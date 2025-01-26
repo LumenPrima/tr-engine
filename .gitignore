@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Directory for audio storage
+storage/
+
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# Testing
+coverage/
+
+# Production build
+dist/
+build/
+
+# Temporary files
+.DS_Store
+.tmp/
+.temp/
+
+# Debug
+.node-xmlhttprequest-*
