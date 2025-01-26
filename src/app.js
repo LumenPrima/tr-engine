@@ -48,11 +48,14 @@ class TREngine {
   }
 
   setupRoutes() {
-    // Mount API routes
-    this.app.use('/', apiRoutes);
+    // Mount API routes with versioning
+    this.app.use('/api/v1', apiRoutes);
+    
+    // Root path redirect
+    this.app.use('/', (req, res) => res.redirect('/api/v1/health'));
 
     // Handle 404s for API routes
-    this.app.use((req, res) => {
+    this.app.use('/api/v1/*', (req, res) => {
       res.status(404).json({
         status: 'error',
         message: 'Not Found',

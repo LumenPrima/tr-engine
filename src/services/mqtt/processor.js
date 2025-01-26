@@ -53,6 +53,11 @@ class MessageProcessor {
 
       const message = JSON.parse(payload.toString());
       const topicParts = topic.split('/');
+      
+      if (topicParts.length < 3) {
+        logger.warn(`Invalid topic format: ${topic}`);
+        return;
+      }
 
       // Get message type from topic structure
       const messageType = topicParts[2];
@@ -80,7 +85,7 @@ class MessageProcessor {
 
         // Create and save the message document
         const doc = new Collection({
-          type: messageType,
+          message_type: messageType,
           timestamp: message.timestamp,
           instance_id: message.instance_id,
           topic,
@@ -150,7 +155,7 @@ class MessageProcessor {
       } else {
         // For all other messages, store them with stringified payload
         const doc = new Collection({
-          type: messageType,
+          message_type: messageType,
           timestamp: message.timestamp,
           instance_id: message.instance_id,
           topic,
