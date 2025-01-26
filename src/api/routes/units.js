@@ -3,9 +3,9 @@ const router = express.Router();
 const logger = require('../../utils/logger');
 const unitManager = require('../../services/state/UnitManager');
 
-// GET /units
+// GET /
 // Get all currently active units
-router.get('/units', async (req, res) => {
+router.get('/', async (req, res) => {
     try {
         const options = {
             timeWindow: parseInt(req.query.window) * 60 * 1000 || 5 * 60 * 1000 // Default 5 minutes
@@ -44,22 +44,12 @@ router.get('/units', async (req, res) => {
     }
 });
 
-// GET /:unit_id/status
-// Get current status and recent activity for a specific unit
-router.get('/:unit_id/status', async (req, res) => {
+// GET /:unit_id - Get current status and recent activity for a specific unit
+router.get('/:unit_id', async (req, res) => {
     try {
         const unitId = parseInt(req.params.unit_id);
-        const sysName = req.query.sys_name;
+        const unitState = await unitManager.getUnitState(unitId);
 
-        if (!sysName) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'sys_name query parameter is required'
-            });
-        }
-
-        const unitState = await unitManager.getUnitState(sysName, unitId);
-        
         if (!unitState) {
             return res.status(404).json({
                 status: 'error',
@@ -67,20 +57,10 @@ router.get('/:unit_id/status', async (req, res) => {
             });
         }
 
-        // Transform unit data for detailed response
-        const detailedStatus = {
-            unit: unitState.unit,
-            sys_name: unitState.sys_name,
-            unit_alpha_tag: unitState.unit_alpha_tag,
-            status: unitState.status,
-            activity_summary: unitState.activity_summary,
-            recent_activity: unitState.recent_activity
-        };
-
         res.json({
             status: 'success',
             timestamp: new Date().toISOString(),
-            unit: detailedStatus
+            unit: unitState
         });
     } catch (err) {
         logger.error('Error getting unit status:', err);
@@ -91,20 +71,10 @@ router.get('/:unit_id/status', async (req, res) => {
     }
 });
 
-// GET /unit/{unit_id}
-// Get complete history for a specific unit
-router.get('/unit/:unit_id', async (req, res) => {
+// GET /:unit_id/history - Get complete history for a specific unit
+router.get('/:unit_id/history', async (req, res) => {
     try {
         const unitId = parseInt(req.params.unit_id);
-        const sysName = req.query.sys_name;
-
-        if (!sysName) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'sys_name query parameter is required'
-            });
-        }
-
         const options = {
             limit: parseInt(req.query.limit) || 100,
             startTime: req.query.start ? new Date(req.query.start) : new Date(Date.now() - 24 * 60 * 60 * 1000), // Default to last 24 hours
@@ -112,7 +82,7 @@ router.get('/unit/:unit_id', async (req, res) => {
             activityTypes: req.query.types ? req.query.types.split(',') : ['calls', 'status', 'affiliations'] // Default to all types
         };
 
-        const history = await unitManager.getUnitHistory(sysName, unitId, options);
+        const history = await unitManager.getUnitHistory(unitId, options);
 
         // Transform history entries to standardized format
         const formattedHistory = history.map(entry => ({
@@ -141,10 +111,7 @@ router.get('/unit/:unit_id', async (req, res) => {
             status: 'success',
             timestamp: new Date().toISOString(),
             data: {
-                unit: {
-                    id: unitId,
-                    sys_name: sysName
-                },
+                unit: unitId,
                 time_range: {
                     start: options.startTime,
                     end: options.endTime

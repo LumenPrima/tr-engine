@@ -3,9 +3,9 @@ const router = express.Router();
 const logger = require('../../utils/logger');
 const systemManager = require('../../services/state/SystemManager');
 
-// GET /status
+// GET /
 // Get current status of all systems
-router.get('/status', async (req, res) => {
+router.get('/', async (req, res) => {
     try {
         const activeSystems = await systemManager.getActiveSystems();
         
@@ -43,9 +43,9 @@ router.get('/status', async (req, res) => {
     }
 });
 
-// GET /stats
+// GET /performance
 // Get system performance statistics
-router.get('/stats', async (req, res) => {
+router.get('/performance', async (req, res) => {
     try {
         const activeSystems = await systemManager.getActiveSystems();
         
@@ -91,9 +91,9 @@ router.get('/stats', async (req, res) => {
     }
 });
 
-// GET /:sys_name/status
+// GET /:sys_name
 // Get detailed status for a specific system
-router.get('/:sys_name/status', async (req, res) => {
+router.get('/:sys_name', async (req, res) => {
     try {
         const systemState = await systemManager.getSystemState(req.params.sys_name);
         
