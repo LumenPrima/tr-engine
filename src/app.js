@@ -51,6 +51,10 @@ class TREngine {
     // Mount API routes with versioning
     this.app.use('/api/v1', apiRoutes);
     
+    // Add active calls routes
+    const activeCallsRoutes = require('./api/routes/activeCalls');
+    this.app.use('/api/v1/active', activeCallsRoutes);
+
     // Root path redirect
     this.app.use('/', (req, res) => res.redirect('/api/v1/health'));
 

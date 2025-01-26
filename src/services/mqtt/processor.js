@@ -86,6 +86,7 @@ class MessageProcessor {
         // Create and save the message document
         const doc = new Collection({
           message_type: messageType,
+          type: messageType, // Add type field expected by tests
           timestamp: message.timestamp,
           instance_id: message.instance_id,
           topic,
