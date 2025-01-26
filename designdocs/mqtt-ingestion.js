@@ -61,6 +61,7 @@ class MessageProcessor {
     this.mqttUrl = mqttUrl;
     this.models = {};
     this.activeCalls = new Map();
+    this.talkgroupManager = new TalkgroupManager();
   }
 
   async initialize() {
@@ -73,6 +74,9 @@ class MessageProcessor {
     // Initialize models
     this.models.RawMessage = mongoose.model('RawMessage', RawMessageSchema);
     this.models.CallEvent = mongoose.model('CallEvent', CallEventSchema);
+    
+    // Initialize managers
+    await this.talkgroupManager.initialize();
 
     // Connect to MQTT
     this.mqttClient = mqtt.connect(this.mqttUrl);
@@ -166,6 +170,13 @@ class MessageProcessor {
 
         await callEvent.save();
         this.activeCalls.set(callId, callEvent);
+        
+        // Update talkgroup tracking
+        await this.talkgroupManager.handleCallActivity({
+          sys_num: baseFields.sys_num,
+          sys_name: baseFields.sys_name,
+          ...talkgroupFields
+        });
         break;
       }
 
