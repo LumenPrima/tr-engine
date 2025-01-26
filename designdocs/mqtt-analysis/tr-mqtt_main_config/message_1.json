@@ -1,0 +1,90 @@
+{
+  "type": "config",
+  "config": {
+    "sources": [
+      {
+        "source_num": 0,
+        "rate": 10000000,
+        "center": 855500000,
+        "min_hz": 850550000,
+        "max_hz": 860450000,
+        "error": 0,
+        "driver": "osmosdr",
+        "device": "airspy=0,bias=1",
+        "antenna": "",
+        "gain": 0,
+        "gain_stages": [
+          [
+            "IF_gain",
+            12
+          ],
+          [
+            "MIX_gain",
+            14
+          ],
+          [
+            "LNA_gain",
+            14
+          ]
+        ],
+        "analog_recorders": 0,
+        "digital_recorders": 12,
+        "debug_recorders": 0,
+        "sigmf_recorders": 0,
+        "silence_frames": 0
+      }
+    ],
+    "systems": [
+      {
+        "sys_num": 0,
+        "sys_name": "warco2",
+        "system_type": "p25",
+        "talkgroups_file": "trs_tg_6643.csv",
+        "qpsk": true,
+        "squelch_db": -160,
+        "analog_levels": 8,
+        "digital_levels": 3,
+        "audio_archive": true,
+        "upload_script": "",
+        "record_unkown": true,
+        "call_log": true,
+        "control_channel": 858237500,
+        "channels": [
+          858237500,
+          858762500,
+          859237500,
+          859762500
+        ]
+      },
+      {
+        "sys_num": 1,
+        "sys_name": "butco2",
+        "system_type": "p25",
+        "talkgroups_file": "trs_tg_6643.csv",
+        "qpsk": true,
+        "squelch_db": -160,
+        "analog_levels": 8,
+        "digital_levels": 3,
+        "audio_archive": true,
+        "upload_script": "",
+        "record_unkown": true,
+        "call_log": true,
+        "control_channel": 853062500,
+        "channels": [
+          853062500,
+          853037500,
+          853287500,
+          853537500
+        ]
+      }
+    ],
+    "capture_dir": "/home/millerah/tr-tester",
+    "upload_server": "",
+    "call_timeout": 1,
+    "log_file": true,
+    "instance_id": "",
+    "instance_key": ""
+  },
+  "timestamp": 1737421911,
+  "instance_id": "trunk-recorder"
+}

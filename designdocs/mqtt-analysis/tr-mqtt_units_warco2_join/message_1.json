@@ -1,0 +1,17 @@
+{
+  "type": "join",
+  "join": {
+    "sys_num": 0,
+    "sys_name": "warco2",
+    "unit": 8312512,
+    "unit_alpha_tag": "",
+    "talkgroup": 48536,
+    "talkgroup_alpha_tag": "83 56 FD OPS",
+    "talkgroup_description": "Deerfield Township Fire Operations",
+    "talkgroup_group": "Warren County (83) Fire/EMS/Hospital",
+    "talkgroup_tag": "Fire-Tac",
+    "talkgroup_patches": ""
+  },
+  "timestamp": 1737430057,
+  "instance_id": "trunk-recorder"
+}

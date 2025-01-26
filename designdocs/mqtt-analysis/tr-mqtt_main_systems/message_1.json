@@ -1,0 +1,27 @@
+{
+  "type": "systems",
+  "systems": [
+    {
+      "sys_num": 0,
+      "sys_name": "warco2",
+      "type": "p25",
+      "sysid": "348",
+      "wacn": "BEE00",
+      "nac": "34D",
+      "rfss": 1,
+      "site_id": 13
+    },
+    {
+      "sys_num": 1,
+      "sys_name": "butco2",
+      "type": "p25",
+      "sysid": "348",
+      "wacn": "BEE00",
+      "nac": "340",
+      "rfss": 4,
+      "site_id": 1
+    }
+  ],
+  "timestamp": 1737421920,
+  "instance_id": "trunk-recorder"
+}

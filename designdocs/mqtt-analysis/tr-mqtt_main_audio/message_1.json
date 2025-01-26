@@ -1,0 +1,70 @@
+{
+  "type": "audio",
+  "call": {
+    "audio_wav_base64": "base64 audio goes here",
+    "metadata": {
+      "freq": 851350000,
+      "freq_error": 176,
+      "signal": 999,
+      "noise": 999,
+      "source_num": 0,
+      "recorder_num": 0,
+      "tdma_slot": 0,
+      "phase2_tdma": 0,
+      "start_time": 1737430015,
+      "stop_time": 1737430023,
+      "emergency": 0,
+      "priority": 4,
+      "mode": 0,
+      "duplex": 0,
+      "encrypted": 0,
+      "call_length": 6,
+      "talkgroup": 9131,
+      "talkgroup_tag": "09 WC HOSP SEC",
+      "talkgroup_description": "UC Health West Chester Hospital - Security",
+      "talkgroup_group_tag": "Security",
+      "talkgroup_group": "Butler County (09) Fire/EMS/Hospitals",
+      "audio_type": "digital",
+      "short_name": "butco2",
+      "freqList": [
+        {
+          "freq": 851350000,
+          "time": 1737430015,
+          "pos": 0,
+          "len": 2.7,
+          "error_count": 1,
+          "spike_count": 0
+        },
+        {
+          "freq": 851350000,
+          "time": 1737430020,
+          "pos": 2.7,
+          "len": 3.42,
+          "error_count": 0,
+          "spike_count": 0
+        }
+      ],
+      "srcList": [
+        {
+          "src": 976109,
+          "time": 1737430015,
+          "pos": 0,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        },
+        {
+          "src": 976001,
+          "time": 1737430020,
+          "pos": 2.7,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        }
+      ],
+      "filename": "9131-1737430014_851350000.0-call_1571.wav"
+    }
+  },
+  "timestamp": 1737430027,
+  "instance_id": "trunk-recorder"
+}

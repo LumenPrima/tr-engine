@@ -1,0 +1,29 @@
+{
+  "type": "end",
+  "end": {
+    "sys_num": 1,
+    "sys_name": "butco2",
+    "unit": 976109,
+    "unit_alpha_tag": "",
+    "talkgroup": 9131,
+    "talkgroup_alpha_tag": "09 WC HOSP SEC",
+    "talkgroup_description": "UC Health West Chester Hospital - Security",
+    "talkgroup_group": "Butler County (09) Fire/EMS/Hospitals",
+    "talkgroup_tag": "Security",
+    "talkgroup_patches": "",
+    "call_num": 1571,
+    "freq": 851350000,
+    "position": 0,
+    "length": 2.7,
+    "emergency": false,
+    "encrypted": false,
+    "start_time": 1737430015,
+    "stop_time": 1737430017,
+    "error_count": 1,
+    "spike_count": 0,
+    "sample_count": 21600,
+    "transmission_filename": "/dev/shm/butco2/9131-1737430015_851350000.wav"
+  },
+  "timestamp": 1737430027,
+  "instance_id": "trunk-recorder"
+}

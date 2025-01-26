@@ -1,0 +1,11 @@
+{
+  "type": "off",
+  "off": {
+    "sys_num": 1,
+    "sys_name": "butco2",
+    "unit": 941462,
+    "unit_alpha_tag": ""
+  },
+  "timestamp": 1737430049,
+  "instance_id": "trunk-recorder"
+}

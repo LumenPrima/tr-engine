@@ -1,0 +1,11 @@
+{
+  "type": "data",
+  "data": {
+    "sys_num": 1,
+    "sys_name": "butco2",
+    "unit": 944140,
+    "unit_alpha_tag": ""
+  },
+  "timestamp": 1737430030,
+  "instance_id": "trunk-recorder"
+}

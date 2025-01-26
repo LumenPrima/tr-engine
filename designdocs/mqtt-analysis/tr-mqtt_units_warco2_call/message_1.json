@@ -1,0 +1,21 @@
+{
+  "type": "call",
+  "call": {
+    "sys_num": 0,
+    "sys_name": "warco2",
+    "unit": 8312806,
+    "unit_alpha_tag": "",
+    "talkgroup": 48694,
+    "talkgroup_alpha_tag": "83 TAC 3",
+    "talkgroup_description": "Countywide Tac 3",
+    "talkgroup_group": "Warren County (83) Common",
+    "talkgroup_tag": "Interop",
+    "talkgroup_patches": "",
+    "call_num": 1572,
+    "freq": 857237500,
+    "encrypted": false,
+    "start_time": 1737430027
+  },
+  "timestamp": 1737430027,
+  "instance_id": "trunk-recorder"
+}

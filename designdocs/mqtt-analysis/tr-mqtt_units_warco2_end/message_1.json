@@ -1,0 +1,29 @@
+{
+  "type": "end",
+  "end": {
+    "sys_num": 0,
+    "sys_name": "warco2",
+    "unit": 8312806,
+    "unit_alpha_tag": "",
+    "talkgroup": 48694,
+    "talkgroup_alpha_tag": "83 TAC 3",
+    "talkgroup_description": "Countywide Tac 3",
+    "talkgroup_group": "Warren County (83) Common",
+    "talkgroup_tag": "Interop",
+    "talkgroup_patches": "",
+    "call_num": 1572,
+    "freq": 857237500,
+    "position": 0,
+    "length": 9,
+    "emergency": false,
+    "encrypted": false,
+    "start_time": 1737430028,
+    "stop_time": 1737430037,
+    "error_count": 19,
+    "spike_count": 5,
+    "sample_count": 72000,
+    "transmission_filename": "/dev/shm/warco2/48694-1737430028_857237500.wav"
+  },
+  "timestamp": 1737430040,
+  "instance_id": "trunk-recorder"
+}

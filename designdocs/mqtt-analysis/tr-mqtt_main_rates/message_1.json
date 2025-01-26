@@ -1,0 +1,21 @@
+{
+  "type": "rates",
+  "rates": [
+    {
+      "sys_num": 0,
+      "sys_name": "warco2",
+      "decoderate": 40,
+      "decoderate_interval": 3,
+      "control_channel": 859762500
+    },
+    {
+      "sys_num": 1,
+      "sys_name": "butco2",
+      "decoderate": 25.67,
+      "decoderate_interval": 3,
+      "control_channel": 853062500
+    }
+  ],
+  "timestamp": 1737430014,
+  "instance_id": "trunk-recorder"
+}

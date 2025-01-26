@@ -1,0 +1,17 @@
+{
+  "type": "join",
+  "join": {
+    "sys_num": 1,
+    "sys_name": "butco2",
+    "unit": 943259,
+    "unit_alpha_tag": "",
+    "talkgroup": 9178,
+    "talkgroup_alpha_tag": "09-8L Main",
+    "talkgroup_description": "Middletown Police Dispatch",
+    "talkgroup_group": "Butler County (09) Law",
+    "talkgroup_tag": "Law Dispatch",
+    "talkgroup_patches": ""
+  },
+  "timestamp": 1737430024,
+  "instance_id": "trunk-recorder"
+}

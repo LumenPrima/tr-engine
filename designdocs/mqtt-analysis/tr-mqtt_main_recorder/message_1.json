@@ -1,0 +1,17 @@
+{
+  "type": "recorder",
+  "recorder": {
+    "id": "0_0",
+    "src_num": 0,
+    "rec_num": 0,
+    "type": "P25",
+    "duration": 3243.06,
+    "freq": 851350000,
+    "count": 462,
+    "rec_state": 4,
+    "rec_state_type": "IDLE",
+    "squelched": true
+  },
+  "timestamp": 1737430014,
+  "instance_id": "trunk-recorder"
+}

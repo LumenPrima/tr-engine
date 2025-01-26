@@ -1,0 +1,151 @@
+{
+  "type": "recorders",
+  "recorders": [
+    {
+      "id": "0_0",
+      "src_num": 0,
+      "rec_num": 0,
+      "type": "P25",
+      "duration": 3243.06,
+      "freq": 851350000,
+      "count": 462,
+      "rec_state": 1,
+      "rec_state_type": "RECORDING",
+      "squelched": true
+    },
+    {
+      "id": "0_1",
+      "src_num": 0,
+      "rec_num": 1,
+      "type": "P25",
+      "duration": 2511,
+      "freq": 851762500,
+      "count": 368,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_2",
+      "src_num": 0,
+      "rec_num": 2,
+      "type": "P25",
+      "duration": 1947.96,
+      "freq": 855737500,
+      "count": 287,
+      "rec_state": 1,
+      "rec_state_type": "RECORDING",
+      "squelched": true
+    },
+    {
+      "id": "0_3",
+      "src_num": 0,
+      "rec_num": 3,
+      "type": "P25",
+      "duration": 1225.44,
+      "freq": 852687500,
+      "count": 173,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_4",
+      "src_num": 0,
+      "rec_num": 4,
+      "type": "P25",
+      "duration": 705.24,
+      "freq": 852687500,
+      "count": 95,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_5",
+      "src_num": 0,
+      "rec_num": 5,
+      "type": "P25",
+      "duration": 320.04,
+      "freq": 855962500,
+      "count": 54,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_6",
+      "src_num": 0,
+      "rec_num": 6,
+      "type": "P25",
+      "duration": 102.24,
+      "freq": 854012500,
+      "count": 18,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_7",
+      "src_num": 0,
+      "rec_num": 7,
+      "type": "P25",
+      "duration": 48.6,
+      "freq": 853387500,
+      "count": 9,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_8",
+      "src_num": 0,
+      "rec_num": 8,
+      "type": "P25",
+      "duration": 2.16,
+      "freq": 853537500,
+      "count": 1,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_9",
+      "src_num": 0,
+      "rec_num": 9,
+      "type": "P25",
+      "duration": 0,
+      "freq": 855500000,
+      "count": 0,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_10",
+      "src_num": 0,
+      "rec_num": 10,
+      "type": "P25",
+      "duration": 0,
+      "freq": 855500000,
+      "count": 0,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    },
+    {
+      "id": "0_11",
+      "src_num": 0,
+      "rec_num": 11,
+      "type": "P25",
+      "duration": 0,
+      "freq": 855500000,
+      "count": 0,
+      "rec_state": 7,
+      "rec_state_type": "AVAILABLE",
+      "squelched": true
+    }
+  ],
+  "timestamp": 1737430017,
+  "instance_id": "trunk-recorder"
+}

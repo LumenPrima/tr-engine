@@ -1,0 +1,17 @@
+{
+  "type": "location",
+  "location": {
+    "sys_num": 1,
+    "sys_name": "butco2",
+    "unit": 990101,
+    "unit_alpha_tag": "",
+    "talkgroup": 53548,
+    "talkgroup_alpha_tag": "BUTLER REC1",
+    "talkgroup_description": "Butler Rural Electric Cooperative 1",
+    "talkgroup_group": "Rural Electric Cooperatives",
+    "talkgroup_tag": "Utilities",
+    "talkgroup_patches": ""
+  },
+  "timestamp": 1737430020,
+  "instance_id": "trunk-recorder"
+}

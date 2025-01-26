@@ -1,0 +1,17 @@
+{
+  "type": "join",
+  "join": {
+    "sys_num": 1,
+    "sys_name": "butco2",
+    "unit": 909280,
+    "unit_alpha_tag": "",
+    "talkgroup": 9080,
+    "talkgroup_alpha_tag": "",
+    "talkgroup_description": "",
+    "talkgroup_group": "",
+    "talkgroup_tag": "",
+    "talkgroup_patches": ""
+  },
+  "timestamp": 1737430016,
+  "instance_id": "trunk-recorder"
+}

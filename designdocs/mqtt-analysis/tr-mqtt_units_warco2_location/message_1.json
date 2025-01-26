@@ -1,0 +1,17 @@
+{
+  "type": "location",
+  "location": {
+    "sys_num": 0,
+    "sys_name": "warco2",
+    "unit": 2991214,
+    "unit_alpha_tag": "",
+    "talkgroup": 20103,
+    "talkgroup_alpha_tag": "29F TAC 3",
+    "talkgroup_description": "County Fire Tactical 3",
+    "talkgroup_group": "Greene County (29) Fire/EMS/Hospital",
+    "talkgroup_tag": "Fire-Tac",
+    "talkgroup_patches": ""
+  },
+  "timestamp": 1737430032,
+  "instance_id": "trunk-recorder"
+}

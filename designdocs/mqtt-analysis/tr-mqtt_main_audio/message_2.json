@@ -1,0 +1,150 @@
+{
+  "type": "audio",
+  "call": {
+    "audio_wav_base64": "base64 audio goes here",
+    "metadata": {
+      "freq": 855737500,
+      "freq_error": 409,
+      "signal": 999,
+      "noise": 999,
+      "source_num": 0,
+      "recorder_num": 2,
+      "tdma_slot": 0,
+      "phase2_tdma": 0,
+      "start_time": 1737429986,
+      "stop_time": 1737430027,
+      "emergency": 0,
+      "priority": 4,
+      "mode": 0,
+      "duplex": 0,
+      "encrypted": 0,
+      "call_length": 30,
+      "talkgroup": 9468,
+      "talkgroup_tag": "09 TA 02",
+      "talkgroup_description": "County Regional Transit 2",
+      "talkgroup_group_tag": "Transportation",
+      "talkgroup_group": "Butler County (09) Local Government/Public Works",
+      "audio_type": "digital",
+      "short_name": "butco2",
+      "freqList": [
+        {
+          "freq": 855737500,
+          "time": 1737429986,
+          "pos": 0,
+          "len": 5.04,
+          "error_count": 0,
+          "spike_count": 0
+        },
+        {
+          "freq": 855737500,
+          "time": 1737429992,
+          "pos": 5.04,
+          "len": 4.68,
+          "error_count": 45,
+          "spike_count": 3
+        },
+        {
+          "freq": 855737500,
+          "time": 1737429999,
+          "pos": 9.719999999999999,
+          "len": 5.58,
+          "error_count": 45,
+          "spike_count": 3
+        },
+        {
+          "freq": 855737500,
+          "time": 1737430006,
+          "pos": 15.299999999999999,
+          "len": 3.96,
+          "error_count": 0,
+          "spike_count": 0
+        },
+        {
+          "freq": 855737500,
+          "time": 1737430012,
+          "pos": 19.259999999999998,
+          "len": 6.12,
+          "error_count": 0,
+          "spike_count": 0
+        },
+        {
+          "freq": 855737500,
+          "time": 1737430021,
+          "pos": 25.38,
+          "len": 2.88,
+          "error_count": 0,
+          "spike_count": 0
+        },
+        {
+          "freq": 855737500,
+          "time": 1737430026,
+          "pos": 28.259999999999998,
+          "len": 1.44,
+          "error_count": 0,
+          "spike_count": 0
+        }
+      ],
+      "srcList": [
+        {
+          "src": 984766,
+          "time": 1737429986,
+          "pos": 0,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        },
+        {
+          "src": 984844,
+          "time": 1737429992,
+          "pos": 5.04,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        },
+        {
+          "src": 984766,
+          "time": 1737429999,
+          "pos": 9.719999999999999,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        },
+        {
+          "src": 984844,
+          "time": 1737430006,
+          "pos": 15.299999999999999,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        },
+        {
+          "src": 984775,
+          "time": 1737430012,
+          "pos": 19.259999999999998,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        },
+        {
+          "src": 984766,
+          "time": 1737430021,
+          "pos": 25.38,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        },
+        {
+          "src": 984775,
+          "time": 1737430026,
+          "pos": 28.259999999999998,
+          "emergency": 0,
+          "signal_system": "",
+          "tag": ""
+        }
+      ],
+      "filename": "9468-1737429985_855737500.0-call_1570.wav"
+    }
+  },
+  "timestamp": 1737430031,
+  "instance_id": "trunk-recorder"
+}

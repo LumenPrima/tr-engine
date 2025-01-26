@@ -1,0 +1,11 @@
+{
+  "type": "off",
+  "off": {
+    "sys_num": 0,
+    "sys_name": "warco2",
+    "unit": 8308217,
+    "unit_alpha_tag": ""
+  },
+  "timestamp": 1737430051,
+  "instance_id": "trunk-recorder"
+}
