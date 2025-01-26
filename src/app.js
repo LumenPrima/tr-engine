@@ -20,16 +20,25 @@ dotenv.config();
 class TREngine {
   constructor() {
     this.app = express();
+    this.app.use(express.json());
+    this.app.use(express.urlencoded({ extended: true }));
     this.setupMiddleware();
     this.setupRoutes();
+    this.setupErrorHandling();
+    this.isShuttingDown = false;
+  }
+
+  setupErrorHandling() {
+    const { setupErrorHandling } = require('./api/middleware');
+    setupErrorHandling(this.app);
   }
 
   async initialize() {
     try {
       await this.connectMongoDB();
+      await this.startServer();
       await this.setupWebSocket();
       await this.connectMQTT();
-      await this.startServer();
       this.setupProcessHandlers();
       logger.info('TR-Engine initialized successfully');
       return true;
@@ -48,33 +57,11 @@ class TREngine {
   }
 
   setupRoutes() {
+    // Root path redirect
+    this.app.get('/', (req, res) => res.redirect('/api/v1/hello'));
+
     // Mount API routes with versioning
     this.app.use('/api/v1', apiRoutes);
-    
-    // Add active calls routes
-    const activeCallsRoutes = require('./api/routes/activeCalls');
-    this.app.use('/api/v1/active', activeCallsRoutes);
-
-    // Root path redirect
-    this.app.use('/', (req, res) => res.redirect('/api/v1/health'));
-
-    // Handle 404s for API routes
-    this.app.use('/api/v1/*', (req, res) => {
-      res.status(404).json({
-        status: 'error',
-        message: 'Not Found',
-        path: req.path
-      });
-    });
-
-    // Handle errors
-    this.app.use((err, req, res, next) => {
-      logger.error('Server error:', err);
-      res.status(err.status || 500).json({
-        status: 'error',
-        message: err.message || 'Internal Server Error'
-      });
-    });
   }
 
   async connectMongoDB() {
@@ -87,15 +74,24 @@ class TREngine {
       await mongoose.connect(process.env.MONGODB_URI);
       logger.info('Connected to MongoDB');
 
-      mongoose.connection.on('error', err => {
+      // Only set up MongoDB event handlers if we're not already shutting down
+      const handleMongoEvent = (event, handler) => {
+        mongoose.connection.on(event, (...args) => {
+          if (!this.isShuttingDown) {
+            handler(...args);
+          }
+        });
+      };
+
+      handleMongoEvent('error', err => {
         logger.error('MongoDB connection error:', err);
       });
 
-      mongoose.connection.on('disconnected', () => {
+      handleMongoEvent('disconnected', () => {
         logger.warn('MongoDB disconnected');
       });
 
-      mongoose.connection.on('reconnected', () => {
+      handleMongoEvent('reconnected', () => {
         logger.info('MongoDB reconnected');
       });
     } catch (err) {
@@ -127,8 +123,8 @@ class TREngine {
   async startServer() {
     const port = process.env.PORT || 3000;
     return new Promise((resolve, reject) => {
-      this.server = this.app.listen(port, () => {
-        logger.info(`TR-Engine server listening on port ${port}`);
+      this.server = this.app.listen(port, '0.0.0.0', () => {
+        logger.info(`TR-Engine server listening on 0.0.0.0:${port}`);
         resolve();
       }).on('error', reject);
     });
@@ -152,41 +148,114 @@ class TREngine {
   }
 
   async shutdown(code = 0) {
+    // Prevent multiple shutdown attempts
+    if (this.isShuttingDown) {
+      logger.warn('Shutdown already in progress...');
+      return;
+    }
+    this.isShuttingDown = true;
+    
     logger.info('Shutting down TR-Engine...');
 
-    // Close WebSocket server
-    if (this.wss) {
-      await new Promise(resolve => this.wss.close(resolve));
-      logger.info('WebSocket server closed');
-    }
+    // Set a timeout to force exit after 10 seconds
+    const forceExitTimeout = setTimeout(() => {
+      logger.error('Shutdown timed out after 10 seconds, forcing exit');
+      process.exit(1);
+    }, 10000);
 
-    // Close MQTT connection
-    if (mqttClient.isConnected()) {
-      mqttClient.disconnect();
-    }
+    try {
+      // Create an array of cleanup tasks
+      const cleanupTasks = [];
 
-    // Close MongoDB connection
-    if (mongoose.connection.readyState === 1) {
-      await mongoose.disconnect();
-      logger.info('MongoDB disconnected');
-    }
+      // First cleanup state managers
+      const activeCallManager = require('./services/state/ActiveCallManager');
+      const systemManager = require('./services/state/SystemManager');
+      const unitManager = require('./services/state/UnitManager');
 
-    // Close HTTP server
-    if (this.server) {
-      await new Promise(resolve => this.server.close(resolve));
-      logger.info('HTTP server closed');
-    }
+      cleanupTasks.push(
+        activeCallManager.cleanup().then(() => {
+          logger.info('ActiveCallManager cleaned up');
+        })
+      );
+      cleanupTasks.push(
+        systemManager.cleanup().then(() => {
+          logger.info('SystemManager cleaned up');
+        })
+      );
+      cleanupTasks.push(
+        unitManager.cleanup().then(() => {
+          logger.info('UnitManager cleaned up');
+        })
+      );
 
-    // Only exit in production
-    if (process.env.NODE_ENV !== 'test') {
-      process.exit(code);
+      // Close WebSocket server
+      if (this.wss) {
+        cleanupTasks.push(
+          new Promise(resolve => {
+            this.wss.close(() => {
+              logger.info('WebSocket server closed');
+              resolve();
+            });
+          })
+        );
+      }
+
+      // Close MQTT connection
+      if (mqttClient.isConnected()) {
+        cleanupTasks.push(
+          mqttClient.disconnect().then(() => {
+            logger.info('MQTT client disconnected');
+          })
+        );
+      }
+
+      // Close MongoDB connection
+      if (mongoose.connection.readyState === 1) {
+        cleanupTasks.push(
+          mongoose.disconnect().then(() => {
+            logger.info('MongoDB disconnected');
+          })
+        );
+      }
+
+      // Close HTTP server
+      if (this.server) {
+        cleanupTasks.push(
+          new Promise(resolve => {
+            this.server.close(() => {
+              logger.info('HTTP server closed');
+              resolve();
+            });
+          })
+        );
+      }
+
+      // Wait for all cleanup tasks to complete
+      await Promise.all(cleanupTasks);
+      
+      clearTimeout(forceExitTimeout);
+      logger.info('Cleanup completed successfully');
+
+      // Only exit in production
+      if (process.env.NODE_ENV !== 'test') {
+        process.exit(code);
+      }
+    } catch (err) {
+      clearTimeout(forceExitTimeout);
+      logger.error('Error during shutdown:', err);
+      
+      if (process.env.NODE_ENV !== 'test') {
+        process.exit(1);
+      }
     }
   }
 }
 
-// Only initialize engine in production
+// Create single instance for both export and running
+const engine = new TREngine();
+
+// Only initialize in production
 if (process.env.NODE_ENV !== 'test') {
-  const engine = new TREngine();
   engine.initialize().catch(err => {
     logger.error('Failed to start TR-Engine:', err);
     process.exit(1);
@@ -195,5 +264,5 @@ if (process.env.NODE_ENV !== 'test') {
 
 module.exports = {
   TREngine,
-  app: new TREngine().app // For backward compatibility
+  app: engine.app // Share the same instance
 };

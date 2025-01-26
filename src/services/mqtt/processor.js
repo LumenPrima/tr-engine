@@ -60,11 +60,13 @@ class MessageProcessor {
       }
 
       // Get message type from topic structure
-      const messageType = topicParts[2];
+      // For unit messages (tr-mqtt/units/[system]/[type]), use the last part
+      // For main messages (tr-mqtt/main/[type]), use the third part
+      const messageType = topicParts[1] === 'units' ? topicParts[topicParts.length - 1] : topicParts[2];
       const Collection = this.messageCollections.get(messageType);
 
       if (!Collection) {
-        logger.warn(`No collection mapped for type: ${messageType}`);
+        logger.warn(`No collection mapped for message type '${messageType}' from topic: ${topic}`);
         return;
       }
 
@@ -86,14 +88,11 @@ class MessageProcessor {
         // Create and save the message document
         const doc = new Collection({
           message_type: messageType,
-          type: messageType, // Add type field expected by tests
-          timestamp: message.timestamp,
+          type: message.type || messageType,
+          timestamp: typeof message.timestamp === 'number' ? message.timestamp * 1000 : new Date(message.timestamp).getTime(),
           instance_id: message.instance_id,
           topic,
-          payload: JSON.stringify({
-            ...message,
-            topic // Include topic in payload for consistency
-          })
+          payload: message
         });
 
         await doc.save();
@@ -154,16 +153,14 @@ class MessageProcessor {
 
         logger.info(`Stored audio message and files for ${metadata.filename} in ${Collection.collection.name}`);
       } else {
-        // For all other messages, store them with stringified payload
+        // For all other messages, store them with raw payload
         const doc = new Collection({
           message_type: messageType,
-          timestamp: message.timestamp,
+          type: message.type || messageType,
+          timestamp: typeof message.timestamp === 'number' ? message.timestamp * 1000 : new Date(message.timestamp).getTime(),
           instance_id: message.instance_id,
           topic,
-          payload: JSON.stringify({
-            ...message,
-            topic // Include topic in payload for consistency
-          })
+          payload: message
         });
 
         await doc.save();
