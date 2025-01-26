@@ -80,7 +80,7 @@ class MessageProcessor {
 
         // Create and save the message document
         const doc = new Collection({
-          type: message.type,
+          type: messageType,
           timestamp: message.timestamp,
           instance_id: message.instance_id,
           topic,
@@ -150,7 +150,7 @@ class MessageProcessor {
       } else {
         // For all other messages, store them with stringified payload
         const doc = new Collection({
-          type: message.type,
+          type: messageType,
           timestamp: message.timestamp,
           instance_id: message.instance_id,
           topic,

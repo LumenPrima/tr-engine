@@ -48,8 +48,8 @@ class TREngine {
   }
 
   setupRoutes() {
-    // Mount versioned API routes
-    this.app.use('/api/v1', apiRoutes);
+    // Mount API routes
+    this.app.use('/', apiRoutes);
 
     // Handle 404s for API routes
     this.app.use((req, res) => {
