@@ -54,8 +54,8 @@ class MessageProcessor {
       const message = JSON.parse(payload.toString());
       const topicParts = topic.split('/');
 
-      // Get message type from topic or message
-      const messageType = message.type || topicParts[2]; // e.g., systems, call_start, etc.
+      // Get message type from topic structure
+      const messageType = topicParts[2];
       const Collection = this.messageCollections.get(messageType);
 
       if (!Collection) {

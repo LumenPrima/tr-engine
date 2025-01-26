@@ -48,29 +48,10 @@ class TREngine {
   }
 
   setupRoutes() {
-    // Mount API routes
-    this.app.use('/', apiRoutes);
+    // Mount versioned API routes
+    this.app.use('/api/v1', apiRoutes);
 
-    // Health check endpoint
-    this.app.get('/api/v1/health', (req, res) => {
-      const status = {
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        services: {
-          mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-          mqtt: mqttClient.isConnected() ? 'connected' : 'disconnected',
-          websocket: this.wss ? 'running' : 'stopped',
-          state_managers: {
-            active_calls: activeCallManager ? 'running' : 'stopped',
-            systems: systemManager ? 'running' : 'stopped',
-            units: unitManager ? 'running' : 'stopped'
-          }
-        }
-      };
-      res.json(status);
-    });
-
-    // Handle 404s
+    // Handle 404s for API routes
     this.app.use((req, res) => {
       res.status(404).json({
         status: 'error',
