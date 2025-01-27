@@ -8,11 +8,11 @@ const transcriptionService = new TranscriptionService();
 // Get transcription for a specific call
 router.get('/calls/:callId/transcription', async (req, res) => {
     try {
-        const transcription = await transcriptionService.getTranscription(req.params.callId);
-        if (!transcription) {
+        const call = await transcriptionService.getTranscription(req.params.callId);
+        if (!call?.call?.metadata?.transcription) {
             return res.status(404).json({ error: 'Transcription not found' });
         }
-        res.json(transcription);
+        res.json(call.call.metadata.transcription);
     } catch (error) {
         logger.error('Error fetching transcription:', error);
         res.status(500).json({ error: 'Internal server error' });

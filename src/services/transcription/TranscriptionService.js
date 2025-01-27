@@ -1,13 +1,10 @@
-const mongoose = require('mongoose');
-const { TranscriptionSchema } = require('../../models/transcription');
 const logger = require('../../utils/logger');
 const OpenAI = require('openai');
 const fs = require('fs');
+const { CallMessage } = require('../../models/call');
 
 class TranscriptionService {
     constructor() {
-        this.Transcription = mongoose.model('Transcription', TranscriptionSchema);
-        
         // Initialize OpenAI client with environment config
         this.openai = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY,
@@ -81,9 +78,8 @@ class TranscriptionService {
     async saveTranscription(callId, whisperResponse, startTime, audioMessage) {
         const processingTime = (Date.now() - startTime) / 1000;
         
-        // Get source list and talkgroup from audio message
+        // Get source list from audio message
         const srcList = audioMessage.call.metadata.srcList || [];
-        const talkgroup = audioMessage.call.metadata.talkgroup;
         
         // Convert Whisper segments to our schema format and map to sources
         const segments = whisperResponse.segments.map(seg => {
@@ -106,45 +102,31 @@ class TranscriptionService {
                 } : null
             };
         });
-        
-        // Create and store transcription
-        const transcription = new this.Transcription({
-            call_id: callId,
-            talkgroup: talkgroup,
-            talkgroup_metadata: {
-                tag: audioMessage.call.metadata.talkgroup_tag,
-                description: audioMessage.call.metadata.talkgroup_description,
-                group_tag: audioMessage.call.metadata.talkgroup_group_tag,
-                group: audioMessage.call.metadata.talkgroup_group
-            },
-            call_metadata: {
-                start_time: audioMessage.call.metadata.start_time,
-                stop_time: audioMessage.call.metadata.stop_time,
-                emergency: Boolean(audioMessage.call.metadata.emergency),
-                encrypted: Boolean(audioMessage.call.metadata.encrypted),
-                freq: audioMessage.call.metadata.freq,
-                audio_type: audioMessage.call.metadata.audio_type
-            },
-            transcription: {
-                text: whisperResponse.text,
-                segments: segments,
-                metadata: {
-                    model: process.env.WHISPER_MODEL,
-                    processing_time: processingTime,
-                    audio_duration: whisperResponse.duration
-                }
+
+        // Add transcription to call metadata
+        audioMessage.call.metadata.transcription = {
+            text: whisperResponse.text,
+            segments: segments,
+            metadata: {
+                model: process.env.WHISPER_MODEL,
+                processing_time: processingTime,
+                audio_duration: whisperResponse.duration,
+                timestamp: new Date()
             }
-        });
+        };
 
         try {
-            await transcription.save();
-            logger.info(`Stored transcription for call ${callId}, duration: ${processingTime}s`);
-            return transcription;
+            // Update the call message with transcription
+            const result = await CallMessage.findOneAndUpdate(
+                { 'call.metadata.filename': audioMessage.call.metadata.filename },
+                audioMessage,
+                { new: true }
+            );
+            
+            logger.info(`Updated call ${callId} with transcription, duration: ${processingTime}s`);
+            return result;
         } catch (error) {
-            if (error.code === 11000) { // Duplicate key error
-                logger.warn(`Duplicate transcription for call ${callId}, skipping`);
-                return await this.Transcription.findOne({ call_id: callId });
-            }
+            logger.error(`Failed to update call ${callId} with transcription:`, error);
             throw error;
         }
     }
@@ -186,13 +168,18 @@ class TranscriptionService {
     }
 
     async getTranscription(callId) {
-        return await this.Transcription.findOne({ call_id: callId });
+        return await CallMessage.findOne({ 
+            'call.metadata.filename': callId 
+        });
     }
 
     async getRecentTranscriptions(talkgroupId, limit = 10) {
-        return await this.Transcription.find({ talkgroup: talkgroupId })
-            .sort({ 'transcription.metadata.timestamp': -1 })
-            .limit(limit);
+        return await CallMessage.find({ 
+            'call.metadata.talkgroup': talkgroupId,
+            'call.metadata.transcription': { $exists: true }
+        })
+        .sort({ 'call.metadata.transcription.metadata.timestamp': -1 })
+        .limit(limit);
     }
 }
 
