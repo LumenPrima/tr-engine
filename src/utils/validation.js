@@ -14,6 +14,14 @@ class MessageValidator {
             ['recorder', recorderMessageSchema],
             ['unit', unitMessageSchema]
         ]);
+
+        // Cache for validation results
+        this.validationCache = new Map();
+        this.maxCacheSize = 1000;
+        
+        // Performance metrics
+        this.validationTimes = [];
+        this.maxTimingSamples = 100;
     }
 
     /**
@@ -23,8 +31,12 @@ class MessageValidator {
      * @returns {Object} - { isValid: boolean, errors: Array }
      */
     validateMessage(messageType, message) {
+        // Skip validation in production unless explicitly enabled
+        if (process.env.NODE_ENV === 'production' && !process.env.ENABLE_VALIDATION) {
+            return { isValid: true, errors: [] };
+        }
+
         const schema = this.schemaMap.get(messageType);
-        
         if (!schema) {
             return {
                 isValid: false,
@@ -32,18 +44,70 @@ class MessageValidator {
             };
         }
 
-        const validation = schema.validate(message, { abortEarly: false });
+        // Generate cache key from message structure
+        const cacheKey = this.getCacheKey(messageType, message);
         
-        if (validation.error) {
-            return {
-                isValid: false,
-                errors: validation.error.details.map(detail => detail.message)
-            };
+        // Check cache first
+        if (this.validationCache.has(cacheKey)) {
+            return this.validationCache.get(cacheKey);
         }
 
-        return {
+        // Measure validation time
+        const startTime = process.hrtime();
+        
+        const validation = schema.validate(message, { abortEarly: false });
+        const result = validation.error ? {
+            isValid: false,
+            errors: validation.error.details.map(detail => detail.message)
+        } : {
             isValid: true,
             errors: []
+        };
+
+        // Update performance metrics
+        const [seconds, nanoseconds] = process.hrtime(startTime);
+        const milliseconds = seconds * 1000 + nanoseconds / 1000000;
+        this.updateMetrics(milliseconds);
+
+        // Cache the result
+        this.validationCache.set(cacheKey, result);
+        
+        // Maintain cache size limit
+        if (this.validationCache.size > this.maxCacheSize) {
+            const firstKey = this.validationCache.keys().next().value;
+            this.validationCache.delete(firstKey);
+        }
+
+        return result;
+    }
+
+    getCacheKey(messageType, message) {
+        // Create a structural hash of the message
+        const structure = JSON.stringify(
+            Object.keys(message).sort().map(key => {
+                return typeof message[key];
+            })
+        );
+        return `${messageType}:${structure}`;
+    }
+
+    updateMetrics(milliseconds) {
+        this.validationTimes.push(milliseconds);
+        if (this.validationTimes.length > this.maxTimingSamples) {
+            this.validationTimes.shift();
+        }
+    }
+
+    getPerformanceMetrics() {
+        if (this.validationTimes.length === 0) return null;
+        
+        return {
+            averageTime: this.validationTimes.reduce((a, b) => a + b) / this.validationTimes.length,
+            maxTime: Math.max(...this.validationTimes),
+            minTime: Math.min(...this.validationTimes),
+            cacheSize: this.validationCache.size,
+            cacheHitRate: this.validationTimes.length > 0 ? 
+                (this.validationCache.size / this.validationTimes.length) : 0
         };
     }
 
