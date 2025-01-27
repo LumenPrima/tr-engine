@@ -1,6 +1,9 @@
-# TR-Engine
+# TR-ENGINE
+(ENGINE: ENGINE, Next-Generation Integration for Network Events)
 
-A real-time trunk radio monitoring and analysis server that processes MQTT messages from radio systems, stores historical data, and provides real-time monitoring capabilities.
+A self-referential recursive acronym that's as interconnected as the trunk radio systems it monitors - a meta-monitoring server that processes its own kind of trunked communications (MQTT messages) to analyze actual trunked radio communications. Like a digital ouroboros, it's a system monitoring system, recording the recorders, and tracking the trackers.
+
+At its core, TR-ENGINE is a real-time trunk radio monitoring and analysis server that processes MQTT messages from radio systems, stores historical data, and provides real-time monitoring capabilities.
 
 ## Features
 
