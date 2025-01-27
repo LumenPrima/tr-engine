@@ -23,6 +23,23 @@ class TranscriptionService {
             if (!audioMessage?.call?.metadata?.srcList) {
                 throw new Error('Invalid audio message format: missing required metadata');
             }
+
+            // Validate audio file
+            if (!fs.existsSync(audioPath)) {
+                throw new Error(`Audio file not found: ${audioPath}`);
+            }
+
+            // Check file format
+            const fileStats = fs.statSync(audioPath);
+            if (fileStats.size === 0) {
+                throw new Error('Audio file is empty');
+            }
+
+            // Validate audio duration matches metadata
+            const expectedDuration = audioMessage.call.metadata.call_length;
+            if (expectedDuration < 0.1) {
+                throw new Error('Invalid call duration in metadata');
+            }
             
             const startTime = Date.now();
             let lastError;
@@ -94,6 +111,20 @@ class TranscriptionService {
         const transcription = new this.Transcription({
             call_id: callId,
             talkgroup: talkgroup,
+            talkgroup_metadata: {
+                tag: audioMessage.call.metadata.talkgroup_tag,
+                description: audioMessage.call.metadata.talkgroup_description,
+                group_tag: audioMessage.call.metadata.talkgroup_group_tag,
+                group: audioMessage.call.metadata.talkgroup_group
+            },
+            call_metadata: {
+                start_time: audioMessage.call.metadata.start_time,
+                stop_time: audioMessage.call.metadata.stop_time,
+                emergency: Boolean(audioMessage.call.metadata.emergency),
+                encrypted: Boolean(audioMessage.call.metadata.encrypted),
+                freq: audioMessage.call.metadata.freq,
+                audio_type: audioMessage.call.metadata.audio_type
+            },
             transcription: {
                 text: whisperResponse.text,
                 segments: segments,
