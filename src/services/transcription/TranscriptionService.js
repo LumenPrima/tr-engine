@@ -15,9 +15,14 @@ class TranscriptionService {
         });
     }
 
-    async processAudioFile(callId, audioPath, retries = 3) {
+    async processAudioFile(callId, audioPath, audioMessage, retries = 3) {
         try {
             logger.debug(`Starting transcription for call ${callId}`);
+            
+            // Validate audio message format
+            if (!audioMessage?.call?.metadata?.srcList) {
+                throw new Error('Invalid audio message format: missing required metadata');
+            }
             
             const startTime = Date.now();
             let lastError;
@@ -39,7 +44,7 @@ class TranscriptionService {
                         throw new Error(`Low quality transcription: ${quality.reason}`);
                     }
                     
-                    return await this.saveTranscription(callId, whisperResponse, startTime, message);
+                    return await this.saveTranscription(callId, whisperResponse, startTime, audioMessage);
                 } catch (error) {
                     lastError = error;
                     logger.warn(`Transcription attempt ${attempt} failed for call ${callId}:`, error);
@@ -50,35 +55,6 @@ class TranscriptionService {
                 }
             }
             throw lastError;
-            
-            const processingTime = (Date.now() - startTime) / 1000;
-            
-            // Convert Whisper segments to our schema format
-            const segments = whisperResponse.segments.map(seg => ({
-                start_time: seg.start,
-                end_time: seg.end,
-                text: seg.text,
-                confidence: seg.confidence
-            }));
-            
-            // Create and store transcription
-            const transcription = new this.Transcription({
-                call_id: callId,
-                transcription: {
-                    text: whisperResponse.text,
-                    segments: segments,
-                    metadata: {
-                        model: process.env.WHISPER_MODEL,
-                        processing_time: processingTime,
-                        audio_duration: whisperResponse.duration
-                    }
-                }
-            });
-
-            await transcription.save();
-            logger.info(`Stored transcription for call ${callId}, duration: ${processingTime}s`);
-            
-            return transcription;
         } catch (error) {
             logger.error(`Transcription failed for call ${callId}:`, error);
             throw error;
@@ -88,8 +64,9 @@ class TranscriptionService {
     async saveTranscription(callId, whisperResponse, startTime, audioMessage) {
         const processingTime = (Date.now() - startTime) / 1000;
         
-        // Get source list from audio message
-        const srcList = audioMessage.call.metadata.srcList;
+        // Get source list and talkgroup from audio message
+        const srcList = audioMessage.call.metadata.srcList || [];
+        const talkgroup = audioMessage.call.metadata.talkgroup;
         
         // Convert Whisper segments to our schema format and map to sources
         const segments = whisperResponse.segments.map(seg => {
@@ -116,6 +93,7 @@ class TranscriptionService {
         // Create and store transcription
         const transcription = new this.Transcription({
             call_id: callId,
+            talkgroup: talkgroup,
             transcription: {
                 text: whisperResponse.text,
                 segments: segments,
