@@ -85,31 +85,26 @@ Response Format:
       "duration": 8.12,
       "emergency": false,
       "transcription": {
-        "text": "Engine 5 responding to Box 1234",
+        "text": "1469 1 with 10.30 13.69 find the scales with Ohio 4",
         "segments": [
           {
-            "start_time": 0.0,
-            "end_time": 1.2,
-            "text": "Engine 5",
-            "confidence": 0.95
-          },
-          {
-            "start_time": 1.2,
-            "end_time": 2.1,
-            "text": "responding to",
-            "confidence": 0.98
-          },
-          {
-            "start_time": 2.1,
-            "end_time": 3.4,
-            "text": "Box 1234",
-            "confidence": 0.92
+            "start_time": 1.18,
+            "end_time": 18.16,
+            "text": "1469 1 with 10.30 13.69 find the scales with Ohio 4",
+            "confidence": 0.85,
+            "source": {
+              "unit": "9001877",
+              "emergency": false,
+              "signal_system": "",
+              "tag": ""
+            }
           }
         ],
         "metadata": {
-          "model": "whisper-large-v3",
-          "processing_time": 2.3,
-          "audio_duration": 3.4
+          "model": "guillaumekln/faster-whisper-base.en",
+          "processing_time": 1.226,
+          "audio_duration": 18.18,
+          "timestamp": "2025-01-27T17:35:23.270Z"
         }
       },
       "sentiment": {
@@ -208,6 +203,12 @@ When audio messages are received:
 3. Store audio files in GridFS using original filename
 4. For M4A files, use same filename pattern but change extension
 5. Include metadata with each stored file
+6. Process transcription:
+   - Validate WAV file format and duration
+   - Send to local OpenAI-compatible endpoint
+   - Store transcription in AudioMessage metadata
+   - Map transcription segments to source units
+   - Retry up to 3 times on failure
 
 ### File Retrieval
 When searching for files:

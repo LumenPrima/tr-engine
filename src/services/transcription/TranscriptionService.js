@@ -1,18 +1,26 @@
 const logger = require('../../utils/logger');
 const OpenAI = require('openai');
 const fs = require('fs');
-const { CallMessage } = require('../../models/call');
+const { AudioMessage } = require('../../models/raw/MessageCollections');
 
 class TranscriptionService {
     constructor() {
         // Initialize OpenAI client with environment config
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-            baseURL: process.env.OPENAI_API_BASE
-        });
+        if (process.env.OPENAI_API_KEY) {
+            this.openai = new OpenAI({
+                apiKey: process.env.OPENAI_API_KEY,
+                baseURL: process.env.OPENAI_API_BASE
+            });
+        } else {
+            logger.warn('OpenAI API key not configured. Transcription service will be unavailable.');
+            this.openai = null;
+        }
     }
 
     async processAudioFile(callId, audioPath, audioMessage, retries = 3) {
+        if (!this.openai) {
+            throw new Error('Transcription service is not configured. Please set OPENAI_API_KEY environment variable.');
+        }
         try {
             logger.debug(`Starting transcription for call ${callId}`);
             
@@ -133,9 +141,9 @@ class TranscriptionService {
 
         try {
             // Update the call message with transcription
-            const result = await CallMessage.findOneAndUpdate(
-                { 'call.metadata.filename': audioMessage.call.metadata.filename },
-                audioMessage,
+            const result = await AudioMessage.findOneAndUpdate(
+                { 'payload.call.metadata.filename': audioMessage.call.metadata.filename },
+                { $set: { 'payload.call.metadata.transcription': audioMessage.call.metadata.transcription } },
                 { new: true }
             );
             
@@ -184,70 +192,73 @@ class TranscriptionService {
     }
 
     async getTranscription(callId) {
-        return await CallMessage.findOne({ 
-            'call.metadata.filename': callId 
+        const result = await AudioMessage.findOne({ 
+            'payload.call.metadata.filename': callId 
         });
+        return result?.payload;
     }
 
     async getRecentTranscriptions(talkgroupId, limit = 10, startDate = null, endDate = null) {
         const query = { 
-            'call.metadata.talkgroup': talkgroupId,
-            'call.metadata.transcription': { $exists: true }
+            'payload.call.metadata.talkgroup': talkgroupId,
+            'payload.call.metadata.transcription': { $exists: true }
         };
         
         if (startDate || endDate) {
-            query['call.metadata.transcription.metadata.timestamp'] = {};
+            query['payload.call.metadata.transcription.metadata.timestamp'] = {};
             if (startDate) {
-                query['call.metadata.transcription.metadata.timestamp'].$gte = startDate;
+                query['payload.call.metadata.transcription.metadata.timestamp'].$gte = startDate;
             }
             if (endDate) {
-                query['call.metadata.transcription.metadata.timestamp'].$lte = endDate;
+                query['payload.call.metadata.transcription.metadata.timestamp'].$lte = endDate;
             }
         }
         
-        return await CallMessage.find(query)
-            .sort({ 'call.metadata.transcription.metadata.timestamp': -1 })
+        const results = await AudioMessage.find(query)
+            .sort({ 'payload.call.metadata.transcription.metadata.timestamp': -1 })
             .limit(limit);
+            
+        return results.map(doc => doc.payload);
     }
 
     async getTranscriptionStats(talkgroupId = null, startDate = null, endDate = null) {
         const match = {
-            'call.metadata.transcription': { $exists: true }
+            'payload.call.metadata.transcription': { $exists: true }
         };
         
         if (talkgroupId) {
-            match['call.metadata.talkgroup'] = talkgroupId;
+            match['payload.call.metadata.talkgroup'] = talkgroupId;
         }
         
         if (startDate || endDate) {
-            match['call.metadata.transcription.metadata.timestamp'] = {};
+            match['payload.call.metadata.transcription.metadata.timestamp'] = {};
             if (startDate) {
-                match['call.metadata.transcription.metadata.timestamp'].$gte = startDate;
+                match['payload.call.metadata.transcription.metadata.timestamp'].$gte = startDate;
             }
             if (endDate) {
-                match['call.metadata.transcription.metadata.timestamp'].$lte = endDate;
+                match['payload.call.metadata.transcription.metadata.timestamp'].$lte = endDate;
             }
         }
 
-        return await CallMessage.aggregate([
+        return await AudioMessage.aggregate([
             { $match: match },
             { $group: {
-                _id: '$call.metadata.talkgroup',
+                _id: '$payload.call.metadata.talkgroup',
                 count: { $sum: 1 },
                 avg_confidence: { 
                     $avg: { 
-                        $avg: '$call.metadata.transcription.segments.confidence' 
+                        $avg: '$payload.call.metadata.transcription.segments.confidence' 
                     }
                 },
                 avg_duration: { 
-                    $avg: '$call.metadata.transcription.metadata.audio_duration' 
+                    $avg: '$payload.call.metadata.transcription.metadata.audio_duration' 
                 },
                 avg_processing_time: { 
-                    $avg: '$call.metadata.transcription.metadata.processing_time' 
+                    $avg: '$payload.call.metadata.transcription.metadata.processing_time' 
                 },
                 emergency_count: {
                     $sum: { 
-                        $cond: ['$call.metadata.emergency', 1, 0]
+                        $cond: ['$payload.call.metadata.emergency', 1, 0]
                     }
                 }
             }},

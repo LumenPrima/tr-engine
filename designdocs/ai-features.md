@@ -6,35 +6,38 @@ This document specifies AI-powered features for enhancing radio monitoring capab
 ## Voice Transcription
 
 ### Storage Schema
+Transcriptions are stored in the AudioMessage collection as part of the call metadata:
+
 ```json
 {
-  "call_id": "9131-1737430014",
-  "transcription": {
-    "text": "Engine 5 responding to Box 1234",
-    "segments": [
-      {
-        "start_time": 0.0,
-        "end_time": 1.2,
-        "text": "Engine 5",
-        "confidence": 0.95
-      },
-      {
-        "start_time": 1.2,
-        "end_time": 2.1,
-        "text": "responding to",
-        "confidence": 0.98
-      },
-      {
-        "start_time": 2.1,
-        "end_time": 3.4,
-        "text": "Box 1234",
-        "confidence": 0.92
+  "payload": {
+    "call": {
+      "metadata": {
+        "filename": "51514-1737999290_856762500.0-call_6008.wav",
+        "transcription": {
+          "text": "1469 1 with 10.30 13.69 find the scales with Ohio 4",
+          "segments": [
+            {
+              "start_time": 1.18,
+              "end_time": 18.16,
+              "text": "1469 1 with 10.30 13.69 find the scales with Ohio 4",
+              "confidence": 0.85,
+              "source": {
+                "unit": "9001877",
+                "emergency": false,
+                "signal_system": "",
+                "tag": ""
+              }
+            }
+          ],
+          "metadata": {
+            "model": "guillaumekln/faster-whisper-base.en",
+            "processing_time": 1.226,
+            "audio_duration": 18.18,
+            "timestamp": "2025-01-27T17:35:23.270Z"
+          }
+        }
       }
-    ],
-    "metadata": {
-      "model": "whisper-large-v3",
-      "processing_time": 2.3,
-      "audio_duration": 3.4
     }
   }
 }
@@ -42,14 +45,19 @@ This document specifies AI-powered features for enhancing radio monitoring capab
 
 ### Processing Pipeline
 1. Audio Recording Complete
-   - Trigger transcription job
-   - Store segments as they're processed
-   - Update call metadata with transcription
+   - Audio file is stored in GridFS
+   - Transcription job is triggered automatically
+   - WAV file is validated (header, format, duration)
+   - Transcription is processed using local OpenAI-compatible endpoint
+   - Results are stored in AudioMessage collection
 
 2. Error Handling
-   - Retry failed transcriptions
-   - Flag low confidence segments
-   - Store processing errors
+   - Automatic retries (up to 3 attempts) for failed transcriptions
+   - Quality assessment of transcription results:
+     - Minimum confidence threshold: 0.6
+     - Minimum duration threshold: 0.5s
+     - Text length validation
+   - Failed transcriptions are logged but don't block audio storage
 
 ## Call Sentiment Analysis
 
@@ -194,8 +202,19 @@ This document specifies AI-powered features for enhancing radio monitoring capab
 ## API Endpoints
 
 ### Transcription Endpoints
-- GET /api/v1/calls/{call_id}/transcription
-- GET /api/v1/talkgroups/{talkgroup_id}/recent_transcriptions
+- GET /api/v1/transcription/calls/{call_id}/transcription
+  - Get transcription for a specific call
+  - Returns full transcription with segments and metadata
+- GET /api/v1/transcription/talkgroups/{talkgroup_id}/recent_transcriptions
+  - Get recent transcriptions for a talkgroup
+  - Supports pagination and date range filtering
+- GET /api/v1/transcription/stats
+  - Get aggregate transcription statistics
+  - Groups by talkgroup with metrics like:
+    - Average confidence
+    - Average duration
+    - Average processing time
+    - Emergency call counts
 
 ### Sentiment Endpoints
 - GET /api/v1/calls/{call_id}/sentiment
@@ -209,10 +228,10 @@ This document specifies AI-powered features for enhancing radio monitoring capab
 ## Implementation Considerations
 
 ### Performance
-- Async transcription processing
-- Caching of sentiment analysis
-- Efficient audio streaming
-- Resource usage monitoring
+- Async transcription processing integrated with audio storage
+- Efficient MongoDB indexing on transcription fields
+- Optimized queries using MongoDB aggregation pipeline
+- Automatic cleanup of temporary audio files
 
 ### Accuracy
 - Model selection and tuning

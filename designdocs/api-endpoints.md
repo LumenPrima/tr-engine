@@ -56,11 +56,34 @@ See [Audio File Handling Specification](audio-file-handling.md) for detailed doc
 ### Advanced Audio Management (/audio)
 - [ ] POST /audio/process: Trigger audio processing job
 - [ ] GET /audio/processing/status: Check audio processing queue status
-- [ ] GET /audio/transcription/{call_id}: Get call transcription with segments
-- [ ] GET /audio/transcription/{call_id}/live: SSE endpoint for live transcription
+- [x] GET /api/v1/transcription/calls/{call_id}/transcription: Get call transcription with segments
+- [x] GET /api/v1/transcription/talkgroups/{talkgroup_id}/recent_transcriptions: Get recent transcriptions for a talkgroup
+- [x] GET /api/v1/transcription/stats: Get aggregate transcription statistics
 - [ ] POST /audio/export: Export audio files with custom filtering
 
-### AI Analysis (/analysis)
+### AI Analysis (/api/v1/transcription)
+- [x] GET /api/v1/transcription/calls/{call_id}/transcription
+  - Get transcription for a specific call
+  - Returns full transcription text, segments, and metadata
+  - Supports both WAV and M4A audio formats
+  - Maps transcription segments to source units
+
+- [x] GET /api/v1/transcription/talkgroups/{talkgroup_id}/recent_transcriptions
+  - Get recent transcriptions for a talkgroup
+  - Supports pagination through limit parameter
+  - Optional date range filtering
+  - Returns transcriptions sorted by timestamp
+
+- [x] GET /api/v1/transcription/stats
+  - Get aggregate transcription statistics
+  - Groups by talkgroup
+  - Provides metrics:
+    - Total transcription count
+    - Average confidence scores
+    - Average audio duration
+    - Average processing time
+    - Emergency call counts
+
 - [ ] GET /analysis/calls/{call_id}/sentiment: Get call sentiment analysis
 - [ ] GET /analysis/calls/{call_id}/related: Get related call analysis
 - [ ] GET /analysis/talkgroups/{talkgroup_id}/sentiment: Get talkgroup sentiment
