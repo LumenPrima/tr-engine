@@ -1,6 +1,11 @@
 const EventEmitter = require('events');
 const logger = require('../../utils/logger');
 
+/**
+ * RecordingMonitor
+ * Monitors local storage resources and database for the recording system.
+ * Note: Remote trunk-recorder monitoring should be handled by separate systems.
+ */
 class RecordingMonitor extends EventEmitter {
     constructor() {
         super();

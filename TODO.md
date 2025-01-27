@@ -29,14 +29,16 @@
   - Call status monitoring
   - Unit status monitoring
 
-### 4. Recording System Monitoring
+### ✓ 4. Recording System Monitoring *(Completed)*
 - **Why**: Critical for archive reliability
 - **Reference**: designdocs/system-metrics.js - SystemHealthEventSchema
 - **Impact**: Recording quality assurance
-- **Components**:
-  - Recording status tracking
-  - Storage monitoring
-  - Recording failure detection
+- **Status**: Completed
+- **Implementation**:
+  - Local storage monitoring (recordings & temp files)
+  - Database storage tracking
+  - Recording failure detection & alerts
+- **Note**: Remote trunk-recorder monitoring handled by separate systems
 
 ### 5. Historical Data Retention
 - **Why**: Essential for archive management
