@@ -4,21 +4,55 @@ const logger = require('../../utils/logger');
 const { getGridFSBucket } = require('../../config/mongodb');
 const mongoose = require('mongoose');
 
+// Helper function to find audio files by call ID or filename
+const findAudioFiles = async (callIdOrFilename) => {
+    const gridFSBucket = getGridFSBucket();
+    
+    // Check if it's a full filename
+    if (callIdOrFilename.match(/^\d+-\d+_[\d.]+(-call_\d+)?\.(?:wav|m4a)$/)) {
+        // Exact filename match
+        const files = await gridFSBucket.find({
+            filename: callIdOrFilename
+        }).toArray();
+        logger.debug(`Searching for exact filename: ${callIdOrFilename}`);
+        return files;
+    }
+    
+    // Check if it's a simple call ID (talkgroup-timestamp)
+    if (callIdOrFilename.match(/^\d+-\d+$/)) {
+        // Find any files that start with this call ID
+        const pattern = `^${callIdOrFilename}`;
+        const files = await gridFSBucket.find({
+            filename: { $regex: pattern }
+        }).toArray();
+        logger.debug(`Searching for files with pattern: ${pattern}`);
+        return files;
+    }
+    
+    throw new Error(`Invalid format: ${callIdOrFilename}. Expected either talkgroup-timestamp or full filename`);
+};
+
+// Helper function to get preferred format file
+const getPreferredFile = (files, requestedFormat) => {
+    if (!files.length) return null;
+
+    // If a specific format is requested, try to find it
+    if (requestedFormat) {
+        const requestedFile = files.find(f => f.filename.endsWith(`.${requestedFormat}`));
+        if (requestedFile) return requestedFile;
+    }
+
+    // Otherwise prefer m4a over wav
+    const m4aFile = files.find(f => f.filename.endsWith('.m4a'));
+    return m4aFile || files[0]; // Fallback to first file if no m4a
+};
+
 // GET /call/{call_id}
 // Retrieves audio recording for specific call
 router.get('/call/:call_id', async (req, res) => {
     try {
-        const gridFSBucket = getGridFSBucket();
-        const filename = req.params.call_id;
-        const format = req.query.format || 'wav'; // Default to WAV if not specified
-
-        // Adjust filename based on format
-        const audioFilename = format === 'm4a' ? 
-            filename.replace('.wav', '.m4a') : 
-            filename;
-
-        // Find the file in GridFS
-        const files = await gridFSBucket.find({ filename: audioFilename }).toArray();
+        const format = req.query.format; // Optional format preference
+        const files = await findAudioFiles(req.params.call_id);
         
         if (!files.length) {
             return res.status(404).json({
@@ -27,13 +61,14 @@ router.get('/call/:call_id', async (req, res) => {
             });
         }
 
-        const audioFile = files[0];
+        const audioFile = getPreferredFile(files, format);
+        const fileFormat = audioFile.filename.endsWith('.m4a') ? 'm4a' : 'wav';
 
         // Set appropriate headers
         res.set({
-            'Content-Type': format === 'm4a' ? 'audio/mp4' : 'audio/wav',
+            'Content-Type': fileFormat === 'm4a' ? 'audio/mp4' : 'audio/wav',
             'Content-Length': audioFile.length,
-            'Content-Disposition': `attachment; filename="${audioFilename}"`,
+            'Content-Disposition': `attachment; filename="${audioFile.filename}"`,
             'Accept-Ranges': 'bytes'
         });
 
@@ -52,18 +87,18 @@ router.get('/call/:call_id', async (req, res) => {
             });
 
             // Create read stream for the range
-            const downloadStream = gridFSBucket.openDownloadStreamByName(audioFilename, {
+            const downloadStream = getGridFSBucket().openDownloadStreamByName(audioFile.filename, {
                 start,
                 end: end + 1
             });
             downloadStream.pipe(res);
         } else {
             // Stream the entire file
-            const downloadStream = gridFSBucket.openDownloadStreamByName(audioFilename);
+            const downloadStream = getGridFSBucket().openDownloadStreamByName(audioFile.filename);
             downloadStream.pipe(res);
         }
 
-        logger.debug(`Streaming audio file: ${audioFilename}`);
+        logger.debug(`Streaming audio file: ${audioFile.filename}`);
     } catch (err) {
         logger.error('Error streaming audio file:', err);
         res.status(500).json({
@@ -77,15 +112,7 @@ router.get('/call/:call_id', async (req, res) => {
 // Get metadata for an audio file
 router.get('/call/:call_id/metadata', async (req, res) => {
     try {
-        const gridFSBucket = getGridFSBucket();
-        const filename = req.params.call_id;
-
-        // Find both WAV and M4A versions
-        const files = await gridFSBucket.find({
-            filename: {
-                $in: [filename, filename.replace('.wav', '.m4a')]
-            }
-        }).toArray();
+        const files = await findAudioFiles(req.params.call_id);
 
         if (!files.length) {
             return res.status(404).json({
@@ -96,7 +123,7 @@ router.get('/call/:call_id/metadata', async (req, res) => {
 
         // Organize metadata by format
         const metadata = {
-            call_id: filename.replace('.wav', ''),
+            call_id: req.params.call_id,
             formats: {}
         };
 
@@ -106,7 +133,8 @@ router.get('/call/:call_id/metadata', async (req, res) => {
                 filename: file.filename,
                 length: file.length,
                 upload_date: file.uploadDate,
-                md5: file.md5
+                md5: file.md5,
+                metadata: file.metadata
             };
         });
 
@@ -128,15 +156,7 @@ router.get('/call/:call_id/metadata', async (req, res) => {
 // Delete an audio file and its metadata
 router.delete('/call/:call_id', async (req, res) => {
     try {
-        const gridFSBucket = getGridFSBucket();
-        const filename = req.params.call_id;
-
-        // Find both WAV and M4A versions
-        const files = await gridFSBucket.find({
-            filename: {
-                $in: [filename, filename.replace('.wav', '.m4a')]
-            }
-        }).toArray();
+        const files = await findAudioFiles(req.params.call_id);
 
         if (!files.length) {
             return res.status(404).json({
@@ -146,6 +166,7 @@ router.delete('/call/:call_id', async (req, res) => {
         }
 
         // Delete each file
+        const gridFSBucket = getGridFSBucket();
         for (const file of files) {
             await gridFSBucket.delete(file._id);
             logger.debug(`Deleted audio file: ${file.filename}`);

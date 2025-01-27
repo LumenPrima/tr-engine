@@ -1,38 +1,49 @@
 const mongoose = require('mongoose');
 const logger = require('../../config/logger');
-const TalkgroupSchema = require('../../models/Talkgroup');
+const Talkgroup = require('../../models/Talkgroup');
 
 class TalkgroupManager {
   constructor() {
-    this.Talkgroup = mongoose.model('Talkgroup', TalkgroupSchema);
+    this.Talkgroup = Talkgroup;
     this.emergencyTalkgroups = new Set(); // In-memory cache for quick lookup
   }
 
   async initialize() {
-    // Load emergency talkgroups at startup
-    const emergencyTgs = await this.Talkgroup.find({ emergency: true });
-    emergencyTgs.forEach(tg => this.emergencyTalkgroups.add(tg.talkgroup));
+    try {
+      // Load emergency talkgroups at startup
+      const emergencyTgs = await this.Talkgroup.find({ emergency: true });
+      emergencyTgs.forEach(tg => this.emergencyTalkgroups.add(tg.talkgroup));
+      
+      logger.info(`Initialized ${this.emergencyTalkgroups.size} emergency talkgroups`);
+    } catch (error) {
+      logger.error('Failed to initialize emergency talkgroups', error);
+    }
   }
 
   async handleCallActivity(callData) {
-    // Update last_heard and create if new (upsert)
-    await this.Talkgroup.findOneAndUpdate(
-      { sys_num: callData.sys_num, talkgroup: callData.talkgroup },
-      {
-        $set: {
-          sys_name: callData.sys_name,
-          alpha_tag: callData.talkgroup_alpha_tag,
-          description: callData.talkgroup_description,
-          category: callData.talkgroup_tag,
-          group: callData.talkgroup_group,
-          last_heard: new Date()
+    try {
+      // Update last_heard and create if new (upsert)
+      return await this.Talkgroup.findOneAndUpdate(
+        { sys_num: callData.sys_num, talkgroup: callData.talkgroup },
+        {
+          $set: {
+            sys_name: callData.sys_name,
+            alpha_tag: callData.talkgroup_alpha_tag,
+            description: callData.talkgroup_description,
+            category: callData.talkgroup_tag,
+            group: callData.talkgroup_group,
+            last_heard: new Date()
+          },
+          $setOnInsert: {
+            first_heard: new Date()
+          }
         },
-        $setOnInsert: {
-          first_heard: new Date()
-        }
-      },
-      { upsert: true, new: true }
-    );
+        { upsert: true, new: true }
+      );
+    } catch (error) {
+      logger.error('Error handling call activity', error);
+      throw error;
+    }
   }
 
   async getTalkgroups(filters = {}) {
@@ -45,17 +56,36 @@ class TalkgroupManager {
     if (filters.category) query.category = filters.category;
     if (filters.group) query.group = filters.group;
 
-    return this.Talkgroup.find(query)
-      .sort({ sys_num: 1, talkgroup: 1 })
-      .lean();
+    try {
+      return await this.Talkgroup.find(query)
+        .sort({ sys_num: 1, talkgroup: 1 })
+        .lean();
+    } catch (error) {
+      logger.error('Error retrieving talkgroups', error);
+      throw error;
+    }
+  }
+
+  async getTalkgroupById(id) {
+    try {
+      return await this.Talkgroup.findById(id).lean();
+    } catch (error) {
+      logger.error(`Error retrieving talkgroup by ID: ${id}`, error);
+      throw error;
+    }
   }
 
   async updateTalkgroupConfig(talkgroupID, updates) {
-    return this.Talkgroup.findByIdAndUpdate(
-      talkgroupID,
-      { $set: { config: updates } },
-      { new: true }
-    );
+    try {
+      return await this.Talkgroup.findByIdAndUpdate(
+        talkgroupID,
+        { $set: { config: updates } },
+        { new: true }
+      );
+    } catch (error) {
+      logger.error(`Error updating talkgroup config: ${talkgroupID}`, error);
+      throw error;
+    }
   }
 }
 

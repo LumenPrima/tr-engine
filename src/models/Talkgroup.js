@@ -1,15 +1,15 @@
 const mongoose = require('mongoose');
 
 const TalkgroupSchema = new mongoose.Schema({
-  sys_name: { type: String, required: true, index: true },
-  sys_num: { type: Number, required: true, index: true },
-  talkgroup: { type: Number, required: true, index: true },
-  alpha_tag: { type: String, index: true },
+  sys_name: { type: String, required: true },
+  sys_num: { type: Number, required: true },
+  talkgroup: { type: Number, required: true },
+  alpha_tag: String,
   description: String,
   category: String,
   group: String,
-  emergency: { type: Boolean, default: false, index: true },
-  last_heard: { type: Date, index: true },
+  emergency: { type: Boolean, default: false },
+  last_heard: Date,
   first_heard: { type: Date, default: Date.now },
   config: {  // For user-overridable settings
     alias: String,
@@ -19,7 +19,12 @@ const TalkgroupSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Compound index for unique talkgroup per system
+// Indexes
 TalkgroupSchema.index({ sys_num: 1, talkgroup: 1 }, { unique: true });
+TalkgroupSchema.index({ sys_name: 1 });  // Keep sys_name index for filtering
+TalkgroupSchema.index({ emergency: 1 });
+TalkgroupSchema.index({ last_heard: 1 });
 
-module.exports = TalkgroupSchema;
+const Talkgroup = mongoose.model('Talkgroup', TalkgroupSchema);
+
+module.exports = Talkgroup;

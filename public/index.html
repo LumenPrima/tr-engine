@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TR-Engine Status</title>
-    <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGwSURBVFhH7ZY9TsNAEIVnbQkhJCSkSBQUFJRIlJTQ0yAKJI7AETgCR+AIHIEjcASOwBEQBQUFBQUFEhISQiDx4zfOLI7XWfPjNaLIJ43Wa3vfeN7MrJ2mGjVqjI4wvAyTZJGxCJtNxhwsw2H4HN6Fp+F+eAEmYTyPQhR/Ca/D5/AjxE8hPg3vQ3wSLsAJGM+jEMXxdXgT3ofv4WeIr8LH8Da8DPGpRXEK4vMQxXfhQ/gWfoT4LHwK70IUX4SzMJ5HIYpPwbPwInwJUZz7PQ9RHJ+HszCeRyGKz8GV8Dp8DlEcn4Qojq/CJRjPoxDFl+FG+BS+hiiOT0IUx9vhOoznUYjiG+FueBzuhSiOT0IUxwfhBoznUYjiW+FheBKiOD4JURzvheswnkchiu+Ex+FpiOL4JERxvBtuwHgehSh+EB6FpyGK45MQxfFOuAXjeRSi+FF4Ep6FKI5PQhTH2+EmjOdRiOKn4Xl4EaI4PglRHG+FWzCeRyGKX4aX4XmI4vgkRHG8GW7DeB6FKH4dXoXnIYrjkxDF8Ua4A+N5FNZfxRo1/jdS6Qu/J+AgmA5g7gAAAABJRU5ErkJggg==">
+    <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGwSURBVFhH7ZY9TsNAEIVnbQkhJCSkSBQUFJRIlJTQ0yAKJI7AETgCR+AIHIEjcASOwBEQBQUFBQUFEhISQiDx4zfOLI7XWfPjNaLIJ43Wa3vfeN7MrJ2mGjVqjI4wvAyTZJGxCJtNxhwsw2H4HN6Fp+F+eAEmYTyPQhR/Ca/D5/AjxE8hPg3vQ3wSLsAJGM+jEMXxdXgT3ofv4WeIr8LH8Da8DPGpRXEK4vMQxXfhQ/gWfoT4LHwK70IUX4SzMJ5HIYpPwbPwInwJUZz7PQ9RHJ+HszCeRyGKz8GV8Dp8DlEcn4Qojq/CJRjPoxDFl+FG+BS+hiiOT0IUxwfhBoznUYjiW+FheBKiOD4JURzvheswnkchiu+Ex+FpiOL4JERxvBtuwHgehSh+EB6FpyGK45MQxfFOuAXjeRSi+FF4Ep6FKI5PQhTH2+EmjOdRiOKn4Xl4EaI4PglRHG+FWzCeRyGKX4aX4XmI4vgkRHG8GW7DeB6FKH4dXoXnIYrjkxDF8Ua4A+N5FNZfxRo1/jdS6Qu/J+AgmA5g7gAAAABJRU5ErkJggg==">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -36,6 +36,9 @@
             padding: 10px;
             background: #f8f9fa;
             border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .status-item:hover {
             background: #e9ecef;
@@ -84,6 +87,31 @@
         .refresh-button:hover {
             background: #0056b3;
         }
+        .audio-controls {
+            display: flex;
+            align-items: center;
+        }
+        .play-button {
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
+        .play-button:hover {
+            background: #218838;
+        }
+        .play-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        #audio-player {
+            display: none;
+            width: 100%;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -105,10 +133,11 @@
             <div class="content"></div>
         </div>
     </div>
+    <audio id="audio-player" controls></audio>
     <button class="refresh-button" onclick="refreshAll()">Refresh All</button>
 
     <script>
-        // Format timestamp to local time with error handling
+        // Utility functions
         function formatTime(timestamp) {
             try {
                 if (!timestamp) return 'Unknown';
@@ -120,7 +149,6 @@
             }
         }
 
-        // Format duration in seconds to readable format
         function formatDuration(seconds) {
             if (!seconds || isNaN(seconds)) return '0:00';
             const minutes = Math.floor(seconds / 60);
@@ -128,7 +156,6 @@
             return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
         }
 
-        // Format units array to string
         function formatUnits(units) {
             if (!units) return 'None';
             if (!Array.isArray(units)) return 'None';
@@ -144,100 +171,42 @@
                 .join(', ') || 'None';
         }
 
-        // Fetch and display active calls
-        async function fetchActiveCalls() {
+        // Audio playback function
+        async function playAudio(callId) {
+            const audioPlayer = document.getElementById('audio-player');
+            const playButton = document.querySelector(`.play-button[data-call-id="${callId}"]`);
+            
             try {
-                const response = await fetch('/api/v1/calls/active');
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-                const content = document.querySelector('#active-calls .content');
-                
-                if (!data.data?.calls || data.data.calls.length === 0) {
-                    content.innerHTML = '<div class="status-item">No active calls</div>';
-                    return;
-                }
+                // Disable play button during loading
+                playButton.disabled = true;
+                playButton.textContent = 'Loading...';
 
-                content.innerHTML = data.data.calls.map(call => `
-                    <div class="status-item">
-                        <div>
-                            TG: ${call.talkgroup || 'Unknown'} - ${call.talkgroup_tag || 'Unknown'}
-                            ${call.emergency ? '<span class="badge badge-danger">Emergency</span>' : ''}
-                        </div>
-                        <div>Units: ${formatUnits(call.units)}</div>
-                        <div class="timestamp">Started: ${formatTime(call.start_time)}</div>
-                    </div>
-                `).join('');
+                // Fetch audio file metadata first
+                const metadataResponse = await fetch(`/api/v1/audio/call/${callId}/metadata`);
+                if (!metadataResponse.ok) throw new Error('Could not fetch audio metadata');
+                const metadata = await metadataResponse.json();
+
+                // Prefer M4A if available, otherwise use WAV
+                const audioFormat = metadata.metadata.formats.m4a ? 'm4a' : 'wav';
+                const audioUrl = `/api/v1/audio/call/${callId}?format=${audioFormat}`;
+
+                // Set audio source and play
+                audioPlayer.src = audioUrl;
+                audioPlayer.style.display = 'block';
+                await audioPlayer.play();
+
+                // Update button state
+                playButton.textContent = 'Playing';
             } catch (error) {
-                document.querySelector('#active-calls .content').innerHTML = 
-                    `<div class="error">Error loading active calls: ${error.message}</div>`;
+                console.error('Audio playback error:', error);
+                alert(`Could not play audio: ${error.message}`);
+                playButton.textContent = 'Play Audio';
+            } finally {
+                playButton.disabled = false;
             }
         }
 
-        // Fetch and display system status
-        async function fetchSystemStatus() {
-            try {
-                const response = await fetch('/api/v1/systems');
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-                const content = document.querySelector('#system-status .content');
-                
-                if (!data.systems || data.systems.length === 0) {
-                    content.innerHTML = '<div class="status-item">No systems available</div>';
-                    return;
-                }
-
-                content.innerHTML = data.systems.map(system => `
-                    <div class="status-item">
-                        <div>
-                            ${system.sys_name || 'Unknown System'}
-                            <span class="badge ${system.status?.connected ? 'badge-success' : 'badge-danger'}">
-                                ${system.status?.connected ? 'Connected' : 'Disconnected'}
-                            </span>
-                        </div>
-                        <div>Control Channel: ${system.status?.current_control_channel || 'Unknown'}</div>
-                        <div class="timestamp">Last seen: ${formatTime(system.status?.last_seen)}</div>
-                    </div>
-                `).join('');
-            } catch (error) {
-                document.querySelector('#system-status .content').innerHTML = 
-                    `<div class="error">Error loading system status: ${error.message}</div>`;
-            }
-        }
-
-        // Fetch and display active units
-        async function fetchActiveUnits() {
-            try {
-                const response = await fetch('/api/v1/units');
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-                const content = document.querySelector('#active-units .content');
-                
-                if (!data.data?.units || data.data.units.length === 0) {
-                    content.innerHTML = '<div class="status-item">No active units</div>';
-                    return;
-                }
-
-                content.innerHTML = data.data.units.map(unit => `
-                    <div class="status-item">
-                        <div>
-                            ${unit.id || 'Unknown'} ${unit.unit_tag ? `(${unit.unit_tag})` : ''}
-                            <span class="badge ${unit.status?.online ? 'badge-success' : 'badge-warning'}">
-                                ${unit.status?.online ? 'Online' : 'Offline'}
-                            </span>
-                        </div>
-                        <div>Current TG: ${unit.status?.current_talkgroup ? 
-                            `${unit.status.current_talkgroup} - ${unit.status.current_talkgroup_tag || 'Unknown'}` : 
-                            'None'}</div>
-                        <div class="timestamp">Last seen: ${formatTime(unit.status?.last_seen)}</div>
-                    </div>
-                `).join('');
-            } catch (error) {
-                document.querySelector('#active-units .content').innerHTML = 
-                    `<div class="error">Error loading active units: ${error.message}</div>`;
-            }
-        }
-
-        // Fetch and display recent history
+        // Modify fetchRecentHistory to include audio playback
         async function fetchRecentHistory() {
             try {
                 const response = await fetch('/api/v1/calls?limit=5');
@@ -253,12 +222,21 @@
                 content.innerHTML = data.data.calls.map(call => `
                     <div class="status-item">
                         <div>
-                            TG: ${call.talkgroup || 'Unknown'} - ${call.talkgroup_tag || 'Unknown'}
-                            ${call.emergency ? '<span class="badge badge-danger">Emergency</span>' : ''}
+                            <div>
+                                TG: ${call.talkgroup || 'Unknown'} - ${call.talkgroup_tag || 'Unknown'}
+                                ${call.emergency ? '<span class="badge badge-danger">Emergency</span>' : ''}
+                            </div>
+                            <div>Units: ${formatUnits(call.units)}</div>
+                            <div>Duration: ${formatDuration(call.duration)}</div>
+                            <div class="timestamp">${formatTime(call.timestamp)}</div>
                         </div>
-                        <div>Units: ${formatUnits(call.units)}</div>
-                        <div>Duration: ${formatDuration(call.duration)}</div>
-                        <div class="timestamp">${formatTime(call.timestamp)}</div>
+                        <div class="audio-controls">
+                            <button 
+                                class="play-button" 
+                                data-call-id="${call.id}" 
+                                onclick="playAudio('${call.id}')"
+                            >Play Audio</button>
+                        </div>
                     </div>
                 `).join('');
             } catch (error) {
@@ -267,7 +245,102 @@
             }
         }
 
-        // Refresh all data
+        // Data fetching functions
+        async function fetchActiveCalls() {
+            try {
+                const response = await fetch('/api/v1/calls/active');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                const content = document.querySelector('#active-calls .content');
+                
+                if (!data.data?.calls || data.data.calls.length === 0) {
+                    content.innerHTML = '<div class="status-item">No active calls</div>';
+                    return;
+                }
+
+                content.innerHTML = data.data.calls.map(call => `
+                    <div class="status-item">
+                        <div>
+                            <div>
+                                TG: ${call.talkgroup || 'Unknown'} - ${call.talkgroup_tag || 'Unknown'}
+                                ${call.emergency ? '<span class="badge badge-danger">Emergency</span>' : ''}
+                            </div>
+                            <div>Units: ${formatUnits(call.units)}</div>
+                            <div>Duration: ${formatDuration(call.duration)}</div>
+                            <div class="timestamp">${formatTime(call.start_time)}</div>
+                        </div>
+                        <div class="audio-controls">
+                            ${call.has_audio ? 
+                                `<button class="play-button" data-call-id="${call.id}" onclick="playAudio('${call.id}')">Play Audio</button>` 
+                                : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.querySelector('#active-calls .content').innerHTML = 
+                    `<div class="error">Error loading active calls: ${error.message}</div>`;
+            }
+        }
+
+        async function fetchSystemStatus() {
+            try {
+                const response = await fetch('/api/v1/systems');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                const content = document.querySelector('#system-status .content');
+                
+                if (!data.data?.systems || data.data.systems.length === 0) {
+                    content.innerHTML = '<div class="status-item">No systems available</div>';
+                    return;
+                }
+
+                content.innerHTML = data.data.systems.map(system => `
+                    <div class="status-item">
+                        <div>
+                            <div>${system.name || 'Unknown System'}</div>
+                            <div>Control Channel: ${system.control_channel || 'Unknown'}</div>
+                            <div>Decode Rate: ${system.decoderate?.toFixed(1) || '0'}/s</div>
+                            <div class="timestamp">Last Update: ${formatTime(system.last_update)}</div>
+                        </div>
+                        <span class="badge ${system.connected ? 'badge-success' : 'badge-danger'}">
+                            ${system.connected ? 'Connected' : 'Disconnected'}
+                        </span>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.querySelector('#system-status .content').innerHTML = 
+                    `<div class="error">Error loading system status: ${error.message}</div>`;
+            }
+        }
+
+        async function fetchActiveUnits() {
+            try {
+                const response = await fetch('/api/v1/units/active');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                const content = document.querySelector('#active-units .content');
+                
+                if (!data.data?.units || data.data.units.length === 0) {
+                    content.innerHTML = '<div class="status-item">No active units</div>';
+                    return;
+                }
+
+                content.innerHTML = data.data.units.map(unit => `
+                    <div class="status-item">
+                        <div>
+                            <div>${unit.id || 'Unknown Unit'}</div>
+                            <div>Status: ${unit.status || 'Unknown'}</div>
+                            <div>Talkgroup: ${unit.talkgroup || 'None'}</div>
+                            <div class="timestamp">Last Seen: ${formatTime(unit.last_seen)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.querySelector('#active-units .content').innerHTML = 
+                    `<div class="error">Error loading active units: ${error.message}</div>`;
+            }
+        }
+
         function refreshAll() {
             fetchActiveCalls();
             fetchSystemStatus();

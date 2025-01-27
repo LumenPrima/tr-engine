@@ -19,14 +19,19 @@ dotenv.config();
 
 class TREngine {
   constructor() {
+    console.log('[TR-Engine] Initializing Express application...');
     this.app = express();
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
     this.app.use(express.static('public')); // Serve static files from public directory
+    console.log('[TR-Engine] Setting up middleware...');
     this.setupMiddleware();
+    console.log('[TR-Engine] Setting up routes...');
     this.setupRoutes();
+    console.log('[TR-Engine] Setting up error handling...');
     this.setupErrorHandling();
     this.isShuttingDown = false;
+    console.log('[TR-Engine] Express application setup complete');
   }
 
   setupErrorHandling() {
@@ -36,14 +41,28 @@ class TREngine {
 
   async initialize() {
     try {
+      console.log('[TR-Engine] Starting initialization sequence...');
+      
+      console.log('[TR-Engine] Step 1/5: Connecting to MongoDB...');
       await this.connectMongoDB();
+      
+      console.log('[TR-Engine] Step 2/5: Starting HTTP server...');
       await this.startServer();
+      
+      console.log('[TR-Engine] Step 3/5: Setting up WebSocket server...');
       await this.setupWebSocket();
+      
+      console.log('[TR-Engine] Step 4/5: Connecting to MQTT broker...');
       await this.connectMQTT();
+      
+      console.log('[TR-Engine] Step 5/5: Setting up process handlers...');
       this.setupProcessHandlers();
+      
+      console.log('[TR-Engine] Initialization completed successfully');
       logger.info('TR-Engine initialized successfully');
       return true;
     } catch (err) {
+      console.error('[TR-Engine] Initialization failed:', err.message);
       logger.error('Failed to initialize TR-Engine:', err);
       if (process.env.NODE_ENV !== 'test') {
         process.exit(1);
@@ -62,6 +81,7 @@ class TREngine {
     this.app.get('/', (req, res) => res.sendFile('index.html', { root: 'public' }));
 
     // Mount API routes with versioning
+    console.log('[TR-Engine] Mounting API routes at /api/v1');
     this.app.use('/api/v1', apiRoutes);
   }
 
@@ -124,7 +144,9 @@ class TREngine {
   async startServer() {
     const port = process.env.PORT || 3000;
     return new Promise((resolve, reject) => {
+      console.log(`[TR-Engine] Starting HTTP server on port ${port}...`);
       this.server = this.app.listen(port, '0.0.0.0', () => {
+        console.log(`[TR-Engine] HTTP server is now listening on 0.0.0.0:${port}`);
         logger.info(`TR-Engine server listening on 0.0.0.0:${port}`);
         resolve();
       }).on('error', reject);

@@ -50,7 +50,10 @@ const notFoundHandler = (req, res) => {
 const setupMiddleware = (app) => {
     // Security middleware
     app.use(cors()); // Enable CORS first
-    app.use(helmet()); // Secure HTTP headers
+    app.use(helmet({
+        contentSecurityPolicy: false,
+        crossOriginEmbedderPolicy: false
+    })); // Less restrictive Helmet config for development
 
     // Request logging
     app.use(requestLogger);

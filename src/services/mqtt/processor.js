@@ -114,15 +114,26 @@ class MessageProcessor {
               fs.writeFileSync(debugPath, wavBuffer);
               logger.debug(`Saved WAV file to disk for debug: ${debugPath}`);
 
+              // Use original filename from metadata
+              const wavFilename = metadata.filename;
+
               // Store the WAV file in GridFS
               await new Promise((resolve, reject) => {
-                const uploadStream = gridFSBucket.openUploadStream(metadata.filename);
+                const uploadStream = gridFSBucket.openUploadStream(wavFilename, {
+                  metadata: {
+                    talkgroup: metadata.talkgroup,
+                    talkgroup_tag: metadata.talkgroup_tag,
+                    start_time: metadata.start_time,
+                    duration: totalDuration,
+                    emergency: metadata.emergency || false
+                  }
+                });
                 uploadStream.end(wavBuffer);
                 uploadStream.once('finish', resolve);
                 uploadStream.once('error', reject);
               });
 
-              logger.debug(`Stored WAV file ${metadata.filename} in GridFS`);
+              logger.debug(`Stored WAV file ${wavFilename} in GridFS`);
             } catch (err) {
               logger.error('Error storing WAV file:', err);
               throw err;
@@ -133,11 +144,20 @@ class MessageProcessor {
           if (m4aData) {
             try {
               const m4aBuffer = Buffer.from(m4aData, 'base64');
-              const m4aFilename = metadata.filename.replace('.wav', '.m4a');
+              // Use original filename but change extension to m4a
+              const m4aFilename = metadata.filename.replace(/\.wav$/, '.m4a');
 
               // Store the M4A file in GridFS
               await new Promise((resolve, reject) => {
-                const uploadStream = gridFSBucket.openUploadStream(m4aFilename);
+                const uploadStream = gridFSBucket.openUploadStream(m4aFilename, {
+                  metadata: {
+                    talkgroup: metadata.talkgroup,
+                    talkgroup_tag: metadata.talkgroup_tag,
+                    start_time: metadata.start_time,
+                    duration: totalDuration,
+                    emergency: metadata.emergency || false
+                  }
+                });
                 uploadStream.end(m4aBuffer);
                 uploadStream.once('finish', resolve);
                 uploadStream.once('error', reject);

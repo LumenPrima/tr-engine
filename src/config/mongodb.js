@@ -4,7 +4,9 @@ const logger = require('../utils/logger');
 
 const connectDB = async () => {
   try {
+    console.log(`[MongoDB] Attempting to connect to ${config.mongodb.uri}`);
     const conn = await mongoose.connect(config.mongodb.uri, config.mongodb.options);
+    console.log(`[MongoDB] Successfully connected to ${conn.connection.host}`);
     
     // Set up GridFS bucket for audio files
     const gridFSBucket = new mongoose.mongo.GridFSBucket(conn.connection.db, {
@@ -37,14 +39,17 @@ const connectDB = async () => {
     
     // Handle connection events
     mongoose.connection.on('error', err => {
+      console.error('[MongoDB] Connection error:', err.message);
       logger.error('MongoDB connection error:', err);
     });
 
     mongoose.connection.on('disconnected', () => {
+      console.warn('[MongoDB] Disconnected from database. Attempting to reconnect...');
       logger.warn('MongoDB disconnected. Attempting to reconnect...');
     });
 
     mongoose.connection.on('reconnected', () => {
+      console.log('[MongoDB] Successfully reconnected to database');
       logger.info('MongoDB reconnected');
     });
 

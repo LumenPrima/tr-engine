@@ -21,19 +21,23 @@ class MQTTClient {
       password: config.mqtt.password
     };
 
+    console.log(`[MQTT] Attempting to connect to broker at ${config.mqtt.brokerUrl}`);
     logger.info(`Connecting to MQTT broker at ${config.mqtt.brokerUrl}`);
     
     this.client = mqtt.connect(config.mqtt.brokerUrl, options);
+    console.log('[MQTT] Client instance created, waiting for connection...');
 
     this.client.on('connect', () => {
       this.connected = true;
       this.reconnectAttempts = 0;
+      console.log('[MQTT] Successfully connected to broker');
       logger.info('Connected to MQTT broker');
       this.subscribeToTopics();
     });
 
     this.client.on('reconnect', () => {
       this.reconnectAttempts++;
+      console.warn(`[MQTT] Attempting to reconnect to broker (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
       logger.warn(`Attempting to reconnect to MQTT broker (attempt ${this.reconnectAttempts})`);
       
       if (this.reconnectAttempts > this.maxReconnectAttempts) {
@@ -43,11 +47,13 @@ class MQTTClient {
     });
 
     this.client.on('error', (err) => {
+      console.error('[MQTT] Client error:', err.message);
       logger.error('MQTT client error:', err);
     });
 
     this.client.on('close', () => {
       this.connected = false;
+      console.warn('[MQTT] Client disconnected from broker');
       logger.warn('MQTT client disconnected');
     });
 
@@ -79,6 +85,7 @@ class MQTTClient {
         if (err) {
           logger.error(`Error subscribing to ${topic}:`, err);
         } else {
+          console.log(`[MQTT] Successfully subscribed to topic: ${topic}`);
           logger.info(`Subscribed to ${topic}`);
         }
       });

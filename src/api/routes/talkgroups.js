@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { query, param, validationResult } = require('express-validator');
 const TalkgroupManager = require('../../services/state/TalkgroupManager');
-const errorHandler = require('../middleware/errorHandler');
+const { errorHandler } = require('../middleware');
 
 const talkgroupManager = new TalkgroupManager();
 

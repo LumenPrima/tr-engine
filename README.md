@@ -1,18 +1,15 @@
-# TR-ENGINE
-(ENGINE: ENGINE, Next-Generation Integration for Network Events)
+# TR-ENGINE (Event Network Gateway and Integration Node Engine)
 
-A self-referential recursive acronym that's as interconnected as the trunk radio systems it monitors - a meta-monitoring server that processes its own kind of trunked communications (MQTT messages) to analyze actual trunked radio communications. Like a digital ouroboros, it's a system monitoring system, recording the recorders, and tracking the trackers.
+A high-throughput trunk radio monitoring and analysis server that ingests MQTT message streams from multiple radio systems, processes them through a distributed event pipeline, and maintains real-time state while archiving to a time-series data store. The system implements an event-driven architecture with a focus on low-latency message processing, efficient state management, and scalable data persistence. Built around modern async processing patterns, TR-ENGINE handles concurrent message streams while providing both REST and WebSocket interfaces for real-time monitoring and historical analysis.
 
-At its core, TR-ENGINE is a real-time trunk radio monitoring and analysis server that processes MQTT messages from radio systems, stores historical data, and provides real-time monitoring capabilities.
+## Key Features
 
-## Features
-
-- MQTT message ingestion and processing
-- Real-time state management
-- WebSocket-based real-time updates
-- REST API for data access
-- Audio file management with GridFS
-- Comprehensive monitoring and metrics
+- Multi-threaded MQTT message ingestion
+- Persistent message queue with fail-safe processing
+- Time-series data storage with efficient indexing
+- Real-time state management with in-memory caching
+- WebSocket-based event streaming
+- RESTful API for historical queries
 
 ## Prerequisites
 
@@ -123,13 +120,13 @@ The system processes messages through several stages:
    - State changes are broadcast to subscribers
    - Clients can request initial state through REST API
 
-## Performance
+## Performance Considerations
 
-The system is designed to handle high message throughput:
-- Asynchronous message processing
-- In-memory caching for active state
-- Efficient database indexing
-- Batch operations where appropriate
+- Event-driven architecture
+- Low-latency message processing
+- Efficient state management
+- Scalable data persistence
+- Concurrent message stream handling
 
 ## Contributing
 

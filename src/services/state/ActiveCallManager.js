@@ -68,7 +68,9 @@ ActiveCallSchema.index({ emergency: 1 });
 
 class ActiveCallManager {
     constructor() {
+        console.log('[ActiveCallManager] Initializing...');
         this.ActiveCall = mongoose.model('ActiveCall', ActiveCallSchema);
+        console.log('[ActiveCallManager] MongoDB model registered');
         
         // In-memory cache of active calls for fastest possible access
         this.activeCallsCache = new Map();
@@ -76,6 +78,7 @@ class ActiveCallManager {
         // Track the state of all recorders
         this.recorderStates = new Map();
 
+        console.log('[ActiveCallManager] In-memory caches initialized');
         logger.info('ActiveCallManager initialized');
     }
 
@@ -133,6 +136,7 @@ class ActiveCallManager {
             const call = message.call;
             const callId = `${call.sys_num}_${call.talkgroup}_${call.start_time}`;
             
+            console.log(`[ActiveCallManager] Processing new call start: ${callId}`);
             logger.debug(`Processing call start for ${callId}`);
 
             // Use findOneAndUpdate with upsert to handle both new and existing calls
