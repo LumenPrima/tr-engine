@@ -8,7 +8,11 @@ const RawMessageSchema = new mongoose.Schema({
   topic: { type: String, required: true, index: true },
   payload: { type: mongoose.Schema.Types.Mixed, required: true },
   timestamp: { type: Date, required: true, index: true },
-  instance_id: String
+  instance_id: String,
+  validation: {
+    isValid: Boolean,
+    errors: [String]
+  }
 }, {
   timeseries: {
     timeField: 'timestamp',
@@ -96,13 +100,28 @@ class MessageProcessor {
     try {
       const timestamp = new Date();
       const message = JSON.parse(payload.toString());
+      
+      // Get message type from topic
+      const topicParts = topic.split('/');
+      const messageType = topicParts[1] === 'units' ? topicParts[topicParts.length - 1] : topicParts[2];
 
-      // Store raw message
+      // Validate but don't block storage
+      const validator = require('../../utils/validation');
+      const { isValid, errors } = validator.validateMessage(messageType, message);
+      if (!isValid) {
+        console.warn(`Invalid message format on topic ${topic}:`, errors);
+      }
+
+      // Store raw message with validation status
       const rawMessage = new this.models.RawMessage({
         topic,
         payload: message,
         timestamp,
-        instance_id: message.instance_id
+        instance_id: message.instance_id,
+        validation: {
+          isValid,
+          errors: errors || []
+        }
       });
       await rawMessage.save();
 
