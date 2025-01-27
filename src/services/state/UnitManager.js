@@ -1,26 +1,6 @@
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
 
-// Time series collection for all unit activity messages
-const UnitActivitySchema = new mongoose.Schema({
-    timestamp: { type: Date, required: true },
-    sys_name: { type: String, required: true },
-    unit: { type: Number, required: true },
-    activity_type: { 
-        type: String, 
-        required: true,
-        enum: ['call', 'data', 'join', 'on', 'off', 'end', 'location', 'ackresp']
-    },
-    // Store the complete message payload for historical reference
-    payload: mongoose.Schema.Types.Mixed
-}, {
-    timeseries: {
-        timeField: 'timestamp',
-        metaField: 'unit',
-        granularity: 'seconds'
-    }
-});
-
 // Current state of each unit
 const UnitStateSchema = new mongoose.Schema({
     // Unit identification
@@ -65,7 +45,6 @@ UnitStateSchema.index({ 'status.current_talkgroup': 1 });
 
 class UnitManager {
     constructor() {
-        this.UnitActivity = mongoose.model('UnitActivity', UnitActivitySchema);
         this.UnitState = mongoose.model('UnitState', UnitStateSchema);
         
         // Cache current unit states for quick access
@@ -90,40 +69,17 @@ class UnitManager {
             const sysName = topicParts[2];
             const activityType = topicParts[3];
             
-            // Extract unit data based on message type
-            const unitData = message[message.type];
-            if (!unitData?.unit) {
+            if (!message.unit) {
                 logger.debug('Skipping message without unit data');
                 return;
             }
             
-            logger.debug(`Processing ${activityType} message for unit ${unitData.unit}`);
-            
-            // Store the raw activity
-            await this.storeUnitActivity(sysName, unitData.unit, activityType, message);
+            logger.debug(`Processing ${activityType} message for unit ${message.unit}`);
             
             // Update the unit's current state
-            await this.updateUnitState(sysName, unitData, activityType);
+            await this.updateUnitState(sysName, message, activityType);
         } catch (err) {
             logger.error('Error processing message in UnitManager:', err);
-            throw err;
-        }
-    }
-    
-    async storeUnitActivity(sysName, unit, activityType, message) {
-        try {
-            const activity = new this.UnitActivity({
-                timestamp: new Date(),
-                sys_name: sysName,
-                unit: unit,
-                activity_type: activityType,
-                payload: message
-            });
-            
-            await activity.save();
-            logger.debug(`Stored ${activityType} activity for unit ${unit}`);
-        } catch (err) {
-            logger.error('Error storing unit activity:', err);
             throw err;
         }
     }
@@ -348,32 +304,6 @@ class UnitManager {
         }
     }
 
-    // Helper method to get unit history across all systems
-    async getUnitHistory(unit, options = {}) {
-        try {
-            const query = {
-                unit: unit
-            };
-            
-            if (options.startTime) {
-                query.timestamp = { $gte: options.startTime };
-            }
-            if (options.endTime) {
-                query.timestamp = { ...query.timestamp, $lte: options.endTime };
-            }
-            if (options.activityTypes) {
-                query.activity_type = { $in: options.activityTypes };
-            }
-            
-            return this.UnitActivity.find(query)
-                .sort({ timestamp: -1 })
-                .limit(options.limit || 100);
-        } catch (err) {
-            logger.error('Error getting unit history:', err);
-            throw err;
-        }
-    }
-
     // Helper to check if two activities are similar (ignoring timestamp)
     areSimilarActivities(a, b) {
         if (a.activity_type !== b.activity_type) return false;
@@ -422,10 +352,7 @@ class UnitManager {
     // Clear all units (for testing)
     async clearUnits() {
         try {
-            await Promise.all([
-                this.UnitActivity.deleteMany({}),
-                this.UnitState.deleteMany({})
-            ]);
+            await this.UnitState.deleteMany({});
             this.unitStateCache.clear();
             logger.debug('Cleared all unit data');
         } catch (err) {

@@ -6,10 +6,10 @@ const mongoose = require('mongoose');
 
 // Helper function to find audio files by call ID or filename
 const findAudioFiles = async (callIdOrFilename) => {
-    const gridFSBucket = getGridFSBucket();
+    const gridFSBucket = getGridFSBucket('calls');
     
     // Check if it's a full filename
-    if (callIdOrFilename.match(/^\d+-\d+_[\d.]+(-call_\d+)?\.(?:wav|m4a)$/)) {
+    if (callIdOrFilename.match(/^\d+_\d+_\d+(?:_\d+)?\.(?:wav|m4a)$/)) {
         // Exact filename match
         const files = await gridFSBucket.find({
             filename: callIdOrFilename
@@ -18,8 +18,8 @@ const findAudioFiles = async (callIdOrFilename) => {
         return files;
     }
     
-    // Check if it's a simple call ID (talkgroup-timestamp)
-    if (callIdOrFilename.match(/^\d+-\d+$/)) {
+    // Check if it's a call ID (sys_num_talkgroup_start_time)
+    if (callIdOrFilename.match(/^\d+_\d+_\d+$/)) {
         // Find any files that start with this call ID
         const pattern = `^${callIdOrFilename}`;
         const files = await gridFSBucket.find({
@@ -29,7 +29,7 @@ const findAudioFiles = async (callIdOrFilename) => {
         return files;
     }
     
-    throw new Error(`Invalid format: ${callIdOrFilename}. Expected either talkgroup-timestamp or full filename`);
+    throw new Error(`Invalid format: ${callIdOrFilename}. Expected either sys_num_talkgroup_start_time or full filename`);
 };
 
 // Helper function to get preferred format file
@@ -87,14 +87,14 @@ router.get('/call/:call_id', async (req, res) => {
             });
 
             // Create read stream for the range
-            const downloadStream = getGridFSBucket().openDownloadStreamByName(audioFile.filename, {
+            const downloadStream = getGridFSBucket('calls').openDownloadStreamByName(audioFile.filename, {
                 start,
                 end: end + 1
             });
             downloadStream.pipe(res);
         } else {
             // Stream the entire file
-            const downloadStream = getGridFSBucket().openDownloadStreamByName(audioFile.filename);
+            const downloadStream = getGridFSBucket('calls').openDownloadStreamByName(audioFile.filename);
             downloadStream.pipe(res);
         }
 
@@ -134,7 +134,17 @@ router.get('/call/:call_id/metadata', async (req, res) => {
                 length: file.length,
                 upload_date: file.uploadDate,
                 md5: file.md5,
-                metadata: file.metadata
+                metadata: {
+                    talkgroup: file.metadata.talkgroup,
+                    talkgroup_tag: file.metadata.talkgroup_tag,
+                    start_time: file.metadata.start_time,
+                    stop_time: file.metadata.stop_time,
+                    call_length: file.metadata.call_length,
+                    emergency: file.metadata.emergency,
+                    encrypted: file.metadata.encrypted,
+                    freq: file.metadata.freq,
+                    instance_id: file.metadata.instance_id
+                }
             };
         });
 
@@ -166,7 +176,7 @@ router.delete('/call/:call_id', async (req, res) => {
         }
 
         // Delete each file
-        const gridFSBucket = getGridFSBucket();
+        const gridFSBucket = getGridFSBucket('calls');
         for (const file of files) {
             await gridFSBucket.delete(file._id);
             logger.debug(`Deleted audio file: ${file.filename}`);
@@ -190,7 +200,7 @@ router.delete('/call/:call_id', async (req, res) => {
 // Search archived audio recordings
 router.get('/archive', async (req, res) => {
     try {
-        const gridFSBucket = getGridFSBucket();
+        const gridFSBucket = getGridFSBucket('calls');
         const options = {
             limit: parseInt(req.query.limit) || 100,
             offset: parseInt(req.query.offset) || 0,
@@ -200,12 +210,9 @@ router.get('/archive', async (req, res) => {
 
         // Build filter based on query parameters
         const filter = {
-            'uploadDate': { $gte: options.startTime, $lte: options.endTime }
+            'metadata.start_time': { $gte: options.startTime.getTime() / 1000, $lte: options.endTime.getTime() / 1000 }
         };
 
-        if (req.query.unit) {
-            filter['metadata.unit'] = parseInt(req.query.unit);
-        }
         if (req.query.talkgroup) {
             filter['metadata.talkgroup'] = parseInt(req.query.talkgroup);
         }
@@ -215,6 +222,9 @@ router.get('/archive', async (req, res) => {
         if (req.query.format) {
             filter.filename = new RegExp(`\\.${req.query.format}$`);
         }
+        if (req.query.emergency === 'true') {
+            filter['metadata.emergency'] = true;
+        }
 
         // Get total count for pagination
         const totalCount = await gridFSBucket.find(filter).count();
@@ -223,7 +233,7 @@ router.get('/archive', async (req, res) => {
         const files = await gridFSBucket.find(filter)
             .skip(options.offset)
             .limit(options.limit)
-            .sort({ uploadDate: -1 })
+            .sort({ 'metadata.start_time': -1 })
             .toArray();
 
         // Transform files to standardized format
@@ -231,15 +241,18 @@ router.get('/archive', async (req, res) => {
             id: file._id.toString(),
             call_id: file.filename.replace(/\.(wav|m4a)$/, ''),
             format: file.filename.split('.').pop(),
-            timestamp: file.uploadDate,
+            timestamp: new Date(file.metadata.start_time * 1000),
             size: file.length,
             metadata: {
-                sys_name: file.metadata?.sys_name,
-                talkgroup: file.metadata?.talkgroup,
-                talkgroup_tag: file.metadata?.talkgroup_tag,
-                unit: file.metadata?.unit,
-                duration: file.metadata?.duration,
-                emergency: file.metadata?.emergency || false
+                talkgroup: file.metadata.talkgroup,
+                talkgroup_tag: file.metadata.talkgroup_tag,
+                start_time: file.metadata.start_time,
+                stop_time: file.metadata.stop_time,
+                call_length: file.metadata.call_length,
+                emergency: file.metadata.emergency,
+                encrypted: file.metadata.encrypted,
+                freq: file.metadata.freq,
+                instance_id: file.metadata.instance_id
             }
         }));
 

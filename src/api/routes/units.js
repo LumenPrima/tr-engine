@@ -15,9 +15,9 @@ router.get('/active', async (req, res) => {
         
         // Transform unit data for response
         const formattedUnits = activeUnits.map(unit => ({
-            id: unit.unit,
+            unit: unit.unit,
             sys_name: unit.sys_name,
-            unit_tag: unit.unit_alpha_tag,
+            unit_alpha_tag: unit.unit_alpha_tag,
             status: {
                 online: unit.status.online,
                 last_seen: unit.status.last_seen,
@@ -47,13 +47,13 @@ router.get('/active', async (req, res) => {
 // GET / - Get all units
 router.get('/', async (req, res) => {
     try {
-        const units = await unitManager.UnitState.find().sort({ 'status.last_seen': -1 });
+        const units = await unitManager.getActiveUnits({ timeWindow: 24 * 60 * 60 * 1000 }); // Last 24 hours
         
         // Transform unit data for response
         const formattedUnits = units.map(unit => ({
-            id: unit.unit,
+            unit: unit.unit,
             sys_name: unit.sys_name,
-            unit_tag: unit.unit_alpha_tag,
+            unit_alpha_tag: unit.unit_alpha_tag,
             status: {
                 online: unit.status.online,
                 last_seen: unit.status.last_seen,
@@ -124,36 +124,22 @@ router.get('/:unit_id/history', async (req, res) => {
                 message: 'Invalid unit ID format'
             });
         }
-        const options = {
-            limit: parseInt(req.query.limit) || 100,
-            startTime: req.query.start ? new Date(req.query.start) : new Date(Date.now() - 24 * 60 * 60 * 1000), // Default to last 24 hours
-            endTime: req.query.end ? new Date(req.query.end) : new Date(),
-            activityTypes: req.query.types ? req.query.types.split(',') : ['calls', 'status', 'affiliations'] // Default to all types
-        };
 
-        const history = await unitManager.getUnitHistory(unitId, options);
+        const unitState = await unitManager.getUnitState(unitId);
+        if (!unitState) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Unit not found'
+            });
+        }
 
-        // Transform history entries to standardized format
-        const formattedHistory = history.map(entry => ({
-            id: entry.id || `${entry.timestamp}_${entry.type}`,
-            timestamp: entry.timestamp,
-            type: entry.type,
-            details: {
-                ...(entry.type === 'call' && {
-                    talkgroup: entry.talkgroup,
-                    talkgroup_tag: entry.talkgroup_tag,
-                    emergency: entry.emergency || false,
-                    audio_url: entry.audio_url
-                }),
-                ...(entry.type === 'status' && {
-                    old_status: entry.old_status,
-                    new_status: entry.new_status
-                }),
-                ...(entry.type === 'affiliation' && {
-                    talkgroup: entry.talkgroup,
-                    talkgroup_tag: entry.talkgroup_tag
-                })
-            }
+        // Format recent activity for response
+        const formattedHistory = unitState.recent_activity.map(activity => ({
+            timestamp: activity.timestamp,
+            activity_type: activity.activity_type,
+            talkgroup: activity.talkgroup,
+            talkgroup_tag: activity.talkgroup_tag,
+            details: activity.details
         }));
 
         res.json({
@@ -161,10 +147,6 @@ router.get('/:unit_id/history', async (req, res) => {
             timestamp: new Date().toISOString(),
             data: {
                 unit: unitId,
-                time_range: {
-                    start: options.startTime,
-                    end: options.endTime
-                },
                 count: formattedHistory.length,
                 history: formattedHistory
             }

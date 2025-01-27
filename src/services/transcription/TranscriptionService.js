@@ -1,10 +1,47 @@
 const logger = require('../../utils/logger');
 const OpenAI = require('openai');
 const fs = require('fs');
-const { AudioMessage } = require('../../models/raw/MessageCollections');
+const mongoose = require('mongoose');
+const { getGridFSBucket } = require('../../config/mongodb');
+
+// Queue for managing transcription requests
+class RequestQueue {
+    constructor() {
+        this.queue = [];
+        this.processing = false;
+    }
+
+    async add(task) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({ task, resolve, reject });
+            this.process();
+        });
+    }
+
+    async process() {
+        if (this.processing || this.queue.length === 0) return;
+        this.processing = true;
+
+        const { task, resolve, reject } = this.queue.shift();
+        try {
+            const result = await task();
+            resolve(result);
+        } catch (error) {
+            reject(error);
+        } finally {
+            this.processing = false;
+            this.process();
+        }
+    }
+}
 
 class TranscriptionService {
     constructor() {
+        // Initialize rate limiting and queue
+        this.requestCount = 0;
+        this.lastReset = Date.now();
+        this.queue = new RequestQueue();
+
         // Initialize OpenAI client with environment config
         if (process.env.OPENAI_API_KEY) {
             this.openai = new OpenAI({
@@ -25,7 +62,7 @@ class TranscriptionService {
             logger.debug(`Starting transcription for call ${callId}`);
             
             // Validate audio message format
-            if (!audioMessage?.call?.metadata?.srcList) {
+            if (!audioMessage?.srcList) {
                 throw new Error('Invalid audio message format: missing required metadata');
             }
 
@@ -57,7 +94,7 @@ class TranscriptionService {
             }
 
             // Validate audio duration matches metadata
-            const expectedDuration = audioMessage.call.metadata.call_length;
+            const expectedDuration = audioMessage.call_length;
             if (expectedDuration < 0.1) {
                 throw new Error('Invalid call duration in metadata');
             }
@@ -68,26 +105,32 @@ class TranscriptionService {
             // Retry loop
             for (let attempt = 1; attempt <= retries; attempt++) {
                 try {
-                    // Process with Whisper
-                    const whisperResponse = await this.openai.audio.transcriptions.create({
-                        file: fs.createReadStream(audioPath),
-                        model: process.env.WHISPER_MODEL || "guillaumekln/faster-whisper-base.en",
-                        response_format: "verbose_json",
-                        timestamp_granularities: ["word"]
-                    });
-                    
-                    // Check quality before proceeding
-                    const quality = this.assessTranscriptionQuality(whisperResponse);
-                    if (quality.needsRetry && attempt < retries) {
-                        throw new Error(`Low quality transcription: ${quality.reason}`);
-                    }
-                    
+                    // Queue the transcription request
+                    const processTranscription = async () => {
+                        const whisperResponse = await this.openai.audio.transcriptions.create({
+                            file: fs.createReadStream(audioPath),
+                            model: process.env.WHISPER_MODEL || "guillaumekln/faster-whisper-base.en",
+                            response_format: "verbose_json",
+                            timestamp_granularities: ["word"]
+                        });
+                        
+                        // Check quality before proceeding
+                        const quality = this.assessTranscriptionQuality(whisperResponse);
+                        if (quality.needsRetry && attempt < retries) {
+                            throw new Error(`Low quality transcription: ${quality.reason}`);
+                        }
+                        
+                        return whisperResponse;
+                    };
+
+                    const whisperResponse = await this.queue.add(processTranscription);
                     return await this.saveTranscription(callId, whisperResponse, startTime, audioMessage);
                 } catch (error) {
                     lastError = error;
                     logger.warn(`Transcription attempt ${attempt} failed for call ${callId}:`, error);
                     if (attempt < retries) {
-                        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+                        // Increase max backoff time to 30 seconds
+                        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
                         await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
@@ -103,7 +146,7 @@ class TranscriptionService {
         const processingTime = (Date.now() - startTime) / 1000;
         
         // Get source list from audio message
-        const srcList = audioMessage.call.metadata.srcList || [];
+        const srcList = audioMessage.srcList || [];
         
         // Convert Whisper segments to our schema format and map to sources
         const segments = whisperResponse.segments.map(seg => {
@@ -127,30 +170,30 @@ class TranscriptionService {
             };
         });
 
-        // Add transcription to call metadata
-        audioMessage.call.metadata.transcription = {
+        // Create transcription document
+        const transcription = {
+            call_id: callId,
             text: whisperResponse.text,
             segments: segments,
-            metadata: {
-                model: process.env.WHISPER_MODEL,
-                processing_time: processingTime,
-                audio_duration: whisperResponse.duration,
-                timestamp: new Date()
-            }
+            audio_duration: whisperResponse.duration,
+            processing_time: processingTime,
+            model: process.env.WHISPER_MODEL,
+            timestamp: new Date(),
+            talkgroup: audioMessage.talkgroup,
+            talkgroup_tag: audioMessage.talkgroup_tag,
+            sys_name: audioMessage.sys_name,
+            emergency: audioMessage.emergency || false,
+            filename: audioMessage.filename
         };
 
         try {
-            // Update the call message with transcription
-            const result = await AudioMessage.findOneAndUpdate(
-                { 'payload.call.metadata.filename': audioMessage.call.metadata.filename },
-                { $set: { 'payload.call.metadata.transcription': audioMessage.call.metadata.transcription } },
-                { new: true }
-            );
+            const collection = mongoose.connection.db.collection('transcriptions');
+            await collection.insertOne(transcription);
             
-            logger.info(`Updated call ${callId} with transcription, duration: ${processingTime}s`);
-            return result;
+            logger.info(`Saved transcription for call ${callId}, duration: ${processingTime}s`);
+            return transcription;
         } catch (error) {
-            logger.error(`Failed to update call ${callId} with transcription:`, error);
+            logger.error(`Failed to save transcription for call ${callId}:`, error);
             throw error;
         }
     }
@@ -192,78 +235,81 @@ class TranscriptionService {
     }
 
     async getTranscription(callId) {
-        const result = await AudioMessage.findOne({ 
-            'payload.call.metadata.filename': callId 
-        });
-        return result?.payload;
+        try {
+            const collection = mongoose.connection.db.collection('transcriptions');
+            return await collection.findOne({ call_id: callId });
+        } catch (error) {
+            logger.error('Error getting transcription:', error);
+            return null;
+        }
     }
 
     async getRecentTranscriptions(talkgroupId, limit = 10, startDate = null, endDate = null) {
-        const query = { 
-            'payload.call.metadata.talkgroup': talkgroupId,
-            'payload.call.metadata.transcription': { $exists: true }
-        };
-        
-        if (startDate || endDate) {
-            query['payload.call.metadata.transcription.metadata.timestamp'] = {};
-            if (startDate) {
-                query['payload.call.metadata.transcription.metadata.timestamp'].$gte = startDate;
-            }
-            if (endDate) {
-                query['payload.call.metadata.transcription.metadata.timestamp'].$lte = endDate;
-            }
-        }
-        
-        const results = await AudioMessage.find(query)
-            .sort({ 'payload.call.metadata.transcription.metadata.timestamp': -1 })
-            .limit(limit);
+        try {
+            const collection = mongoose.connection.db.collection('transcriptions');
+            const query = { talkgroup: talkgroupId };
             
-        return results.map(doc => doc.payload);
+            if (startDate || endDate) {
+                query.timestamp = {};
+                if (startDate) query.timestamp.$gte = startDate;
+                if (endDate) query.timestamp.$lte = endDate;
+            }
+            
+            return await collection.find(query)
+                .sort({ timestamp: -1 })
+                .limit(limit)
+                .toArray();
+        } catch (error) {
+            logger.error('Error getting recent transcriptions:', error);
+            return [];
+        }
     }
 
     async getTranscriptionStats(talkgroupId = null, startDate = null, endDate = null) {
-        const match = {
-            'payload.call.metadata.transcription': { $exists: true }
-        };
-        
-        if (talkgroupId) {
-            match['payload.call.metadata.talkgroup'] = talkgroupId;
-        }
-        
-        if (startDate || endDate) {
-            match['payload.call.metadata.transcription.metadata.timestamp'] = {};
-            if (startDate) {
-                match['payload.call.metadata.transcription.metadata.timestamp'].$gte = startDate;
+        try {
+            const collection = mongoose.connection.db.collection('transcriptions');
+            const match = {};
+            
+            if (talkgroupId) {
+                match.talkgroup = talkgroupId;
             }
-            if (endDate) {
-                match['payload.call.metadata.transcription.metadata.timestamp'].$lte = endDate;
+            
+            if (startDate || endDate) {
+                match.timestamp = {};
+                if (startDate) match.timestamp.$gte = startDate;
+                if (endDate) match.timestamp.$lte = endDate;
             }
-        }
 
-        return await AudioMessage.aggregate([
-            { $match: match },
-            { $group: {
-                _id: '$payload.call.metadata.talkgroup',
-                count: { $sum: 1 },
-                avg_confidence: { 
-                    $avg: { 
-                        $avg: '$payload.call.metadata.transcription.segments.confidence' 
+            return await collection.aggregate([
+                { $match: match },
+                {
+                    $group: {
+                        _id: '$talkgroup',
+                        count: { $sum: 1 },
+                        avg_confidence: { 
+                            $avg: { 
+                                $avg: '$segments.confidence' 
+                            }
+                        },
+                        avg_duration: { 
+                            $avg: '$audio_duration' 
+                        },
+                        avg_processing_time: { 
+                            $avg: '$processing_time' 
+                        },
+                        emergency_count: {
+                            $sum: { 
+                                $cond: ['$emergency', 1, 0]
+                            }
+                        }
                     }
                 },
-                avg_duration: { 
-                    $avg: '$payload.call.metadata.transcription.metadata.audio_duration' 
-                },
-                avg_processing_time: { 
-                    $avg: '$payload.call.metadata.transcription.metadata.processing_time' 
-                },
-                emergency_count: {
-                    $sum: { 
-                        $cond: ['$payload.call.metadata.emergency', 1, 0]
-                    }
-                }
-            }},
-            { $sort: { count: -1 } }
-        ]);
+                { $sort: { count: -1 } }
+            ]).toArray();
+        } catch (error) {
+            logger.error('Error getting transcription stats:', error);
+            return [];
+        }
     }
 }
 

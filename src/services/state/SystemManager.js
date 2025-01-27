@@ -1,40 +1,6 @@
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
 
-// Raw system configuration messages (time series)
-const SystemMessageSchema = new mongoose.Schema({
-    timestamp: { type: Date, required: true },
-    type: { type: String, required: true },
-    instance_id: String,
-    payload: mongoose.Schema.Types.Mixed
-}, {
-    timeseries: {
-        timeField: 'timestamp',
-        metaField: 'sys_name',
-        granularity: 'minutes'  // System configs change infrequently
-    }
-});
-
-// Raw system performance messages (time series)
-const SystemRatesSchema = new mongoose.Schema({
-    timestamp: { type: Date, required: true },
-    type: { type: String, required: true },
-    instance_id: String,
-    payload: {
-        sys_num: Number,
-        sys_name: String,
-        decoderate: Number,
-        decoderate_interval: Number,
-        control_channel: Number
-    }
-}, {
-    timeseries: {
-        timeField: 'timestamp',
-        metaField: 'sys_name',
-        granularity: 'seconds'  // Performance metrics need finer granularity
-    }
-});
-
 // Current system state (regular collection, one doc per system)
 const SystemStateSchema = new mongoose.Schema({
     sys_name: { type: String, required: true, unique: true },
@@ -94,19 +60,7 @@ SystemStateSchema.index({ 'status.last_seen': 1 });
 
 class SystemManager {
     constructor() {
-        // Try to get existing models or create new ones
-        try {
-            this.SystemMessage = mongoose.model('SystemMessage');
-        } catch (error) {
-            this.SystemMessage = mongoose.model('SystemMessage', SystemMessageSchema);
-        }
-
-        try {
-            this.SystemRates = mongoose.model('SystemRates');
-        } catch (error) {
-            this.SystemRates = mongoose.model('SystemRates', SystemRatesSchema);
-        }
-
+        // Initialize system state model
         try {
             this.SystemState = mongoose.model('SystemState');
         } catch (error) {
@@ -131,15 +85,16 @@ class SystemManager {
             
             logger.debug(`Processing ${messageType} message for system state`);
             
-            // Store raw message in appropriate time series collection
-            if (messageType === 'systems') {
-                await this.storeSystemMessage(message);
-                await this.updateSystemState(message);
-            } else if (messageType === 'rates') {
-                await this.storeRatesMessage(message);
-                await this.updateSystemRates(message);
-            } else if (messageType === 'config') {
-                await this.updateSystemConfig(message);
+            switch(messageType) {
+                case 'systems':
+                    await this.updateSystemState(message);
+                    break;
+                case 'rates':
+                    await this.updateSystemRates(message);
+                    break;
+                case 'config':
+                    await this.updateSystemConfig(message);
+                    break;
             }
         } catch (err) {
             logger.error('Error processing message in SystemManager:', err);
@@ -147,70 +102,32 @@ class SystemManager {
         }
     }
     
-    async storeSystemMessage(message) {
-        try {
-            // Store in time series collection
-            const systemMessages = message.systems.map(system => ({
-                timestamp: new Date(),
-                type: 'systems',
-                instance_id: message.instance_id,
-                payload: JSON.parse(JSON.stringify(system)) // Ensure proper serialization
-            }));
-            
-            await this.SystemMessage.insertMany(systemMessages);
-            logger.debug(`Stored ${systemMessages.length} system messages`);
-        } catch (err) {
-            logger.error('Error storing system message:', err);
-            throw err;
-        }
-    }
-    
-    async storeRatesMessage(message) {
-        try {
-            // Store in time series collection
-            const ratesMessages = message.rates.map(rate => ({
-                timestamp: new Date(),
-                type: 'rates',
-                instance_id: message.instance_id,
-                payload: JSON.parse(JSON.stringify(rate)) // Ensure proper serialization
-            }));
-            
-            await this.SystemRates.insertMany(ratesMessages);
-            logger.debug(`Stored ${ratesMessages.length} rate messages`);
-        } catch (err) {
-            logger.error('Error storing rates message:', err);
-            throw err;
-        }
-    }
-    
     async updateSystemState(message) {
         try {
-            for (const system of message.systems) {
-                logger.debug(`Updating state for system ${system.sys_name}`);
-                
-                // Update or create system state document
-                const update = await this.SystemState.findOneAndUpdate(
-                    { sys_name: system.sys_name },
-                    {
-                        $set: {
-                            sys_num: system.sys_num,
-                            type: system.type,
-                            sysid: system.sysid,
-                            wacn: system.wacn,
-                            nac: system.nac,
-                            rfss: system.rfss,
-                            site_id: system.site_id,
-                            'status.last_config_update': new Date(),
-                            'status.last_seen': new Date(),
-                            'status.connected': true
-                        }
-                    },
-                    { upsert: true, new: true }
-                );
-                
-                // Update cache
-                this.systemStateCache.set(system.sys_name, update);
-            }
+            logger.debug(`Updating state for system ${message.sys_name}`);
+            
+            // Update or create system state document
+            const update = await this.SystemState.findOneAndUpdate(
+                { sys_name: message.sys_name },
+                {
+                    $set: {
+                        sys_num: message.sys_num,
+                        type: message.type,
+                        sysid: message.sysid,
+                        wacn: message.wacn,
+                        nac: message.nac,
+                        rfss: message.rfss,
+                        site_id: message.site_id,
+                        'status.last_config_update': new Date(),
+                        'status.last_seen': new Date(),
+                        'status.connected': true
+                    }
+                },
+                { upsert: true, new: true }
+            );
+            
+            // Update cache
+            this.systemStateCache.set(message.sys_name, update);
         } catch (err) {
             logger.error('Error updating system state:', err);
             throw err;
@@ -219,37 +136,35 @@ class SystemManager {
     
     async updateSystemRates(message) {
         try {
-            for (const rate of message.rates) {
-                logger.debug(`Updating rates for system ${rate.sys_name}`);
-                
-                // Update system state with latest rates
-                const update = await this.SystemState.findOneAndUpdate(
-                    { sys_name: rate.sys_name },
-                    {
-                        $set: {
-                            current_control_channel: rate.control_channel,
-                            current_decoderate: rate.decoderate,
-                            decoderate_interval: rate.decoderate_interval,
-                            'status.last_rate_update': new Date(),
-                            'status.last_seen': new Date()
-                        },
-                        $push: {
-                            recent_rates: {
-                                $each: [{
-                                    timestamp: new Date(),
-                                    decoderate: rate.decoderate,
-                                    control_channel: rate.control_channel
-                                }],
-                                $slice: -60 // Keep last 60 readings
-                            }
-                        }
+            logger.debug(`Updating rates for system ${message.sys_name}`);
+            
+            // Update system state with latest rates
+            const update = await this.SystemState.findOneAndUpdate(
+                { sys_name: message.sys_name },
+                {
+                    $set: {
+                        current_control_channel: message.control_channel,
+                        current_decoderate: message.decoderate,
+                        decoderate_interval: message.decoderate_interval,
+                        'status.last_rate_update': new Date(),
+                        'status.last_seen': new Date()
                     },
-                    { new: true }
-                );
-                
-                // Update cache
-                this.systemStateCache.set(rate.sys_name, update);
-            }
+                    $push: {
+                        recent_rates: {
+                            $each: [{
+                                timestamp: new Date(),
+                                decoderate: message.decoderate,
+                                control_channel: message.control_channel
+                            }],
+                            $slice: -60 // Keep last 60 readings
+                        }
+                    }
+                },
+                { new: true }
+            );
+            
+            // Update cache
+            this.systemStateCache.set(message.sys_name, update);
         } catch (err) {
             logger.error('Error updating system rates:', err);
             throw err;
@@ -258,31 +173,26 @@ class SystemManager {
     
     async updateSystemConfig(message) {
         try {
-            const config = message.config;
+            logger.debug(`Updating config for system ${message.sys_name}`);
             
-            // Update each system mentioned in the config
-            for (const system of config.systems) {
-                logger.debug(`Updating config for system ${system.sys_name}`);
-                
-                const update = await this.SystemState.findOneAndUpdate(
-                    { sys_name: system.sys_name },
-                    {
-                        $set: {
-                            'config.system_type': system.system_type,
-                            'config.talkgroups_file': system.talkgroups_file,
-                            'config.control_channels': system.control_channel ? [system.control_channel] : [],
-                            'config.voice_channels': system.channels || [],
-                            'config.digital_levels': system.digital_levels,
-                            'config.audio_archive': system.audio_archive,
-                            'status.last_config_update': new Date()
-                        }
-                    },
-                    { new: true }
-                );
-                
-                // Update cache
-                this.systemStateCache.set(system.sys_name, update);
-            }
+            const update = await this.SystemState.findOneAndUpdate(
+                { sys_name: message.sys_name },
+                {
+                    $set: {
+                        'config.system_type': message.system_type,
+                        'config.talkgroups_file': message.talkgroups_file,
+                        'config.control_channels': message.control_channel ? [message.control_channel] : [],
+                        'config.voice_channels': message.channels || [],
+                        'config.digital_levels': message.digital_levels,
+                        'config.audio_archive': message.audio_archive,
+                        'status.last_config_update': new Date()
+                    }
+                },
+                { new: true }
+            );
+            
+            // Update cache
+            this.systemStateCache.set(message.sys_name, update);
         } catch (err) {
             logger.error('Error updating system config:', err);
             throw err;
@@ -316,11 +226,7 @@ class SystemManager {
     // Clear all systems (for testing)
     async clearSystems() {
         try {
-            await Promise.all([
-                this.SystemMessage.deleteMany({}),
-                this.SystemRates.deleteMany({}),
-                this.SystemState.deleteMany({})
-            ]);
+            await this.SystemState.deleteMany({});
             this.systemStateCache.clear();
             logger.debug('Cleared all system data');
         } catch (err) {

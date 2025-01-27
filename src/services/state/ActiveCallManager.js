@@ -121,7 +121,7 @@ class ActiveCallManager {
             }
             
             // Update statistics for affected system
-            const sysName = message.calls?.[0]?.sys_name || message.call?.sys_name;
+            const sysName = message.sys_name;
             if (sysName) {
                 await this.updateStatistics(sysName);
             }
@@ -133,8 +133,7 @@ class ActiveCallManager {
     
     async handleCallStart(message, messageId) {
         try {
-            const call = message.call;
-            const callId = `${call.sys_num}_${call.talkgroup}_${call.start_time}`;
+            const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
             
             console.log(`[ActiveCallManager] Processing new call start: ${callId}`);
             logger.debug(`Processing call start for ${callId}`);
@@ -144,25 +143,25 @@ class ActiveCallManager {
                 { call_id: callId },
                 {
                     $setOnInsert: {
-                        sys_num: call.sys_num,
-                        sys_name: call.sys_name,
-                        start_time: new Date(call.start_time * 1000),
-                        talkgroup: call.talkgroup,
-                        talkgroup_alpha_tag: call.talkgroup_alpha_tag,
-                        talkgroup_tag: call.talkgroup_tag,
-                        talkgroup_description: call.talkgroup_description,
-                        talkgroup_group: call.talkgroup_group
+                        sys_num: message.sys_num,
+                        sys_name: message.sys_name,
+                        start_time: new Date(message.start_time * 1000),
+                        talkgroup: message.talkgroup,
+                        talkgroup_alpha_tag: message.talkgroup_alpha_tag,
+                        talkgroup_tag: message.talkgroup_tag,
+                        talkgroup_description: message.talkgroup_description,
+                        talkgroup_group: message.talkgroup_group
                     },
                     $set: {
                         last_update: new Date(),
-                        freq: call.freq,
-                        emergency: call.emergency || false,
-                        encrypted: call.encrypted || false
+                        freq: message.freq,
+                        emergency: message.emergency || false,
+                        encrypted: message.encrypted || false
                     },
                     $addToSet: {
                         units: {
-                            unit: call.unit,
-                            unit_alpha_tag: call.unit_alpha_tag,
+                            unit: message.unit,
+                            unit_alpha_tag: message.unit_alpha_tag,
                             joined_at: new Date(),
                             last_seen: new Date(),
                             status: 'initiator'
@@ -178,7 +177,7 @@ class ActiveCallManager {
                 },
                 { 
                     upsert: true,
-                    new: true // Return the updated/new document
+                    new: true
                 }
             );
 
@@ -196,8 +195,7 @@ class ActiveCallManager {
     async handleCallsActive(message, messageId) {
         try {
             // If calls is null, remove all calls for this system
-            if (message.calls === null) {
-                // Extract system name from instance_id (e.g., "trunk-recorder" -> "trunk")
+            if (!message.calls) {
                 const sysName = message.instance_id?.split('-')[0];
                 if (!sysName) {
                     logger.warn('No system name found in instance_id for calls_active message');
@@ -222,7 +220,7 @@ class ActiveCallManager {
             
             // Get all existing calls for this system
             const existingCalls = await this.ActiveCall.find({
-                sys_name: currentCalls[0].sys_name // All calls in message are from same system
+                sys_name: currentCalls[0].sys_name
             });
 
             // Create a set of current call IDs
@@ -292,8 +290,7 @@ class ActiveCallManager {
     
     async handleAudioMessage(message, messageId) {
         try {
-            const metadata = message.call.metadata;
-            const callId = `${metadata.sys_num}_${metadata.talkgroup}_${metadata.start_time}`;
+            const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
             
             logger.debug(`Processing audio message for ${callId}`);
 
@@ -302,19 +299,19 @@ class ActiveCallManager {
                 { call_id: callId },
                 {
                     $setOnInsert: {
-                        sys_num: metadata.sys_num,
-                        sys_name: metadata.sys_name,
-                        start_time: new Date(metadata.start_time * 1000),
-                        talkgroup: metadata.talkgroup,
-                        talkgroup_tag: metadata.talkgroup_tag
+                        sys_num: message.sys_num,
+                        sys_name: message.sys_name,
+                        start_time: new Date(message.start_time * 1000),
+                        talkgroup: message.talkgroup,
+                        talkgroup_tag: message.talkgroup_tag
                     },
                     $set: {
                         last_update: new Date(),
                         has_audio: true,
-                        audio_file: metadata.filename,
-                        freq: metadata.freq,
-                        emergency: metadata.emergency || false,
-                        encrypted: metadata.encrypted || false
+                        audio_file: message.filename,
+                        freq: message.freq,
+                        emergency: message.emergency || false,
+                        encrypted: message.encrypted || false
                     },
                     $inc: {
                         audio_segments: 1
@@ -344,15 +341,14 @@ class ActiveCallManager {
     
     async handleUnitMessage(topic, message, messageId) {
         try {
-            const unitData = message[message.type];
-            if (!unitData?.talkgroup) return;
+            if (!message.talkgroup) return;
             
-            logger.debug(`Processing unit message for talkgroup ${unitData.talkgroup}`);
+            logger.debug(`Processing unit message for talkgroup ${message.talkgroup}`);
             
             // Find and update all active calls for this talkgroup
             const activeCalls = await this.ActiveCall.find({
-                talkgroup: unitData.talkgroup,
-                sys_name: unitData.sys_name
+                talkgroup: message.talkgroup,
+                sys_name: message.sys_name
             });
 
             // Process all calls concurrently
@@ -372,8 +368,8 @@ class ActiveCallManager {
                         },
                         $addToSet: {
                             units: {
-                                unit: unitData.unit,
-                                unit_alpha_tag: unitData.unit_alpha_tag,
+                                unit: message.unit,
+                                unit_alpha_tag: message.unit_alpha_tag,
                                 joined_at: new Date(),
                                 last_seen: new Date(),
                                 status: message.type
@@ -385,7 +381,7 @@ class ActiveCallManager {
 
                 if (updatedCall) {
                     this.activeCallsCache.set(updatedCall.call_id, updatedCall);
-                    logger.debug(`Updated call ${updatedCall.call_id} with unit ${unitData.unit}`);
+                    logger.debug(`Updated call ${updatedCall.call_id} with unit ${message.unit}`);
                 }
             }));
         } catch (err) {
@@ -396,8 +392,7 @@ class ActiveCallManager {
     
     async handleCallEnd(message, messageId) {
         try {
-            const call = message.call;
-            const callId = `${call.sys_num}_${call.talkgroup}_${call.start_time}`;
+            const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
             
             logger.debug(`Processing call end for ${callId}`);
             
@@ -414,32 +409,30 @@ class ActiveCallManager {
     
     async handleRecorderUpdate(message, messageId) {
         try {
-            const recorder = message.recorder;
-            
             // Update our recorder state cache
-            this.recorderStates.set(recorder.id, {
-                ...recorder,
+            this.recorderStates.set(message.id, {
+                ...message,
                 last_update: new Date()
             });
 
-            logger.debug(`Recorder ${recorder.id} state updated to ${recorder.rec_state_type}`);
+            logger.debug(`Recorder ${message.id} state updated to ${message.rec_state_type}`);
 
             // If the recorder is RECORDING, update the first matching call
-            if (recorder.rec_state_type === 'RECORDING') {
+            if (message.rec_state_type === 'RECORDING') {
                 const updatedCall = await this.ActiveCall.findOneAndUpdate(
                     {
-                        freq: recorder.freq,
+                        freq: message.freq,
                         'recorder.id': { $exists: false }
                     },
                     {
                         $set: {
                             recorder: {
-                                id: recorder.id,
-                                src_num: recorder.src_num,
-                                rec_num: recorder.rec_num,
-                                state: recorder.rec_state_type,
-                                freq: recorder.freq,
-                                squelched: recorder.squelched
+                                id: message.id,
+                                src_num: message.src_num,
+                                rec_num: message.rec_num,
+                                state: message.rec_state_type,
+                                freq: message.freq,
+                                squelched: message.squelched
                             },
                             last_update: new Date()
                         }
@@ -449,7 +442,7 @@ class ActiveCallManager {
 
                 if (updatedCall) {
                     this.activeCallsCache.set(updatedCall.call_id, updatedCall);
-                    logger.debug(`Assigned recorder ${recorder.id} to call ${updatedCall.call_id}`);
+                    logger.debug(`Assigned recorder ${message.id} to call ${updatedCall.call_id}`);
                 }
             }
         } catch (err) {

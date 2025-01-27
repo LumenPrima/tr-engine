@@ -6,13 +6,13 @@ const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
-// Create rate limiter
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+// Development rate limiter with extremely high limits
+const devLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 100000, // Effectively unlimited
     message: {
         status: 'error',
-        message: 'Too many requests, please try again later',
+        message: 'Rate limit exceeded',
         timestamp: new Date().toISOString()
     }
 });
@@ -58,8 +58,11 @@ const setupMiddleware = (app) => {
     // Request logging
     app.use(requestLogger);
 
-    // Rate limiting - only apply to /api/v1 routes
-    app.use('/api/v1', limiter);
+    // Apply extremely high rate limit for development
+    if (process.env.NODE_ENV === 'production') {
+        logger.warn('Running in production without proper rate limiting!');
+    }
+    app.use('/api/v1', devLimiter);
 };
 
 // Setup error handling middleware (should be called after routes are mounted)

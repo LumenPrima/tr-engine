@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const logger = require('../../utils/logger');
 const activeCallManager = require('../../services/state/ActiveCallManager');
+const mongoose = require('mongoose');
 
 // GET / - Get historical calls
 router.get('/', async (req, res) => {
@@ -22,40 +23,40 @@ router.get('/', async (req, res) => {
             filter.sys_name = req.query.sys_name;
         }
         if (req.query.talkgroup) {
-            filter['payload.call.talkgroup'] = parseInt(req.query.talkgroup);
+            filter.talkgroup = parseInt(req.query.talkgroup);
         }
         if (req.query.unit) {
-            filter['payload.call.unit'] = parseInt(req.query.unit);
+            filter.unit = parseInt(req.query.unit);
         }
         if (req.query.emergency === 'true') {
-            filter['payload.call.emergency'] = true;
+            filter.emergency = true;
         }
 
-        const { CallStartMessage } = require('../../models/raw/MessageCollections');
+        const collection = mongoose.connection.db.collection('call_start');
         
         const [totalCount, calls] = await Promise.all([
-            CallStartMessage.countDocuments(filter),
-            CallStartMessage.find(filter)
+            collection.countDocuments(filter),
+            collection.find(filter)
                 .limit(options.limit)
                 .skip(options.offset)
                 .sort({ timestamp: -1 })
-                .exec()
+                .toArray()
         ]);
 
         const formattedCalls = calls.map(call => ({
-            id: call.payload.call.id,
+            call_id: call.call_id,
             timestamp: call.timestamp,
-            sys_name: call.payload.call.sys_name,
-            talkgroup: call.payload.call.talkgroup,
-            talkgroup_tag: call.payload.call.talkgroup_tag,
-            units: [call.payload.call.unit].filter(Boolean),
-            emergency: call.payload.call.emergency || false,
-            duration: call.payload.call.length,
-            audio_type: call.payload.call.audio_type,
+            sys_name: call.sys_name,
+            talkgroup: call.talkgroup,
+            talkgroup_tag: call.talkgroup_tag,
+            units: [call.unit].filter(Boolean),
+            emergency: call.emergency || false,
+            duration: call.call_length,
+            audio_type: call.audio_type,
             details: {
-                freq: call.payload.call.freq,
-                phase2: call.payload.call.phase2_tdma || false,
-                encrypted: call.payload.call.encrypted || false
+                freq: call.freq,
+                phase2: call.phase2_tdma || false,
+                encrypted: call.encrypted || false
             }
         }));
 
@@ -92,7 +93,7 @@ router.get('/active', async (req, res) => {
         const filter = {};
         
         if (req.query.sys_name) {
-            filter['payload.call.sys_name'] = req.query.sys_name;
+            filter.sys_name = req.query.sys_name;
         }
         if (req.query.talkgroup) {
             filter.talkgroup = parseInt(req.query.talkgroup);
@@ -104,7 +105,7 @@ router.get('/active', async (req, res) => {
         const activeCalls = await activeCallManager.getActiveCalls(filter);
         
         const formattedCalls = activeCalls.map(call => ({
-            id: call.call_id,
+            call_id: call.call_id,
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
             talkgroup_tag: call.talkgroup_tag,
@@ -141,55 +142,51 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
             endTime: req.query.end ? new Date(req.query.end) : new Date()
         };
 
-        const { CallStartMessage, UnitJoinMessage } = require('../../models/raw/MessageCollections');
+        const db = mongoose.connection.db;
 
-        // Query calls and affiliated units concurrently
-        const [calls, affiliations] = await Promise.all([
-            CallStartMessage.find({
-                'payload.call.talkgroup': talkgroupId,
-                'timestamp': { $gte: options.startTime, $lte: options.endTime }
+        // Query calls and joins concurrently
+        const [calls, joins] = await Promise.all([
+            db.collection('call_start').find({
+                talkgroup: talkgroupId,
+                timestamp: { $gte: options.startTime, $lte: options.endTime }
             })
             .limit(options.limit)
             .sort({ timestamp: -1 })
-            .exec(),
-            UnitJoinMessage.find({
-                'payload.join.talkgroup': talkgroupId,
-                'timestamp': { $gte: options.startTime, $lte: options.endTime }
+            .toArray(),
+            db.collection('join').find({
+                talkgroup: talkgroupId,
+                timestamp: { $gte: options.startTime, $lte: options.endTime }
             })
             .limit(options.limit)
             .sort({ timestamp: -1 })
-            .exec()
+            .toArray()
         ]);
 
         // Transform calls to standardized format
         const formattedCalls = calls.map(call => ({
-            id: call.payload.call.id,
+            call_id: call.call_id,
             timestamp: call.timestamp,
-            type: 'call',
-            details: {
-                units: [call.payload.call.unit].filter(Boolean),
-                emergency: call.payload.call.emergency || false,
-                duration: call.payload.call.length,
-                audio_type: call.payload.call.audio_type,
-                freq: call.payload.call.freq,
-                encrypted: call.payload.call.encrypted || false
-            }
+            activity_type: 'call',
+            units: [call.unit].filter(Boolean),
+            emergency: call.emergency || false,
+            duration: call.call_length,
+            audio_type: call.audio_type,
+            freq: call.freq,
+            encrypted: call.encrypted || false
         }));
 
-        // Transform affiliations to standardized format
-        const formattedAffiliations = affiliations.map(aff => ({
-            id: `${aff.timestamp}_${aff.payload.join.unit}`,
-            timestamp: aff.timestamp,
-            type: 'affiliation',
-            details: {
-                unit: aff.payload.join.unit,
-                unit_tag: aff.payload.join.unit_alpha_tag,
-                talkgroup: aff.payload.join.talkgroup
-            }
+        // Transform joins to standardized format
+        const formattedJoins = joins.map(join => ({
+            timestamp: join.timestamp,
+            activity_type: 'join',
+            unit: join.unit,
+            unit_alpha_tag: join.unit_alpha_tag,
+            talkgroup: join.talkgroup,
+            talkgroup_tag: join.talkgroup_tag
         }));
 
         // Combine and sort all events by timestamp
-        const allEvents = [...formattedCalls, ...formattedAffiliations]
+        const allEvents = [...formattedCalls, ...formattedJoins]
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
         res.json({
@@ -197,8 +194,8 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
             timestamp: new Date().toISOString(),
             data: {
                 talkgroup: {
-                    id: talkgroupId,
-                    tag: calls[0]?.payload?.call?.talkgroup_tag
+                    talkgroup: talkgroupId,
+                    talkgroup_tag: calls[0]?.talkgroup_tag
                 },
                 time_range: {
                     start: options.startTime,
@@ -228,7 +225,7 @@ router.get('/events', async (req, res) => {
 
         // Transform calls to standardized format
         const formattedCalls = activeCalls.map(call => ({
-            id: call.call_id,
+            call_id: call.call_id,
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
             talkgroup_tag: call.talkgroup_tag,
@@ -240,7 +237,7 @@ router.get('/events', async (req, res) => {
 
         // Transform emergency calls to standardized format
         const formattedEmergencies = emergencyCalls.map(call => ({
-            id: call.call_id,
+            call_id: call.call_id,
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
             talkgroup_tag: call.talkgroup_tag,
