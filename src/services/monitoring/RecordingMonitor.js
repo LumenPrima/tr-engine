@@ -13,9 +13,11 @@ class RecordingMonitor extends EventEmitter {
         // Storage paths to monitor
         this.storagePaths = {
             recordings: process.env.RECORDINGS_PATH || '/var/lib/tr/recordings',
-            temp: process.env.TEMP_RECORDINGS_PATH || '/var/lib/tr/temp',
-            database: process.env.DB_PATH || '/var/lib/mongodb'
+            temp: process.env.TEMP_RECORDINGS_PATH || '/var/lib/tr/temp'
         };
+        
+        // MongoDB connection for stats
+        this.mongoose = require('mongoose');
         
         // Track recording failures
         this.failureTracking = new Map();
@@ -100,6 +102,7 @@ class RecordingMonitor extends EventEmitter {
         // Monitor every 5 minutes
         setInterval(async () => {
             try {
+                // Check filesystem storage
                 for (const [type, path] of Object.entries(this.storagePaths)) {
                     const { stdout } = await execFileAsync('df', ['-B1', path]);
                     const [, , used, available] = stdout.split('\n')[1].split(/\s+/);
@@ -116,27 +119,62 @@ class RecordingMonitor extends EventEmitter {
                     };
                     
                     this.storageStats.set(type, stats);
-                    
-                    // Check thresholds
-                    if (usedPercent >= this.storageThresholds.critical) {
-                        this.emit('storage.critical', {
-                            type,
-                            stats,
-                            message: `Critical storage level for ${type}: ${usedPercent.toFixed(1)}%`
-                        });
-                    } else if (usedPercent >= this.storageThresholds.warning) {
-                        this.emit('storage.warning', {
-                            type,
-                            stats,
-                            message: `High storage usage for ${type}: ${usedPercent.toFixed(1)}%`
+                    await this.checkStorageThresholds(type, stats);
+                }
+
+                // Check MongoDB storage if connected
+                if (this.mongoose.connection.readyState === 1) {
+                    try {
+                        const dbStats = await this.mongoose.connection.db.stats();
+                        const dataSize = dbStats.dataSize;
+                        const storageSize = dbStats.storageSize;
+                        const usedPercent = (dataSize / storageSize) * 100;
+                        
+                        const stats = {
+                            total: storageSize,
+                            used: dataSize,
+                            available: storageSize - dataSize,
+                            usedPercent,
+                            timestamp: new Date(),
+                            indexSize: dbStats.indexSize,
+                            avgObjSize: dbStats.avgObjSize
+                        };
+                        
+                        this.storageStats.set('database', stats);
+                        await this.checkStorageThresholds('database', stats);
+                    } catch (error) {
+                        logger.error('MongoDB stats check failed:', error);
+                        this.emit('storage.error', {
+                            type: 'database',
+                            error
                         });
                     }
+                }
+                    
+                    this.storageStats.set(type, stats);
+                    await this.checkStorageThresholds(type, stats);
                 }
             } catch (error) {
                 logger.error('Storage monitoring error:', error);
                 this.emit('storage.error', error);
             }
         }, 5 * 60 * 1000); // Every 5 minutes
+    }
+
+    async checkStorageThresholds(type, stats) {
+        if (stats.usedPercent >= this.storageThresholds.critical) {
+            this.emit('storage.critical', {
+                type,
+                stats,
+                message: `Critical storage level for ${type}: ${stats.usedPercent.toFixed(1)}%`
+            });
+        } else if (stats.usedPercent >= this.storageThresholds.warning) {
+            this.emit('storage.warning', {
+                type,
+                stats,
+                message: `High storage usage for ${type}: ${stats.usedPercent.toFixed(1)}%`
+            });
+        }
     }
 
     getStorageStats(type = null) {
