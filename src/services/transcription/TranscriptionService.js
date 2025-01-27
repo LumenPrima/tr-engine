@@ -136,10 +136,17 @@ class TranscriptionService {
             }
         });
 
-        await transcription.save();
-        logger.info(`Stored transcription for call ${callId}, duration: ${processingTime}s`);
-        
-        return transcription;
+        try {
+            await transcription.save();
+            logger.info(`Stored transcription for call ${callId}, duration: ${processingTime}s`);
+            return transcription;
+        } catch (error) {
+            if (error.code === 11000) { // Duplicate key error
+                logger.warn(`Duplicate transcription for call ${callId}, skipping`);
+                return await this.Transcription.findOne({ call_id: callId });
+            }
+            throw error;
+        }
     }
 
     assessTranscriptionQuality(whisperResponse) {
