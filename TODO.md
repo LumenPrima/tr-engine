@@ -58,14 +58,15 @@
   - Time range queries
   - Activity pattern search
 
-### 7. Message Validation
+### ✓ 7. Message Validation *(Completed)*
 - **Why**: Recording metadata reliability
 - **Reference**: designdocs/mqtt-ingestion.js - Field mapping
 - **Impact**: Archive data quality
-- **Components**:
-  - Field validation
-  - Metadata normalization
-  - Error detection
+- **Status**: Completed
+- **Implementation**:
+  - Raw message storage with no validation blocking
+  - Optional validation at retrieval time
+  - Field mapping for consistent data structure
 
 ### 8. Error Tracking
 - **Why**: Recording issue detection
