@@ -20,7 +20,7 @@ async function setupDatabase() {
         const db = mongoose.connection.db;
 
         // Create time series collections
-        await db.createCollection('systemmessage', {
+        await db.createCollection('systemMetrics', {
             timeseries: {
                 timeField: 'timestamp',
                 metaField: 'sys_name',
@@ -28,15 +28,7 @@ async function setupDatabase() {
             }
         });
 
-        await db.createCollection('systemrates', {
-            timeseries: {
-                timeField: 'timestamp',
-                metaField: 'sys_name',
-                granularity: 'seconds'
-            }
-        });
-
-        await db.createCollection('unitactivity', {
+        await db.createCollection('unitActivity', {
             timeseries: {
                 timeField: 'timestamp',
                 metaField: 'unit',
@@ -46,22 +38,146 @@ async function setupDatabase() {
 
         logger.info('Created time series collections');
 
+        // Create state collections with validation
+        await db.createCollection('activeCalls', {
+            validator: {
+                $jsonSchema: {
+                    bsonType: "object",
+                    required: ["id", "sys_name", "talkgroup", "start_time"],
+                    properties: {
+                        id: { bsonType: "string" },
+                        sys_name: { bsonType: "string" },
+                        sys_num: { bsonType: "int" },
+                        talkgroup: { bsonType: "int" },
+                        unit: { bsonType: "int" },
+                        start_time: { bsonType: "long" },
+                        stop_time: { bsonType: "long" },
+                        emergency: { bsonType: "bool" },
+                        encrypted: { bsonType: "bool" }
+                    }
+                }
+            }
+        });
+
+        await db.createCollection('systemStates', {
+            validator: {
+                $jsonSchema: {
+                    bsonType: "object",
+                    required: ["sys_name", "sys_num", "type"],
+                    properties: {
+                        sys_name: { bsonType: "string" },
+                        sys_num: { bsonType: "int" },
+                        type: { bsonType: "string" },
+                        sysid: { bsonType: "string" },
+                        wacn: { bsonType: "string" },
+                        last_seen: { bsonType: "long" },
+                        connected: { bsonType: "bool" }
+                    }
+                }
+            }
+        });
+
+        await db.createCollection('unitStates', {
+            validator: {
+                $jsonSchema: {
+                    bsonType: "object",
+                    required: ["unit", "sys_name"],
+                    properties: {
+                        unit: { bsonType: "int" },
+                        sys_name: { bsonType: "string" },
+                        unit_alpha_tag: { bsonType: "string" },
+                        last_seen: { bsonType: "long" },
+                        current_talkgroup: { bsonType: "int" },
+                        online: { bsonType: "bool" }
+                    }
+                }
+            }
+        });
+
+        await db.createCollection('talkgroups', {
+            validator: {
+                $jsonSchema: {
+                    bsonType: "object",
+                    required: ["talkgroup", "tag"],
+                    properties: {
+                        talkgroup: { bsonType: "int" },
+                        tag: { bsonType: "string" },
+                        description: { bsonType: "string" },
+                        group_tag: { bsonType: "string" },
+                        group: { bsonType: "string" },
+                        sys_name: { bsonType: "string" }
+                    }
+                }
+            }
+        });
+
+        logger.info('Created state collections');
+
         // Create GridFS bucket for audio files
-        await db.createCollection('audio.files');
-        await db.createCollection('audio.chunks');
+        await db.createCollection('calls.files');
+        await db.createCollection('calls.chunks');
         
         logger.info('Created GridFS collections for audio storage');
 
+        // Create standard message collections with validation
+        const standardCollections = {
+            'call_start': ['id', 'call_num', 'sys_name', 'talkgroup', 'start_time'],
+            'call_end': ['id', 'call_num', 'sys_name', 'talkgroup', 'stop_time'],
+            'calls_active': ['id', 'sys_name', 'talkgroup'],
+            'audio': ['filename', 'metadata'],
+            'config': ['sys_name'],
+            'recorder': ['sys_name'],
+            'systems': ['sys_name', 'sys_num', 'type'],
+            'rates': ['sys_name', 'sys_num'],
+            'call': ['sys_name', 'unit', 'talkgroup'],
+            'data': ['sys_name', 'unit'],
+            'join': ['sys_name', 'unit'],
+            'location': ['sys_name', 'unit'],
+            'on': ['sys_name', 'unit'],
+            'off': ['sys_name', 'unit'],
+            'ackresp': ['sys_name', 'unit'],
+            'unclassified': []
+        };
+
+        for (const [collection, required] of Object.entries(standardCollections)) {
+            await db.createCollection(collection, {
+                validator: {
+                    $jsonSchema: {
+                        bsonType: "object",
+                        required: ["timestamp", "instance_id", ...required],
+                        properties: {
+                            timestamp: { bsonType: "long" },
+                            instance_id: { bsonType: "string" },
+                            sys_name: { bsonType: "string" },
+                            sys_num: { bsonType: "int" },
+                            decoderate: { bsonType: "double" },
+                            decoderate_interval: { bsonType: "int" },
+                            control_channel: { bsonType: "long" }
+                        }
+                    }
+                }
+            });
+        }
+
+        logger.info('Created standard collections');
+
         // Create text indexes for search functionality
-        await db.collection('activecall').createIndex({
-            'call_id': 'text',
-            'talkgroup_alpha_tag': 'text',
+        await db.collection('activeCalls').createIndex({
+            'id': 'text',
+            'talkgroup_tag': 'text',
             'talkgroup_description': 'text'
         });
 
-        await db.collection('systemstate').createIndex({
+        await db.collection('systemStates').createIndex({
             'sys_name': 'text',
             'type': 'text'
+        });
+
+        await db.collection('talkgroups').createIndex({
+            'tag': 'text',
+            'description': 'text',
+            'group_tag': 'text',
+            'group': 'text'
         });
 
         logger.info('Created text search indexes');
