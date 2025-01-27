@@ -2,19 +2,23 @@
 
 ## High Priority - Core Recording & Archival
 
-### 🔄 1. Voice Transcription System *(In Progress)*
+### ✓ 1. Voice Transcription System *(Completed)*
 - **Why**: Essential for searchable archives and AI analysis
 - **Reference**: designdocs/ai-features.md - Voice Transcription section
 - **Impact**: Enhanced archive searchability and analysis
 - **Components**:
-  - ✓ Whisper integration
-  - Real-time transcription
-  - ✓ Transcription storage
-- **Status**: Basic implementation complete
+  - ✓ Whisper integration with OpenAI-compatible API
+  - ✓ Transcription storage in call metadata
+  - ✓ Source tracking for multi-radio context
+  - ✓ Quality assessment and retry logic
+  - ✓ Error handling and validation
+  - TODO: Real-time transcription (moved to #16)
+- **Status**: Core implementation complete
   - Added OpenAI-compatible Whisper integration
   - Implemented error handling and retries
   - Added quality assessment
-  - TODO: Add real-time transcription
+  - Added source tracking for multi-radio transcriptions
+  - Integrated with call metadata storage
 
 ### 2. Audio Quality Management
 - **Why**: Essential for best recording selection in multi-system scenarios
