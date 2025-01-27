@@ -29,9 +29,16 @@ class RecordingMonitor extends EventEmitter {
         
         // Storage paths to monitor
         this.storagePaths = {
-            recordings: process.env.RECORDINGS_PATH || '/var/lib/tr/recordings',
-            temp: process.env.TEMP_RECORDINGS_PATH || '/var/lib/tr/temp'
+            // Where trunk-recorder saves completed recordings
+            recordings: process.env.TR_RECORDINGS_PATH,
+            // Where trunk-recorder stores in-progress recordings
+            temp: process.env.TR_TEMP_PATH
         };
+
+        // Validate required paths
+        if (!this.storagePaths.recordings || !this.storagePaths.temp) {
+            throw new Error('TR_RECORDINGS_PATH and TR_TEMP_PATH environment variables must be set');
+        }
         
         // MongoDB connection for stats
         this.mongoose = require('mongoose');
