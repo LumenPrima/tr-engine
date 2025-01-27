@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const activeCallManager = require('../state/ActiveCallManager');
 const systemManager = require('../state/SystemManager');
 const unitManager = require('../state/UnitManager');
+const validator = require('../../utils/validation');
 const {
   SystemMessage,
   RatesMessage,
@@ -53,6 +54,23 @@ class MessageProcessor {
 
       const message = JSON.parse(payload.toString());
       const topicParts = topic.split('/');
+      
+      if (topicParts.length < 3) {
+        logger.warn(`Invalid topic format: ${topic}`);
+        return;
+      }
+
+      // Get message type and validate
+      const messageType = topicParts[1] === 'units' ? topicParts[topicParts.length - 1] : topicParts[2];
+      const { isValid, errors } = validator.validateMessage(messageType, message);
+      
+      if (!isValid) {
+        logger.error(`Invalid message on topic ${topic}:`, errors);
+        return;
+      }
+
+      // Normalize message data
+      const normalizedMessage = validator.normalizeMessage(message);
       
       if (topicParts.length < 3) {
         logger.warn(`Invalid topic format: ${topic}`);
