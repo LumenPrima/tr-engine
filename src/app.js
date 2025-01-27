@@ -22,6 +22,7 @@ class TREngine {
     this.app = express();
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
+    this.app.use(express.static('public')); // Serve static files from public directory
     this.setupMiddleware();
     this.setupRoutes();
     this.setupErrorHandling();
@@ -57,8 +58,8 @@ class TREngine {
   }
 
   setupRoutes() {
-    // Root path redirect
-    this.app.get('/', (req, res) => res.redirect('/api/v1/hello'));
+    // Root path serves status page
+    this.app.get('/', (req, res) => res.sendFile('index.html', { root: 'public' }));
 
     // Mount API routes with versioning
     this.app.use('/api/v1', apiRoutes);

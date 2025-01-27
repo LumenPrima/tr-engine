@@ -21,7 +21,7 @@ A real-time trunk radio monitoring and analysis server that processes MQTT messa
 
 1. Clone the repository:
 ```bash
-git clone [repository-url]
+git clone https://github.com/LumenPrima/tr-engine.git
 cd tr-engine
 ```
 

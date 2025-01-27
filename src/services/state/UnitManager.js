@@ -30,7 +30,7 @@ const UnitStateSchema = new mongoose.Schema({
     
     // Current status
     status: {
-        online: { type: Boolean, default: false },
+        online: { type: Boolean, default: true },
         last_seen: Date,
         last_activity_type: String,
         current_talkgroup: Number,
@@ -243,7 +243,7 @@ class UnitManager {
                 unit_alpha_tag: states[0].unit_alpha_tag, // Use tag from most recently seen system
                 systems: states.map(s => s.sys_name),
                 status: {
-                    online: states.some(s => s.status.online),
+                    online: !states.some(s => s.status.last_activity_type === 'off'),
                     last_seen: states.reduce((latest, s) => 
                         !latest || s.status.last_seen > latest ? s.status.last_seen : latest, null),
                     last_activity_type: states[0].status.last_activity_type,
@@ -298,7 +298,7 @@ class UnitManager {
                 unit_alpha_tag: states[0].unit_alpha_tag,
                 systems: states.map(s => s.sys_name),
                 status: {
-                    online: states.some(s => s.status.online),
+                    online: !states.some(s => s.status.last_activity_type === 'off'),
                     last_seen: states.reduce((latest, s) => 
                         !latest || s.status.last_seen > latest ? s.status.last_seen : latest, null),
                     last_activity_type: states[0].status.last_activity_type
@@ -335,7 +335,7 @@ class UnitManager {
                 unit_alpha_tag: states[0].unit_alpha_tag,
                 systems: states.map(s => s.sys_name),
                 status: {
-                    online: states.some(s => s.status.online),
+                    online: !states.some(s => s.status.last_activity_type === 'off'),
                     last_seen: states.reduce((latest, s) => 
                         !latest || s.status.last_seen > latest ? s.status.last_seen : latest, null),
                     current_talkgroup: states[0].status.current_talkgroup,
