@@ -20,14 +20,20 @@
   - Added source tracking for multi-radio transcriptions
   - Integrated with call metadata storage
 
-### 2. Audio Quality Management
+### 🔄 2. Audio Quality Management *(In Progress)*
 - **Why**: Essential for best recording selection in multi-system scenarios
 - **Reference**: designdocs/audio-file-handling.md - Quality Management section
 - **Impact**: Better audio archive quality
 - **Components**:
-  - Signal quality assessment
+  - ✓ Signal quality assessment (signal/noise ratio tracking)
+  - ✓ Error tracking (error_count and spike_count)
   - Recording comparison
   - Best copy selection for archive
+- **Status**: Partial implementation
+  - Signal/noise metrics from trunk-recorder
+  - Error count tracking from freqList
+  - Spike count monitoring
+  - TODO: Implement recording comparison logic
 
 ### 3. WebSocket Server Implementation
 - **Why**: Required for real-time monitoring displays
@@ -79,14 +85,21 @@
   - Optional validation at retrieval time
   - Field mapping for consistent data structure
 
-### 8. Error Tracking
+### ✓ 8. Error Tracking *(Completed)*
 - **Why**: Recording issue detection
 - **Reference**: designdocs/error-tracking.js
 - **Impact**: Archive quality assurance
 - **Components**:
-  - Recording error tracking
-  - Storage error detection
-  - Data integrity checks
+  - ✓ Recording error tracking (via ErrorTrackingManager)
+  - ✓ Storage error detection (via ErrorEventSchema)
+  - ✓ Data integrity checks (via pre-save validation)
+  - ✓ Error pattern detection
+  - ✓ Impact assessment
+- **Status**: Fully implemented
+  - Comprehensive error tracking system
+  - Pattern detection with time windows
+  - Impact assessment for different error types
+  - Error statistics and reporting
 
 ### 9. Data Export System
 - **Why**: Archive accessibility
@@ -153,13 +166,19 @@
   - Pattern detection
   - Cross-talkgroup correlation
 
-### 16. Real-Time Audio Streaming
+### 16. Real-Time Audio Streaming & Transcription
 - **Why**: Live monitoring capabilities
 - **Reference**: designdocs/ai-features.md - Real-Time Audio Streaming
 - **Components**:
   - WebSocket streaming
   - Format conversion
   - Live transcription
+- **Dependencies**:
+  - Requires WebSocket server implementation (#3)
+  - Builds on existing transcription service
+  - Needs audio format conversion support
+- **Note**: Split from Voice Transcription System
+- **Status**: Blocked by WebSocket implementation
 
 ### 17. Storage Optimization
 - **Why**: Archive efficiency
