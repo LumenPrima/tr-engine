@@ -3,7 +3,18 @@ const logger = require('../../utils/logger');
 
 /**
  * RecordingMonitor
- * Monitors local storage resources and database for the recording system.
+ * Monitors recording system health and resources:
+ * 
+ * Storage Monitoring:
+ * - Recording files directory space usage
+ * - Temporary recording files space usage
+ * - MongoDB database storage utilization
+ * 
+ * Recording State:
+ * - Recorder status changes (active/inactive/error)
+ * - Error detection and tracking
+ * - Failure pattern detection (3+ failures/24h)
+ * 
  * Note: Remote trunk-recorder monitoring should be handled by separate systems.
  */
 class RecordingMonitor extends EventEmitter {
@@ -31,8 +42,12 @@ class RecordingMonitor extends EventEmitter {
         // Track storage stats
         this.storageStats = new Map();
         
-        // Initialize storage monitoring
+        // Track file counts and sizes
+        this.fileStats = new Map();
+        
+        // Initialize monitoring
         this.monitorStorage();
+        this.monitorFiles();
         
         logger.info('RecordingMonitor initialized');
     }
@@ -191,10 +206,70 @@ class RecordingMonitor extends EventEmitter {
         return Object.fromEntries(this.storageStats);
     }
 
+    async monitorFiles() {
+        const { readdir, stat } = require('fs/promises');
+        const path = require('path');
+
+        // Monitor every 15 minutes
+        const interval = setInterval(async () => {
+            try {
+                for (const [type, dirPath] of Object.entries(this.storagePaths)) {
+                    const files = await readdir(dirPath);
+                    let totalSize = 0;
+                    let fileTypes = new Map();
+
+                    for (const file of files) {
+                        const filePath = path.join(dirPath, file);
+                        const stats = await stat(filePath);
+                        totalSize += stats.size;
+
+                        // Track by extension
+                        const ext = path.extname(file);
+                        fileTypes.set(ext, (fileTypes.get(ext) || 0) + 1);
+                    }
+
+                    const fileStats = {
+                        totalFiles: files.length,
+                        totalSize,
+                        byType: Object.fromEntries(fileTypes),
+                        timestamp: new Date()
+                    };
+
+                    this.fileStats.set(type, fileStats);
+
+                    // Alert if too many temp files
+                    if (type === 'temp' && files.length > 100) {
+                        this.emit('files.warning', {
+                            type,
+                            message: `High number of temp files: ${files.length}`,
+                            stats: fileStats
+                        });
+                    }
+                }
+            } catch (error) {
+                logger.error('File monitoring error:', error);
+                this.emit('files.error', error);
+            }
+        }, 15 * 60 * 1000); // Every 15 minutes
+
+        return interval;
+    }
+
+    getFileStats(type = null) {
+        if (type) {
+            return this.fileStats.get(type);
+        }
+        return Object.fromEntries(this.fileStats);
+    }
+
     cleanup() {
         if (this.storageInterval) {
             clearInterval(this.storageInterval);
             this.storageInterval = null;
+        }
+        if (this.fileInterval) {
+            clearInterval(this.fileInterval);
+            this.fileInterval = null;
         }
     }
 }
