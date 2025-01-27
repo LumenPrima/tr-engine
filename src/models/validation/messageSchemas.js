@@ -56,7 +56,7 @@ const unitMessageSchema = baseMessageSchema.keys({
     }).required()
 });
 
-// Audio message validation - only for unencrypted calls
+// Audio message validation
 const audioMessageSchema = baseMessageSchema.keys({
     call: Joi.object({
         metadata: Joi.object({
@@ -69,11 +69,12 @@ const audioMessageSchema = baseMessageSchema.keys({
             freq: Joi.number(),
             freq_error: Joi.number(),
             emergency: Joi.boolean(),
-            encrypted: Joi.boolean().valid(false), // Audio messages should never be for encrypted calls
+            encrypted: Joi.boolean(),
             phase2_tdma: Joi.boolean(),
-            audio_type: Joi.string()
+            audio_type: Joi.string(),
+            audio_status: Joi.string().valid('pending', 'recording', 'complete', 'failed', 'encrypted').default('pending')
         }).required(),
-        audio_wav_base64: Joi.string().required(), // Audio data must be present for unencrypted calls
+        audio_wav_base64: Joi.string(), // Audio data optional
         audio_m4a_base64: Joi.string()
     }).required()
 });
@@ -90,11 +91,8 @@ const callStartSchema = baseMessageSchema.keys({
         emergency: Joi.boolean(),
         encrypted: Joi.boolean().required(), // Encryption status must be specified
         freq: Joi.number(),
-        audio_type: Joi.when('encrypted', {
-            is: false,
-            then: Joi.string().required(), // Audio type required for unencrypted calls
-            otherwise: Joi.string().optional() // Optional for encrypted calls
-        })
+        audio_type: Joi.string(),
+        audio_status: Joi.string().valid('pending', 'recording', 'complete', 'failed', 'encrypted', 'none').default('pending')
     }).required()
 });
 
