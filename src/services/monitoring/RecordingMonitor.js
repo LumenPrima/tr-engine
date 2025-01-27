@@ -9,6 +9,7 @@ class RecordingMonitor extends EventEmitter {
             warning: 85,  // Percentage
             critical: 95
         };
+        this.storageInterval = null;
         
         // Storage paths to monitor
         this.storagePaths = {
@@ -151,14 +152,15 @@ class RecordingMonitor extends EventEmitter {
                     }
                 }
                     
-                    this.storageStats.set(type, stats);
-                    await this.checkStorageThresholds(type, stats);
                 }
             } catch (error) {
                 logger.error('Storage monitoring error:', error);
                 this.emit('storage.error', error);
             }
         }, 5 * 60 * 1000); // Every 5 minutes
+
+        // Return the interval handle for cleanup
+        return interval;
     }
 
     async checkStorageThresholds(type, stats) {
@@ -182,6 +184,13 @@ class RecordingMonitor extends EventEmitter {
             return this.storageStats.get(type);
         }
         return Object.fromEntries(this.storageStats);
+    }
+
+    cleanup() {
+        if (this.storageInterval) {
+            clearInterval(this.storageInterval);
+            this.storageInterval = null;
+        }
     }
 }
 
