@@ -60,18 +60,16 @@ class MessageProcessor {
         return;
       }
 
-      // Get message type and validate
+      // Get message type
       const messageType = topicParts[1] === 'units' ? topicParts[topicParts.length - 1] : topicParts[2];
-      const { isValid, errors } = validator.validateMessage(messageType, message);
       
+      // Validate but don't block storage
+      const { isValid, errors } = validator.validateMessage(messageType, message);
       if (!isValid) {
-        logger.error(`Invalid message on topic ${topic}:`, errors);
-        return;
+        logger.warn(`Invalid message format on topic ${topic}:`, errors);
       }
 
-      // Normalize message data
-      const normalizedMessage = validator.normalizeMessage(message);
-      
+      // Always store original message
       if (topicParts.length < 3) {
         logger.warn(`Invalid topic format: ${topic}`);
         return;
@@ -243,18 +241,47 @@ class MessageProcessor {
       throw new Error(`Unknown collection: ${messageType}`);
     }
 
-    return Collection.find(query, null, options).sort({ timestamp: -1 });
+    const messages = await Collection.find(query, null, options).sort({ timestamp: -1 });
+    
+    // Validate and normalize at retrieval time if requested
+    if (options.validate) {
+      return messages.map(msg => {
+        const { isValid } = validator.validateMessage(messageType, msg.payload);
+        if (isValid) {
+          return {
+            ...msg.toObject(),
+            payload: validator.normalizeMessage(msg.payload)
+          };
+        }
+        return msg;
+      });
+    }
+
+    return messages;
   }
 
   // Helper method to get the latest message from a collection
-  async getLatestMessage(messageType, query = {}) {
+  async getLatestMessage(messageType, query = {}, options = {}) {
     const Collection = this.messageCollections.get(messageType);
     
     if (!Collection) {
       throw new Error(`Unknown collection: ${messageType}`);
     }
 
-    return Collection.findOne(query).sort({ timestamp: -1 });
+    const message = await Collection.findOne(query).sort({ timestamp: -1 });
+    
+    // Validate and normalize at retrieval time if requested
+    if (options.validate && message) {
+      const { isValid } = validator.validateMessage(messageType, message.payload);
+      if (isValid) {
+        return {
+          ...message.toObject(),
+          payload: validator.normalizeMessage(message.payload)
+        };
+      }
+    }
+
+    return message;
   }
 }
 
