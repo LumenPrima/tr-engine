@@ -12,7 +12,11 @@ class MessageValidator {
             ['systems', systemMessageSchema],
             ['rates', ratesMessageSchema],
             ['recorder', recorderMessageSchema],
-            ['unit', unitMessageSchema]
+            ['unit', unitMessageSchema],
+            ['audio', audioMessageSchema],
+            ['call_start', callStartSchema],
+            ['call_end', callEndSchema],
+            ['calls_active', callsActiveSchema]
         ]);
 
         // Cache for validation results

@@ -56,9 +56,73 @@ const unitMessageSchema = baseMessageSchema.keys({
     }).required()
 });
 
+// Audio message validation
+const audioMessageSchema = baseMessageSchema.keys({
+    call: Joi.object({
+        metadata: Joi.object({
+            filename: Joi.string().required(),
+            talkgroup: Joi.number().required(),
+            talkgroup_tag: Joi.string(),
+            talkgroup_description: Joi.string(),
+            talkgroup_group: Joi.string(),
+            start_time: Joi.date().iso().required(),
+            freq: Joi.number(),
+            freq_error: Joi.number(),
+            emergency: Joi.boolean(),
+            encrypted: Joi.boolean(),
+            phase2_tdma: Joi.boolean(),
+            audio_type: Joi.string()
+        }).required(),
+        audio_wav_base64: Joi.string(),
+        audio_m4a_base64: Joi.string()
+    }).required()
+});
+
+// Call event validation schemas
+const callStartSchema = baseMessageSchema.keys({
+    call: Joi.object({
+        sys_name: Joi.string().required(),
+        sys_num: Joi.number().required(),
+        talkgroup: Joi.number().required(),
+        talkgroup_tag: Joi.string(),
+        talkgroup_description: Joi.string(),
+        start_time: Joi.number().required(),
+        emergency: Joi.boolean(),
+        encrypted: Joi.boolean(),
+        freq: Joi.number(),
+        audio_type: Joi.string()
+    }).required()
+});
+
+const callEndSchema = baseMessageSchema.keys({
+    call: Joi.object({
+        sys_name: Joi.string().required(),
+        sys_num: Joi.number().required(),
+        talkgroup: Joi.number().required(),
+        stop_time: Joi.number().required(),
+        length: Joi.number()
+    }).required()
+});
+
+const callsActiveSchema = baseMessageSchema.keys({
+    calls: Joi.array().items(Joi.object({
+        sys_name: Joi.string().required(),
+        sys_num: Joi.number().required(),
+        talkgroup: Joi.number().required(),
+        start_time: Joi.number().required(),
+        emergency: Joi.boolean(),
+        encrypted: Joi.boolean(),
+        freq: Joi.number()
+    })).required()
+});
+
 module.exports = {
     systemMessageSchema,
     ratesMessageSchema,
     recorderMessageSchema,
-    unitMessageSchema
+    unitMessageSchema,
+    audioMessageSchema,
+    callStartSchema,
+    callEndSchema,
+    callsActiveSchema
 };
