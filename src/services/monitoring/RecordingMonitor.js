@@ -10,8 +10,21 @@ class RecordingMonitor extends EventEmitter {
             critical: 95
         };
         
+        // Storage paths to monitor
+        this.storagePaths = {
+            recordings: process.env.RECORDINGS_PATH || '/var/lib/tr/recordings',
+            temp: process.env.TEMP_RECORDINGS_PATH || '/var/lib/tr/temp',
+            database: process.env.DB_PATH || '/var/lib/mongodb'
+        };
+        
         // Track recording failures
         this.failureTracking = new Map();
+        
+        // Track storage stats
+        this.storageStats = new Map();
+        
+        // Initialize storage monitoring
+        this.monitorStorage();
         
         logger.info('RecordingMonitor initialized');
     }
@@ -79,26 +92,58 @@ class RecordingMonitor extends EventEmitter {
         return this.failureTracking.get(recorderId) || [];
     }
 
-    checkStorageStatus(usage) {
-        const storageUsed = usage.used / usage.total * 100;
-        
-        if (storageUsed >= this.storageThresholds.critical) {
-            this.emit('storage.critical', { 
-                usage: storageUsed,
-                available: usage.available
-            });
-            return 'critical';
-        } 
-        
-        if (storageUsed >= this.storageThresholds.warning) {
-            this.emit('storage.warning', {
-                usage: storageUsed,
-                available: usage.available
-            });
-            return 'warning';
+    async monitorStorage() {
+        const { execFile } = require('child_process');
+        const util = require('util');
+        const execFileAsync = util.promisify(execFile);
+
+        // Monitor every 5 minutes
+        setInterval(async () => {
+            try {
+                for (const [type, path] of Object.entries(this.storagePaths)) {
+                    const { stdout } = await execFileAsync('df', ['-B1', path]);
+                    const [, , used, available] = stdout.split('\n')[1].split(/\s+/);
+                    
+                    const total = parseInt(used) + parseInt(available);
+                    const usedPercent = (parseInt(used) / total) * 100;
+                    
+                    const stats = {
+                        total,
+                        used: parseInt(used),
+                        available: parseInt(available),
+                        usedPercent,
+                        timestamp: new Date()
+                    };
+                    
+                    this.storageStats.set(type, stats);
+                    
+                    // Check thresholds
+                    if (usedPercent >= this.storageThresholds.critical) {
+                        this.emit('storage.critical', {
+                            type,
+                            stats,
+                            message: `Critical storage level for ${type}: ${usedPercent.toFixed(1)}%`
+                        });
+                    } else if (usedPercent >= this.storageThresholds.warning) {
+                        this.emit('storage.warning', {
+                            type,
+                            stats,
+                            message: `High storage usage for ${type}: ${usedPercent.toFixed(1)}%`
+                        });
+                    }
+                }
+            } catch (error) {
+                logger.error('Storage monitoring error:', error);
+                this.emit('storage.error', error);
+            }
+        }, 5 * 60 * 1000); // Every 5 minutes
+    }
+
+    getStorageStats(type = null) {
+        if (type) {
+            return this.storageStats.get(type);
         }
-        
-        return 'normal';
+        return Object.fromEntries(this.storageStats);
     }
 }
 
