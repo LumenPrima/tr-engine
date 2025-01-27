@@ -60,16 +60,7 @@ class MessageProcessor {
         return;
       }
 
-      // Get message type
-      const messageType = topicParts[1] === 'units' ? topicParts[topicParts.length - 1] : topicParts[2];
-      
-      // Validate but don't block storage
-      const { isValid, errors } = validator.validateMessage(messageType, message);
-      if (!isValid) {
-        logger.warn(`Invalid message format on topic ${topic}:`, errors);
-      }
-
-      // Always store original message
+      // Get message type and store original message
       if (topicParts.length < 3) {
         logger.warn(`Invalid topic format: ${topic}`);
         return;
