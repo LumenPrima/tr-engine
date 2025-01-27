@@ -4,7 +4,13 @@ const TranscriptionSegmentSchema = new mongoose.Schema({
     start_time: Number,
     end_time: Number,
     text: String,
-    confidence: Number
+    confidence: Number,
+    source: {
+        unit: Number,
+        emergency: Boolean,
+        signal_system: String,
+        tag: String
+    }
 }, { _id: false });
 
 const TranscriptionMetadataSchema = new mongoose.Schema({

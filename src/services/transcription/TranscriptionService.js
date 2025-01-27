@@ -39,7 +39,7 @@ class TranscriptionService {
                         throw new Error(`Low quality transcription: ${quality.reason}`);
                     }
                     
-                    return await this.saveTranscription(callId, whisperResponse, startTime);
+                    return await this.saveTranscription(callId, whisperResponse, startTime, message);
                 } catch (error) {
                     lastError = error;
                     logger.warn(`Transcription attempt ${attempt} failed for call ${callId}:`, error);
@@ -85,16 +85,33 @@ class TranscriptionService {
         }
     }
 
-    async saveTranscription(callId, whisperResponse, startTime) {
+    async saveTranscription(callId, whisperResponse, startTime, audioMessage) {
         const processingTime = (Date.now() - startTime) / 1000;
         
-        // Convert Whisper segments to our schema format
-        const segments = whisperResponse.segments.map(seg => ({
-            start_time: seg.start,
-            end_time: seg.end,
-            text: seg.text,
-            confidence: seg.confidence
-        }));
+        // Get source list from audio message
+        const srcList = audioMessage.call.metadata.srcList;
+        
+        // Convert Whisper segments to our schema format and map to sources
+        const segments = whisperResponse.segments.map(seg => {
+            // Find the source active during this segment
+            const source = srcList.find(src => 
+                seg.start >= src.pos && 
+                seg.start < (src.pos + (srcList[srcList.indexOf(src) + 1]?.pos || Infinity))
+            );
+            
+            return {
+                start_time: seg.start,
+                end_time: seg.end,
+                text: seg.text,
+                confidence: seg.confidence,
+                source: source ? {
+                    unit: source.src,
+                    emergency: Boolean(source.emergency),
+                    signal_system: source.signal_system,
+                    tag: source.tag
+                } : null
+            };
+        });
         
         // Create and store transcription
         const transcription = new this.Transcription({
