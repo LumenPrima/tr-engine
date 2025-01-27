@@ -26,10 +26,26 @@ class TranscriptionService {
                 throw new Error(`Audio file not found: ${audioPath}`);
             }
 
-            // Check file format
+            // Check file format and size
             const fileStats = fs.statSync(audioPath);
             if (fileStats.size === 0) {
                 throw new Error('Audio file is empty');
+            }
+            
+            // Validate file extension
+            if (!audioPath.toLowerCase().endsWith('.wav')) {
+                throw new Error('Invalid file format: only WAV files are supported');
+            }
+            
+            // Basic WAV header validation
+            const header = Buffer.alloc(44);
+            const fd = fs.openSync(audioPath, 'r');
+            fs.readSync(fd, header, 0, 44, 0);
+            fs.closeSync(fd);
+            
+            if (header.toString('ascii', 0, 4) !== 'RIFF' || 
+                header.toString('ascii', 8, 12) !== 'WAVE') {
+                throw new Error('Invalid WAV file format');
             }
 
             // Validate audio duration matches metadata
@@ -173,13 +189,70 @@ class TranscriptionService {
         });
     }
 
-    async getRecentTranscriptions(talkgroupId, limit = 10) {
-        return await CallMessage.find({ 
+    async getRecentTranscriptions(talkgroupId, limit = 10, startDate = null, endDate = null) {
+        const query = { 
             'call.metadata.talkgroup': talkgroupId,
             'call.metadata.transcription': { $exists: true }
-        })
-        .sort({ 'call.metadata.transcription.metadata.timestamp': -1 })
-        .limit(limit);
+        };
+        
+        if (startDate || endDate) {
+            query['call.metadata.transcription.metadata.timestamp'] = {};
+            if (startDate) {
+                query['call.metadata.transcription.metadata.timestamp'].$gte = startDate;
+            }
+            if (endDate) {
+                query['call.metadata.transcription.metadata.timestamp'].$lte = endDate;
+            }
+        }
+        
+        return await CallMessage.find(query)
+            .sort({ 'call.metadata.transcription.metadata.timestamp': -1 })
+            .limit(limit);
+    }
+
+    async getTranscriptionStats(talkgroupId = null, startDate = null, endDate = null) {
+        const match = {
+            'call.metadata.transcription': { $exists: true }
+        };
+        
+        if (talkgroupId) {
+            match['call.metadata.talkgroup'] = talkgroupId;
+        }
+        
+        if (startDate || endDate) {
+            match['call.metadata.transcription.metadata.timestamp'] = {};
+            if (startDate) {
+                match['call.metadata.transcription.metadata.timestamp'].$gte = startDate;
+            }
+            if (endDate) {
+                match['call.metadata.transcription.metadata.timestamp'].$lte = endDate;
+            }
+        }
+
+        return await CallMessage.aggregate([
+            { $match: match },
+            { $group: {
+                _id: '$call.metadata.talkgroup',
+                count: { $sum: 1 },
+                avg_confidence: { 
+                    $avg: { 
+                        $avg: '$call.metadata.transcription.segments.confidence' 
+                    }
+                },
+                avg_duration: { 
+                    $avg: '$call.metadata.transcription.metadata.audio_duration' 
+                },
+                avg_processing_time: { 
+                    $avg: '$call.metadata.transcription.metadata.processing_time' 
+                },
+                emergency_count: {
+                    $sum: { 
+                        $cond: ['$call.metadata.emergency', 1, 0]
+                    }
+                }
+            }},
+            { $sort: { count: -1 } }
+        ]);
     }
 }
 
