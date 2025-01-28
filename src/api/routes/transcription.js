@@ -4,50 +4,104 @@ const logger = require('../../utils/logger');
 const mongoose = require('mongoose');
 
 // Get transcription for a specific call
-router.get('/calls/:callId/transcription', async (req, res) => {
+router.get('/:callId', async (req, res) => {
     try {
         const collection = mongoose.connection.db.collection('transcriptions');
-        const transcription = await collection.findOne({ call_id: req.params.callId });
+        
+        // Parse talkgroup-starttime pattern
+        const parts = req.params.callId.split('-');
+        if (parts.length !== 2) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid call_id format. Expected talkgroup-starttime',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        const talkgroup = parseInt(parts[0]);
+        const targetTime = parseInt(parts[1]);
+
+        if (isNaN(talkgroup) || isNaN(targetTime)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid talkgroup or starttime format',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Find transcription with closest start_time
+        const transcription = await collection.aggregate([
+            { 
+                $match: { talkgroup: talkgroup }
+            },
+            {
+                $addFields: {
+                    timeDiff: { $abs: { $subtract: ['$timestamp', targetTime] } }
+                }
+            },
+            {
+                $sort: { timeDiff: 1 }
+            },
+            {
+                $limit: 1
+            }
+        ]).next();
         
         if (!transcription) {
-            return res.status(404).json({ error: 'Transcription not found' });
+            return res.status(404).json({
+                status: 'error',
+                message: 'Transcription not found',
+                timestamp: new Date().toISOString()
+            });
         }
 
         res.json({
-            text: transcription.text,
-            metadata: {
+            status: 'success',
+            timestamp: new Date().toISOString(),
+            data: {
+                call_id: req.params.callId,
+                text: transcription.text,
                 audio_duration: transcription.audio_duration,
                 processing_time: transcription.processing_time,
                 model: transcription.model,
-                timestamp: transcription.timestamp
+                created_at: new Date(transcription.timestamp * 1000)
             }
         });
     } catch (error) {
         logger.error('Error fetching transcription:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to retrieve transcription',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
 // Get recent transcriptions for a talkgroup
-router.get('/talkgroups/:talkgroupId/recent_transcriptions', async (req, res) => {
+router.get('/:talkgroupId/recent', async (req, res) => {
     try {
-        const limit = parseInt(req.query.limit) || 10;
-        const startDate = req.query.start ? new Date(req.query.start) : new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const endDate = req.query.end ? new Date(req.query.end) : new Date();
-        
+        const options = {
+            limit: parseInt(req.query.limit) || 10,
+            startTime: req.query.start ? new Date(req.query.start) : new Date(Date.now() - 24 * 60 * 60 * 1000),
+            endTime: req.query.end ? new Date(req.query.end) : new Date()
+        };
+
         const collection = mongoose.connection.db.collection('transcriptions');
         const transcriptions = await collection.find({
             talkgroup: parseInt(req.params.talkgroupId),
-            timestamp: { $gte: startDate, $lte: endDate }
+            timestamp: { 
+                $gte: Math.floor(options.startTime.getTime() / 1000),
+                $lte: Math.floor(options.endTime.getTime() / 1000)
+            }
         })
         .sort({ timestamp: -1 })
-        .limit(limit)
+        .limit(options.limit)
         .toArray();
 
         const formattedTranscriptions = transcriptions.map(t => ({
-            call_id: t.call_id,
+            call_id: `${t.talkgroup}-${t.timestamp}`,
             text: t.text,
-            timestamp: t.timestamp,
+            timestamp: new Date(t.timestamp * 1000),
             metadata: {
                 audio_duration: t.audio_duration,
                 processing_time: t.processing_time,
@@ -57,12 +111,23 @@ router.get('/talkgroups/:talkgroupId/recent_transcriptions', async (req, res) =>
 
         res.json({
             status: 'success',
-            count: formattedTranscriptions.length,
-            transcriptions: formattedTranscriptions
+            timestamp: new Date().toISOString(),
+            data: {
+                count: formattedTranscriptions.length,
+                transcriptions: formattedTranscriptions,
+                range: {
+                    start: options.startTime,
+                    end: options.endTime
+                }
+            }
         });
     } catch (error) {
         logger.error('Error fetching recent transcriptions:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to retrieve transcriptions',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -77,8 +142,8 @@ router.get('/stats', async (req, res) => {
         }
         if (req.query.start || req.query.end) {
             match.timestamp = {};
-            if (req.query.start) match.timestamp.$gte = new Date(req.query.start);
-            if (req.query.end) match.timestamp.$lte = new Date(req.query.end);
+            if (req.query.start) match.timestamp.$gte = Math.floor(new Date(req.query.start).getTime() / 1000);
+            if (req.query.end) match.timestamp.$lte = Math.floor(new Date(req.query.end).getTime() / 1000);
         }
 
         const [stats] = await collection.aggregate([
@@ -115,7 +180,8 @@ router.get('/stats', async (req, res) => {
         if (!stats) {
             return res.json({
                 status: 'success',
-                stats: {
+                timestamp: new Date().toISOString(),
+                data: {
                     total_transcriptions: 0,
                     total_duration: 0,
                     avg_duration: 0,
@@ -128,11 +194,141 @@ router.get('/stats', async (req, res) => {
 
         res.json({
             status: 'success',
-            stats
+            timestamp: new Date().toISOString(),
+            data: stats
         });
     } catch (error) {
         logger.error('Error fetching transcription stats:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to retrieve transcription statistics',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Get a group of transcriptions closest to a timestamp
+router.get('/group', async (req, res) => {
+    try {
+        const targetTime = parseInt(req.query.time);
+        const limit = parseInt(req.query.limit) || 10;
+
+        if (isNaN(targetTime)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid timestamp format',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        const collection = mongoose.connection.db.collection('transcriptions');
+        const transcriptions = await collection.aggregate([
+            {
+                $addFields: {
+                    timeDiff: { $abs: { $subtract: ['$timestamp', targetTime] } }
+                }
+            },
+            {
+                $sort: { timeDiff: 1 }
+            },
+            {
+                $limit: limit
+            }
+        ]).toArray();
+
+        const formattedTranscriptions = transcriptions.map(t => ({
+            call_id: `${t.talkgroup}-${t.timestamp}`,
+            talkgroup: t.talkgroup,
+            text: t.text,
+            timestamp: new Date(t.timestamp * 1000),
+            time_diff_seconds: t.timeDiff,
+            metadata: {
+                audio_duration: t.audio_duration,
+                processing_time: t.processing_time,
+                model: t.model
+            }
+        }));
+
+        res.json({
+            status: 'success',
+            timestamp: new Date().toISOString(),
+            data: {
+                count: formattedTranscriptions.length,
+                transcriptions: formattedTranscriptions,
+                target: new Date(targetTime * 1000)
+            }
+        });
+    } catch (error) {
+        logger.error('Error finding nearest transcriptions:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to find nearest transcriptions',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Get a group of transcriptions closest to a timestamp for a specific talkgroup
+router.get('/:talkgroupId/group', async (req, res) => {
+    try {
+        const talkgroupId = parseInt(req.params.talkgroupId);
+        const targetTime = parseInt(req.query.time);
+        const limit = parseInt(req.query.limit) || 10;
+
+        if (isNaN(targetTime) || isNaN(talkgroupId)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid talkgroup or timestamp format',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        const collection = mongoose.connection.db.collection('transcriptions');
+        const transcriptions = await collection.aggregate([
+            {
+                $match: { talkgroup: talkgroupId }
+            },
+            {
+                $addFields: {
+                    timeDiff: { $abs: { $subtract: ['$timestamp', targetTime] } }
+                }
+            },
+            {
+                $sort: { timeDiff: 1 }
+            },
+            {
+                $limit: limit
+            }
+        ]).toArray();
+
+        const formattedTranscriptions = transcriptions.map(t => ({
+            call_id: `${t.talkgroup}-${t.timestamp}`,
+            text: t.text,
+            timestamp: new Date(t.timestamp * 1000),
+            time_diff_seconds: t.timeDiff,
+            metadata: {
+                audio_duration: t.audio_duration,
+                processing_time: t.processing_time,
+                model: t.model
+            }
+        }));
+
+        res.json({
+            status: 'success',
+            timestamp: new Date().toISOString(),
+            data: {
+                count: formattedTranscriptions.length,
+                transcriptions: formattedTranscriptions,
+                target: new Date(targetTime * 1000)
+            }
+        });
+    } catch (error) {
+        logger.error('Error finding nearest transcriptions:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to find nearest transcriptions',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
