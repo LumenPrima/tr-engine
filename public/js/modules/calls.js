@@ -1,7 +1,7 @@
 // Call-related functionality
 import { formatTime, formatDuration, formatUnits } from '../utils.js';
 
-const API_BASE_URL = 'http://localhost:3002/api/v1';
+const API_BASE_URL = 'http://localhost:3000/api/v1';
 
 // Fetch and display active calls
 export async function fetchActiveCalls() {

@@ -27,9 +27,23 @@ class ActiveCallManager {
             const topicParts = topic.split('/');
             const messageType = topicParts[2];
             
-            logger.debug(`Processing ${messageType} message for active calls`);
+            logger.debug(`Processing ${messageType} message for active calls`, {
+                topic,
+                messageType,
+                messageId,
+                hasMessage: !!message,
+                messageKeys: message ? Object.keys(message) : [],
+                messageContent: JSON.stringify(message)
+            });
             
             switch(messageType) {
+                case 'call_start':
+                    logger.debug('Call start message content:', {
+                        hasCall: !!message?.call,
+                        messageContent: JSON.stringify(message)
+                    });
+                    await this.handleCallStart(message, messageId);
+                    break;
                 case 'recorder':
                     await this.handleRecorderUpdate(message, messageId);
                     break;
@@ -67,34 +81,35 @@ class ActiveCallManager {
     
     handleCallStart(message, messageId) {
         try {
-            if (!message.call) {
+            if (!message.call_num) {
+                logger.debug('Received message:', JSON.stringify(message));
                 logger.warn('Call start message missing call data');
                 return;
             }
 
-            const callData = message.call;
-            const callId = `${callData.sys_num}_${callData.talkgroup}_${callData.start_time}`;
+            const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
+            //const callData = message;
             
             logger.debug(`Processing call start for ${callId}`, {
                 message_structure: {
-                    has_call: !!message.call,
-                    call_fields: Object.keys(message.call || {})
+                    has_call: !!message.call_num,
+                    call_fields: Object.keys(message.call_num || {})
                 }
             });
 
             // Add unit to participating units
-            if (callData.unit) {
+            if (message.unit) {
                 if (!this.participatingUnits.has(callId)) {
                     this.participatingUnits.set(callId, new Set());
                 }
-                this.participatingUnits.get(callId).add(callData.unit);
+                this.participatingUnits.get(callId).add(message.unit);
             }
 
             // Only emit event if this is a new call
             if (!this.activeCallsCache.has(callId)) {
                 stateEventEmitter.emitCallStart({
                     call_id: callId,
-                    ...callData,
+                    ...message,
                     participating_units: Array.from(this.participatingUnits.get(callId) || [])
                 });
             }
@@ -111,11 +126,13 @@ class ActiveCallManager {
             // Update cache with current calls
             const currentCallIds = new Set();
             
-            if (message.calls) {
-                const calls = Array.isArray(message.calls) ? message.calls : [message.calls];
+            // Check if we have a calls_active array in the message
+            if (message.calls_active) {
+                const calls = Array.isArray(message.calls_active) ? message.calls_active : [message.calls_active];
+                
                 calls.forEach(call => {
                     if (!call) return;
-                    const callId = `${call.sys_num}_${call.talkgroup}_${call.start_time}`;
+                    const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
                     currentCallIds.add(callId);
                     
                     // Add metadata from our tracking
@@ -148,44 +165,6 @@ class ActiveCallManager {
             }
         } catch (err) {
             logger.error('Error handling active calls:', err);
-            throw err;
-        }
-    }
-    
-    handleAudioMessage(message, messageId) {
-        try {
-            if (!message.call?.metadata) {
-                logger.warn('Audio message missing call metadata');
-                return;
-            }
-
-            const metadata = message.call.metadata;
-            const callId = `${metadata.sys_num}_${metadata.talkgroup}_${metadata.start_time}`;
-            
-            logger.debug(`Processing audio message for ${callId}`);
-
-            // Track audio file from metadata
-            if (metadata.filename) {
-                this.audioFiles.set(callId, metadata.filename);
-                
-                // Get current call data
-                const call = this.activeCallsCache.get(callId);
-                if (call) {
-                    // Emit audio start event
-                    stateEventEmitter.emitAudioStart({
-                        call_id: callId,
-                        filename: metadata.filename,
-                        ...call,
-                        ...metadata // Include all metadata in event
-                    });
-                }
-            } else {
-                logger.warn(`Audio message missing filename for call ${callId}`);
-            }
-            
-            logger.debug(`Audio processed for call: ${callId}`);
-        } catch (err) {
-            logger.error('Error handling audio message:', err);
             throw err;
         }
     }
@@ -224,7 +203,9 @@ class ActiveCallManager {
             throw err;
         }
     }
-    
+    handleAudioMessage(message, messageId) {
+        //this is handled elsewhere
+    }
     handleCallEnd(message, messageId) {
         try {
             const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
@@ -297,7 +278,7 @@ class ActiveCallManager {
 
     handleRecordersUpdate(message, messageId) {
         try {
-            // Ensure recorders exists and is an array
+            // Get recorders array from message, ensure it exists and is an array
             const recorders = Array.isArray(message.recorders) ? message.recorders : 
                             (message.recorders ? [message.recorders] : []);
             
@@ -309,15 +290,15 @@ class ActiveCallManager {
                     last_update: new Date()
                 });
             });
-
+    
             logger.debug('Updated states for all recorders');
-
+    
             // Update all active calls with matching recorders
             for (const [callId, call] of this.activeCallsCache.entries()) {
                 const matchingRecorder = recorders.find(rec => 
                     rec && rec.freq === call.freq && rec.rec_state_type === 'RECORDING'
                 );
-
+    
                 if (matchingRecorder) {
                     const updatedCall = {
                         ...call,

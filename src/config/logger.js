@@ -20,6 +20,10 @@ const colors = {
     debug: 'blue',
 };
 
+winston.format.printf(
+    (info) => `${info.timestamp} [${info.level}] cLogger: ${info.message}`
+)
+
 // Tell winston about the colors
 winston.addColors(colors);
 

@@ -7,7 +7,6 @@ const mongoose = require('mongoose');
 // GET / - Get historical calls
 router.get('/', async (req, res) => {
     try {
-        // Handle historical calls
         const options = {
             limit: parseInt(req.query.limit) || 100,
             offset: parseInt(req.query.offset) || 0,
@@ -49,7 +48,7 @@ router.get('/', async (req, res) => {
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
             talkgroup_tag: call.talkgroup_tag,
-            units: [call.unit].filter(Boolean),
+            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
             emergency: call.emergency || false,
             duration: call.call_length,
             audio_type: call.audio_type,
@@ -110,7 +109,7 @@ router.get('/active', async (req, res) => {
             talkgroup: call.talkgroup,
             talkgroup_tag: call.talkgroup_tag,
             emergency: call.emergency || false,
-            units: call.units || [],
+            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
             start_time: call.start_time,
             active: true
         }));
@@ -167,7 +166,7 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
             call_id: call.call_id,
             timestamp: call.timestamp,
             activity_type: 'call',
-            units: [call.unit].filter(Boolean),
+            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
             emergency: call.emergency || false,
             duration: call.call_length,
             audio_type: call.audio_type,
@@ -214,34 +213,31 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
     }
 });
 
-// GET /events - Get currently active events (calls, emergencies, affiliations, system events)
+// GET /events - Get currently active events
 router.get('/events', async (req, res) => {
     try {
-        // Get active calls and emergency calls
         const [activeCalls, emergencyCalls] = await Promise.all([
             activeCallManager.getActiveCalls({}),
             activeCallManager.getActiveCalls({ emergency: true })
         ]);
 
-        // Transform calls to standardized format
         const formattedCalls = activeCalls.map(call => ({
             call_id: call.call_id,
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
             talkgroup_tag: call.talkgroup_tag,
             emergency: call.emergency || false,
-            units: call.units || [],
+            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
             start_time: call.start_time,
             active: true
         }));
 
-        // Transform emergency calls to standardized format
         const formattedEmergencies = emergencyCalls.map(call => ({
             call_id: call.call_id,
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
             talkgroup_tag: call.talkgroup_tag,
-            units: call.units || [],
+            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
             start_time: call.start_time,
             type: 'emergency_call'
         }));
@@ -256,8 +252,8 @@ router.get('/events', async (req, res) => {
                 events: {
                     calls: formattedCalls,
                     emergencies: formattedEmergencies,
-                    affiliations: [], // To be implemented
-                    system_events: [] // To be implemented
+                    affiliations: [],
+                    system_events: []
                 }
             }
         });

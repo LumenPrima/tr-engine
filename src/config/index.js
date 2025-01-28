@@ -23,12 +23,11 @@ const config = {
     clientId: process.env.MQTT_CLIENT_ID || 'tr-engine-client',
     username: process.env.MQTT_USERNAME,
     password: process.env.MQTT_PASSWORD,
-    topics: {
-      calls: 'radio/calls/#',
-      systems: 'radio/systems/#',
-      units: 'radio/units/#',
-      recorders: 'radio/recorders/#'
-    }
+    topicPrefix: process.env.MQTT_TOPIC_PREFIX || 'tr-mqtt',
+    reconnectPeriod: parseInt(process.env.MQTT_RECONNECT_PERIOD || '5000', 10),
+    maxReconnectAttempts: parseInt(process.env.MQTT_MAX_RECONNECT_ATTEMPTS || '10', 10),
+    connectTimeout: parseInt(process.env.MQTT_CONNECT_TIMEOUT || '30000', 10),
+    qos: parseInt(process.env.MQTT_QOS || '1', 10)
   },
   websocket: {
     port: parseInt(process.env.WS_PORT || '3001', 10)
