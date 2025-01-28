@@ -4,32 +4,53 @@ const logger = require('../../utils/logger');
 const { getGridFSBucket } = require('../../config/mongodb');
 const mongoose = require('mongoose');
 
-// Helper function to find audio files by call ID or filename
+// Helper function to find audio metadata and files
 const findAudioFiles = async (callIdOrFilename) => {
-    const gridFSBucket = getGridFSBucket('calls');
+    const collection = mongoose.connection.db.collection('audio');
+    const gridFSBucket = getGridFSBucket('audioFiles');
     
-    // Check if it's a full filename
-    if (callIdOrFilename.match(/^\d+_\d+_\d+(?:_\d+)?\.(?:wav|m4a)$/)) {
-        // Exact filename match
-        const files = await gridFSBucket.find({
-            filename: callIdOrFilename
-        }).toArray();
-        logger.debug(`Searching for exact filename: ${callIdOrFilename}`);
-        return files;
+    // Parse talkgroup-starttime pattern
+    const parts = callIdOrFilename.split('-');
+    if (parts.length !== 2) {
+        logger.debug(`Invalid call_id format: ${callIdOrFilename}. Expected talkgroup-starttime`);
+        return { metadata: null, files: [] };
     }
-    
-    // Check if it's a call ID (sys_num_talkgroup_start_time)
-    if (callIdOrFilename.match(/^\d+_\d+_\d+$/)) {
-        // Find any files that start with this call ID
-        const pattern = `^${callIdOrFilename}`;
-        const files = await gridFSBucket.find({
-            filename: { $regex: pattern }
-        }).toArray();
-        logger.debug(`Searching for files with pattern: ${pattern}`);
-        return files;
+
+    const talkgroup = parseInt(parts[0]);
+    const targetTime = parseInt(parts[1]);
+
+    if (isNaN(talkgroup) || isNaN(targetTime)) {
+        logger.debug(`Invalid talkgroup or starttime: ${callIdOrFilename}`);
+        return { metadata: null, files: [] };
     }
-    
-    throw new Error(`Invalid format: ${callIdOrFilename}. Expected either sys_num_talkgroup_start_time or full filename`);
+
+    // Find metadata with closest start_time
+    const metadata = await collection.aggregate([
+        { 
+            $match: { talkgroup: talkgroup }
+        },
+        {
+            $addFields: {
+                timeDiff: { $abs: { $subtract: ['$start_time', targetTime] } }
+            }
+        },
+        {
+            $sort: { timeDiff: 1 }
+        },
+        {
+            $limit: 1
+        }
+    ]).next();
+
+    if (!metadata) {
+        logger.debug(`No metadata found for talkgroup ${talkgroup}`);
+        return { metadata: null, files: [] };
+    }
+
+    // Find audio file
+    const files = await gridFSBucket.find({ filename: metadata.filename }).toArray();
+    logger.debug(`Found ${files.length} audio files for ${metadata.filename}`);
+    return { metadata, files };
 };
 
 // Helper function to get preferred format file
@@ -52,9 +73,9 @@ const getPreferredFile = (files, requestedFormat) => {
 router.get('/call/:call_id', async (req, res) => {
     try {
         const format = req.query.format; // Optional format preference
-        const files = await findAudioFiles(req.params.call_id);
+        const { metadata, files } = await findAudioFiles(req.params.call_id);
         
-        if (!files.length) {
+        if (!metadata || !files.length) {
             return res.status(404).json({
                 status: 'error',
                 message: 'Audio file not found'
@@ -87,14 +108,14 @@ router.get('/call/:call_id', async (req, res) => {
             });
 
             // Create read stream for the range
-            const downloadStream = getGridFSBucket('calls').openDownloadStreamByName(audioFile.filename, {
+            const downloadStream = getGridFSBucket('audioFiles').openDownloadStreamByName(audioFile.filename, {
                 start,
                 end: end + 1
             });
             downloadStream.pipe(res);
         } else {
             // Stream the entire file
-            const downloadStream = getGridFSBucket('calls').openDownloadStreamByName(audioFile.filename);
+            const downloadStream = getGridFSBucket('audioFiles').openDownloadStreamByName(audioFile.filename);
             downloadStream.pipe(res);
         }
 
@@ -112,46 +133,45 @@ router.get('/call/:call_id', async (req, res) => {
 // Get metadata for an audio file
 router.get('/call/:call_id/metadata', async (req, res) => {
     try {
-        const files = await findAudioFiles(req.params.call_id);
+        const { metadata, files } = await findAudioFiles(req.params.call_id);
 
-        if (!files.length) {
+        if (!metadata || !files.length) {
             return res.status(404).json({
                 status: 'error',
                 message: 'Audio file not found'
             });
         }
 
-        // Organize metadata by format
-        const metadata = {
+        // Format response
+        const response = {
             call_id: req.params.call_id,
-            formats: {}
-        };
-
-        files.forEach(file => {
-            const format = file.filename.endsWith('.m4a') ? 'm4a' : 'wav';
-            metadata.formats[format] = {
-                filename: file.filename,
+            filename: metadata.filename,
+            talkgroup: metadata.talkgroup,
+            talkgroup_tag: metadata.talkgroup_tag,
+            talkgroup_description: metadata.talkgroup_description,
+            talkgroup_group: metadata.talkgroup_group,
+            talkgroup_group_tag: metadata.talkgroup_group_tag,
+            start_time: metadata.start_time,
+            stop_time: metadata.stop_time,
+            call_length: metadata.call_length,
+            emergency: metadata.emergency === 1,
+            encrypted: metadata.encrypted === 1,
+            freq: metadata.freq,
+            audio_type: metadata.audio_type,
+            short_name: metadata.short_name,
+            srcList: metadata.srcList || [],
+            formats: files.map(file => ({
+                format: file.filename.endsWith('.m4a') ? 'm4a' : 'wav',
                 length: file.length,
                 upload_date: file.uploadDate,
-                md5: file.md5,
-                metadata: {
-                    talkgroup: file.metadata.talkgroup,
-                    talkgroup_tag: file.metadata.talkgroup_tag,
-                    start_time: file.metadata.start_time,
-                    stop_time: file.metadata.stop_time,
-                    call_length: file.metadata.call_length,
-                    emergency: file.metadata.emergency,
-                    encrypted: file.metadata.encrypted,
-                    freq: file.metadata.freq,
-                    instance_id: file.metadata.instance_id
-                }
-            };
-        });
+                md5: file.md5
+            }))
+        };
 
         res.json({
             status: 'success',
             timestamp: new Date().toISOString(),
-            metadata
+            metadata: response
         });
     } catch (err) {
         logger.error('Error getting audio metadata:', err);
@@ -166,9 +186,9 @@ router.get('/call/:call_id/metadata', async (req, res) => {
 // Delete an audio file and its metadata
 router.delete('/call/:call_id', async (req, res) => {
     try {
-        const files = await findAudioFiles(req.params.call_id);
+        const { metadata, files } = await findAudioFiles(req.params.call_id);
 
-        if (!files.length) {
+        if (!metadata || !files.length) {
             return res.status(404).json({
                 status: 'error',
                 message: 'Audio file not found'
@@ -176,7 +196,7 @@ router.delete('/call/:call_id', async (req, res) => {
         }
 
         // Delete each file
-        const gridFSBucket = getGridFSBucket('calls');
+        const gridFSBucket = getGridFSBucket('audioFiles');
         for (const file of files) {
             await gridFSBucket.delete(file._id);
             logger.debug(`Deleted audio file: ${file.filename}`);
@@ -200,7 +220,7 @@ router.delete('/call/:call_id', async (req, res) => {
 // Search archived audio recordings
 router.get('/archive', async (req, res) => {
     try {
-        const gridFSBucket = getGridFSBucket('calls');
+        const collection = mongoose.connection.db.collection('audio');
         const options = {
             limit: parseInt(req.query.limit) || 100,
             offset: parseInt(req.query.offset) || 0,
@@ -210,50 +230,51 @@ router.get('/archive', async (req, res) => {
 
         // Build filter based on query parameters
         const filter = {
-            'metadata.start_time': { $gte: options.startTime.getTime() / 1000, $lte: options.endTime.getTime() / 1000 }
+            start_time: { $gte: Math.floor(options.startTime.getTime() / 1000), $lte: Math.floor(options.endTime.getTime() / 1000) }
         };
 
         if (req.query.talkgroup) {
-            filter['metadata.talkgroup'] = parseInt(req.query.talkgroup);
+            filter.talkgroup = parseInt(req.query.talkgroup);
         }
         if (req.query.sys_name) {
-            filter['metadata.sys_name'] = req.query.sys_name;
+            filter.short_name = req.query.sys_name;
         }
         if (req.query.format) {
             filter.filename = new RegExp(`\\.${req.query.format}$`);
         }
         if (req.query.emergency === 'true') {
-            filter['metadata.emergency'] = true;
+            filter.emergency = 1;
         }
 
         // Get total count for pagination
-        const totalCount = await gridFSBucket.find(filter).count();
+        const totalCount = await collection.countDocuments(filter);
 
         // Get paginated audio files
-        const files = await gridFSBucket.find(filter)
+        const files = await collection.find(filter)
             .skip(options.offset)
             .limit(options.limit)
-            .sort({ 'metadata.start_time': -1 })
+            .sort({ start_time: -1 })
             .toArray();
 
         // Transform files to standardized format
         const formattedFiles = files.map(file => ({
             id: file._id.toString(),
-            call_id: file.filename.replace(/\.(wav|m4a)$/, ''),
-            format: file.filename.split('.').pop(),
-            timestamp: new Date(file.metadata.start_time * 1000),
-            size: file.length,
-            metadata: {
-                talkgroup: file.metadata.talkgroup,
-                talkgroup_tag: file.metadata.talkgroup_tag,
-                start_time: file.metadata.start_time,
-                stop_time: file.metadata.stop_time,
-                call_length: file.metadata.call_length,
-                emergency: file.metadata.emergency,
-                encrypted: file.metadata.encrypted,
-                freq: file.metadata.freq,
-                instance_id: file.metadata.instance_id
-            }
+            filename: file.filename,
+            timestamp: new Date(file.start_time * 1000),
+            talkgroup: file.talkgroup,
+            talkgroup_tag: file.talkgroup_tag,
+            talkgroup_description: file.talkgroup_description,
+            talkgroup_group: file.talkgroup_group,
+            talkgroup_group_tag: file.talkgroup_group_tag,
+            start_time: file.start_time,
+            stop_time: file.stop_time,
+            call_length: file.call_length,
+            emergency: file.emergency === 1,
+            encrypted: file.encrypted === 1,
+            freq: file.freq,
+            audio_type: file.audio_type,
+            short_name: file.short_name,
+            srcList: file.srcList || []
         }));
 
         res.json({

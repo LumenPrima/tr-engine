@@ -8,28 +8,39 @@ router.get('/active', async (req, res) => {
     try {
         const window = parseInt(req.query.window);
         const options = {
+            limit: parseInt(req.query.limit) || 100,
+            offset: parseInt(req.query.offset) || 0,
             timeWindow: !isNaN(window) ? window * 60 * 1000 : 5 * 60 * 1000 // Default 5 minutes if window is invalid
         };
 
         const activeUnits = await unitManager.getActiveUnits(options);
         
-        // Transform unit data for response
-        const formattedUnits = activeUnits.map(unit => ({
-            unit: unit.unit,
-            sys_name: unit.sys_name,
-            unit_alpha_tag: unit.unit_alpha_tag,
-            status: {
-                online: unit.status.online,
-                last_seen: unit.status.last_seen,
-                current_talkgroup: unit.status.current_talkgroup,
-                current_talkgroup_tag: unit.status.current_talkgroup_tag
-            }
-        }));
+        // Transform and paginate unit data
+        const formattedUnits = activeUnits
+            .sort((a, b) => b.status.last_seen - a.status.last_seen) // Sort by last seen
+            .slice(options.offset, options.offset + options.limit)
+            .map(unit => ({
+                unit: unit.unit,
+                sys_name: unit.sys_name,
+                unit_alpha_tag: unit.unit_alpha_tag,
+                status: {
+                    online: unit.status.online,
+                    last_seen: unit.status.last_seen,
+                    current_talkgroup: unit.status.current_talkgroup,
+                    current_talkgroup_tag: unit.status.current_talkgroup_tag
+                }
+            }));
 
         res.json({
             status: 'success',
             timestamp: new Date().toISOString(),
             data: {
+                pagination: {
+                    total: activeUnits.length,
+                    limit: options.limit,
+                    offset: options.offset,
+                    has_more: activeUnits.length > (options.offset + options.limit)
+                },
                 count: formattedUnits.length,
                 window: options.timeWindow / 1000, // seconds
                 units: formattedUnits
@@ -47,25 +58,40 @@ router.get('/active', async (req, res) => {
 // GET / - Get all units
 router.get('/', async (req, res) => {
     try {
-        const units = await unitManager.getActiveUnits({ timeWindow: 24 * 60 * 60 * 1000 }); // Last 24 hours
+        const options = {
+            limit: parseInt(req.query.limit) || 100,
+            offset: parseInt(req.query.offset) || 0,
+            timeWindow: 24 * 60 * 60 * 1000 // Last 24 hours
+        };
+
+        const units = await unitManager.getActiveUnits({ timeWindow: options.timeWindow });
         
         // Transform unit data for response
-        const formattedUnits = units.map(unit => ({
-            unit: unit.unit,
-            sys_name: unit.sys_name,
-            unit_alpha_tag: unit.unit_alpha_tag,
-            status: {
-                online: unit.status.online,
-                last_seen: unit.status.last_seen,
-                current_talkgroup: unit.status.current_talkgroup,
-                current_talkgroup_tag: unit.status.current_talkgroup_tag
-            }
-        }));
+        const formattedUnits = units
+            .sort((a, b) => b.status.last_seen - a.status.last_seen) // Sort by last seen
+            .slice(options.offset, options.offset + options.limit)
+            .map(unit => ({
+                unit: unit.unit,
+                sys_name: unit.sys_name,
+                unit_alpha_tag: unit.unit_alpha_tag,
+                status: {
+                    online: unit.status.online,
+                    last_seen: unit.status.last_seen,
+                    current_talkgroup: unit.status.current_talkgroup,
+                    current_talkgroup_tag: unit.status.current_talkgroup_tag
+                }
+            }));
 
         res.json({
             status: 'success',
             timestamp: new Date().toISOString(),
             data: {
+                pagination: {
+                    total: units.length,
+                    limit: options.limit,
+                    offset: options.offset,
+                    has_more: units.length > (options.offset + options.limit)
+                },
                 count: formattedUnits.length,
                 units: formattedUnits
             }
@@ -133,22 +159,36 @@ router.get('/:unit_id/history', async (req, res) => {
             });
         }
 
-        // Format recent activity for response
-        const formattedHistory = unitState.recent_activity.map(activity => ({
-            timestamp: activity.timestamp,
-            activity_type: activity.activity_type,
-            talkgroup: activity.talkgroup,
-            talkgroup_tag: activity.talkgroup_tag,
-            details: activity.details
-        }));
+        const options = {
+            limit: parseInt(req.query.limit) || 100,
+            offset: parseInt(req.query.offset) || 0
+        };
+
+        // Sort by timestamp and paginate
+        const history = unitState.recent_activity
+            .sort((a, b) => b.timestamp - a.timestamp)
+            .slice(options.offset, options.offset + options.limit)
+            .map(activity => ({
+                timestamp: activity.timestamp,
+                activity_type: activity.activity_type,
+                talkgroup: activity.talkgroup,
+                talkgroup_tag: activity.talkgroup_tag,
+                details: activity.details
+            }));
 
         res.json({
             status: 'success',
             timestamp: new Date().toISOString(),
             data: {
                 unit: unitId,
-                count: formattedHistory.length,
-                history: formattedHistory
+                pagination: {
+                    total: unitState.recent_activity.length,
+                    limit: options.limit,
+                    offset: options.offset,
+                    has_more: unitState.recent_activity.length > (options.offset + options.limit)
+                },
+                count: history.length,
+                history: history
             }
         });
     } catch (err) {
@@ -171,26 +211,42 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
                 message: 'Invalid talkgroup ID format'
             });
         }
+        const options = {
+            limit: parseInt(req.query.limit) || 100,
+            offset: parseInt(req.query.offset) || 0
+        };
+
         const units = await unitManager.getUnitsInTalkgroup(talkgroupId);
 
-        // Transform unit data for response
-        const unitStatus = units.map(unit => ({
-            unit: unit.unit,
-            sys_name: unit.sys_name,
-            unit_alpha_tag: unit.unit_alpha_tag,
-            status: {
-                online: unit.status.online,
-                last_seen: unit.status.last_seen,
-                last_activity_type: unit.status.last_activity_type
-            }
-        }));
+        // Transform and paginate unit data
+        const unitStatus = units
+            .sort((a, b) => b.status.last_seen - a.status.last_seen) // Sort by last seen
+            .slice(options.offset, options.offset + options.limit)
+            .map(unit => ({
+                unit: unit.unit,
+                sys_name: unit.sys_name,
+                unit_alpha_tag: unit.unit_alpha_tag,
+                status: {
+                    online: unit.status.online,
+                    last_seen: unit.status.last_seen,
+                    last_activity_type: unit.status.last_activity_type
+                }
+            }));
 
         res.json({
             status: 'success',
             timestamp: new Date().toISOString(),
-            talkgroup: talkgroupId,
-            count: unitStatus.length,
-            units: unitStatus
+            data: {
+                talkgroup: talkgroupId,
+                pagination: {
+                    total: units.length,
+                    limit: options.limit,
+                    offset: options.offset,
+                    has_more: units.length > (options.offset + options.limit)
+                },
+                count: unitStatus.length,
+                units: unitStatus
+            }
         });
     } catch (err) {
         logger.error('Error getting units in talkgroup:', err);

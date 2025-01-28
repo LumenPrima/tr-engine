@@ -81,19 +81,18 @@ class ActiveCallManager {
     
     handleCallStart(message, messageId) {
         try {
-            if (!message.call_num) {
+            if (!message.id) {
                 logger.debug('Received message:', JSON.stringify(message));
-                logger.warn('Call start message missing call data');
+                logger.warn('Call start message missing id');
                 return;
             }
 
-            const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
-            //const callData = message;
+            const callId = message.id;
             
             logger.debug(`Processing call start for ${callId}`, {
                 message_structure: {
-                    has_call: !!message.call_num,
-                    call_fields: Object.keys(message.call_num || {})
+                    has_id: !!message.id,
+                    message_fields: Object.keys(message)
                 }
             });
 
@@ -126,13 +125,12 @@ class ActiveCallManager {
             // Update cache with current calls
             const currentCallIds = new Set();
             
-            // Check if we have a calls_active array in the message
-            if (message.calls_active) {
-                const calls = Array.isArray(message.calls_active) ? message.calls_active : [message.calls_active];
-                
-                calls.forEach(call => {
-                    if (!call) return;
-                    const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
+            // Process each active call from the calls array
+            if (message.calls && Array.isArray(message.calls)) {
+                message.calls.forEach(call => {
+                    if (!call || !call.id) return;
+                    
+                    const callId = call.id;
                     currentCallIds.add(callId);
                     
                     // Add metadata from our tracking
@@ -208,7 +206,7 @@ class ActiveCallManager {
     }
     handleCallEnd(message, messageId) {
         try {
-            const callId = `${message.sys_num}_${message.talkgroup}_${message.start_time}`;
+            const callId = message.id;
             
             logger.debug(`Processing call end for ${callId}`);
             

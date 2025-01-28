@@ -15,7 +15,10 @@ router.get('/', async (req, res) => {
         };
 
         const filter = {
-            timestamp: { $gte: options.startTime, $lte: options.endTime }
+            timestamp: { 
+                $gte: Math.floor(options.startTime.getTime() / 1000),
+                $lte: Math.floor(options.endTime.getTime() / 1000)
+            }
         };
 
         if (req.query.sys_name) {
@@ -43,20 +46,18 @@ router.get('/', async (req, res) => {
         ]);
 
         const formattedCalls = calls.map(call => ({
-            call_id: call.call_id,
-            timestamp: call.timestamp,
+            call_id: call.id,
+            timestamp: new Date(call.timestamp * 1000),
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
-            talkgroup_tag: call.talkgroup_tag,
-            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
+            talkgroup_tag: call.talkgroup_alpha_tag,
+            units: call.unit ? [call.unit] : [],
             emergency: call.emergency || false,
-            duration: call.call_length,
+            duration: call.length,
             audio_type: call.audio_type,
-            details: {
-                freq: call.freq,
-                phase2: call.phase2_tdma || false,
-                encrypted: call.encrypted || false
-            }
+            freq: call.freq,
+            phase2: call.phase2_tdma || false,
+            encrypted: call.encrypted || false
         }));
 
         res.json({
@@ -104,12 +105,12 @@ router.get('/active', async (req, res) => {
         const activeCalls = await activeCallManager.getActiveCalls(filter);
         
         const formattedCalls = activeCalls.map(call => ({
-            call_id: call.call_id,
+            call_id: call.id,
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
-            talkgroup_tag: call.talkgroup_tag,
+            talkgroup_tag: call.talkgroup_alpha_tag,
             emergency: call.emergency || false,
-            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
+            units: call.unit ? [call.unit] : [],
             start_time: call.start_time,
             active: true
         }));
@@ -147,14 +148,20 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
         const [calls, joins] = await Promise.all([
             db.collection('call_start').find({
                 talkgroup: talkgroupId,
-                timestamp: { $gte: options.startTime, $lte: options.endTime }
+                timestamp: { 
+                    $gte: Math.floor(options.startTime.getTime() / 1000),
+                    $lte: Math.floor(options.endTime.getTime() / 1000)
+                }
             })
             .limit(options.limit)
             .sort({ timestamp: -1 })
             .toArray(),
             db.collection('join').find({
                 talkgroup: talkgroupId,
-                timestamp: { $gte: options.startTime, $lte: options.endTime }
+                timestamp: { 
+                    $gte: Math.floor(options.startTime.getTime() / 1000),
+                    $lte: Math.floor(options.endTime.getTime() / 1000)
+                }
             })
             .limit(options.limit)
             .sort({ timestamp: -1 })
@@ -163,12 +170,12 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
 
         // Transform calls to standardized format
         const formattedCalls = calls.map(call => ({
-            call_id: call.call_id,
-            timestamp: call.timestamp,
+            call_id: call.id,
+            timestamp: new Date(call.timestamp * 1000),
             activity_type: 'call',
-            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
+            units: call.unit ? [call.unit] : [],
             emergency: call.emergency || false,
-            duration: call.call_length,
+            duration: call.length,
             audio_type: call.audio_type,
             freq: call.freq,
             encrypted: call.encrypted || false
@@ -176,12 +183,12 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
 
         // Transform joins to standardized format
         const formattedJoins = joins.map(join => ({
-            timestamp: join.timestamp,
+            timestamp: new Date(join.timestamp * 1000),
             activity_type: 'join',
             unit: join.unit,
             unit_alpha_tag: join.unit_alpha_tag,
             talkgroup: join.talkgroup,
-            talkgroup_tag: join.talkgroup_tag
+            talkgroup_tag: join.talkgroup_alpha_tag
         }));
 
         // Combine and sort all events by timestamp
@@ -194,7 +201,7 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
             data: {
                 talkgroup: {
                     talkgroup: talkgroupId,
-                    talkgroup_tag: calls[0]?.talkgroup_tag
+                    talkgroup_tag: calls[0]?.talkgroup_alpha_tag
                 },
                 time_range: {
                     start: options.startTime,
@@ -222,22 +229,22 @@ router.get('/events', async (req, res) => {
         ]);
 
         const formattedCalls = activeCalls.map(call => ({
-            call_id: call.call_id,
+            call_id: call.id,
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
-            talkgroup_tag: call.talkgroup_tag,
+            talkgroup_tag: call.talkgroup_alpha_tag,
             emergency: call.emergency || false,
-            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
+            units: call.unit ? [call.unit] : [],
             start_time: call.start_time,
             active: true
         }));
 
         const formattedEmergencies = emergencyCalls.map(call => ({
-            call_id: call.call_id,
+            call_id: call.id,
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
-            talkgroup_tag: call.talkgroup_tag,
-            units: call.srcList?.map(src => src.src).filter(Boolean) || [],
+            talkgroup_tag: call.talkgroup_alpha_tag,
+            units: call.unit ? [call.unit] : [],
             start_time: call.start_time,
             type: 'emergency_call'
         }));

@@ -11,21 +11,17 @@ router.get('/', async (req, res) => {
         
         // Transform system data for response
         const systemStatus = activeSystems.map(system => ({
+            name: system.name || system.sys_name,
             sys_name: system.sys_name,
             sys_num: system.sys_num,
             type: system.type,
             status: {
-                connected: system.status.connected,
-                last_seen: system.status.last_seen,
+                connected: system.status?.connected || true,
+                last_seen: system.status?.last_seen || new Date(),
                 current_control_channel: system.current_control_channel,
                 current_decoderate: system.current_decoderate
             },
-            config: {
-                system_type: system.config.system_type,
-                control_channels: system.config.control_channels,
-                voice_channels: system.config.voice_channels
-            },
-            active_recorders: system.active_recorders
+            config: system.config || {}
         }));
 
         res.json({
@@ -52,29 +48,23 @@ router.get('/performance', async (req, res) => {
         // Calculate system-wide statistics
         const stats = {
             total_systems: activeSystems.length,
-            active_systems: activeSystems.filter(sys => sys.status.connected).length,
+            active_systems: activeSystems.filter(sys => sys.status?.connected !== false).length,
             system_stats: activeSystems.map(system => ({
+                name: system.sys_name,
                 sys_name: system.sys_name,
-                performance: {
-                    decoderate: system.current_decoderate,
-                    decoderate_interval: system.decoderate_interval,
-                    recent_rates: system.recent_rates.slice(-10) // Last 10 readings
-                },
-                recorders: {
-                    total: system.active_recorders.length,
-                    active: system.active_recorders.filter(rec => rec.state === 'RECORDING').length
-                }
+                sys_num: system.sys_num,
+                type: system.type,
+                control_channel: system.current_control_channel,
+                decoderate: system.current_decoderate || 0,
+                decoderate_interval: system.decoderate_interval || 3,
+                recent_rates: (system.recent_rates || []).slice(-10), // Last 10 readings
             }))
         };
 
         // Add aggregate statistics
         stats.aggregate = {
             average_decoderate: stats.system_stats.reduce((sum, sys) => 
-                sum + (sys.performance.decoderate || 0), 0) / stats.total_systems,
-            total_recorders: stats.system_stats.reduce((sum, sys) => 
-                sum + sys.recorders.total, 0),
-            active_recorders: stats.system_stats.reduce((sum, sys) => 
-                sum + sys.recorders.active, 0)
+                sum + (sys.decoderate || 0), 0) / stats.total_systems
         };
 
         res.json({
@@ -115,19 +105,18 @@ router.get('/:sys_name', async (req, res) => {
             rfss: systemState.rfss,
             site_id: systemState.site_id,
             status: {
-                connected: systemState.status.connected,
-                last_seen: systemState.status.last_seen,
-                last_config_update: systemState.status.last_config_update,
-                last_rate_update: systemState.status.last_rate_update
+                connected: systemState.status?.connected || true,
+                last_seen: systemState.status?.last_seen || new Date(),
+                last_config_update: systemState.status?.last_config_update,
+                last_rate_update: systemState.status?.last_rate_update
             },
             performance: {
-                current_control_channel: systemState.current_control_channel,
-                current_decoderate: systemState.current_decoderate,
-                decoderate_interval: systemState.decoderate_interval,
-                recent_rates: systemState.recent_rates
+                current_control_channel: systemState.current_control_channel || 0,
+                current_decoderate: systemState.current_decoderate || 0,
+                decoderate_interval: systemState.decoderate_interval || 3,
+                recent_rates: systemState.recent_rates || []
             },
-            config: systemState.config,
-            active_recorders: systemState.active_recorders
+            config: systemState.config || {}
         };
 
         res.json({
