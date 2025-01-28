@@ -44,13 +44,22 @@ The project is in active development. Current status:
 
 ## Prerequisites
 
+Before installing TR-Engine, ensure you have the following:
+
+### Required Services
 - Node.js 16+
-- MongoDB 4.4+
-- MQTT Broker (e.g., Mosquitto)
+- MongoDB 4.4+ running and accessible
+- MQTT Broker (e.g., Mosquitto) running and accessible
+- Local Whisper instance recommended (OpenAI API compatible as fallback)
+
+### Required Dependencies
+- [trunk-recorder](https://github.com/robotastic/trunk-recorder) with [MQTT Status plugin](https://github.com/taclane/trunk-recorder-mqtt-status) compiled in
+
+🐳 **Docker Support Coming Soon!** A Dockerfile will be provided for those who prefer containerized deployment without manual setup.
 
 ## Installation
 
-Note: These setup instructions are AI-generated and may need verification.
+> ⚠️ **Note:** These instructions are for manual setup. Docker support is coming soon!
 
 1. Clone the repository:
 ```bash
@@ -65,12 +74,16 @@ npm install
 
 3. Create a .env file:
 ```bash
-MONGODB_URI=mongodb://localhost:27017/tr-engine
-MQTT_BROKER_URL=mqtt://localhost:1883
+# Required services - ensure these are running first!
+MONGODB_URI=mongodb://localhost:27017/tr-engine  # MongoDB connection URL
+MQTT_BROKER_URL=mqtt://localhost:1883           # MQTT broker URL
 MQTT_CLIENT_ID=tr-engine-client
 PORT=3000
 NODE_ENV=development
-OPENAI_API_KEY=your_api_key  # Required for transcription
+
+# Transcription settings (choose one):
+WHISPER_LOCAL_URL=http://localhost:9000         # Preferred: Local Whisper instance
+# OPENAI_API_KEY=your_api_key                   # Optional: OpenAI API fallback
 ```
 
 4. Initialize the database:
