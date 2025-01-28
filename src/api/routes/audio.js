@@ -3,6 +3,10 @@ const router = express.Router();
 const logger = require('../../utils/logger');
 const { getGridFSBucket } = require('../../config/mongodb');
 const mongoose = require('mongoose');
+const TranscriptionService = require('../../services/transcription/TranscriptionService');
+const path = require('path');
+
+const transcriptionService = new TranscriptionService();
 
 // Helper function to find audio metadata and files
 const findAudioFiles = async (callIdOrFilename) => {
@@ -117,6 +121,21 @@ router.get('/call/:call_id', async (req, res) => {
             // Stream the entire file
             const downloadStream = getGridFSBucket('audioFiles').openDownloadStreamByName(audioFile.filename);
             downloadStream.pipe(res);
+            
+            // Trigger transcription in the background if not already transcribed
+            try {
+                const transcriptionCollection = mongoose.connection.db.collection('transcriptions');
+                const existingTranscription = await transcriptionCollection.findOne({ call_id: req.params.call_id });
+                
+                if (!existingTranscription) {
+                    logger.debug(`Triggering transcription for call ${req.params.call_id}`);
+                    const audioPath = path.join(process.env.AUDIO_STORAGE_PATH || 'audio_files', audioFile.filename);
+                    transcriptionService.processAudioFile(req.params.call_id, audioPath, metadata)
+                        .catch(err => logger.error(`Background transcription failed for ${req.params.call_id}:`, err));
+                }
+            } catch (err) {
+                logger.error('Error checking/triggering transcription:', err);
+            }
         }
 
         logger.debug(`Streaming audio file: ${audioFile.filename}`);

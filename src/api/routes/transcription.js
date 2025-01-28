@@ -2,6 +2,76 @@ const express = require('express');
 const router = express.Router();
 const logger = require('../../utils/logger');
 const mongoose = require('mongoose');
+const TranscriptionService = require('../../services/transcription/TranscriptionService');
+const path = require('path');
+
+const transcriptionService = new TranscriptionService();
+
+// POST endpoint to transcribe an audio file
+router.post('/process/:callId', async (req, res) => {
+    try {
+        const callId = req.params.callId;
+        
+        // Get audio metadata
+        const audioCollection = mongoose.connection.db.collection('audio');
+        const parts = callId.split('-');
+        if (parts.length !== 2) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid call_id format. Expected talkgroup-starttime',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        const talkgroup = parseInt(parts[0]);
+        const targetTime = parseInt(parts[1]);
+
+        // Find audio metadata with closest start_time
+        const audioMetadata = await audioCollection.aggregate([
+            { 
+                $match: { talkgroup: talkgroup }
+            },
+            {
+                $addFields: {
+                    timeDiff: { $abs: { $subtract: ['$start_time', targetTime] } }
+                }
+            },
+            {
+                $sort: { timeDiff: 1 }
+            },
+            {
+                $limit: 1
+            }
+        ]).next();
+
+        if (!audioMetadata) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Audio metadata not found',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Get audio file path
+        const audioPath = path.join(process.env.AUDIO_STORAGE_PATH || 'audio_files', audioMetadata.filename);
+        
+        // Process transcription
+        const transcription = await transcriptionService.processAudioFile(callId, audioPath, audioMetadata);
+
+        res.json({
+            status: 'success',
+            timestamp: new Date().toISOString(),
+            data: transcription
+        });
+    } catch (error) {
+        logger.error('Error processing transcription:', error);
+        res.status(500).json({
+            status: 'error',
+            message: error.message || 'Failed to process transcription',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
 
 // Get transcription for a specific call
 router.get('/:callId', async (req, res) => {

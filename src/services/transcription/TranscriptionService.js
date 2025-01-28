@@ -3,6 +3,8 @@ const OpenAI = require('openai');
 const fs = require('fs');
 const mongoose = require('mongoose');
 const { getGridFSBucket } = require('../../config/mongodb');
+const os = require('os');
+const path = require('path');
 
 // Queue for managing transcription requests
 class RequestQueue {
@@ -66,28 +68,36 @@ class TranscriptionService {
                 throw new Error('Invalid audio message format: missing required metadata');
             }
 
-            // Validate audio file
-            if (!fs.existsSync(audioPath)) {
-                throw new Error(`Audio file not found: ${audioPath}`);
+            // Get audio file from GridFS
+            const gridFSBucket = getGridFSBucket('audioFiles');
+            const files = await gridFSBucket.find({ filename: audioMessage.filename }).toArray();
+            
+            if (!files.length) {
+                throw new Error(`Audio file not found: ${audioMessage.filename}`);
             }
 
-            // Check file format and size
-            const fileStats = fs.statSync(audioPath);
-            if (fileStats.size === 0) {
+            // Get WAV file if available
+            const wavFile = files.find(f => f.filename.endsWith('.wav'));
+            if (!wavFile) {
+                throw new Error('WAV format not available for transcription');
+            }
+
+            // Validate file size
+            if (wavFile.length === 0) {
                 throw new Error('Audio file is empty');
             }
+
+            // Download file to temp buffer for WAV header validation
+            const chunks = [];
+            const downloadStream = gridFSBucket.openDownloadStream(wavFile._id, { start: 0, end: 43 });
             
-            // Validate file extension
-            if (!audioPath.toLowerCase().endsWith('.wav')) {
-                throw new Error('Invalid file format: only WAV files are supported');
-            }
-            
-            // Basic WAV header validation
-            const header = Buffer.alloc(44);
-            const fd = fs.openSync(audioPath, 'r');
-            fs.readSync(fd, header, 0, 44, 0);
-            fs.closeSync(fd);
-            
+            await new Promise((resolve, reject) => {
+                downloadStream.on('data', chunk => chunks.push(chunk));
+                downloadStream.on('error', reject);
+                downloadStream.on('end', resolve);
+            });
+
+            const header = Buffer.concat(chunks);
             if (header.toString('ascii', 0, 4) !== 'RIFF' || 
                 header.toString('ascii', 8, 12) !== 'WAVE') {
                 throw new Error('Invalid WAV file format');
@@ -107,20 +117,36 @@ class TranscriptionService {
                 try {
                     // Queue the transcription request
                     const processTranscription = async () => {
-                        const whisperResponse = await this.openai.audio.transcriptions.create({
-                            file: fs.createReadStream(audioPath),
-                            model: process.env.WHISPER_MODEL || "guillaumekln/faster-whisper-base.en",
-                            response_format: "verbose_json",
-                            timestamp_granularities: ["word"]
+                        // Create a temporary file from GridFS stream
+                        const tempFilePath = path.join(os.tmpdir(), `temp-${Date.now()}.wav`);
+                        const writeStream = fs.createWriteStream(tempFilePath);
+                        const downloadStream = gridFSBucket.openDownloadStream(wavFile._id);
+                        
+                        await new Promise((resolve, reject) => {
+                            downloadStream.pipe(writeStream)
+                                .on('error', reject)
+                                .on('finish', resolve);
                         });
-                        
-                        // Check quality before proceeding
-                        const quality = this.assessTranscriptionQuality(whisperResponse);
-                        if (quality.needsRetry && attempt < retries) {
-                            throw new Error(`Low quality transcription: ${quality.reason}`);
+
+                        try {
+                            const whisperResponse = await this.openai.audio.transcriptions.create({
+                                file: fs.createReadStream(tempFilePath),
+                                model: process.env.WHISPER_MODEL || "guillaumekln/faster-whisper-base.en",
+                                response_format: "verbose_json",
+                                timestamp_granularities: ["word"]
+                            });
+                            
+                            // Check quality before proceeding
+                            const quality = this.assessTranscriptionQuality(whisperResponse);
+                            if (quality.needsRetry && attempt < retries) {
+                                throw new Error(`Low quality transcription: ${quality.reason}`);
+                            }
+                            
+                            return whisperResponse;
+                        } finally {
+                            // Clean up temp file
+                            fs.unlinkSync(tempFilePath);
                         }
-                        
-                        return whisperResponse;
                     };
 
                     const whisperResponse = await this.queue.add(processTranscription);

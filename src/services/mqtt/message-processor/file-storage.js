@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 const logger = require('../../../utils/logger');
+const TranscriptionService = require('../../transcription/TranscriptionService');
+
+const transcriptionService = new TranscriptionService();
 
 class FileStorage {
   async storeFile(base64Data, message, filename) {
@@ -53,13 +56,41 @@ class FileStorage {
         reject(error);
       });
 
-      uploadStream.on('finish', (fileId) => {
+      uploadStream.on('finish', async (fileId) => {
         logger.debug('Successfully stored file', {
           filename,
           size: fileBuffer.length,
           fileId,
           bucket: bucketName
         });
+
+        // Trigger transcription for audio files
+        if (bucketName === 'audioFiles' && filename.endsWith('.wav')) {
+          try {
+            const callId = `${essentialMetadata.talkgroup}-${essentialMetadata.start_time}`;
+            
+            // Format metadata for transcription
+            const audioMessage = {
+              filename,
+              srcList: message?.call?.metadata?.srcList || [],
+              call_length: essentialMetadata.call_length,
+              talkgroup: essentialMetadata.talkgroup,
+              talkgroup_tag: essentialMetadata.talkgroup_tag,
+              sys_name: message?.call?.metadata?.short_name,
+              emergency: message?.call?.metadata?.emergency
+            };
+
+            // Trigger transcription in background
+            transcriptionService.processAudioFile(callId, filename, audioMessage)
+              .catch(err => logger.error(`Background transcription failed for ${callId}:`, err));
+            
+            logger.debug(`Triggered transcription for file: ${filename}`);
+          } catch (error) {
+            logger.error('Error triggering transcription:', error);
+            // Don't reject the promise as file storage was successful
+          }
+        }
+
         resolve({ fileId, filename });
       });
 
