@@ -13,27 +13,57 @@ const connectDB = async () => {
       bucketName: 'audioFiles'
     });
 
-    // Create indexes for GridFS collections
-    await Promise.all([
-      // Indexes for the files collection
-      gridFSBucket.s.files.createIndex({ 'metadata.callId': 1 }),
-      gridFSBucket.s.files.createIndex({ 'metadata.format': 1 }),
-      gridFSBucket.s.files.createIndex({ 'metadata.talkgroup': 1 }),
-      gridFSBucket.s.files.createIndex({ 'metadata.short_name': 1 }),
-      gridFSBucket.s.files.createIndex({ 'metadata.start_time': -1 }),
-      gridFSBucket.s.files.createIndex({ 'metadata.emergency': 1 }),
+    // Create GridFS collections and indexes
+    const db = conn.connection.db;
+    
+    // Ensure GridFS collections exist by writing a dummy file
+    const tempBucket = new mongoose.mongo.GridFSBucket(db, {
+      bucketName: 'audioFiles'
+    });
+    
+    try {
+      // Create a small temporary file to ensure collections are created
+      const tempBuffer = Buffer.from('temp');
+      const uploadStream = tempBucket.openUploadStream('temp.txt', {
+        metadata: { temp: true }
+      });
+      await new Promise((resolve, reject) => {
+        uploadStream.end(tempBuffer, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
       
-      // Compound indexes for common audio queries
-      gridFSBucket.s.files.createIndex({ 
-        'metadata.short_name': 1, 
-        'metadata.talkgroup': 1, 
-        'metadata.start_time': -1 
-      }),
-      gridFSBucket.s.files.createIndex({ 
-        'metadata.format': 1, 
-        'metadata.start_time': -1 
-      })
-    ]);
+      // Now that collections exist, create indexes
+      const audioFiles = db.collection('audioFiles.files');
+      await Promise.all([
+        // Indexes for the files collection
+        audioFiles.createIndex({ 'metadata.callId': 1 }),
+        audioFiles.createIndex({ 'metadata.format': 1 }),
+        audioFiles.createIndex({ 'metadata.talkgroup': 1 }),
+        audioFiles.createIndex({ 'metadata.short_name': 1 }),
+        audioFiles.createIndex({ 'metadata.start_time': -1 }),
+        audioFiles.createIndex({ 'metadata.emergency': 1 }),
+        
+        // Compound indexes for common audio queries
+        audioFiles.createIndex({ 
+          'metadata.short_name': 1, 
+          'metadata.talkgroup': 1, 
+          'metadata.start_time': -1 
+        }),
+        audioFiles.createIndex({ 
+          'metadata.format': 1, 
+          'metadata.start_time': -1 
+        })
+      ]);
+      
+      // Clean up temp file
+      await tempBucket.delete(uploadStream.id);
+      
+    } catch (err) {
+      logger.error('Error setting up GridFS:', err);
+      throw err;
+    }
 
     logger.info(`MongoDB Connected: ${conn.connection.host}`);
     

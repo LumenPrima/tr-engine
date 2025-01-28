@@ -1,8 +1,9 @@
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
+const stateEventEmitter = require('../events/emitter');
 
-// Current state of each unit
-const UnitStateSchema = new mongoose.Schema({
+// Schema for persistent unit state
+const UnitSchema = new mongoose.Schema({
     // Unit identification
     unit: { type: Number, required: true },
     sys_name: { type: String, required: true },
@@ -10,7 +11,7 @@ const UnitStateSchema = new mongoose.Schema({
     
     // Current status
     status: {
-        online: { type: Boolean, default: true },
+        online: { type: Boolean, default: false },
         last_seen: Date,
         last_activity_type: String,
         current_talkgroup: Number,
@@ -26,7 +27,7 @@ const UnitStateSchema = new mongoose.Schema({
         last_affiliation_time: Date
     },
     
-    // Recent activity cache (for quick access to unit history)
+    // Recent activity history
     recent_activity: [{
         timestamp: Date,
         activity_type: String,
@@ -34,33 +35,71 @@ const UnitStateSchema = new mongoose.Schema({
         talkgroup_tag: String,
         details: mongoose.Schema.Types.Mixed
     }]
+}, {
+    timestamps: true // Adds createdAt and updatedAt
 });
 
-// Create compound index for unit+system lookup
-UnitStateSchema.index({ unit: 1, sys_name: 1 }, { unique: true });
-// Index for finding recently active units
-UnitStateSchema.index({ 'status.last_seen': 1 });
-// Index for finding units by talkgroup
-UnitStateSchema.index({ 'status.current_talkgroup': 1 });
+// Indexes for efficient querying
+UnitSchema.index({ unit: 1, sys_name: 1 }, { unique: true });
+UnitSchema.index({ 'status.last_seen': 1 });
+UnitSchema.index({ 'status.current_talkgroup': 1 });
 
 class UnitManager {
     constructor() {
-        this.UnitState = mongoose.model('UnitState', UnitStateSchema);
+        // Initialize MongoDB model
+        try {
+            this.Unit = mongoose.model('Unit');
+        } catch (error) {
+            this.Unit = mongoose.model('Unit', UnitSchema);
+        }
         
-        // Cache current unit states for quick access
-        this.unitStateCache = new Map();
+        // In-memory caches for performance
+        this.unitStates = new Map(); // unit+sys_name -> state
+        this.recentActivity = new Map(); // unit+sys_name -> activity array
+        this.unitsByTalkgroup = new Map(); // talkgroup -> Set of unit+sys_name
+
+        // Load existing data into cache
+        this.loadCacheFromDB().catch(err => 
+            logger.error('Error loading unit cache from DB:', err)
+        );
 
         logger.info('UnitManager initialized');
     }
 
-    async cleanup() {
+    async loadCacheFromDB() {
+        logger.debug('Loading unit cache from database...');
+        const units = await this.Unit.find({});
+        
+        units.forEach(unit => {
+            const unitKey = this.getUnitKey(unit.sys_name, unit.unit);
+            this.unitStates.set(unitKey, unit.toObject());
+            
+            // Cache recent activity
+            this.recentActivity.set(unitKey, unit.recent_activity || []);
+            
+            // Cache talkgroup mapping
+            if (unit.status.current_talkgroup) {
+                if (!this.unitsByTalkgroup.has(unit.status.current_talkgroup)) {
+                    this.unitsByTalkgroup.set(unit.status.current_talkgroup, new Set());
+                }
+                this.unitsByTalkgroup.get(unit.status.current_talkgroup).add(unitKey);
+            }
+        });
+        
+        logger.info(`Loaded ${units.length} units into cache`);
+    }
+
+    cleanup() {
         logger.debug('Cleaning up UnitManager...');
-        this.unitStateCache.clear();
+        this.unitStates.clear();
+        this.recentActivity.clear();
+        this.unitsByTalkgroup.clear();
+        logger.debug('Cleared in-memory caches');
     }
     
-    // Generate a unique key for the cache
+    // Generate a unique key for unit+system
     getUnitKey(sysName, unit) {
-        return `${sysName}_${unit}`;
+        return `${sysName}:${unit}`;
     }
     
     async processMessage(topic, message, messageId) {
@@ -90,8 +129,28 @@ class UnitManager {
             
             logger.debug(`Updating state for unit ${unitData.unit} (${activityType})`);
             
-            // Get all states for this unit to check for changes across systems
-            const allStates = await this.UnitState.find({ unit: unitData.unit }).sort({ 'status.last_seen': -1 });
+            // Get current state or create new one
+            const currentState = this.unitStates.get(unitKey) || {
+                unit: unitData.unit,
+                sys_name: sysName,
+                unit_alpha_tag: unitData.unit_alpha_tag,
+                status: {
+                    online: true,
+                    last_seen: new Date(),
+                    last_activity_type: activityType,
+                    current_talkgroup: null,
+                    current_talkgroup_tag: null
+                },
+                activity_summary: {
+                    first_seen: new Date(),
+                    total_calls: 0,
+                    total_affiliations: 0,
+                    last_call_time: null,
+                    last_affiliation_time: null
+                }
+            };
+            
+            // Create new activity entry
             const newActivity = {
                 timestamp: new Date(),
                 activity_type: activityType,
@@ -99,205 +158,221 @@ class UnitManager {
                 talkgroup_tag: unitData.talkgroup_tag,
                 details: unitData
             };
-
-            // Get most recent activity across all systems
-            const mostRecentActivity = allStates.reduce((latest, state) => {
-                if (!state.recent_activity.length) return latest;
-                const stateLatest = state.recent_activity[0];
-                if (!latest) return stateLatest;
-                return new Date(stateLatest.timestamp) > new Date(latest.timestamp) ? stateLatest : latest;
-            }, null);
-
-            // Check if this activity is different from the most recent one
-            const shouldLogActivity = !mostRecentActivity ||
-                !this.areSimilarActivities(newActivity, mostRecentActivity);
-
-            // Build the update based on activity type
-            const updateData = {
-                $set: {
-                    unit: unitData.unit,
-                    sys_name: sysName,
-                    unit_alpha_tag: unitData.unit_alpha_tag,
-                    'status.last_seen': new Date(),
-                    'status.last_activity_type': activityType
-                }
-            };
-
-            // Only add to recent_activity if it's different from the previous one
+            
+            // Update recent activity
+            if (!this.recentActivity.has(unitKey)) {
+                this.recentActivity.set(unitKey, []);
+            }
+            const activities = this.recentActivity.get(unitKey);
+            
+            // Only add if different from most recent
+            const shouldLogActivity = activities.length === 0 || 
+                !this.areSimilarActivities(newActivity, activities[0]);
+            
             if (shouldLogActivity) {
-                updateData.$push = {
-                    recent_activity: {
-                        $each: [newActivity],
-                        $slice: -50 // Keep last 50 activities
-                    }
-                };
+                activities.unshift(newActivity);
+                if (activities.length > 50) activities.pop(); // Keep last 50
             }
             
-            // Update specific fields based on activity type
+            // Update state based on activity type
+            const newState = {
+                ...currentState,
+                unit_alpha_tag: unitData.unit_alpha_tag,
+                status: {
+                    ...currentState.status,
+                    last_seen: new Date(),
+                    last_activity_type: activityType
+                }
+            };
+            
             switch (activityType) {
                 case 'on':
-                    updateData.$set['status.online'] = true;
-                    logger.debug(`Unit ${unitData.unit} came online`);
+                    newState.status.online = true;
                     break;
                     
                 case 'off':
-                    updateData.$set['status.online'] = false;
-                    logger.debug(`Unit ${unitData.unit} went offline`);
+                    newState.status.online = false;
                     break;
                     
                 case 'call':
-                    updateData.$set['status.current_talkgroup'] = unitData.talkgroup;
-                    updateData.$set['status.current_talkgroup_tag'] = unitData.talkgroup_tag;
-                    updateData.$inc = { 'activity_summary.total_calls': 1 };
-                    updateData.$set['activity_summary.last_call_time'] = new Date();
-                    logger.debug(`Unit ${unitData.unit} started call on talkgroup ${unitData.talkgroup}`);
+                    newState.status.current_talkgroup = unitData.talkgroup;
+                    newState.status.current_talkgroup_tag = unitData.talkgroup_tag;
+                    newState.activity_summary.total_calls++;
+                    newState.activity_summary.last_call_time = new Date();
                     break;
                     
                 case 'join':
-                    updateData.$set['status.current_talkgroup'] = unitData.talkgroup;
-                    updateData.$set['status.current_talkgroup_tag'] = unitData.talkgroup_tag;
-                    updateData.$inc = { 'activity_summary.total_affiliations': 1 };
-                    updateData.$set['activity_summary.last_affiliation_time'] = new Date();
-                    logger.debug(`Unit ${unitData.unit} joined talkgroup ${unitData.talkgroup}`);
+                    newState.status.current_talkgroup = unitData.talkgroup;
+                    newState.status.current_talkgroup_tag = unitData.talkgroup_tag;
+                    newState.activity_summary.total_affiliations++;
+                    newState.activity_summary.last_affiliation_time = new Date();
                     break;
             }
             
-            // Set first_seen if this is a new unit
-            updateData.$setOnInsert = {
-                'activity_summary.first_seen': new Date()
-            };
+            // Update talkgroup tracking
+            if (unitData.talkgroup) {
+                if (!this.unitsByTalkgroup.has(unitData.talkgroup)) {
+                    this.unitsByTalkgroup.set(unitData.talkgroup, new Set());
+                }
+                this.unitsByTalkgroup.get(unitData.talkgroup).add(unitKey);
+            }
             
-            // Update or create the unit state document
-            const unitState = await this.UnitState.findOneAndUpdate(
+            // Update both cache and database
+            this.unitStates.set(unitKey, newState);
+            await this.Unit.findOneAndUpdate(
                 { unit: unitData.unit, sys_name: sysName },
-                updateData,
+                {
+                    $set: {
+                        ...newState,
+                        recent_activity: activities
+                    }
+                },
                 { upsert: true, new: true }
             );
             
-            // Update cache
-            this.unitStateCache.set(unitKey, unitState);
+            // Emit unit activity event
+            stateEventEmitter.emitUnitActivity({
+                unit: unitData.unit,
+                unit_alpha_tag: unitData.unit_alpha_tag,
+                activity_type: activityType,
+                talkgroup: unitData.talkgroup,
+                talkgroup_tag: unitData.talkgroup_tag,
+                sys_name: sysName,
+                ...newState
+            });
+
+            // Emit specific events based on activity type
+            if (activityType === 'location') {
+                stateEventEmitter.emitUnitLocation({
+                    unit: unitData.unit,
+                    unit_alpha_tag: unitData.unit_alpha_tag,
+                    sys_name: sysName,
+                    ...unitData
+                });
+            } else if (['on', 'off'].includes(activityType)) {
+                stateEventEmitter.emitUnitStatus({
+                    unit: unitData.unit,
+                    unit_alpha_tag: unitData.unit_alpha_tag,
+                    status: activityType === 'on' ? 'online' : 'offline',
+                    sys_name: sysName,
+                    ...unitData
+                });
+            }
         } catch (err) {
             logger.error('Error updating unit state:', err);
             throw err;
         }
     }
     
-    // Helper method to get a unit's current state across all systems
-    async getUnitState(unit) {
+    getUnitState(unit) {
         try {
             // Get all states for this unit across systems
-            const states = await this.UnitState.find({ unit: unit })
-                .sort({ 'status.last_seen': -1 });
+            const states = Array.from(this.unitStates.entries())
+                .filter(([key, state]) => state.unit === unit)
+                .map(([key, state]) => state)
+                .sort((a, b) => b.status.last_seen - a.status.last_seen);
 
-            if (!states || states.length === 0) {
-                return null;
-            }
+            if (states.length === 0) return null;
 
             // Combine data from all systems
-            const combinedState = {
+            return {
                 unit: unit,
-                unit_alpha_tag: states[0].unit_alpha_tag, // Use tag from most recently seen system
+                unit_alpha_tag: states[0].unit_alpha_tag,
                 systems: states.map(s => s.sys_name),
                 status: {
                     online: !states.some(s => s.status.last_activity_type === 'off'),
-                    last_seen: states.reduce((latest, s) => 
-                        !latest || s.status.last_seen > latest ? s.status.last_seen : latest, null),
+                    last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
                     last_activity_type: states[0].status.last_activity_type,
                     current_talkgroup: states[0].status.current_talkgroup,
                     current_talkgroup_tag: states[0].status.current_talkgroup_tag
                 },
                 activity_summary: {
-                    first_seen: states.reduce((earliest, s) => 
-                        !earliest || s.activity_summary.first_seen < earliest ? s.activity_summary.first_seen : earliest, null),
-                    total_calls: states.reduce((sum, s) => sum + (s.activity_summary.total_calls || 0), 0),
-                    total_affiliations: states.reduce((sum, s) => sum + (s.activity_summary.total_affiliations || 0), 0),
-                    last_call_time: states.reduce((latest, s) => 
-                        !latest || (s.activity_summary.last_call_time && s.activity_summary.last_call_time > latest) 
-                            ? s.activity_summary.last_call_time : latest, null),
-                    last_affiliation_time: states.reduce((latest, s) => 
-                        !latest || (s.activity_summary.last_affiliation_time && s.activity_summary.last_affiliation_time > latest)
-                            ? s.activity_summary.last_affiliation_time : latest, null)
+                    first_seen: new Date(Math.min(...states.map(s => s.activity_summary.first_seen.getTime()))),
+                    total_calls: states.reduce((sum, s) => sum + s.activity_summary.total_calls, 0),
+                    total_affiliations: states.reduce((sum, s) => sum + s.activity_summary.total_affiliations, 0),
+                    last_call_time: this.getLatestDate(states.map(s => s.activity_summary.last_call_time)),
+                    last_affiliation_time: this.getLatestDate(states.map(s => s.activity_summary.last_affiliation_time))
                 },
-                // Combine, sort, and aggregate recent activity from all systems
                 recent_activity: this.aggregateRecentActivity(
-                    states.reduce((all, s) => [...all, ...s.recent_activity], [])
+                    states.flatMap(s => this.recentActivity.get(this.getUnitKey(s.sys_name, s.unit)) || [])
                 )
             };
-
-            return combinedState;
         } catch (err) {
             logger.error('Error getting unit state:', err);
             throw err;
         }
     }
     
-    // Helper method to find all units in a talkgroup
-    async getUnitsInTalkgroup(talkgroup) {
+    getUnitsInTalkgroup(talkgroup) {
         try {
-            // Get all unit states in this talkgroup
-            const states = await this.UnitState.find({
-                'status.current_talkgroup': talkgroup
-            }).sort({ 'status.last_seen': -1 });
-
+            // Get unit keys for this talkgroup
+            const unitKeys = this.unitsByTalkgroup.get(talkgroup) || new Set();
+            
             // Group states by unit ID
-            const unitGroups = states.reduce((groups, state) => {
-                if (!groups[state.unit]) {
-                    groups[state.unit] = [];
+            const unitGroups = {};
+            for (const unitKey of unitKeys) {
+                const state = this.unitStates.get(unitKey);
+                if (!state) continue;
+                
+                if (!unitGroups[state.unit]) {
+                    unitGroups[state.unit] = [];
                 }
-                groups[state.unit].push(state);
-                return groups;
-            }, {});
+                unitGroups[state.unit].push(state);
+            }
 
             // Combine data for each unit
-            return Object.values(unitGroups).map(states => ({
-                unit: states[0].unit,
-                unit_alpha_tag: states[0].unit_alpha_tag,
-                systems: states.map(s => s.sys_name),
-                status: {
-                    online: !states.some(s => s.status.last_activity_type === 'off'),
-                    last_seen: states.reduce((latest, s) => 
-                        !latest || s.status.last_seen > latest ? s.status.last_seen : latest, null),
-                    last_activity_type: states[0].status.last_activity_type
-                }
-            }));
+            return Object.values(unitGroups).map(states => {
+                states.sort((a, b) => b.status.last_seen - a.status.last_seen);
+                return {
+                    unit: states[0].unit,
+                    unit_alpha_tag: states[0].unit_alpha_tag,
+                    systems: states.map(s => s.sys_name),
+                    status: {
+                        online: !states.some(s => s.status.last_activity_type === 'off'),
+                        last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
+                        last_activity_type: states[0].status.last_activity_type
+                    }
+                };
+            });
         } catch (err) {
             logger.error('Error getting units in talkgroup:', err);
             throw err;
         }
     }
     
-    // Helper method to get recently active units (aggregated across systems)
-    async getActiveUnits(options = {}) {
+    getActiveUnits(options = {}) {
         try {
-            const cutoff = new Date(Date.now() - (options.timeWindow || 5 * 60 * 1000));
+            const cutoff = Date.now() - (options.timeWindow || 5 * 60 * 1000);
             
-            // Get all active unit states
-            const activeStates = await this.UnitState.find({
-                'status.last_seen': { $gte: cutoff }
-            }).sort({ 'status.last_seen': -1 });
-
-            // Group states by unit ID
-            const unitGroups = activeStates.reduce((groups, state) => {
-                if (!groups[state.unit]) {
-                    groups[state.unit] = [];
+            // Get all active states
+            const activeStates = Array.from(this.unitStates.values())
+                .filter(state => state.status.last_seen.getTime() >= cutoff)
+                .sort((a, b) => b.status.last_seen - a.status.last_seen);
+            
+            // Group by unit ID
+            const unitGroups = {};
+            for (const state of activeStates) {
+                if (!unitGroups[state.unit]) {
+                    unitGroups[state.unit] = [];
                 }
-                groups[state.unit].push(state);
-                return groups;
-            }, {});
-
+                unitGroups[state.unit].push(state);
+            }
+            
             // Combine data for each unit
-            return Object.values(unitGroups).map(states => ({
-                unit: states[0].unit,
-                unit_alpha_tag: states[0].unit_alpha_tag,
-                systems: states.map(s => s.sys_name),
-                status: {
-                    online: !states.some(s => s.status.last_activity_type === 'off'),
-                    last_seen: states.reduce((latest, s) => 
-                        !latest || s.status.last_seen > latest ? s.status.last_seen : latest, null),
-                    current_talkgroup: states[0].status.current_talkgroup,
-                    current_talkgroup_tag: states[0].status.current_talkgroup_tag
-                }
-            }));
+            return Object.values(unitGroups).map(states => {
+                states.sort((a, b) => b.status.last_seen - a.status.last_seen);
+                return {
+                    unit: states[0].unit,
+                    unit_alpha_tag: states[0].unit_alpha_tag,
+                    systems: states.map(s => s.sys_name),
+                    status: {
+                        online: !states.some(s => s.status.last_activity_type === 'off'),
+                        last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
+                        current_talkgroup: states[0].status.current_talkgroup,
+                        current_talkgroup_tag: states[0].status.current_talkgroup_tag
+                    }
+                };
+            });
         } catch (err) {
             logger.error('Error getting active units:', err);
             throw err;
@@ -349,16 +424,22 @@ class UnitManager {
         }).slice(0, 50); // Keep most recent 50 activities
     }
 
-    // Clear all units (for testing)
-    async clearUnits() {
+    clearUnits() {
         try {
-            await this.UnitState.deleteMany({});
-            this.unitStateCache.clear();
+            this.unitStates.clear();
+            this.recentActivity.clear();
+            this.unitsByTalkgroup.clear();
             logger.debug('Cleared all unit data');
         } catch (err) {
             logger.error('Error clearing units:', err);
             throw err;
         }
+    }
+
+    // Helper method to get latest non-null date from array
+    getLatestDate(dates) {
+        const validDates = dates.filter(d => d);
+        return validDates.length > 0 ? new Date(Math.max(...validDates.map(d => d.getTime()))) : null;
     }
 }
 

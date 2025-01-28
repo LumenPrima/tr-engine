@@ -1,6 +1,10 @@
 const logger = require('../../utils/logger');
 const mongoose = require('mongoose');
 const AudioMessageProcessor = require('./audio-processor');
+const ActiveCallManager = require('../state/ActiveCallManager');
+const SystemManager = require('../state/SystemManager');
+const UnitManager = require('../state/UnitManager');
+const TalkgroupManager = require('../state/TalkgroupManager');
 
 /**
  * MessageProcessor handles the ingestion and storage of all MQTT messages in our system.
@@ -40,16 +44,53 @@ class MessageProcessor {
 
       // Parse message
       const message = JSON.parse(payload.toString());
+      const messageId = new mongoose.Types.ObjectId();
       
       logger.debug(`Processing message from topic: ${topic}, type: ${message.type}`);
 
-      // Handle message based on type
+      // Route message to appropriate manager based on topic
+      const topicParts = topic.split('/');
+      
+      // Handle audio messages separately - pass directly to AudioMessageProcessor
       if (message.type === 'audio') {
-        // Delegate audio messages to specialized processor
+        logger.debug('Processing audio message:', {
+          message_structure: {
+            type: message.type,
+            has_call: !!message.call,
+            has_metadata: !!message.call?.metadata,
+            has_wav: !!message.call?.audio_wav_base64,
+            has_m4a: !!message.call?.audio_m4a_base64,
+            metadata_fields: message.call?.metadata ? Object.keys(message.call.metadata) : []
+          }
+        });
         await AudioMessageProcessor.processAudioMessage(topic, message);
+        // Also send to ActiveCallManager for call tracking
+        await ActiveCallManager.processMessage(topic, message, messageId);
+        // Also update talkgroup state if message has talkgroup info
+        if (message.call?.metadata?.talkgroup) {
+          await TalkgroupManager.processMessage(topic, message, messageId);
+        }
       } else {
-        // Process standard message
-        await this.processStandardMessage(topic, message);
+        // For non-audio messages, process normally
+        const transformedMessage = this.transformMessage(message);
+        const collectionName = this.resolveCollectionName(topic, message);
+        await this.storeMessage(collectionName, transformedMessage, topic);
+
+        // Route to appropriate handlers
+        if (topic.startsWith('tr-mqtt/units/')) {
+          // Unit-related messages (on, off, call, location, etc.)
+          await UnitManager.processMessage(topic, transformedMessage, messageId);
+        } else if (topicParts[2] === 'systems' || topicParts[2] === 'rates' || topicParts[2] === 'config') {
+          // System-related messages
+          await SystemManager.processMessage(topic, transformedMessage, messageId);
+        } else if (['call_start', 'call_end', 'calls_active', 'recorder', 'recorders'].includes(topicParts[2])) {
+          // Call-related messages
+          await ActiveCallManager.processMessage(topic, transformedMessage, messageId);
+          // Also update talkgroup state if message has talkgroup info
+          if (transformedMessage.talkgroup) {
+            await TalkgroupManager.processMessage(topic, transformedMessage, messageId);
+          }
+        }
       }
 
       // Update statistics
@@ -58,24 +99,6 @@ class MessageProcessor {
     } catch (err) {
       this.handleError(err, topic);
     }
-  }
-
-  /**
-   * Process a standard (non-audio) message by determining its collection
-   * and storing the transformed data.
-   * 
-   * @param {string} topic - MQTT topic
-   * @param {Object} message - Parsed message
-   */
-  async processStandardMessage(topic, message) {
-    // Get collection name from message type or topic
-    const collectionName = this.resolveCollectionName(topic, message);
-    
-    // Transform message structure
-    const transformedMessage = this.transformMessage(message);
-    
-    // Store in appropriate collection
-    await this.storeMessage(collectionName, transformedMessage, topic);
   }
 
   /**
@@ -136,20 +159,39 @@ class MessageProcessor {
     // If no type, return as is
     if (!message.type) return message;
 
-    // Get inner content based on type
-    const innerContent = message[message.type.toLowerCase()];
-    if (!innerContent) {
-      logger.warn(`No inner content found for type: ${message.type}`);
-      return message;
+    const type = message.type.toLowerCase();
+    
+    // Base metadata that should be preserved
+    const metadata = {
+      _type: type,
+      _processed_at: new Date(),
+      timestamp: message.timestamp || Math.floor(Date.now() / 1000),
+      instance_id: message.instance_id
+    };
+
+    // Get the inner content based on type
+    const innerContent = message[type];
+
+    // For messages with nested content under 'call' key
+    if (message.call && typeof message.call === 'object') {
+      return {
+        ...metadata,
+        ...message.call // Use the call object directly
+      };
     }
 
-    // Create transformed message with metadata
+    // For messages with nested content under their type key
+    if (innerContent && typeof innerContent === 'object' && !Array.isArray(innerContent)) {
+      return {
+        ...metadata,
+        ...innerContent // Unwrap the nested content
+      };
+    }
+
+    // For arrays or primitive values, or null/undefined
     return {
-      ...innerContent,                    // Inner message content
-      timestamp: message.timestamp,       // Original timestamp
-      instance_id: message.instance_id,   // Instance identifier
-      _original_type: message.type,       // Preserve message type
-      _processed_at: new Date()           // Add processing timestamp
+      ...metadata,
+      [type]: innerContent // Keep under type key, even if null/undefined
     };
   }
 

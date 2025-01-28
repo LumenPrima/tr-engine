@@ -57,7 +57,7 @@ class MQTTClient {
 
     this.client.on('message', async (topic, payload) => {
       try {
-        await this.handleMessage(topic, payload);
+        await messageProcessor.processMessage(topic, payload);
       } catch (err) {
         logger.error('Error processing message:', err);
       }
@@ -77,90 +77,6 @@ class MQTTClient {
     });
   }
 
-  async handleMessage(topic, payload) {
-    try {
-      // Only process if MongoDB is connected
-      if (mongoose.connection.readyState !== 1) {
-        logger.warn('Message received but MongoDB not connected');
-        return;
-      }
-
-      const message = JSON.parse(payload.toString());
-      
-      // Handle audio messages specially
-      if (message.type === 'audio' && message.call?.audio_wav_base64) {
-        await this.handleAudioMessage(topic, message);
-        return;
-      }
-
-      // Determine collection name from type or topic
-      const collectionName = this.resolveCollectionName(topic, message);
-      
-      // Get or create collection
-      const collection = await this.getCollection(collectionName);
-
-      // Transform message for storage
-      const transformedMessage = this.transformMessage(message);
-
-      // Store the message
-      await collection.insertOne({
-        ...transformedMessage,
-        _mqtt_topic: topic,       // Store original topic
-        _received_at: new Date()  // Add reception timestamp
-      });
-
-      logger.debug(`Stored message in collection: ${collectionName}`);
-
-    } catch (err) {
-      if (err instanceof SyntaxError) {
-        logger.error('Invalid JSON in message:', err);
-      } else {
-        logger.error('Error processing message:', err);
-      }
-    }
-  }
-
-  resolveCollectionName(topic, message) {
-    // Try to use message type first
-    if (message.type && typeof message.type === 'string') {
-      return message.type.toLowerCase();
-    }
-
-    // Fall back to topic parsing
-    const segments = topic.split('/');
-    const lastSegment = segments[segments.length - 1];
-
-    // Handle wildcards
-    if (lastSegment === '#' || lastSegment === '+') {
-      return segments[segments.length - 2].toLowerCase();
-    }
-
-    // Use last segment if it looks valid
-    if (lastSegment && !lastSegment.includes('#') && !lastSegment.includes('+')) {
-      return lastSegment.toLowerCase();
-    }
-
-    // Ultimate fallback
-    return 'unclassified';
-  }
-
-  transformMessage(message) {
-    // Get the inner payload based on type
-    const type = message.type;
-    if (!type) return message; // No transformation needed
-
-    // Extract the wrapped content
-    const innerContent = message[type.toLowerCase()];
-    if (!innerContent) return message; // No wrapped content found
-
-    // Merge top-level fields with inner content
-    return {
-      ...innerContent,
-      timestamp: message.timestamp,
-      instance_id: message.instance_id
-    };
-  }
-
   async getCollection(name) {
     // Check cache first
     if (this.collectionCache.has(name)) {
@@ -178,61 +94,6 @@ class MQTTClient {
     this.collectionCache.set(name, collection);
     
     return collection;
-  }
-
-  async handleAudioMessage(topic, message) {
-    try {
-      // Store metadata in audio collection
-      const audioCollection = await this.getCollection('audio');
-      
-      // Transform metadata
-      const metadata = {
-        ...message.call.metadata,
-        timestamp: message.timestamp,
-        instance_id: message.instance_id,
-        _mqtt_topic: topic,
-        _received_at: new Date()
-      };
-
-      await audioCollection.insertOne(metadata);
-
-      // Store audio in GridFS
-      const { getGridFSBucket } = require('../../config/mongodb');
-      const gridFSBucket = getGridFSBucket('calls'); // Use 'calls' bucket
-
-      if (message.call.audio_wav_base64) {
-        const buffer = Buffer.from(message.call.audio_wav_base64, 'base64');
-        const filename = metadata.filename;
-
-        // Convert numeric boolean fields to actual booleans
-        const gridFSMetadata = {
-          talkgroup: metadata.talkgroup,
-          talkgroup_tag: metadata.talkgroup_tag,
-          start_time: metadata.start_time,
-          stop_time: metadata.stop_time,
-          call_length: metadata.call_length,
-          emergency: Boolean(metadata.emergency),
-          encrypted: Boolean(metadata.encrypted),
-          freq: metadata.freq,
-          instance_id: metadata.instance_id
-        };
-
-        const uploadStream = gridFSBucket.openUploadStream(filename, {
-          metadata: gridFSMetadata
-        });
-
-        await new Promise((resolve, reject) => {
-          uploadStream.on('error', reject);
-          uploadStream.on('finish', resolve);
-          uploadStream.end(buffer);
-        });
-
-        logger.debug(`Stored audio file: ${filename}`);
-      }
-    } catch (err) {
-      logger.error('Error processing audio message:', err);
-      throw err;
-    }
   }
 
   async disconnect() {

@@ -32,13 +32,29 @@ class AudioMessageProcessor {
         throw new Error('Invalid audio message structure');
       }
 
+      logger.debug('AudioMessageProcessor received message:', {
+        message_structure: {
+          type: message.type,
+          has_call: !!message.call,
+          has_metadata: !!message.call?.metadata,
+          has_wav: !!message.call?.audio_wav_base64,
+          has_m4a: !!message.call?.audio_m4a_base64,
+          metadata_fields: message.call?.metadata ? Object.keys(message.call.metadata) : [],
+          metadata_sample: message.call?.metadata ? {
+            filename: message.call.metadata.filename,
+            talkgroup: message.call.metadata.talkgroup,
+            start_time: message.call.metadata.start_time
+          } : null
+        }
+      });
+
       const startTime = process.hrtime();
 
       // First, store the metadata
-      await this.storeMetadata(topic, message);
+      const metadata = await this.processMetadata(topic, message);
 
       // Then handle the audio data
-      await this.processAudioData(message);
+      await this.processAudioData(message, metadata);
 
       // Update processing statistics
       this.updateStats(startTime, message);
@@ -62,17 +78,30 @@ class AudioMessageProcessor {
   async processMetadata(topic, message) {
     const audioCollection = await this.getCollection('audio');
     
-    // Extract and flatten metadata
+    if (!message?.call?.metadata) {
+      throw new Error('Invalid audio message structure - missing metadata');
+    }
+
+    // Extract metadata fields from nested structure
     const metadata = {
-      ...message.call.metadata,
-      // Add top-level message fields
+      ...message.call.metadata,  // Base metadata fields from nested structure
       timestamp: message.timestamp,
       instance_id: message.instance_id,
-      // Add processing metadata
+      _type: 'audio',
       _mqtt_topic: topic,
       _received_at: new Date(),
-      _audio_processed: false  // Will be updated after audio storage
+      _audio_processed: false,
+      _audio_formats: [] // Will be updated with formats stored in GridFS
     };
+
+    // Map fields according to field-mappings.md
+    metadata.talkgroup_alpha_tag = metadata.talkgroup_tag;
+    metadata.talkgroup_tag = metadata.talkgroup_group_tag;
+    metadata.sys_name = metadata.short_name;
+
+    // Remove old field names
+    delete metadata.talkgroup_group_tag;
+    delete metadata.short_name;
 
     // Convert numeric booleans to actual booleans
     metadata.emergency = Boolean(metadata.emergency);
@@ -80,7 +109,12 @@ class AudioMessageProcessor {
     metadata.phase2_tdma = Boolean(metadata.phase2_tdma);
 
     // Calculate total duration from freqList
-    metadata.total_duration = metadata.freqList.reduce((sum, freq) => sum + freq.len, 0);
+    metadata.total_duration = metadata.freqList?.reduce((sum, freq) => sum + freq.len, 0) || 0;
+
+    logger.debug('Storing audio metadata:', {
+      filename: metadata.filename,
+      fields: Object.keys(metadata)
+    });
 
     await audioCollection.insertOne(metadata);
     return metadata;
@@ -92,30 +126,16 @@ class AudioMessageProcessor {
    * @param {Object} metadata - Previously stored metadata
    */
   async processAudioData(message, metadata) {
-    let audioData;
-    let audioFormat;
-
-    // Determine the format and extract audio data
-    if (message.call.audio_wav_base64) {
-      audioData = Buffer.from(message.call.audio_wav_base64, 'base64');
-      audioFormat = 'base64';
-      this.stats.base64Processed++;
-    } else if (Buffer.isBuffer(message.call.audio_data)) {
-      audioData = message.call.audio_data;
-      audioFormat = 'binary';
-      this.stats.binaryProcessed++;
-    } else {
-      logger.warn('No audio data found in message', {
-        filename: metadata.filename
-      });
-      return;
+    if (!message?.call) {
+      throw new Error('Invalid audio message structure - missing call data');
     }
 
-    // Store audio data in GridFS
-    const gridFSBucket = getGridFSBucket('calls');
+    const gridFSBucket = getGridFSBucket();
+    const audioFormats = [];
+    let totalBytes = 0;
 
-    // Prepare GridFS metadata
-    const gridFSMetadata = {
+    // Common metadata for GridFS
+    const baseGridFSMetadata = {
       talkgroup: metadata.talkgroup,
       talkgroup_tag: metadata.talkgroup_tag,
       start_time: metadata.start_time,
@@ -125,29 +145,66 @@ class AudioMessageProcessor {
       encrypted: Boolean(metadata.encrypted),
       freq: metadata.freq,
       instance_id: metadata.instance_id,
-      audio_format: audioFormat,
-      original_filename: metadata.filename,
       processing_timestamp: new Date()
     };
 
-    // Store the audio file
-    await this.storeAudioFile(gridFSBucket, metadata.filename, audioData, gridFSMetadata);
+    // Process WAV audio if present in nested structure
+    if (message.call.audio_wav_base64) {
+      const wavData = Buffer.from(message.call.audio_wav_base64, 'base64');
+      const wavFilename = metadata.filename;
+      logger.debug('Processing WAV audio:', {
+        filename: wavFilename,
+        size: wavData.length
+      });
+      await this.storeAudioFile(gridFSBucket, wavFilename, wavData, {
+        ...baseGridFSMetadata,
+        audio_format: 'wav'
+      });
+      audioFormats.push('wav');
+      totalBytes += wavData.length;
+      this.stats.base64Processed++;
+    }
 
-    // Update metadata to indicate audio was processed
+    // Process M4A audio if present in nested structure
+    if (message.call.audio_m4a_base64) {
+      const m4aData = Buffer.from(message.call.audio_m4a_base64, 'base64');
+      const m4aFilename = metadata.filename.replace('.wav', '.m4a');
+      logger.debug('Processing M4A audio:', {
+        filename: m4aFilename,
+        size: m4aData.length
+      });
+      await this.storeAudioFile(gridFSBucket, m4aFilename, m4aData, {
+        ...baseGridFSMetadata,
+        audio_format: 'm4a'
+      });
+      audioFormats.push('m4a');
+      totalBytes += m4aData.length;
+      this.stats.base64Processed++;
+    }
+
+    // Update metadata with audio processing results
     const audioCollection = await this.getCollection('audio');
     await audioCollection.updateOne(
       { filename: metadata.filename },
       { 
         $set: { 
           _audio_processed: true,
-          _audio_format: audioFormat,
-          _audio_size: audioData.length
+          _audio_formats: audioFormats,
+          _audio_size: totalBytes
         }
       }
     );
 
     // Update processing stats
-    this.stats.totalBytesProcessed += audioData.length;
+    this.stats.totalBytesProcessed += totalBytes;
+
+    // Log if no audio data found
+    if (audioFormats.length === 0) {
+      logger.debug('No audio data found in message', {
+        filename: metadata.filename,
+        available_fields: Object.keys(message.call || {})
+      });
+    }
   }
 
   /**
