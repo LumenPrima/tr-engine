@@ -1,5 +1,6 @@
 // System-related functionality
-const API_BASE_URL = 'http://localhost:3002/api/v1';
+import { getApiBaseUrl } from '../utils.js';
+const API_BASE_URL = getApiBaseUrl();
 
 // Fetch and display system performance
 export async function fetchSystemPerformance() {

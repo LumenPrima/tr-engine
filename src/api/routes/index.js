@@ -4,6 +4,21 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Config endpoint to expose necessary frontend configuration
+router.get('/config', (req, res) => {
+    const port = process.env.PORT || 3000;
+    res.json({
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        config: {
+            api: {
+                port: port,
+                base_url: `/api/v1`
+            }
+        }
+    });
+});
+
 // Health check endpoint with system stats
 router.get('/hello', (req, res) => {
     const totalMem = os.totalmem();

@@ -1,7 +1,8 @@
 // Call-related functionality
 import { formatTime, formatDuration, formatUnits } from '../utils.js';
 
-const API_BASE_URL = 'http://localhost:3000/api/v1';
+import { getApiBaseUrl } from '../utils.js';
+const API_BASE_URL = getApiBaseUrl();
 
 // Fetch and display active calls
 export async function fetchActiveCalls() {
@@ -35,11 +36,6 @@ export async function fetchActiveCalls() {
                     <div>TG: ${call.talkgroup || 'Unknown'} - ${call.talkgroup_tag || 'Unknown'}</div>
                     <div>Units: ${formatUnits(call.units)}</div>
                     <div class="timestamp">Started: ${formatTime(call.start_time)}</div>
-                </div>
-                <div class="audio-controls">
-                    <button class="button button-success" data-call-id="${call.call_id}" onclick="playAudio('${call.call_id}')">
-                        Play Audio
-                    </button>
                 </div>
             </div>
         `).join('');
@@ -78,9 +74,12 @@ export async function fetchRecentHistory() {
         // Fetch transcriptions for each call
         const callsWithTranscriptions = await Promise.all(data.data.calls.map(async call => {
             try {
-                const transcriptionResponse = await fetch(`${API_BASE_URL}/transcription/calls/${call.call_id}/transcription`);
+                const transcriptionResponse = await fetch(`${API_BASE_URL}/transcription/${call.call_id}`);
                 if (transcriptionResponse.ok) {
-                    call.transcription = await transcriptionResponse.json();
+                    const transcriptionData = await transcriptionResponse.json();
+                    if (transcriptionData.status === 'success') {
+                        call.transcription = transcriptionData.data;
+                    }
                 }
             } catch (error) {
                 console.error('Error fetching transcription:', error);
@@ -147,9 +146,12 @@ export async function fetchRecentCalls() {
         const calls = showTranscriptions ? 
             await Promise.all(data.data.calls.map(async call => {
                 try {
-                    const transcriptionResponse = await fetch(`${API_BASE_URL}/transcription/calls/${call.call_id}/transcription`);
+                    const transcriptionResponse = await fetch(`${API_BASE_URL}/transcription/${call.call_id}`);
                     if (transcriptionResponse.ok) {
-                        call.transcription = await transcriptionResponse.json();
+                        const transcriptionData = await transcriptionResponse.json();
+                        if (transcriptionData.status === 'success') {
+                            call.transcription = transcriptionData.data;
+                        }
                     }
                 } catch (error) {
                     console.error('Error fetching transcription:', error);

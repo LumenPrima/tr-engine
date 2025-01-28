@@ -1,7 +1,8 @@
 // Unit-related functionality
 import { formatTime, formatUnits } from '../utils.js';
 
-const API_BASE_URL = 'http://localhost:3002/api/v1';
+import { getApiBaseUrl } from '../utils.js';
+const API_BASE_URL = getApiBaseUrl();
 
 // Fetch and display active units
 export async function fetchActiveUnits() {

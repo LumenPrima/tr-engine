@@ -7,29 +7,50 @@ const path = require('path');
 
 const transcriptionService = new TranscriptionService();
 
+// Helper function to parse call ID
+const parseCallId = (callId) => {
+    let talkgroup, targetTime, sysNum;
+    
+    // Parse call ID formats
+    const parts = callId.split('_');
+    
+    if (parts.length === 3) {
+        // Format: sys_num_talkgroup_timestamp (e.g., 2_58259_1738107954)
+        [sysNum, talkgroup, targetTime] = parts.map(p => parseInt(p));
+    } else if (parts.length === 2) {
+        // Format: talkgroup_timestamp (e.g., 58259_1738107954)
+        [talkgroup, targetTime] = parts.map(p => parseInt(p));
+    } else {
+        // Try legacy format: talkgroup-starttime
+        const legacyParts = callId.split('-');
+        if (legacyParts.length === 2) {
+            [talkgroup, targetTime] = legacyParts.map(p => parseInt(p));
+        }
+    }
+
+    if (isNaN(talkgroup) || isNaN(targetTime)) {
+        throw new Error('Invalid call_id format');
+    }
+
+    return { talkgroup, targetTime, sysNum };
+};
+
 // POST endpoint to transcribe an audio file
 router.post('/process/:callId', async (req, res) => {
     try {
         const callId = req.params.callId;
+        const { talkgroup, targetTime, sysNum } = parseCallId(callId);
         
         // Get audio metadata
         const audioCollection = mongoose.connection.db.collection('audio');
-        const parts = callId.split('-');
-        if (parts.length !== 2) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Invalid call_id format. Expected talkgroup-starttime',
-                timestamp: new Date().toISOString()
-            });
-        }
-
-        const talkgroup = parseInt(parts[0]);
-        const targetTime = parseInt(parts[1]);
 
         // Find audio metadata with closest start_time
         const audioMetadata = await audioCollection.aggregate([
             { 
-                $match: { talkgroup: talkgroup }
+                $match: {
+                    talkgroup: talkgroup,
+                    ...(typeof sysNum === 'number' ? { sys_num: sysNum } : {})
+                }
             },
             {
                 $addFields: {
@@ -77,32 +98,15 @@ router.post('/process/:callId', async (req, res) => {
 router.get('/:callId', async (req, res) => {
     try {
         const collection = mongoose.connection.db.collection('transcriptions');
-        
-        // Parse talkgroup-starttime pattern
-        const parts = req.params.callId.split('-');
-        if (parts.length !== 2) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Invalid call_id format. Expected talkgroup-starttime',
-                timestamp: new Date().toISOString()
-            });
-        }
-
-        const talkgroup = parseInt(parts[0]);
-        const targetTime = parseInt(parts[1]);
-
-        if (isNaN(talkgroup) || isNaN(targetTime)) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Invalid talkgroup or starttime format',
-                timestamp: new Date().toISOString()
-            });
-        }
+        const { talkgroup, targetTime, sysNum } = parseCallId(req.params.callId);
 
         // Find transcription with closest start_time
         const transcription = await collection.aggregate([
             { 
-                $match: { talkgroup: talkgroup }
+                $match: {
+                    talkgroup: talkgroup,
+                    ...(typeof sysNum === 'number' ? { sys_name: `sys${sysNum}` } : {})
+                }
             },
             {
                 $addFields: {
@@ -169,7 +173,9 @@ router.get('/:talkgroupId/recent', async (req, res) => {
         .toArray();
 
         const formattedTranscriptions = transcriptions.map(t => ({
-            call_id: `${t.talkgroup}-${t.timestamp}`,
+            call_id: typeof t.sys_num === 'number' ? 
+                `${t.sys_num}_${t.talkgroup}_${t.timestamp}` : 
+                `${t.talkgroup}_${t.timestamp}`,
             text: t.text,
             timestamp: new Date(t.timestamp * 1000),
             metadata: {
@@ -307,7 +313,9 @@ router.get('/group', async (req, res) => {
         ]).toArray();
 
         const formattedTranscriptions = transcriptions.map(t => ({
-            call_id: `${t.talkgroup}-${t.timestamp}`,
+            call_id: typeof t.sys_num === 'number' ? 
+                `${t.sys_num}_${t.talkgroup}_${t.timestamp}` : 
+                `${t.talkgroup}_${t.timestamp}`,
             talkgroup: t.talkgroup,
             text: t.text,
             timestamp: new Date(t.timestamp * 1000),
@@ -372,7 +380,9 @@ router.get('/:talkgroupId/group', async (req, res) => {
         ]).toArray();
 
         const formattedTranscriptions = transcriptions.map(t => ({
-            call_id: `${t.talkgroup}-${t.timestamp}`,
+            call_id: typeof t.sys_num === 'number' ? 
+                `${t.sys_num}_${t.talkgroup}_${t.timestamp}` : 
+                `${t.talkgroup}_${t.timestamp}`,
             text: t.text,
             timestamp: new Date(t.timestamp * 1000),
             time_diff_seconds: t.timeDiff,

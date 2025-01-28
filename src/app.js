@@ -8,6 +8,7 @@ const config = require('./config');
 const WebSocketServer = require('./api/websocket/server');
 const apiRoutes = require('./api/routes');
 const { setupMiddleware } = require('./api/middleware');
+const audioHandler = require('./services/mqtt/handlers/audio-handler');
 
 // Initialize state managers
 const activeCallManager = require('./services/state/ActiveCallManager');
@@ -210,7 +211,9 @@ class TREngine {
   async setupWebSocket() {
     // Initialize WebSocket server with HTTP server
     this.wss = new WebSocketServer(this.server);
-    logger.info('WebSocket server initialized');
+    // Connect AudioHandler to WebSocket server
+    audioHandler.setWebSocketServer(this.wss);
+    logger.info('WebSocket server initialized and connected to AudioHandler');
   }
 
   async connectMQTT() {

@@ -9,6 +9,9 @@ class SystemManager {
         // Track recent rates for each system
         this.recentRates = new Map(); // sys_name -> rates array
         
+        // Track active recorders for each system
+        this.activeRecorders = new Map(); // sys_name -> recorder[]
+        
         logger.info('SystemManager initialized');
     }
 
@@ -16,6 +19,7 @@ class SystemManager {
         logger.debug('Cleaning up SystemManager...');
         this.systemStates.clear();
         this.recentRates.clear();
+        this.activeRecorders.clear();
     }
     
     async processMessage(topic, message, messageId) {
@@ -34,6 +38,9 @@ class SystemManager {
                     break;
                 case 'config':
                     await this.updateSystemConfig(message);
+                    break;
+                case 'recorders':
+                    await this.updateRecorders(message);
                     break;
             }
         } catch (err) {
@@ -84,6 +91,35 @@ class SystemManager {
             });
         } catch (err) {
             logger.error('Error updating system state:', err);
+            throw err;
+        }
+    }
+
+    updateRecorders(message) {
+        try {
+            if (!message.recorders || !Array.isArray(message.recorders)) {
+                logger.warn('Recorders message missing recorders array');
+                return;
+            }
+
+            // Process each recorder
+            message.recorders.forEach(recorder => {
+                const sysName = recorder.sys_name;
+                if (!this.activeRecorders.has(sysName)) {
+                    this.activeRecorders.set(sysName, []);
+                }
+                const recorders = this.activeRecorders.get(sysName);
+                
+                // Update or add recorder
+                const index = recorders.findIndex(r => r.id === recorder.id);
+                if (index >= 0) {
+                    recorders[index] = recorder;
+                } else {
+                    recorders.push(recorder);
+                }
+            });
+        } catch (err) {
+            logger.error('Error updating recorders:', err);
             throw err;
         }
     }
@@ -207,7 +243,11 @@ class SystemManager {
         try {
             const cutoff = Date.now() - (5 * 60 * 1000); // 5 minutes
             return Array.from(this.systemStates.values())
-                .filter(system => system.status?.last_seen?.getTime() >= cutoff);
+                .filter(system => system.status?.last_seen?.getTime() >= cutoff)
+                .map(system => ({
+                    ...system,
+                    active_recorders: this.activeRecorders.get(system.sys_name) || []
+                }));
         } catch (err) {
             logger.error('Error getting active systems:', err);
             throw err;

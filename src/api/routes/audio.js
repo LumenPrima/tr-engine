@@ -13,25 +13,43 @@ const findAudioFiles = async (callIdOrFilename) => {
     const collection = mongoose.connection.db.collection('audio');
     const gridFSBucket = getGridFSBucket('audioFiles');
     
-    // Parse talkgroup-starttime pattern
-    const parts = callIdOrFilename.split('-');
-    if (parts.length !== 2) {
-        logger.debug(`Invalid call_id format: ${callIdOrFilename}. Expected talkgroup-starttime`);
+    let talkgroup, targetTime, sysNum;
+    
+    // Parse call ID formats
+    const parts = callIdOrFilename.split('_');
+    
+    if (parts.length === 3) {
+        // Format: sys_num_talkgroup_timestamp (e.g., 2_58259_1738107954)
+        [sysNum, talkgroup, targetTime] = parts.map(p => parseInt(p));
+    } else if (parts.length === 2) {
+        // Format: talkgroup_timestamp (e.g., 58259_1738107954)
+        [talkgroup, targetTime] = parts.map(p => parseInt(p));
+    } else {
+        // Try legacy format: talkgroup-starttime
+        const legacyParts = callIdOrFilename.split('-');
+        if (legacyParts.length === 2) {
+            [talkgroup, targetTime] = legacyParts.map(p => parseInt(p));
+        }
+    }
+
+    if (isNaN(talkgroup) || isNaN(targetTime)) {
+        logger.debug(`Invalid call_id format: ${callIdOrFilename}`);
         return { metadata: null, files: [] };
     }
 
-    const talkgroup = parseInt(parts[0]);
-    const targetTime = parseInt(parts[1]);
-
-    if (isNaN(talkgroup) || isNaN(targetTime)) {
-        logger.debug(`Invalid talkgroup or starttime: ${callIdOrFilename}`);
-        return { metadata: null, files: [] };
+    // Build query for metadata
+    const query = { talkgroup, start_time: targetTime };
+    if (typeof sysNum === 'number') {
+        query.sys_num = sysNum;
     }
 
     // Find metadata with closest start_time
     const metadata = await collection.aggregate([
         { 
-            $match: { talkgroup: talkgroup }
+            $match: {
+                talkgroup: talkgroup,
+                ...(typeof sysNum === 'number' ? { sys_num: sysNum } : {})
+            }
         },
         {
             $addFields: {

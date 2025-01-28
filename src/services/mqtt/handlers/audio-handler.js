@@ -1,7 +1,16 @@
 const logger = require('../../../utils/logger');
 const fileStorage = require('../message-processor/file-storage');
+const WebSocketServer = require('../../../api/websocket/server');
 
 class AudioHandler {
+  constructor() {
+    this.wsServer = null;
+  }
+
+  setWebSocketServer(server) {
+    this.wsServer = server;
+  }
+
   /**
    * Process an audio message
    * @param {string} topic - MQTT topic
@@ -77,6 +86,37 @@ class AudioHandler {
         logger.debug('Completed file storage tasks successfully', {
           baseFilename
         });
+
+        // Broadcast audio to subscribed WebSocket clients
+        if (this.wsServer) {
+          const metadata = {
+            call_id: transformedMessage.call_id || `${transformedMessage.talkgroup}-${transformedMessage.start_time}`,
+            talkgroup: transformedMessage.talkgroup,
+            talkgroup_tag: transformedMessage.talkgroup_tag,
+            talkgroup_description: transformedMessage.talkgroup_description,
+            start_time: transformedMessage.start_time,
+            stop_time: transformedMessage.stop_time,
+            call_length: transformedMessage.call_length,
+            emergency: transformedMessage.emergency === 1,
+            encrypted: transformedMessage.encrypted === 1,
+            freq: transformedMessage.freq,
+            audio_type: transformedMessage.audio_type,
+            short_name: transformedMessage.short_name,
+            srcList: transformedMessage.srcList || [],
+            filename: baseFilename
+          };
+
+          const audioData = {
+            audio_wav_base64: originalMessage.call?.audio_wav_base64,
+            audio_m4a_base64: originalMessage.call?.audio_m4a_base64
+          };
+
+          this.wsServer.broadcastAudio(audioData, metadata);
+          logger.debug('Broadcasted audio to WebSocket clients', {
+            talkgroup: metadata.talkgroup,
+            filename: metadata.filename
+          });
+        }
       } catch (error) {
         logger.error('Error storing audio files:', {
           error: error.message,

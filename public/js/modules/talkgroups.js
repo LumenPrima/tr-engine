@@ -1,7 +1,8 @@
 // Talkgroup-related functionality
 import { formatTime, formatDuration, formatUnits } from '../utils.js';
 
-const API_BASE_URL = 'http://localhost:3002/api/v1';
+import { getApiBaseUrl } from '../utils.js';
+const API_BASE_URL = getApiBaseUrl();
 
 // Fetch and display talkgroup activity
 export async function fetchTalkgroupActivity() {
@@ -86,13 +87,37 @@ export async function initializeTalkgroupFilters() {
             `<option value="${tg.talkgroup}">${tg.talkgroup} - ${tg.talkgroup_tag || 'Unknown'}</option>`
         ).join('');
         
-        ['active-units-talkgroup-filter', 'talkgroup-select']
-            .forEach(id => {
-                const select = document.getElementById(id);
-                if (select) {
-                    select.innerHTML = '<option value="">All</option>' + talkgroupOptions;
-                }
+        // Populate all talkgroup select elements
+        const selects = {
+            'active-units-talkgroup-filter': { includeAll: true },
+            'talkgroup-select': { includeAll: true },
+            'audio-talkgroup-select': { includeAll: false }
+        };
+
+        Object.entries(selects).forEach(([id, options]) => {
+            const select = document.getElementById(id);
+            if (select) {
+                select.innerHTML = (options.includeAll ? '<option value="">All</option>' : '') + 
+                    talkgroups.map(tg => {
+                        const label = `${tg.talkgroup} - ${tg.talkgroup_tag || 'Unknown'}`;
+                        const description = tg.talkgroup_description ? ` (${tg.talkgroup_description})` : '';
+                        return `<option value="${tg.talkgroup}">${label}${description}</option>`;
+                    }).join('');
+            }
+        });
+
+        // Sort talkgroups in the audio select by talkgroup number
+        const audioSelect = document.getElementById('audio-talkgroup-select');
+        if (audioSelect) {
+            const options = Array.from(audioSelect.options);
+            options.sort((a, b) => {
+                const aNum = parseInt(a.value);
+                const bNum = parseInt(b.value);
+                return aNum - bNum;
             });
+            audioSelect.innerHTML = '';
+            options.forEach(option => audioSelect.appendChild(option));
+        }
     } catch (error) {
         console.error('Error initializing talkgroup filters:', error);
     }

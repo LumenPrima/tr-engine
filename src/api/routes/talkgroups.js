@@ -36,16 +36,16 @@ router.get('/',
       const collection = mongoose.connection.db.collection('talkgroups');
       const talkgroups = await collection.find(filter).toArray();
 
-      const formattedTalkgroups = talkgroups.map(tg => ({
-        talkgroup: tg.talkgroup,
-        sys_name: tg.sys_name,
-        talkgroup_tag: tg.talkgroup_tag,
-        description: tg.description,
-        category: tg.category,
-        group: tg.group,
-        priority: tg.priority || false,
-        encrypted: tg.encrypted || false
-      }));
+        const formattedTalkgroups = talkgroups.map(tg => ({
+            talkgroup: tg.talkgroup,
+            sys_name: tg.sys_name,
+            talkgroup_tag: tg.alpha_tag,
+            description: tg.description,
+            category: tg.category,
+            group: tg.group,
+            priority: tg.priority || false,
+            encrypted: tg.encrypted || false
+        }));
 
       res.json({
         status: 'success',
@@ -89,7 +89,7 @@ router.get('/:talkgroup_id',
       const formattedTalkgroup = {
         talkgroup: talkgroup.talkgroup,
         sys_name: talkgroup.sys_name,
-        talkgroup_tag: talkgroup.talkgroup_tag,
+        talkgroup_tag: talkgroup.alpha_tag,
         description: talkgroup.description,
         category: talkgroup.category,
         group: talkgroup.group,

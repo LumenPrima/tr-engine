@@ -49,22 +49,22 @@ router.get('/performance', async (req, res) => {
         const stats = {
             total_systems: activeSystems.length,
             active_systems: activeSystems.filter(sys => sys.status?.connected !== false).length,
-            system_stats: activeSystems.map(system => ({
-                name: system.sys_name,
+            systems: activeSystems.map(system => ({
                 sys_name: system.sys_name,
-                sys_num: system.sys_num,
-                type: system.type,
-                control_channel: system.current_control_channel,
-                decoderate: system.current_decoderate || 0,
-                decoderate_interval: system.decoderate_interval || 3,
-                recent_rates: (system.recent_rates || []).slice(-10), // Last 10 readings
-            }))
-        };
-
-        // Add aggregate statistics
-        stats.aggregate = {
-            average_decoderate: stats.system_stats.reduce((sum, sys) => 
-                sum + (sys.decoderate || 0), 0) / stats.total_systems
+                current_decoderate: system.current_decoderate || 0,
+                active_recorders: system.active_recorders || [],
+                config: {
+                    control_channels: system.config?.control_channels || []
+                }
+            })),
+            aggregate: {
+                decoderate: activeSystems.reduce((sum, sys) => 
+                    sum + (sys.current_decoderate || 0), 0) / activeSystems.length,
+                active_recorders: activeSystems.reduce((sum, sys) => 
+                    sum + (sys.active_recorders?.length || 0), 0),
+                total_recorders: activeSystems.reduce((sum, sys) => 
+                    sum + (sys.config?.control_channels?.length || 0), 0)
+            }
         };
 
         res.json({

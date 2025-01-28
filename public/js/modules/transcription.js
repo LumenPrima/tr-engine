@@ -1,17 +1,18 @@
 // Transcription-related functionality
 import { formatTime, formatDuration } from '../utils.js';
 
-const API_BASE_URL = 'http://localhost:3002/api/v1';
+import { getApiBaseUrl } from '../utils.js';
+const API_BASE_URL = getApiBaseUrl();
 
 // Fetch recent transcriptions for a talkgroup
 export async function fetchTalkgroupTranscriptions(talkgroupId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/transcription/talkgroups/${talkgroupId}/recent_transcriptions?limit=10`);
+        const response = await fetch(`${API_BASE_URL}/transcription/${talkgroupId}/recent?limit=10`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
         
         const content = document.querySelector('#talkgroup-activity .content');
-        if (!data?.transcriptions || data.transcriptions.length === 0) {
+        if (!data.data?.transcriptions || data.data.transcriptions.length === 0) {
             content.innerHTML += '<div class="status-item">No recent transcriptions</div>';
             return;
         }
@@ -19,7 +20,7 @@ export async function fetchTalkgroupTranscriptions(talkgroupId) {
         content.innerHTML += `
             <div class="transcription-section">
                 <h4>Recent Transcriptions</h4>
-                ${data.transcriptions.map(t => `
+                ${data.data.transcriptions.map(t => `
                     <div class="status-item">
                         <div class="transcription">
                             <strong>Transcription:</strong> ${t.text}
@@ -47,11 +48,11 @@ export async function fetchTranscriptionStats() {
         const data = await response.json();
         
         const content = document.querySelector('#system-performance .content');
-        if (!data?.stats) {
+        if (!data?.data) {
             return;
         }
 
-        const stats = data.stats;
+        const stats = data.data;
         content.innerHTML += `
             <div class="stat-section">
                 <h4>Transcription Stats</h4>

@@ -1,52 +1,96 @@
-// Utility functions
-const API_BASE_URL = 'http://localhost:3002/api/v1';
-
-// Format timestamp
-function formatTime(timestamp) {
-    if (!timestamp) return 'Unknown';
+// Time formatting utilities
+export function formatTime(timestamp) {
+    if (!timestamp) return 'N/A';
     const date = new Date(timestamp);
-    return date.toLocaleString();
+    return date.toLocaleTimeString();
 }
 
-// Format duration in seconds to human-readable string
-function formatDuration(seconds) {
-    if (!seconds) return '0s';
+export function formatDuration(seconds) {
+    if (!seconds) return 'N/A';
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.floor(seconds % 60);
-    if (minutes === 0) return `${remainingSeconds}s`;
-    return `${minutes}m ${remainingSeconds}s`;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
-// Format array of units into readable string
-function formatUnits(units) {
-    if (!units || units.length === 0) return 'None';
+export function formatUnits(units) {
+    if (!units || !Array.isArray(units)) return 'None';
     return units.join(', ');
 }
 
-// Play audio for a call
-async function playAudio(callId) {
-    try {
-        // Convert call ID from "sys_tg_timestamp" to "tg-timestamp" format
-        const [_, tg, timestamp] = callId.split('_');
-        const formattedCallId = `${tg}-${timestamp}`;
+// API configuration management
+let apiConfig = null;
 
-        // First check if audio exists
-        const response = await fetch(`${API_BASE_URL}/audio/call/${formattedCallId}`, {
-            method: 'HEAD'
-        });
+export async function initializeApiConfig() {
+    try {
+        console.log('Fetching API configuration...');
+        const response = await fetch('/api/v1/config');
         
         if (!response.ok) {
-            throw new Error(response.status === 404 ? 'Audio not available yet' : 'Failed to load audio');
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-
-        const audioUrl = `${API_BASE_URL}/audio/call/${formattedCallId}`;
-        const audio = new Audio(audioUrl);
         
-        // Add error handling for audio element
-        audio.onerror = () => {
-            throw new Error('Failed to play audio');
+        const data = await response.json();
+        if (!data?.config?.api) {
+            throw new Error('Invalid API configuration format');
+        }
+        
+        apiConfig = data.config.api;
+        console.log('API configuration loaded:', {
+            port: apiConfig.port,
+            base_url: apiConfig.base_url
+        });
+        
+        return apiConfig;
+    } catch (error) {
+        console.error('Error fetching API config:', error);
+        console.warn('Using fallback configuration');
+        
+        // Default fallback configuration
+        apiConfig = {
+            port: window.location.port || 3000,
+            base_url: '/api/v1'
         };
+        
+        console.log('Fallback configuration:', apiConfig);
+        return apiConfig;
+    }
+}
 
+export function getApiBaseUrl() {
+    if (!apiConfig) {
+        console.warn('API config not initialized, using default base URL');
+        return '/api/v1';
+    }
+    return apiConfig.base_url || '/api/v1';
+}
+
+export function getWsBaseUrl() {
+    if (!apiConfig) {
+        console.warn('API config not initialized, using default WebSocket configuration');
+    }
+    
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    const port = apiConfig?.port || window.location.port || 3000;
+    const wsUrl = `${protocol}//${host}${port ? `:${port}` : ''}`;
+    
+    console.log('WebSocket URL:', wsUrl);
+    return wsUrl;
+}
+
+// Audio playback
+export async function playAudio(callId) {
+    try {
+        const response = await fetch(`${getApiBaseUrl()}/audio/${callId}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        
+        // Clean up object URL after audio loads
+        audio.onload = () => URL.revokeObjectURL(url);
+        
+        // Play the audio
         await audio.play();
     } catch (error) {
         console.error('Error playing audio:', error);
@@ -54,18 +98,5 @@ async function playAudio(callId) {
     }
 }
 
-// Export functions
-export {
-    formatTime,
-    formatDuration,
-    formatUnits,
-    playAudio
-};
-
-// Export to window for HTML use
-Object.assign(window, {
-    formatTime,
-    formatDuration,
-    formatUnits,
-    playAudio
-});
+// Export for use in HTML
+window.playAudio = playAudio;

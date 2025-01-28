@@ -91,8 +91,33 @@
             </div>
             <div class="content"></div>
         </div>
+        <div class="card" id="audio-streaming">
+            <h2>Audio Streaming</h2>
+            <div id="audio-controls" class="filters">
+                <div class="filter-group">
+                    <label>Talkgroups:</label>
+                    <select id="audio-talkgroup-select" multiple size="5">
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Emergency Only:</label>
+                    <input type="checkbox" id="emergency-only-audio">
+                </div>
+                <div class="filter-group">
+                    <label>Auto-Play:</label>
+                    <input type="checkbox" id="auto-play-audio" checked>
+                </div>
+                <div class="button-group">
+                    <button id="subscribe-audio-btn" class="action-button">Subscribe</button>
+                    <button id="unsubscribe-audio-btn" class="action-button">Unsubscribe</button>
+                </div>
+            </div>
+            <div id="audio-container" class="content">
+                <!-- Audio elements will be added here dynamically -->
+            </div>
+        </div>
     </div>
-    <audio id="audio-player" controls></audio>
     <button class="refresh-button" onclick="window.refreshAll()">Refresh All</button>
 
     <!-- Load JavaScript files -->

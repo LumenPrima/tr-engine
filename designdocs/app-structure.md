@@ -1,83 +1,89 @@
 # Radio Monitoring System Architecture
 
 ## Overview
-The Radio Monitoring System is a Node.js/Express application that processes MQTT messages from radio systems, stores historical data, and provides real-time monitoring capabilities. The system is designed to handle high message throughput while maintaining low latency for real-time updates.
+The Radio Monitoring System is a Node.js/Express application that processes MQTT messages from trunk-recorder systems, stores historical data, and provides monitoring capabilities. The system is designed to handle high message throughput while maintaining low latency for data processing.
 
 ## Directory Structure
 ```
-/radio-monitor
+/tr-engine
 ├── src/
 │   ├── app.js                 # Express application setup
 │   ├── config/
 │   │   ├── index.js           # Configuration management
-│   │   ├── mqtt.js            # MQTT connection settings
+│   │   ├── logger.js          # Logging configuration
 │   │   └── mongodb.js         # Database connection settings
 │   │
 │   ├── models/
-│   │   ├── raw/               # Raw message schemas
-│   │   │   ├── CallMessage.js
-│   │   │   ├── SystemMessage.js
-│   │   │   ├── UnitMessage.js
-│   │   │   └── RecorderMessage.js
-│   │   │
-│   │   └── processed/         # Processed data schemas
-│   │       ├── ActiveCall.js
-│   │       ├── SystemState.js
-│   │       ├── UnitState.js
-│   │       └── AudioFile.js
+│   │   ├── call.js           # Call data model
+│   │   ├── Talkgroup.js      # Talkgroup data model
+│   │   └── processed/        # Processed event models
+│   │       └── CallEvent.js
 │   │
 │   ├── services/
 │   │   ├── mqtt/
-│   │   │   ├── client.js      # MQTT connection management
-│   │   │   ├── parser.js      # Message parsing and validation 
-│   │   │   └── handlers/      # Topic-specific message handlers
-│   │   │       ├── calls.js
-│   │   │       ├── systems.js
-│   │   │       ├── units.js
-│   │   │       └── recorders.js
+│   │   │   ├── mqtt-client.js # MQTT connection management
+│   │   │   ├── handlers/      # Message handlers
+│   │   │   │   └── audio-handler.js
+│   │   │   └── message-processor/
+│   │   │       ├── collection-manager.js
+│   │   │       ├── file-storage.js
+│   │   │       ├── index.js
+│   │   │       ├── message-transformer.js
+│   │   │       └── stats-manager.js
 │   │   │
 │   │   ├── state/
 │   │   │   ├── ActiveCallManager.js
 │   │   │   ├── SystemManager.js
+│   │   │   ├── TalkgroupManager.js
 │   │   │   └── UnitManager.js
 │   │   │
-│   │   ├── audio/
-│   │   │   ├── storage.js     # GridFS audio file management
-│   │   │   └── processor.js   # Audio processing utilities
+│   │   ├── events/
+│   │   │   ├── emitter.js    # Application event management
+│   │   │   └── handlers.js   # Event handling logic
 │   │   │
-│   │   └── events/
-│   │       ├── emitter.js     # Application event management
-│   │       └── handlers.js     # Event handling logic
+│   │   ├── monitoring/
+│   │   │   └── RecordingMonitor.js
+│   │   │
+│   │   └── transcription/
+│   │       └── TranscriptionService.js
 │   │
 │   ├── api/
 │   │   ├── routes/
-│   │   │   ├── calls.js       # Call-related endpoints
-│   │   │   ├── systems.js     # System status endpoints
-│   │   │   ├── units.js       # Unit tracking endpoints
-│   │   │   └── audio.js       # Audio file endpoints
+│   │   │   ├── audio.js      # Audio file endpoints
+│   │   │   ├── calls.js      # Call-related endpoints
+│   │   │   ├── index.js      # Main router
+│   │   │   ├── systems.js    # System status endpoints
+│   │   │   ├── talkgroups.js # Talkgroup endpoints
+│   │   │   ├── transcription.js # Transcription endpoints
+│   │   │   └── units.js      # Unit tracking endpoints
 │   │   │
 │   │   ├── middleware/
-│   │   │   ├── auth.js        # Authentication (future use)
-│   │   │   ├── validation.js  # Request validation
-│   │   │   └── error.js       # Error handling
+│   │   │   └── index.js      # Shared middleware
 │   │   │
-│   │   └── websocket/
-│   │       ├── server.js      # WebSocket server setup
-│   │       └── handlers.js     # WebSocket event handlers
+│   │   └── websocket/        # Future WebSocket implementation
+│   │       └── server.js     # (Planned)
 │   │
 │   └── utils/
-│       ├── logger.js          # Logging configuration
-│       ├── metrics.js         # Performance monitoring
-│       └── helpers.js         # Shared utility functions
+│       └── logger.js         # Logging utilities
 │
-├── scripts/
-│   ├── setup-db.js            # Database initialization
-│   └── generate-indexes.js    # Index creation script
+├── public/                    # Frontend assets
+│   ├── index.html
+│   ├── css/
+│   │   └── styles.css
+│   └── js/
+│       ├── app.js
+│       ├── utils.js
+│       └── modules/
+│           ├── calls.js
+│           ├── system.js
+│           ├── talkgroups.js
+│           ├── transcription.js
+│           └── units.js
 │
-└── tests/
-    ├── unit/                  # Unit tests
-    ├── integration/           # Integration tests
-    └── fixtures/              # Test data
+└── designdocs/               # Design documentation
+    ├── api-usage.md
+    ├── app-structure.md
+    └── ...
 ```
 
 ## Core Components
@@ -86,26 +92,26 @@ The Radio Monitoring System is a Node.js/Express application that processes MQTT
 The system processes messages through several stages:
 
 1. MQTT Message Reception
-   - The MQTT client connects to the radio system broker
+   - Messages from trunk-recorder MQTT Status plugin are received
    - Messages are validated and parsed based on topic
    - Raw messages are stored in appropriate collections
 
 2. State Management
    - Messages update real-time state through manager services
-   - Changes trigger events for real-time client updates
+   - Changes trigger events for updates
    - State is persisted to MongoDB for durability
 
-3. Real-time Updates
-   - WebSocket connections maintain client synchronization
-   - State changes are immediately broadcast to subscribers
-   - Clients can request initial state through REST API
+3. Real-time Updates (Current Implementation)
+   - REST endpoints provide current state
+   - Polling-based updates for active calls and events
+   - WebSocket implementation planned for future
 
 ### Data Storage Strategy
 
 1. Raw Message Collections
    - Time series collections store all incoming messages
    - Organized by message type (calls, systems, units)
-   - Efficient historical querying and retention management
+   - Efficient historical querying
 
 2. Processed State Collections
    - Active calls with current status and participants
@@ -116,6 +122,11 @@ The system processes messages through several stages:
    - GridFS for audio file management
    - Metadata stored with call records
    - Efficient streaming and retrieval
+
+4. Transcription Storage
+   - Transcription results linked to audio files
+   - Support for both local Whisper and OpenAI API
+   - Quality assessment and verification flags
 
 ## API Layer
 
@@ -135,7 +146,9 @@ The system processes messages through several stages:
    - GET /api/v1/system/health
    - GET /api/v1/system/stats
 
-### WebSocket Events
+### Future WebSocket Implementation (Planned)
+
+The following features are planned for future WebSocket support:
 
 1. State Updates
    - call.update: Call state changes
@@ -158,43 +171,22 @@ The system processes messages through several stages:
    - Time series collections for historical data
    - Bulk operations for batch updates
 
-3. Real-time Updates
-   - WebSocket connection management
-   - Event batching and throttling
-   - Client-side state reconciliation
-
 ## Deployment Considerations
 
 1. Environment Configuration
    - MQTT connection settings
    - MongoDB configuration
-   - API rate limits and caching
+   - Transcription service settings (local/OpenAI)
+   - API settings
 
 2. Monitoring
    - Message processing metrics
    - System performance monitoring
    - Error tracking and alerting
 
-3. Maintenance
-   - Database cleanup procedures
-   - Audio file retention policies
-   - Backup and recovery procedures
-
-## Development Workflow
-
-1. Local Development
-   - Environment setup with Docker
-   - Development database seeding
-   - Test message simulation
-
-2. Testing Strategy
-   - Unit tests for core logic
-   - Integration tests for API endpoints
-   - Performance testing for message processing
-
-3. Deployment Pipeline
-   - Code quality checks
-   - Automated testing
-   - Deployment automation
+3. Security Notice
+   - Authentication not yet implemented
+   - Run in secure, isolated network
+   - Docker deployment coming soon
 
 This architecture provides a foundation for building a scalable and maintainable radio monitoring system. Each component is designed to be modular and testable, with clear separation of concerns and well-defined interfaces.

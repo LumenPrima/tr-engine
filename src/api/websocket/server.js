@@ -8,7 +8,11 @@ const unitManager = require('../../services/state/UnitManager');
 class WebSocketServer {
     constructor(server) {
         this.wss = new WebSocket.Server({ server });
+        logger.info('WebSocket server attached to HTTP server');
+        
         this.eventHandlers = new EventHandlers(this.wss);
+        this.subscriptions = new Map(); // Track client subscriptions
+        this.audioSubscriptions = new Map(); // Track audio subscriptions
         this.setupWebSocketServer();
     }
 
@@ -30,6 +34,10 @@ class WebSocketServer {
         const clientIp = req.socket.remoteAddress;
         logger.info(`New WebSocket connection from ${clientIp}`);
 
+        // Initialize client subscriptions
+        this.subscriptions.set(ws, new Set());
+        this.audioSubscriptions.set(ws, new Map()); // Map talkgroup IDs to options
+
         // Send initial state to the new client
         this.sendInitialState(ws);
 
@@ -37,6 +45,23 @@ class WebSocketServer {
         ws.on('message', (message) => this.handleClientMessage(ws, message));
         ws.on('close', () => this.handleClientDisconnect(ws));
         ws.on('error', (error) => this.handleClientError(ws, error));
+
+        // Send connection status
+        this.sendResponse(ws, 'connection.status', {
+            status: 'connected',
+            subscriptions: []
+        });
+
+        // Start heartbeat for this client
+        ws.isAlive = true;
+        ws.heartbeatInterval = setInterval(() => {
+            if (!ws.isAlive) {
+                clearInterval(ws.heartbeatInterval);
+                return ws.terminate();
+            }
+            ws.isAlive = false;
+            this.sendResponse(ws, 'heartbeat', {});
+        }, 30000);
     }
 
     async sendInitialState(ws) {
@@ -69,8 +94,28 @@ class WebSocketServer {
             const data = JSON.parse(message);
             logger.debug('Received WebSocket message:', data);
 
+            // Reset heartbeat timeout
+            ws.isAlive = true;
+
             // Handle client requests
             switch (data.type) {
+                // Subscription management
+                case 'subscribe':
+                    this.handleSubscribe(ws, data.data?.events);
+                    break;
+                case 'unsubscribe':
+                    this.handleUnsubscribe(ws, data.data?.events);
+                    break;
+                
+                // Audio subscription management
+                case 'audio.subscribe':
+                    this.handleAudioSubscribe(ws, data.data);
+                    break;
+                case 'audio.unsubscribe':
+                    this.handleAudioUnsubscribe(ws, data.data?.talkgroups);
+                    break;
+
+                // Data requests
                 case 'get.active_calls':
                     this.handleGetActiveCalls(ws);
                     break;
@@ -80,8 +125,24 @@ class WebSocketServer {
                 case 'get.unit_status':
                     this.handleGetUnitStatus(ws, data.unit);
                     break;
+                case 'transcription.request':
+                    this.handleTranscriptionRequest(ws, data.data);
+                    break;
+                case 'transcription.stats.request':
+                    this.handleTranscriptionStatsRequest(ws, data.data);
+                    break;
+                
+                // Heartbeat response
+                case 'heartbeat':
+                    ws.isAlive = true;
+                    break;
+
                 default:
                     logger.warn(`Unknown message type: ${data.type}`);
+                    this.sendError(ws, 'Unknown message type', {
+                        code: 'UNKNOWN_MESSAGE_TYPE',
+                        type: data.type
+                    });
             }
         } catch (err) {
             logger.error('Error handling client message:', err);
@@ -91,6 +152,13 @@ class WebSocketServer {
 
     handleClientDisconnect(ws) {
         logger.info('Client disconnected from WebSocket');
+        // Clean up subscriptions
+        this.subscriptions.delete(ws);
+        this.audioSubscriptions.delete(ws);
+        // Clear heartbeat interval
+        if (ws.heartbeatInterval) {
+            clearInterval(ws.heartbeatInterval);
+        }
     }
 
     handleClientError(ws, error) {
@@ -132,6 +200,75 @@ class WebSocketServer {
         }
     }
 
+    // Subscription handlers
+    handleSubscribe(ws, events) {
+        if (!Array.isArray(events)) {
+            return this.sendError(ws, 'Invalid events array', {
+                code: 'INVALID_SUBSCRIPTION'
+            });
+        }
+
+        const currentSubs = this.subscriptions.get(ws);
+        events.forEach(event => currentSubs.add(event));
+        
+        this.sendResponse(ws, 'connection.status', {
+            status: 'connected',
+            subscriptions: Array.from(currentSubs)
+        });
+    }
+
+    handleUnsubscribe(ws, events) {
+        if (!Array.isArray(events)) {
+            return this.sendError(ws, 'Invalid events array', {
+                code: 'INVALID_UNSUBSCRIBE'
+            });
+        }
+
+        const currentSubs = this.subscriptions.get(ws);
+        events.forEach(event => currentSubs.delete(event));
+        
+        this.sendResponse(ws, 'connection.status', {
+            status: 'connected',
+            subscriptions: Array.from(currentSubs)
+        });
+    }
+
+    handleAudioSubscribe(ws, data) {
+        if (!data?.talkgroups || !Array.isArray(data.talkgroups)) {
+            return this.sendError(ws, 'Invalid talkgroups array', {
+                code: 'INVALID_AUDIO_SUBSCRIPTION'
+            });
+        }
+
+        const audioSubs = this.audioSubscriptions.get(ws);
+        data.talkgroups.forEach(talkgroup => {
+            audioSubs.set(talkgroup, {
+                format: data.format || 'm4a',
+                options: data.options || {}
+            });
+        });
+
+        this.sendResponse(ws, 'connection.status', {
+            status: 'connected',
+            audioSubscriptions: Array.from(audioSubs.keys())
+        });
+    }
+
+    handleAudioUnsubscribe(ws, talkgroups) {
+        const audioSubs = this.audioSubscriptions.get(ws);
+        
+        if (talkgroups && Array.isArray(talkgroups)) {
+            talkgroups.forEach(talkgroup => audioSubs.delete(talkgroup));
+        } else {
+            audioSubs.clear();
+        }
+
+        this.sendResponse(ws, 'connection.status', {
+            status: 'connected',
+            audioSubscriptions: Array.from(audioSubs.keys())
+        });
+    }
+
     // Helper methods for sending responses
     sendResponse(ws, type, data) {
         if (ws.readyState === WebSocket.OPEN) {
@@ -141,6 +278,40 @@ class WebSocketServer {
                 data
             }));
         }
+    }
+
+    // Method to broadcast audio to subscribed clients
+    broadcastAudio(audioData, metadata) {
+        const talkgroup = metadata.talkgroup;
+        
+        this.wss.clients.forEach(client => {
+            if (client.readyState !== WebSocket.OPEN) return;
+
+            const audioSubs = this.audioSubscriptions.get(client);
+            if (!audioSubs || !audioSubs.has(talkgroup)) return;
+
+            const preferences = audioSubs.get(talkgroup);
+            
+            // Check emergency filter
+            if (preferences.options.emergencyOnly && !metadata.emergency) return;
+
+            // Prepare audio data based on format preference
+            const format = preferences.format || 'm4a';
+            const audioContent = format === 'wav' ? 
+                audioData.audio_wav_base64 : 
+                audioData.audio_m4a_base64;
+
+            if (!audioContent) return;
+
+            // Send audio to client
+            this.sendResponse(client, 'audio.new', {
+                callId: metadata.call_id,
+                talkgroup: talkgroup,
+                audioData: audioContent,
+                format: format,
+                metadata: preferences.options.includeMetadata ? metadata : undefined
+            });
+        });
     }
 
     sendError(ws, message) {
