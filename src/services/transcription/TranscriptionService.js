@@ -213,8 +213,46 @@ class TranscriptionService {
         };
 
         try {
-            const collection = mongoose.connection.db.collection('transcriptions');
-            await collection.insertOne(transcription);
+            // Save to transcriptions collection
+            const transcriptionCollection = mongoose.connection.db.collection('transcriptions');
+            await transcriptionCollection.insertOne(transcription);
+            
+            // Update audio record with transcription
+            const audioCollection = mongoose.connection.db.collection('audio');
+            
+            // Parse call ID - handle both formats (system_talkgroup_timestamp and talkgroup-timestamp)
+            let talkgroup, start_time;
+            if (callId.includes('_')) {
+                // New format: system_talkgroup_timestamp
+                const [, tg, ts] = callId.split('_').map(part => parseInt(part));
+                talkgroup = tg;
+                start_time = ts;
+            } else {
+                // Old format: talkgroup-timestamp
+                const [tg, ts] = callId.split('-').map(part => parseInt(part));
+                talkgroup = tg;
+                start_time = ts;
+            }
+            
+            await audioCollection.updateOne(
+                { 
+                    type: 'audio',
+                    talkgroup: talkgroup,
+                    start_time: start_time,
+                    filename: audioMessage.filename
+                },
+                { 
+                    $set: { 
+                        transcription: {
+                            text: transcription.text,
+                            segments: transcription.segments,
+                            processing_time: transcription.processing_time,
+                            model: transcription.model,
+                            timestamp: transcription.timestamp
+                        }
+                    }
+                }
+            );
             
             logger.info(`Saved transcription for call ${callId}, duration: ${processingTime}s`);
             return transcription;
