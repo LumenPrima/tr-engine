@@ -173,28 +173,75 @@ class UnitManager {
                 currentState.systems[systemIndex].last_seen = new Date();
             }
             
-            // Create new activity entry
-            const newActivity = {
-                timestamp: new Date(),
-                activity_type: activityType,
-                talkgroup: unitData.talkgroup,
-                talkgroup_tag: unitData.talkgroup_tag,
-                details: unitData
-            };
+            // Create or update activity entry
+            const callId = unitData.id?.split('_').slice(1).join('_');
             
-            // Update recent activity
+            // Get or create activity list
             if (!this.recentActivity.has(unitKey)) {
                 this.recentActivity.set(unitKey, []);
             }
             const activities = this.recentActivity.get(unitKey);
-            
-            // Only add if different from most recent
-            const shouldLogActivity = activities.length === 0 || 
-                !this.areSimilarActivities(newActivity, activities[0]);
-            
-            if (shouldLogActivity) {
-                activities.unshift(newActivity);
-                if (activities.length > 50) activities.pop(); // Keep last 50
+
+            // For call activities, consolidate system details
+            if (callId && ['call_start', 'call_end'].includes(activityType)) {
+                // Find existing activity or create new one
+                let activity = activities.find(a => 
+                    a.activity_type === activityType && 
+                    a.call_id === callId &&
+                    Math.abs(new Date(a.timestamp).getTime() - new Date().getTime()) < 10000 // Within 10 seconds
+                );
+
+                if (!activity) {
+                    activity = {
+                        timestamp: new Date(),
+                        activity_type: activityType,
+                        call_id: callId,
+                        talkgroup: unitData.talkgroup,
+                        talkgroup_tag: unitData.talkgroup_tag,
+                        start_time: unitData.start_time,
+                        stop_time: unitData.stop_time,
+                        length: unitData.length,
+                        system_details: []
+                    };
+                    activities.unshift(activity);
+                    if (activities.length > 50) activities.pop();
+                }
+
+                // Update or add system details
+                const sysDetails = {
+                    sys_name: unitData.sys_name,
+                    sys_num: unitData.sys_num,
+                    freq: unitData.freq,
+                    error_count: unitData.error_count,
+                    spike_count: unitData.spike_count,
+                    freq_error: unitData.freq_error
+                };
+
+                const sysIndex = activity.system_details.findIndex(s => s.sys_name === unitData.sys_name);
+                if (sysIndex >= 0) {
+                    activity.system_details[sysIndex] = sysDetails;
+                } else {
+                    activity.system_details.push(sysDetails);
+                }
+            } else {
+                // For non-call activities (like affiliations), keep single entry
+                const newActivity = {
+                    timestamp: new Date(),
+                    activity_type: activityType,
+                    talkgroup: unitData.talkgroup,
+                    talkgroup_tag: unitData.talkgroup_tag,
+                    sys_name: unitData.sys_name,
+                    sys_num: unitData.sys_num
+                };
+
+                // Only add if different from most recent
+                const shouldLogActivity = activities.length === 0 || 
+                    !this.areSimilarActivities(newActivity, activities[0]);
+
+                if (shouldLogActivity) {
+                    activities.unshift(newActivity);
+                    if (activities.length > 50) activities.pop();
+                }
             }
             
             // Update state based on activity type

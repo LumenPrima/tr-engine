@@ -175,24 +175,61 @@ class TalkgroupManager {
                 currentState.systems[systemIndex].last_heard = new Date();
             }
             
-            // Create new activity entry
-            const newActivity = {
-                timestamp: new Date(),
-                activity_type: activityType,
-                unit: message.unit,
-                unit_alpha_tag: message.unit_alpha_tag,
-                emergency: message.emergency || false,
-                encrypted: message.encrypted || false,
-                details: message
-            };
-            
-            // Update recent activity
+            // Create or update activity entry
+            const callId = message.id?.split('_').slice(1).join('_');
+            if (!callId) {
+                logger.warn('Message missing call ID, skipping activity tracking');
+                return;
+            }
+
+            // Get or create activity list
             if (!this.recentActivity.has(tgKey)) {
                 this.recentActivity.set(tgKey, []);
             }
             const activities = this.recentActivity.get(tgKey);
-            activities.unshift(newActivity);
-            if (activities.length > 50) activities.pop();
+
+            // Find existing activity or create new one
+            let activity = activities.find(a => 
+                a.activity_type === activityType && 
+                a.call_id === callId &&
+                Math.abs(new Date(a.timestamp).getTime() - new Date().getTime()) < 10000 // Within 10 seconds
+            );
+
+            if (!activity) {
+                activity = {
+                    timestamp: new Date(),
+                    activity_type: activityType,
+                    call_id: callId,
+                    unit: message.unit,
+                    unit_alpha_tag: message.unit_alpha_tag,
+                    emergency: message.emergency || false,
+                    encrypted: message.encrypted || false,
+                    start_time: message.start_time,
+                    stop_time: message.stop_time,
+                    length: message.length,
+                    system_details: []
+                };
+                activities.unshift(activity);
+                if (activities.length > 50) activities.pop();
+            }
+
+            // Update or add system details
+            const sysDetails = {
+                sys_name: message.sys_name,
+                sys_num: message.sys_num,
+                freq: message.freq,
+                error_count: message.error_count,
+                spike_count: message.spike_count,
+                freq_error: message.freq_error,
+                call_filename: message.call_filename
+            };
+
+            const sysIndex = activity.system_details.findIndex(s => s.sys_name === message.sys_name);
+            if (sysIndex >= 0) {
+                activity.system_details[sysIndex] = sysDetails;
+            } else {
+                activity.system_details.push(sysDetails);
+            }
             
             // Update state based on activity type
             const newState = {
