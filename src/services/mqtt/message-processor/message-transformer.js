@@ -22,8 +22,9 @@ class MessageTransformer {
     };
 
     logger.debug('Transformed message:', {
-      original: message,
-      transformed: transformed
+      original: JSON.stringify(message),
+      transformed: JSON.stringify(transformed),
+      topic: message.topic
     });
 
     return transformed;

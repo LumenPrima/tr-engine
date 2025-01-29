@@ -77,10 +77,14 @@ class MessageProcessor {
         // Route to appropriate state managers based on topic
         const topicParts = topic.split('/');
         
-        if (topic.startsWith('tr-mqtt/units/')) {
-          await UnitManager.processMessage(topic, transformedMessage, messageId);
-        } else if (topicParts[2] === 'systems' || topicParts[2] === 'rates' || topicParts[2] === 'config') {
+        if (topicParts[2] === 'systems' || topicParts[2] === 'rates' || topicParts[2] === 'config') {
           await SystemManager.processMessage(topic, transformedMessage, messageId);
+        } else if (topic.startsWith('tr-mqtt/units/')) {
+          logger.debug('Routing unit message:', {
+            topic,
+            message: JSON.stringify(transformedMessage)
+          });
+          await UnitManager.processMessage(topic, transformedMessage, messageId);
         } else if (['call_start', 'call_end', 'calls_active', 'recorder', 'recorders'].includes(topicParts[2])) {
           await ActiveCallManager.processMessage(topic, transformedMessage, messageId);
           
