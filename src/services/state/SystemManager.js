@@ -88,6 +88,14 @@ class SystemManager {
                 
                 // Emit system update event
                 stateEventEmitter.emitSystemUpdate(newState);
+
+                // Emit WACN update event if WACN is present
+                if (system.wacn) {
+                    stateEventEmitter.emitEvent('system.wacn', {
+                        sys_name: system.sys_name,
+                        wacn: system.wacn
+                    });
+                }
             });
         } catch (err) {
             logger.error('Error updating system state:', err);

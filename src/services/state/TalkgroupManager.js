@@ -2,92 +2,55 @@ const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
 const stateEventEmitter = require('../events/emitter');
 
-// Schema for persistent talkgroup state
-const TalkgroupSchema = new mongoose.Schema({
-    // Talkgroup identification
-    talkgroup: { type: Number, required: true },
-    sys_name: { type: String, required: true },
-    sys_num: { type: Number, required: true },
-    alpha_tag: String,
-    description: String,
-    category: String,
-    group: String,
-    
-    // Configuration
-    emergency: { type: Boolean, default: false },
-    encrypted: { type: Boolean, default: false },
-    patches: [Number], // Other talkgroups this one is patched with
-    
-    // Activity tracking
-    activity_summary: {
-        first_heard: Date,
-        last_heard: Date,
-        total_calls: { type: Number, default: 0 },
-        total_affiliations: { type: Number, default: 0 },
-        total_emergency_calls: { type: Number, default: 0 },
-        total_encrypted_calls: { type: Number, default: 0 }
-    },
-    
-    // Recent activity (last 50 events for quick access)
-    recent_activity: [{
-        timestamp: Date,
-        activity_type: String,
-        unit: Number,
-        unit_alpha_tag: String,
-        emergency: Boolean,
-        encrypted: Boolean,
-        details: mongoose.Schema.Types.Mixed
-    }],
-    
-    // Custom configuration
-    config: {
-        alert_on_activity: { type: Boolean, default: false },
-        alert_on_emergency: { type: Boolean, default: true },
-        record_audio: { type: Boolean, default: true },
-        notes: String
-    }
-}, {
-    timestamps: true
-});
-
-// Indexes for efficient querying
-TalkgroupSchema.index({ talkgroup: 1, sys_name: 1 }, { unique: true });
-TalkgroupSchema.index({ sys_num: 1, talkgroup: 1 });
-TalkgroupSchema.index({ emergency: 1 });
-TalkgroupSchema.index({ 'activity_summary.last_heard': 1 });
-TalkgroupSchema.index({ category: 1 });
-TalkgroupSchema.index({ group: 1 });
-
 class TalkgroupManager {
     constructor() {
-        // Initialize MongoDB model
-        try {
-            this.Talkgroup = mongoose.model('Talkgroup');
-        } catch (error) {
-            this.Talkgroup = mongoose.model('Talkgroup', TalkgroupSchema);
-        }
-        
         // In-memory caches for performance
-        this.talkgroupStates = new Map(); // talkgroup+sys_name -> state
-        this.recentActivity = new Map(); // talkgroup+sys_name -> activity array
+        this.talkgroupStates = new Map(); // wacn+talkgroup -> state
+        this.recentActivity = new Map(); // wacn+talkgroup -> activity array
         this.emergencyTalkgroups = new Set(); // Quick lookup for emergency talkgroups
         this.patchedTalkgroups = new Map(); // talkgroup -> Set of patched talkgroups
+        this.wacnBySystem = new Map(); // sys_name -> wacn mapping
 
-        // Load existing data into cache
-        this.loadCacheFromDB().catch(err => 
-            logger.error('Error loading talkgroup cache from DB:', err)
-        );
+        // Initialize after MongoDB connection
+        mongoose.connection.on('connected', () => {
+            // Listen for WACN updates from SystemManager
+            stateEventEmitter.on('system.wacn', ({ sys_name, wacn }) => {
+                if (sys_name && wacn) {
+                    this.wacnBySystem.set(sys_name, wacn);
+                    logger.debug(`Updated WACN mapping for system ${sys_name}: ${wacn}`);
+                }
+            });
+
+            this.collection = mongoose.connection.db.collection('talkgroups');
+            
+            // Create indexes
+            this.setupIndexes().catch(err => 
+                logger.error('Error setting up talkgroup indexes:', err)
+            );
+
+            // Load existing data into cache
+            this.loadCacheFromDB().catch(err => 
+                logger.error('Error loading talkgroup cache from DB:', err)
+            );
+        });
 
         logger.info('TalkgroupManager initialized');
     }
 
+    async setupIndexes() {
+        await this.collection.createIndex({ wacn: 1, talkgroup: 1 }, { unique: true });
+        await this.collection.createIndex({ emergency: 1 });
+        await this.collection.createIndex({ last_heard: 1 });
+        await this.collection.createIndex({ 'systems.sys_name': 1 });
+    }
+
     async loadCacheFromDB() {
         logger.debug('Loading talkgroup cache from database...');
-        const talkgroups = await this.Talkgroup.find({});
+        const talkgroups = await this.collection.find({}).toArray();
         
         talkgroups.forEach(tg => {
-            const tgKey = this.getTalkgroupKey(tg.sys_name, tg.talkgroup);
-            this.talkgroupStates.set(tgKey, tg.toObject());
+            const tgKey = this.getTalkgroupKey(tg.wacn, tg.talkgroup);
+            this.talkgroupStates.set(tgKey, tg);
             
             // Cache recent activity
             this.recentActivity.set(tgKey, tg.recent_activity || []);
@@ -101,6 +64,15 @@ class TalkgroupManager {
             if (tg.patches?.length > 0) {
                 this.patchedTalkgroups.set(tg.talkgroup, new Set(tg.patches));
             }
+
+            // Cache WACN mapping for each system
+            if (tg.systems) {
+                tg.systems.forEach(sys => {
+                    if (sys.sys_name) {
+                        this.wacnBySystem.set(sys.sys_name, tg.wacn);
+                    }
+                });
+            }
         });
         
         logger.info(`Loaded ${talkgroups.length} talkgroups into cache`);
@@ -112,12 +84,13 @@ class TalkgroupManager {
         this.recentActivity.clear();
         this.emergencyTalkgroups.clear();
         this.patchedTalkgroups.clear();
+        this.wacnBySystem.clear();
         logger.debug('Cleared in-memory caches');
     }
     
-    // Generate a unique key for talkgroup+system
-    getTalkgroupKey(sysName, talkgroup) {
-        return `${sysName}:${talkgroup}`;
+    // Generate a unique key for talkgroup+wacn
+    getTalkgroupKey(wacn, talkgroup) {
+        return `${wacn}:${talkgroup}`;
     }
     
     async processMessage(topic, message, messageId) {
@@ -125,32 +98,54 @@ class TalkgroupManager {
             const topicParts = topic.split('/');
             const messageType = topicParts[2];
             
-            if (!message.talkgroup) {
-                logger.debug('Skipping message without talkgroup data');
+            // Handle system messages to update WACN mapping
+            if (messageType === 'systems' && message.systems) {
+                message.systems.forEach(sys => {
+                    if (sys.wacn && sys.sys_name) {
+                        this.wacnBySystem.set(sys.sys_name, sys.wacn);
+                    }
+                });
                 return;
             }
             
-            logger.debug(`Processing ${messageType} message for talkgroup ${message.talkgroup}`);
+            if (!message.talkgroup || !message.sys_name) {
+                logger.debug('Skipping message without required talkgroup data');
+                return;
+            }
+            
+            // Get WACN for the system
+            const wacn = this.wacnBySystem.get(message.sys_name);
+            if (!wacn) {
+                logger.warn(`No WACN found for system ${message.sys_name}, waiting for systems message`);
+                return;
+            }
+            
+            logger.debug(`Processing ${messageType} message for talkgroup ${message.talkgroup} on WACN ${wacn}`);
             
             // Update the talkgroup's state
-            await this.updateTalkgroupState(message, messageType);
+            await this.updateTalkgroupState(message, messageType, wacn);
         } catch (err) {
             logger.error('Error processing message in TalkgroupManager:', err);
             throw err;
         }
     }
     
-    async updateTalkgroupState(message, activityType) {
+    async updateTalkgroupState(message, activityType, wacn) {
         try {
-            const tgKey = this.getTalkgroupKey(message.sys_name, message.talkgroup);
+            if (!this.collection) {
+                logger.warn('MongoDB collection not ready yet');
+                return;
+            }
+
+            const tgKey = this.getTalkgroupKey(wacn, message.talkgroup);
             
             logger.debug(`Updating state for talkgroup ${message.talkgroup} (${activityType})`);
             
             // Get current state or create new one
             const currentState = this.talkgroupStates.get(tgKey) || {
+                wacn: wacn,
                 talkgroup: message.talkgroup,
-                sys_name: message.sys_name,
-                sys_num: message.sys_num,
+                systems: [],
                 alpha_tag: message.talkgroup_alpha_tag,
                 description: message.talkgroup_description,
                 category: message.talkgroup_tag,
@@ -165,13 +160,20 @@ class TalkgroupManager {
                     total_affiliations: 0,
                     total_emergency_calls: 0,
                     total_encrypted_calls: 0
-                },
-                config: {
-                    alert_on_activity: false,
-                    alert_on_emergency: true,
-                    record_audio: true
                 }
             };
+
+            // Update systems array
+            const systemIndex = currentState.systems.findIndex(s => s.sys_name === message.sys_name);
+            if (systemIndex === -1) {
+                currentState.systems.push({
+                    sys_name: message.sys_name,
+                    sys_num: message.sys_num,
+                    last_heard: new Date()
+                });
+            } else {
+                currentState.systems[systemIndex].last_heard = new Date();
+            }
             
             // Create new activity entry
             const newActivity = {
@@ -184,7 +186,7 @@ class TalkgroupManager {
                 details: message
             };
             
-            // Update recent activity cache (last 50 for quick access)
+            // Update recent activity
             if (!this.recentActivity.has(tgKey)) {
                 this.recentActivity.set(tgKey, []);
             }
@@ -222,15 +224,15 @@ class TalkgroupManager {
 
             // Update talkgroup state in cache and database
             this.talkgroupStates.set(tgKey, newState);
-            await this.Talkgroup.findOneAndUpdate(
-                { talkgroup: message.talkgroup, sys_name: message.sys_name },
+            await this.collection.updateOne(
+                { wacn: wacn, talkgroup: message.talkgroup },
                 {
                     $set: {
                         ...newState,
                         recent_activity: activities
                     }
                 },
-                { upsert: true, new: true }
+                { upsert: true }
             );
 
             // Emit talkgroup activity event

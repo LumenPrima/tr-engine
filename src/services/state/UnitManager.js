@@ -2,87 +2,73 @@ const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
 const stateEventEmitter = require('../events/emitter');
 
-// Schema for persistent unit state
-const UnitSchema = new mongoose.Schema({
-    // Unit identification
-    unit: { type: Number, required: true },
-    sys_name: { type: String, required: true },
-    unit_alpha_tag: String,
-    
-    // Current status
-    status: {
-        online: { type: Boolean, default: false },
-        last_seen: Date,
-        last_activity_type: String,
-        current_talkgroup: Number,
-        current_talkgroup_tag: String
-    },
-    
-    // Activity tracking
-    activity_summary: {
-        first_seen: Date,
-        total_calls: { type: Number, default: 0 },
-        total_affiliations: { type: Number, default: 0 },
-        last_call_time: Date,
-        last_affiliation_time: Date
-    },
-    
-    // Recent activity history
-    recent_activity: [{
-        timestamp: Date,
-        activity_type: String,
-        talkgroup: Number,
-        talkgroup_tag: String,
-        details: mongoose.Schema.Types.Mixed
-    }]
-}, {
-    timestamps: true // Adds createdAt and updatedAt
-});
-
-// Indexes for efficient querying
-UnitSchema.index({ unit: 1, sys_name: 1 }, { unique: true });
-UnitSchema.index({ 'status.last_seen': 1 });
-UnitSchema.index({ 'status.current_talkgroup': 1 });
-
 class UnitManager {
     constructor() {
-        // Initialize MongoDB model
-        try {
-            this.Unit = mongoose.model('Unit');
-        } catch (error) {
-            this.Unit = mongoose.model('Unit', UnitSchema);
-        }
-        
         // In-memory caches for performance
-        this.unitStates = new Map(); // unit+sys_name -> state
-        this.recentActivity = new Map(); // unit+sys_name -> activity array
-        this.unitsByTalkgroup = new Map(); // talkgroup -> Set of unit+sys_name
+        this.unitStates = new Map(); // wacn+unit -> state
+        this.recentActivity = new Map(); // wacn+unit -> activity array
+        this.unitsByTalkgroup = new Map(); // talkgroup -> Set of wacn+unit
+        this.wacnBySystem = new Map(); // sys_name -> wacn mapping
 
-        // Load existing data into cache
-        this.loadCacheFromDB().catch(err => 
-            logger.error('Error loading unit cache from DB:', err)
-        );
+        // Initialize after MongoDB connection
+        mongoose.connection.on('connected', () => {
+            // Listen for WACN updates from SystemManager
+            stateEventEmitter.on('system.wacn', ({ sys_name, wacn }) => {
+                if (sys_name && wacn) {
+                    this.wacnBySystem.set(sys_name, wacn);
+                    logger.debug(`Updated WACN mapping for system ${sys_name}: ${wacn}`);
+                }
+            });
+
+            this.collection = mongoose.connection.db.collection('units');
+            
+            // Create indexes
+            this.setupIndexes().catch(err => 
+                logger.error('Error setting up unit indexes:', err)
+            );
+
+            // Load existing data into cache
+            this.loadCacheFromDB().catch(err => 
+                logger.error('Error loading unit cache from DB:', err)
+            );
+        });
 
         logger.info('UnitManager initialized');
     }
 
+    async setupIndexes() {
+        await this.collection.createIndex({ wacn: 1, unit: 1 }, { unique: true });
+        await this.collection.createIndex({ 'status.last_seen': 1 });
+        await this.collection.createIndex({ 'status.current_talkgroup': 1 });
+        await this.collection.createIndex({ 'systems.sys_name': 1 });
+    }
+
     async loadCacheFromDB() {
         logger.debug('Loading unit cache from database...');
-        const units = await this.Unit.find({});
+        const units = await this.collection.find({}).toArray();
         
         units.forEach(unit => {
-            const unitKey = this.getUnitKey(unit.sys_name, unit.unit);
-            this.unitStates.set(unitKey, unit.toObject());
+            const unitKey = this.getUnitKey(unit.wacn, unit.unit);
+            this.unitStates.set(unitKey, unit);
             
             // Cache recent activity
             this.recentActivity.set(unitKey, unit.recent_activity || []);
             
             // Cache talkgroup mapping
-            if (unit.status.current_talkgroup) {
+            if (unit.status?.current_talkgroup) {
                 if (!this.unitsByTalkgroup.has(unit.status.current_talkgroup)) {
                     this.unitsByTalkgroup.set(unit.status.current_talkgroup, new Set());
                 }
                 this.unitsByTalkgroup.get(unit.status.current_talkgroup).add(unitKey);
+            }
+
+            // Cache WACN mapping for each system
+            if (unit.systems) {
+                unit.systems.forEach(sys => {
+                    if (sys.sys_name) {
+                        this.wacnBySystem.set(sys.sys_name, unit.wacn);
+                    }
+                });
             }
         });
         
@@ -94,45 +80,70 @@ class UnitManager {
         this.unitStates.clear();
         this.recentActivity.clear();
         this.unitsByTalkgroup.clear();
+        this.wacnBySystem.clear();
         logger.debug('Cleared in-memory caches');
     }
     
-    // Generate a unique key for unit+system
-    getUnitKey(sysName, unit) {
-        return `${sysName}:${unit}`;
+    // Generate a unique key for unit+wacn
+    getUnitKey(wacn, unit) {
+        return `${wacn}:${unit}`;
     }
     
     async processMessage(topic, message, messageId) {
         try {
             const topicParts = topic.split('/');
-            const sysName = topicParts[2];
+            const messageType = topicParts[2];
+            
+            // Handle system messages to update WACN mapping
+            if (messageType === 'systems' && message.systems) {
+                message.systems.forEach(sys => {
+                    if (sys.wacn && sys.sys_name) {
+                        this.wacnBySystem.set(sys.sys_name, sys.wacn);
+                    }
+                });
+                return;
+            }
+
             const activityType = topicParts[3];
             
-            if (!message.unit) {
-                logger.debug('Skipping message without unit data');
+            if (!message.unit || !message.sys_name) {
+                logger.debug('Skipping message without required unit data');
+                return;
+            }
+
+            // Get WACN for the system
+            const wacn = this.wacnBySystem.get(message.sys_name);
+            if (!wacn) {
+                logger.warn(`No WACN found for system ${message.sys_name}, waiting for systems message`);
                 return;
             }
             
-            logger.debug(`Processing ${activityType} message for unit ${message.unit}`);
+            logger.debug(`Processing ${activityType} message for unit ${message.unit} on WACN ${wacn}`);
             
             // Update the unit's current state
-            await this.updateUnitState(sysName, message, activityType);
+            await this.updateUnitState(message, activityType, wacn);
         } catch (err) {
             logger.error('Error processing message in UnitManager:', err);
             throw err;
         }
     }
     
-    async updateUnitState(sysName, unitData, activityType) {
+    async updateUnitState(unitData, activityType, wacn) {
         try {
-            const unitKey = this.getUnitKey(sysName, unitData.unit);
+            if (!this.collection) {
+                logger.warn('MongoDB collection not ready yet');
+                return;
+            }
+
+            const unitKey = this.getUnitKey(wacn, unitData.unit);
             
             logger.debug(`Updating state for unit ${unitData.unit} (${activityType})`);
             
             // Get current state or create new one
             const currentState = this.unitStates.get(unitKey) || {
+                wacn: wacn,
                 unit: unitData.unit,
-                sys_name: sysName,
+                systems: [],
                 unit_alpha_tag: unitData.unit_alpha_tag,
                 status: {
                     online: true,
@@ -149,6 +160,18 @@ class UnitManager {
                     last_affiliation_time: null
                 }
             };
+
+            // Update systems array
+            const systemIndex = currentState.systems.findIndex(s => s.sys_name === unitData.sys_name);
+            if (systemIndex === -1) {
+                currentState.systems.push({
+                    sys_name: unitData.sys_name,
+                    sys_num: unitData.sys_num,
+                    last_seen: new Date()
+                });
+            } else {
+                currentState.systems[systemIndex].last_seen = new Date();
+            }
             
             // Create new activity entry
             const newActivity = {
@@ -219,15 +242,15 @@ class UnitManager {
             
             // Update both cache and database
             this.unitStates.set(unitKey, newState);
-            await this.Unit.findOneAndUpdate(
-                { unit: unitData.unit, sys_name: sysName },
+            await this.collection.updateOne(
+                { wacn: wacn, unit: unitData.unit },
                 {
                     $set: {
                         ...newState,
                         recent_activity: activities
                     }
                 },
-                { upsert: true, new: true }
+                { upsert: true }
             );
             
             // Emit unit activity event
@@ -237,7 +260,8 @@ class UnitManager {
                 activity_type: activityType,
                 talkgroup: unitData.talkgroup,
                 talkgroup_tag: unitData.talkgroup_tag,
-                sys_name: sysName,
+                wacn: wacn,
+                sys_name: unitData.sys_name,
                 ...newState
             });
 
@@ -246,7 +270,8 @@ class UnitManager {
                 stateEventEmitter.emitUnitLocation({
                     unit: unitData.unit,
                     unit_alpha_tag: unitData.unit_alpha_tag,
-                    sys_name: sysName,
+                    wacn: wacn,
+                    sys_name: unitData.sys_name,
                     ...unitData
                 });
             } else if (['on', 'off'].includes(activityType)) {
@@ -254,7 +279,8 @@ class UnitManager {
                     unit: unitData.unit,
                     unit_alpha_tag: unitData.unit_alpha_tag,
                     status: activityType === 'on' ? 'online' : 'offline',
-                    sys_name: sysName,
+                    wacn: wacn,
+                    sys_name: unitData.sys_name,
                     ...unitData
                 });
             }
@@ -277,8 +303,9 @@ class UnitManager {
             // Combine data from all systems
             return {
                 unit: unit,
+                wacn: states[0].wacn,
                 unit_alpha_tag: states[0].unit_alpha_tag,
-                systems: states.map(s => s.sys_name),
+                systems: states[0].systems,
                 status: {
                     online: !states.some(s => s.status.last_activity_type === 'off'),
                     last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
@@ -294,7 +321,7 @@ class UnitManager {
                     last_affiliation_time: this.getLatestDate(states.map(s => s.activity_summary.last_affiliation_time))
                 },
                 recent_activity: this.aggregateRecentActivity(
-                    states.flatMap(s => this.recentActivity.get(this.getUnitKey(s.sys_name, s.unit)) || [])
+                    states.flatMap(s => this.recentActivity.get(this.getUnitKey(s.wacn, s.unit)) || [])
                 )
             };
         } catch (err) {
@@ -325,8 +352,9 @@ class UnitManager {
                 states.sort((a, b) => b.status.last_seen - a.status.last_seen);
                 return {
                     unit: states[0].unit,
+                    wacn: states[0].wacn,
                     unit_alpha_tag: states[0].unit_alpha_tag,
-                    systems: states.map(s => s.sys_name),
+                    systems: states[0].systems,
                     status: {
                         online: !states.some(s => s.status.last_activity_type === 'off'),
                         last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
@@ -363,8 +391,9 @@ class UnitManager {
                 states.sort((a, b) => b.status.last_seen - a.status.last_seen);
                 return {
                     unit: states[0].unit,
+                    wacn: states[0].wacn,
                     unit_alpha_tag: states[0].unit_alpha_tag,
-                    systems: states.map(s => s.sys_name),
+                    systems: states[0].systems,
                     status: {
                         online: !states.some(s => s.status.last_activity_type === 'off'),
                         last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
@@ -429,6 +458,7 @@ class UnitManager {
             this.unitStates.clear();
             this.recentActivity.clear();
             this.unitsByTalkgroup.clear();
+            this.wacnBySystem.clear();
             logger.debug('Cleared all unit data');
         } catch (err) {
             logger.error('Error clearing units:', err);
