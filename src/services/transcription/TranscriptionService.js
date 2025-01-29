@@ -1,4 +1,5 @@
 const logger = require('../../utils/logger');
+const timestamps = require('../../utils/timestamps');
 const OpenAI = require('openai');
 const fs = require('fs');
 const mongoose = require('mongoose');
@@ -41,7 +42,7 @@ class TranscriptionService {
     constructor() {
         // Initialize rate limiting and queue
         this.requestCount = 0;
-        this.lastReset = Date.now();
+        this.lastReset = timestamps.getCurrentTimeUnix() * 1000;
         this.queue = new RequestQueue();
 
         // Initialize OpenAI client with environment config
@@ -109,7 +110,7 @@ class TranscriptionService {
                 throw new Error('Invalid call duration in metadata');
             }
             
-            const startTime = Date.now();
+            const startTime = timestamps.getCurrentTimeUnix() * 1000;
             let lastError;
             
             // Retry loop
@@ -118,7 +119,7 @@ class TranscriptionService {
                     // Queue the transcription request
                     const processTranscription = async () => {
                         // Create a temporary file from GridFS stream
-                        const tempFilePath = path.join(os.tmpdir(), `temp-${Date.now()}.wav`);
+                        const tempFilePath = path.join(os.tmpdir(), `temp-${timestamps.getCurrentTimeUnix()}.wav`);
                         const writeStream = fs.createWriteStream(tempFilePath);
                         const downloadStream = gridFSBucket.openDownloadStream(wavFile._id);
                         
@@ -169,7 +170,7 @@ class TranscriptionService {
     }
 
     async saveTranscription(callId, whisperResponse, startTime, audioMessage) {
-        const processingTime = (Date.now() - startTime) / 1000;
+        const processingTime = (timestamps.getCurrentTimeUnix() * 1000 - startTime) / 1000;
         
         // Get source list from audio message
         const srcList = audioMessage.srcList || [];
@@ -204,7 +205,7 @@ class TranscriptionService {
             audio_duration: whisperResponse.duration,
             processing_time: processingTime,
             model: process.env.WHISPER_MODEL,
-            timestamp: new Date(),
+            timestamp: timestamps.getCurrentTimeISO(),
             talkgroup: audioMessage.talkgroup,
             talkgroup_tag: audioMessage.talkgroup_tag,
             sys_name: audioMessage.sys_name,
@@ -220,25 +221,37 @@ class TranscriptionService {
             // Update audio record with transcription
             const audioCollection = mongoose.connection.db.collection('audio');
             
-            // Parse call ID - handle both formats (system_talkgroup_timestamp and talkgroup-timestamp)
-            let talkgroup, start_time;
-            if (callId.includes('_')) {
-                // New format: system_talkgroup_timestamp
-                const [, tg, ts] = callId.split('_').map(part => parseInt(part));
-                talkgroup = tg;
-                start_time = ts;
-            } else {
-                // Old format: talkgroup-timestamp
-                const [tg, ts] = callId.split('-').map(part => parseInt(part));
-                talkgroup = tg;
-                start_time = ts;
-            }
+            // Parse call ID - handle all formats
+            let talkgroup, start_time, sys_num;
+            const parts = callId.split('_');
             
+            if (parts.length === 3) {
+                // Format: system_talkgroup_timestamp
+                [sys_num, talkgroup, start_time] = parts.map(part => parseInt(part));
+            } else if (parts.length === 2) {
+                // Format: talkgroup_timestamp
+                [talkgroup, start_time] = parts.map(part => parseInt(part));
+            } else {
+                // Try legacy format: talkgroup-starttime
+                const legacyParts = callId.split('-');
+                if (legacyParts.length === 2) {
+                    [talkgroup, start_time] = legacyParts.map(part => parseInt(part));
+                    
+                    // Check if talkgroup includes system number (e.g. "2_58259")
+                    if (talkgroup.toString().includes('_')) {
+                        const [sys, tg] = talkgroup.toString().split('_').map(p => parseInt(p));
+                        sys_num = sys;
+                        talkgroup = tg;
+                    }
+                }
+            }
+
             await audioCollection.updateOne(
                 { 
                     type: 'audio',
                     talkgroup: talkgroup,
                     start_time: start_time,
+                    ...(sys_num ? { sys_num: sys_num } : {}),
                     filename: audioMessage.filename
                 },
                 { 
@@ -315,8 +328,8 @@ class TranscriptionService {
             
             if (startDate || endDate) {
                 query.timestamp = {};
-                if (startDate) query.timestamp.$gte = startDate;
-                if (endDate) query.timestamp.$lte = endDate;
+            if (startDate) query.timestamp.$gte = timestamps.toISO(startDate);
+            if (endDate) query.timestamp.$lte = timestamps.toISO(endDate);
             }
             
             return await collection.find(query)
@@ -340,8 +353,8 @@ class TranscriptionService {
             
             if (startDate || endDate) {
                 match.timestamp = {};
-                if (startDate) match.timestamp.$gte = startDate;
-                if (endDate) match.timestamp.$lte = endDate;
+                if (startDate) match.timestamp.$gte = timestamps.toISO(startDate);
+                if (endDate) match.timestamp.$lte = timestamps.toISO(endDate);
             }
 
             return await collection.aggregate([

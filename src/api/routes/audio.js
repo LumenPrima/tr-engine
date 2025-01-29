@@ -5,6 +5,7 @@ const { getGridFSBucket } = require('../../config/mongodb');
 const mongoose = require('mongoose');
 const TranscriptionService = require('../../services/transcription/TranscriptionService');
 const path = require('path');
+const timestamps = require('../../utils/timestamps');
 
 const transcriptionService = new TranscriptionService();
 
@@ -207,7 +208,7 @@ router.get('/call/:call_id/metadata', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             metadata: response
         });
     } catch (err) {
@@ -241,7 +242,7 @@ router.delete('/call/:call_id', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             message: 'Audio files deleted successfully'
         });
     } catch (err) {
@@ -261,13 +262,13 @@ router.get('/archive', async (req, res) => {
         const options = {
             limit: parseInt(req.query.limit) || 100,
             offset: parseInt(req.query.offset) || 0,
-            startTime: req.query.start ? new Date(req.query.start) : new Date(Date.now() - 24 * 60 * 60 * 1000), // Default to last 24 hours
-            endTime: req.query.end ? new Date(req.query.end) : new Date()
+            startTime: req.query.start || timestamps.getCurrentTimeISO(-24 * 60 * 60), // Default to last 24 hours
+            endTime: req.query.end || timestamps.getCurrentTimeISO()
         };
 
         // Build filter based on query parameters
         const filter = {
-            start_time: { $gte: Math.floor(options.startTime.getTime() / 1000), $lte: Math.floor(options.endTime.getTime() / 1000) }
+            start_time: { $gte: timestamps.toUnix(options.startTime), $lte: timestamps.toUnix(options.endTime) }
         };
 
         if (req.query.talkgroup) {
@@ -297,7 +298,7 @@ router.get('/archive', async (req, res) => {
         const formattedFiles = files.map(file => ({
             id: file._id.toString(),
             filename: file.filename,
-            timestamp: new Date(file.start_time * 1000),
+            timestamp: timestamps.toISO(file.start_time),
             talkgroup: file.talkgroup,
             talkgroup_tag: file.talkgroup_tag,
             talkgroup_description: file.talkgroup_description,
@@ -316,7 +317,7 @@ router.get('/archive', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             data: {
                 pagination: {
                     total: totalCount,

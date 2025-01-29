@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
+const timestamps = require('../../utils/timestamps');
 const stateEventEmitter = require('../events/emitter');
 
 // Schema for persistent unit state
@@ -12,7 +13,7 @@ const UnitSchema = new mongoose.Schema({
     // Current status
     status: {
         online: { type: Boolean, default: false },
-        last_seen: Date,
+        last_seen: String, // ISO 8601 string
         last_activity_type: String,
         current_talkgroup: Number,
         current_talkgroup_tag: String
@@ -20,16 +21,16 @@ const UnitSchema = new mongoose.Schema({
     
     // Activity tracking
     activity_summary: {
-        first_seen: Date,
+        first_seen: String, // ISO 8601 string
         total_calls: { type: Number, default: 0 },
         total_affiliations: { type: Number, default: 0 },
-        last_call_time: Date,
-        last_affiliation_time: Date
+        last_call_time: String, // ISO 8601 string
+        last_affiliation_time: String // ISO 8601 string
     },
     
     // Recent activity history
     recent_activity: [{
-        timestamp: Date,
+        timestamp: String, // ISO 8601 string
         activity_type: String,
         talkgroup: Number,
         talkgroup_tag: String,
@@ -136,13 +137,13 @@ class UnitManager {
                 unit_alpha_tag: unitData.unit_alpha_tag,
                 status: {
                     online: true,
-                    last_seen: new Date(),
+                    last_seen: timestamps.getCurrentTimeISO(),
                     last_activity_type: activityType,
                     current_talkgroup: null,
                     current_talkgroup_tag: null
                 },
                 activity_summary: {
-                    first_seen: new Date(),
+                    first_seen: timestamps.getCurrentTimeISO(),
                     total_calls: 0,
                     total_affiliations: 0,
                     last_call_time: null,
@@ -152,7 +153,7 @@ class UnitManager {
             
             // Create new activity entry
             const newActivity = {
-                timestamp: new Date(),
+                timestamp: timestamps.getCurrentTimeISO(),
                 activity_type: activityType,
                 talkgroup: unitData.talkgroup,
                 talkgroup_tag: unitData.talkgroup_tag,
@@ -180,7 +181,7 @@ class UnitManager {
                 unit_alpha_tag: unitData.unit_alpha_tag,
                 status: {
                     ...currentState.status,
-                    last_seen: new Date(),
+                    last_seen: timestamps.getCurrentTimeISO(),
                     last_activity_type: activityType
                 }
             };
@@ -198,14 +199,14 @@ class UnitManager {
                     newState.status.current_talkgroup = unitData.talkgroup;
                     newState.status.current_talkgroup_tag = unitData.talkgroup_tag;
                     newState.activity_summary.total_calls++;
-                    newState.activity_summary.last_call_time = new Date();
+                    newState.activity_summary.last_call_time = timestamps.getCurrentTimeISO();
                     break;
                     
                 case 'join':
                     newState.status.current_talkgroup = unitData.talkgroup;
                     newState.status.current_talkgroup_tag = unitData.talkgroup_tag;
                     newState.activity_summary.total_affiliations++;
-                    newState.activity_summary.last_affiliation_time = new Date();
+                    newState.activity_summary.last_affiliation_time = timestamps.getCurrentTimeISO();
                     break;
             }
             
@@ -270,7 +271,7 @@ class UnitManager {
             const states = Array.from(this.unitStates.entries())
                 .filter(([key, state]) => state.unit === unit)
                 .map(([key, state]) => state)
-                .sort((a, b) => b.status.last_seen - a.status.last_seen);
+                .sort((a, b) => new Date(b.status.last_seen) - new Date(a.status.last_seen));
 
             if (states.length === 0) return null;
 
@@ -281,13 +282,13 @@ class UnitManager {
                 systems: states.map(s => s.sys_name),
                 status: {
                     online: !states.some(s => s.status.last_activity_type === 'off'),
-                    last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
+                    last_seen: timestamps.toISO(Math.max(...states.map(s => new Date(s.status.last_seen).getTime() / 1000))),
                     last_activity_type: states[0].status.last_activity_type,
                     current_talkgroup: states[0].status.current_talkgroup,
                     current_talkgroup_tag: states[0].status.current_talkgroup_tag
                 },
                 activity_summary: {
-                    first_seen: new Date(Math.min(...states.map(s => s.activity_summary.first_seen.getTime()))),
+                    first_seen: timestamps.toISO(Math.min(...states.map(s => new Date(s.activity_summary.first_seen).getTime() / 1000))),
                     total_calls: states.reduce((sum, s) => sum + s.activity_summary.total_calls, 0),
                     total_affiliations: states.reduce((sum, s) => sum + s.activity_summary.total_affiliations, 0),
                     last_call_time: this.getLatestDate(states.map(s => s.activity_summary.last_call_time)),
@@ -322,14 +323,14 @@ class UnitManager {
 
             // Combine data for each unit
             return Object.values(unitGroups).map(states => {
-                states.sort((a, b) => b.status.last_seen - a.status.last_seen);
+                states.sort((a, b) => new Date(b.status.last_seen) - new Date(a.status.last_seen));
                 return {
                     unit: states[0].unit,
                     unit_alpha_tag: states[0].unit_alpha_tag,
                     systems: states.map(s => s.sys_name),
                     status: {
                         online: !states.some(s => s.status.last_activity_type === 'off'),
-                        last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
+                        last_seen: timestamps.toISO(Math.max(...states.map(s => new Date(s.status.last_seen).getTime() / 1000))),
                         last_activity_type: states[0].status.last_activity_type
                     }
                 };
@@ -342,12 +343,9 @@ class UnitManager {
     
     getActiveUnits(options = {}) {
         try {
-            const cutoff = Date.now() - (options.timeWindow || 5 * 60 * 1000);
-            
-            // Get all active states
+            // Get all states
             const activeStates = Array.from(this.unitStates.values())
-                .filter(state => state.status.last_seen.getTime() >= cutoff)
-                .sort((a, b) => b.status.last_seen - a.status.last_seen);
+                .sort((a, b) => new Date(b.status.last_seen) - new Date(a.status.last_seen));
             
             // Group by unit ID
             const unitGroups = {};
@@ -360,14 +358,14 @@ class UnitManager {
             
             // Combine data for each unit
             return Object.values(unitGroups).map(states => {
-                states.sort((a, b) => b.status.last_seen - a.status.last_seen);
+                states.sort((a, b) => new Date(b.status.last_seen) - new Date(a.status.last_seen));
                 return {
                     unit: states[0].unit,
                     unit_alpha_tag: states[0].unit_alpha_tag,
                     systems: states.map(s => s.sys_name),
                     status: {
                         online: !states.some(s => s.status.last_activity_type === 'off'),
-                        last_seen: new Date(Math.max(...states.map(s => s.status.last_seen.getTime()))),
+                        last_seen: timestamps.toISO(Math.max(...states.map(s => new Date(s.status.last_seen).getTime() / 1000))),
                         current_talkgroup: states[0].status.current_talkgroup,
                         current_talkgroup_tag: states[0].status.current_talkgroup_tag
                     }
@@ -439,7 +437,10 @@ class UnitManager {
     // Helper method to get latest non-null date from array
     getLatestDate(dates) {
         const validDates = dates.filter(d => d);
-        return validDates.length > 0 ? new Date(Math.max(...validDates.map(d => d.getTime()))) : null;
+        if (validDates.length === 0) return null;
+        
+        const latestUnix = Math.max(...validDates.map(d => new Date(d).getTime() / 1000));
+        return timestamps.toISO(latestUnix);
     }
 }
 

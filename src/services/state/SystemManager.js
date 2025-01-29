@@ -1,4 +1,5 @@
 const logger = require('../../utils/logger');
+const timestamps = require('../../utils/timestamps');
 const stateEventEmitter = require('../events/emitter');
 
 class SystemManager {
@@ -12,7 +13,80 @@ class SystemManager {
         // Track active recorders for each system
         this.activeRecorders = new Map(); // sys_name -> recorder[]
         
+        // Load initial state from MongoDB
+        this.loadInitialState().catch(err => {
+            logger.error('Failed to load initial system state:', err);
+        });
+        
         logger.info('SystemManager initialized');
+    }
+
+    async loadInitialState() {
+        try {
+            const mongoose = require('mongoose');
+            const db = mongoose.connection;
+            
+            // Wait for MongoDB connection
+            if (db.readyState !== 1) {
+                logger.debug('Waiting for MongoDB connection...');
+                await new Promise(resolve => {
+                    db.once('connected', resolve);
+                });
+            }
+
+            logger.debug('MongoDB connected, attempting to load system state');
+            
+            // List all collections to verify 'systems' exists
+            const collections = await db.db.listCollections().toArray();
+            logger.debug('Available collections:', collections.map(c => c.name));
+
+            // Try both 'systems' and 'system' collections
+            let systemsCollection = db.collection('systems');
+            let latestSystem = await systemsCollection.findOne(
+                { type: 'systems' },
+                { sort: { _processed_at: -1 } }
+            );
+
+            if (!latestSystem) {
+                logger.debug('No document found in "systems" collection, trying "system"');
+                systemsCollection = db.collection('system');
+                latestSystem = await systemsCollection.findOne(
+                    { type: 'systems' },
+                    { sort: { _processed_at: -1 } }
+                );
+            }
+
+            logger.debug('Latest system document:', latestSystem);
+
+            if (latestSystem && latestSystem.systems) {
+                logger.debug('Loading initial system state from MongoDB');
+                await this.updateSystemState(latestSystem);
+                logger.debug('Current system states:', Array.from(this.systemStates.keys()));
+            } else {
+                // Try to find any document with systems array
+                const pipeline = [
+                    { $match: { systems: { $exists: true, $ne: null } } },
+                    { $sort: { _processed_at: -1 } },
+                    { $limit: 1 }
+                ];
+                
+                for (const collName of collections.map(c => c.name)) {
+                    const coll = db.collection(collName);
+                    const doc = await coll.findOne(pipeline);
+                    if (doc && doc.systems) {
+                        logger.debug(`Found system data in collection: ${collName}`);
+                        await this.updateSystemState(doc);
+                        logger.debug('Current system states:', Array.from(this.systemStates.keys()));
+                        return;
+                    }
+                }
+                
+                logger.warn('No system data found in any collection');
+            }
+        } catch (err) {
+            logger.error('Error loading initial system state:', err);
+            throw err;
+        }
     }
 
     cleanup() {
@@ -78,8 +152,8 @@ class SystemManager {
                     status: {
                         ...currentState.status,
                         connected: true,
-                        last_seen: new Date(),
-                        last_config_update: new Date()
+                        last_seen: message._processed_at || message._mqtt_received_at || timestamps.getCurrentTimeISO(),
+                        last_config_update: message._processed_at || message._mqtt_received_at || timestamps.getCurrentTimeISO()
                     }
                 };
                 
@@ -144,7 +218,7 @@ class SystemManager {
                 }
                 const rates = this.recentRates.get(rate.sys_name);
                 rates.push({
-                    timestamp: new Date(),
+                    timestamp: timestamps.getCurrentTimeISO(),
                     decoderate: rate.decoderate,
                     control_channel: rate.control_channel
                 });
@@ -161,8 +235,8 @@ class SystemManager {
                     decoderate_interval: rate.decoderate_interval,
                     status: {
                         ...currentState.status,
-                        last_rate_update: new Date(),
-                        last_seen: new Date()
+                        last_rate_update: timestamps.getCurrentTimeISO(),
+                        last_seen: timestamps.getCurrentTimeISO()
                     },
                     recent_rates: rates
                 };
@@ -214,7 +288,7 @@ class SystemManager {
                     },
                     status: {
                         ...currentState.status,
-                        last_config_update: new Date()
+                        last_config_update: timestamps.getCurrentTimeISO()
                     }
                 };
                 
@@ -241,9 +315,8 @@ class SystemManager {
     
     getActiveSystems() {
         try {
-            const cutoff = Date.now() - (5 * 60 * 1000); // 5 minutes
+            // Return all systems in the state map since they were loaded from MongoDB
             return Array.from(this.systemStates.values())
-                .filter(system => system.status?.last_seen?.getTime() >= cutoff)
                 .map(system => ({
                     ...system,
                     active_recorders: this.activeRecorders.get(system.sys_name) || []

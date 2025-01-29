@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const logger = require('../../utils/logger');
 const unitManager = require('../../services/state/UnitManager');
+const timestamps = require('../../utils/timestamps');
 
 // GET /active - Get all currently active units
 router.get('/active', async (req, res) => {
@@ -10,7 +11,7 @@ router.get('/active', async (req, res) => {
         const options = {
             limit: parseInt(req.query.limit) || 100,
             offset: parseInt(req.query.offset) || 0,
-            timeWindow: !isNaN(window) ? window * 60 * 1000 : 5 * 60 * 1000 // Default 5 minutes if window is invalid
+            timeWindow: !isNaN(window) ? window * 60 : 5 * 60 // Default 5 minutes if window is invalid, in seconds
         };
 
         const activeUnits = await unitManager.getActiveUnits(options);
@@ -33,7 +34,7 @@ router.get('/active', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             data: {
                 pagination: {
                     total: activeUnits.length,
@@ -61,7 +62,7 @@ router.get('/', async (req, res) => {
         const options = {
             limit: parseInt(req.query.limit) || 100,
             offset: parseInt(req.query.offset) || 0,
-            timeWindow: 24 * 60 * 60 * 1000 // Last 24 hours
+            timeWindow: 24 * 60 * 60 // Last 24 hours in seconds
         };
 
         const units = await unitManager.getActiveUnits({ timeWindow: options.timeWindow });
@@ -84,7 +85,7 @@ router.get('/', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             data: {
                 pagination: {
                     total: units.length,
@@ -127,7 +128,7 @@ router.get('/:unit_id', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             unit: unitState
         });
     } catch (err) {
@@ -178,7 +179,7 @@ router.get('/:unit_id/history', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             data: {
                 unit: unitId,
                 pagination: {
@@ -235,7 +236,7 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             data: {
                 talkgroup: talkgroupId,
                 pagination: {

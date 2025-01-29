@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const logger = require('../../utils/logger');
+const timestamps = require('../../utils/timestamps');
 const stateEventEmitter = require('../events/emitter');
 
 // Schema for persistent talkgroup state
@@ -20,8 +21,8 @@ const TalkgroupSchema = new mongoose.Schema({
     
     // Activity tracking
     activity_summary: {
-        first_heard: Date,
-        last_heard: Date,
+        first_heard: String, // ISO 8601 string
+        last_heard: String, // ISO 8601 string
         total_calls: { type: Number, default: 0 },
         total_affiliations: { type: Number, default: 0 },
         total_emergency_calls: { type: Number, default: 0 },
@@ -30,7 +31,7 @@ const TalkgroupSchema = new mongoose.Schema({
     
     // Recent activity (last 50 events for quick access)
     recent_activity: [{
-        timestamp: Date,
+        timestamp: String, // ISO 8601 string
         activity_type: String,
         unit: Number,
         unit_alpha_tag: String,
@@ -159,8 +160,8 @@ class TalkgroupManager {
                 encrypted: message.encrypted || false,
                 patches: [],
                 activity_summary: {
-                    first_heard: new Date(),
-                    last_heard: new Date(),
+                    first_heard: timestamps.getCurrentTimeISO(),
+                    last_heard: timestamps.getCurrentTimeISO(),
                     total_calls: 0,
                     total_affiliations: 0,
                     total_emergency_calls: 0,
@@ -175,7 +176,7 @@ class TalkgroupManager {
             
             // Create new activity entry
             const newActivity = {
-                timestamp: new Date(),
+                timestamp: timestamps.getCurrentTimeISO(),
                 activity_type: activityType,
                 unit: message.unit,
                 unit_alpha_tag: message.unit_alpha_tag,
@@ -203,7 +204,7 @@ class TalkgroupManager {
                 encrypted: message.encrypted || currentState.encrypted,
                 activity_summary: {
                     ...currentState.activity_summary,
-                    last_heard: new Date()
+                    last_heard: timestamps.getCurrentTimeISO()
                 }
             };
             
@@ -238,6 +239,7 @@ class TalkgroupManager {
                 talkgroup: message.talkgroup,
                 sys_name: message.sys_name,
                 activity_type: activityType,
+                timestamp: timestamps.getCurrentTimeISO(),
                 ...newState
             });
 
@@ -248,6 +250,7 @@ class TalkgroupManager {
                     sys_name: message.sys_name,
                     unit: message.unit,
                     unit_alpha_tag: message.unit_alpha_tag,
+                    timestamp: timestamps.getCurrentTimeISO(),
                     ...newState
                 });
             }

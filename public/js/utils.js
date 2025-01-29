@@ -1,20 +1,44 @@
 // Time formatting utilities
-export function formatTime(timestamp) {
-    if (!timestamp) return 'N/A';
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString();
+export function formatTime(isoString) {
+    if (!isoString) return 'N/A';
+    try {
+        const date = new Date(isoString);
+        return date.toLocaleString(undefined, {
+            timeStyle: 'medium',
+            dateStyle: 'short'
+        });
+    } catch (err) {
+        console.error('Error formatting time:', err);
+        return 'N/A';
+    }
 }
 
 export function formatDuration(seconds) {
     if (!seconds) return 'N/A';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    try {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    } catch (err) {
+        console.error('Error formatting duration:', err);
+        return 'N/A';
+    }
 }
 
 export function formatUnits(units) {
     if (!units || !Array.isArray(units)) return 'None';
     return units.join(', ');
+}
+
+// Timestamp validation
+export function isValidISOString(isoString) {
+    if (!isoString) return false;
+    try {
+        const date = new Date(isoString);
+        return date.toISOString() === isoString;
+    } catch {
+        return false;
+    }
 }
 
 // API configuration management

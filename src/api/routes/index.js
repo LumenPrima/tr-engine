@@ -3,13 +3,14 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const timestamps = require('../../utils/timestamps');
 
 // Config endpoint to expose necessary frontend configuration
 router.get('/config', (req, res) => {
     const port = process.env.PORT || 3000;
     res.json({
         status: 'success',
-        timestamp: new Date().toISOString(),
+        timestamp: timestamps.getCurrentTimeISO(),
         config: {
             api: {
                 port: port,
@@ -27,7 +28,7 @@ router.get('/hello', (req, res) => {
 
     res.json({
         status: 'success',
-        timestamp: new Date().toISOString(),
+        timestamp: timestamps.getCurrentTimeISO(),
         system: {
             hostname: os.hostname(),
             platform: os.platform(),

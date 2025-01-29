@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const logger = require('../../utils/logger');
 const systemManager = require('../../services/state/SystemManager');
+const timestamps = require('../../utils/timestamps');
 
 // GET /
 // Get current status of all systems
@@ -17,7 +18,7 @@ router.get('/', async (req, res) => {
             type: system.type,
             status: {
                 connected: system.status?.connected || true,
-                last_seen: system.status?.last_seen || new Date(),
+                last_seen: system.status?.last_seen || timestamps.getCurrentTimeISO(),
                 current_control_channel: system.current_control_channel,
                 current_decoderate: system.current_decoderate
             },
@@ -26,7 +27,7 @@ router.get('/', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             count: systemStatus.length,
             systems: systemStatus
         });
@@ -69,7 +70,7 @@ router.get('/performance', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             stats: stats
         });
     } catch (err) {
@@ -106,7 +107,7 @@ router.get('/:sys_name', async (req, res) => {
             site_id: systemState.site_id,
             status: {
                 connected: systemState.status?.connected || true,
-                last_seen: systemState.status?.last_seen || new Date(),
+                last_seen: systemState.status?.last_seen || timestamps.getCurrentTimeISO(),
                 last_config_update: systemState.status?.last_config_update,
                 last_rate_update: systemState.status?.last_rate_update
             },
@@ -121,7 +122,7 @@ router.get('/:sys_name', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: new Date().toISOString(),
+            timestamp: timestamps.getCurrentTimeISO(),
             system: detailedStatus
         });
     } catch (err) {
