@@ -1,5 +1,4 @@
 const logger = require('../../utils/logger');
-const timestamps = require('../../utils/timestamps');
 const OpenAI = require('openai');
 const fs = require('fs');
 const mongoose = require('mongoose');
@@ -42,7 +41,7 @@ class TranscriptionService {
     constructor() {
         // Initialize rate limiting and queue
         this.requestCount = 0;
-        this.lastReset = timestamps.getCurrentTimeUnix() * 1000;
+        this.lastReset = Date.now();
         this.queue = new RequestQueue();
 
         // Initialize OpenAI client with environment config
@@ -110,7 +109,7 @@ class TranscriptionService {
                 throw new Error('Invalid call duration in metadata');
             }
             
-            const startTime = timestamps.getCurrentTimeUnix() * 1000;
+            const startTime = Date.now();
             let lastError;
             
             // Retry loop
@@ -119,7 +118,7 @@ class TranscriptionService {
                     // Queue the transcription request
                     const processTranscription = async () => {
                         // Create a temporary file from GridFS stream
-                        const tempFilePath = path.join(os.tmpdir(), `temp-${timestamps.getCurrentTimeUnix()}.wav`);
+                        const tempFilePath = path.join(os.tmpdir(), `temp-${Date.now()}.wav`);
                         const writeStream = fs.createWriteStream(tempFilePath);
                         const downloadStream = gridFSBucket.openDownloadStream(wavFile._id);
                         
@@ -170,7 +169,7 @@ class TranscriptionService {
     }
 
     async saveTranscription(callId, whisperResponse, startTime, audioMessage) {
-        const processingTime = (timestamps.getCurrentTimeUnix() * 1000 - startTime) / 1000;
+        const processingTime = (Date.now() - startTime) / 1000;
         
         // Get source list from audio message
         const srcList = audioMessage.srcList || [];
@@ -205,7 +204,7 @@ class TranscriptionService {
             audio_duration: whisperResponse.duration,
             processing_time: processingTime,
             model: process.env.WHISPER_MODEL,
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date(),
             talkgroup: audioMessage.talkgroup,
             talkgroup_tag: audioMessage.talkgroup_tag,
             sys_name: audioMessage.sys_name,
@@ -214,58 +213,8 @@ class TranscriptionService {
         };
 
         try {
-            // Save to transcriptions collection
-            const transcriptionCollection = mongoose.connection.db.collection('transcriptions');
-            await transcriptionCollection.insertOne(transcription);
-            
-            // Update audio record with transcription
-            const audioCollection = mongoose.connection.db.collection('audio');
-            
-            // Parse call ID - handle all formats
-            let talkgroup, start_time, sys_num;
-            const parts = callId.split('_');
-            
-            if (parts.length === 3) {
-                // Format: system_talkgroup_timestamp
-                [sys_num, talkgroup, start_time] = parts.map(part => parseInt(part));
-            } else if (parts.length === 2) {
-                // Format: talkgroup_timestamp
-                [talkgroup, start_time] = parts.map(part => parseInt(part));
-            } else {
-                // Try legacy format: talkgroup-starttime
-                const legacyParts = callId.split('-');
-                if (legacyParts.length === 2) {
-                    [talkgroup, start_time] = legacyParts.map(part => parseInt(part));
-                    
-                    // Check if talkgroup includes system number (e.g. "2_58259")
-                    if (talkgroup.toString().includes('_')) {
-                        const [sys, tg] = talkgroup.toString().split('_').map(p => parseInt(p));
-                        sys_num = sys;
-                        talkgroup = tg;
-                    }
-                }
-            }
-
-            await audioCollection.updateOne(
-                { 
-                    type: 'audio',
-                    talkgroup: talkgroup,
-                    start_time: start_time,
-                    ...(sys_num ? { sys_num: sys_num } : {}),
-                    filename: audioMessage.filename
-                },
-                { 
-                    $set: { 
-                        transcription: {
-                            text: transcription.text,
-                            segments: transcription.segments,
-                            processing_time: transcription.processing_time,
-                            model: transcription.model,
-                            timestamp: transcription.timestamp
-                        }
-                    }
-                }
-            );
+            const collection = mongoose.connection.db.collection('transcriptions');
+            await collection.insertOne(transcription);
             
             logger.info(`Saved transcription for call ${callId}, duration: ${processingTime}s`);
             return transcription;
@@ -328,8 +277,8 @@ class TranscriptionService {
             
             if (startDate || endDate) {
                 query.timestamp = {};
-            if (startDate) query.timestamp.$gte = timestamps.toISO(startDate);
-            if (endDate) query.timestamp.$lte = timestamps.toISO(endDate);
+                if (startDate) query.timestamp.$gte = startDate;
+                if (endDate) query.timestamp.$lte = endDate;
             }
             
             return await collection.find(query)
@@ -353,8 +302,8 @@ class TranscriptionService {
             
             if (startDate || endDate) {
                 match.timestamp = {};
-                if (startDate) match.timestamp.$gte = timestamps.toISO(startDate);
-                if (endDate) match.timestamp.$lte = timestamps.toISO(endDate);
+                if (startDate) match.timestamp.$gte = startDate;
+                if (endDate) match.timestamp.$lte = endDate;
             }
 
             return await collection.aggregate([
