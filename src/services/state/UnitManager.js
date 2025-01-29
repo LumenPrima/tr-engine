@@ -91,23 +91,50 @@ class UnitManager {
     
     async processMessage(topic, message, messageId) {
         try {
+            logger.debug('Processing message in UnitManager:', {
+                topic,
+                message: JSON.stringify(message),
+                topicParts: topic.split('/')
+            });
+
+            if (!message || typeof message !== 'object') {
+                logger.debug('Skipping invalid message - not an object');
+                return;
+            }
+
             const topicParts = topic.split('/');
+            if (topicParts.length < 3) {
+                logger.debug('Skipping message with invalid topic format:', topic);
+                return;
+            }
+
             const messageType = topicParts[2];
             
             // Handle system messages to update WACN mapping
-            if (messageType === 'systems' && message.systems) {
+            if (messageType === 'systems' && Array.isArray(message.systems)) {
+                logger.debug('Processing systems message:', message.systems);
                 message.systems.forEach(sys => {
-                    if (sys.wacn && sys.sys_name) {
+                    if (sys && sys.wacn && sys.sys_name) {
                         this.wacnBySystem.set(sys.sys_name, sys.wacn);
+                        logger.debug(`Set WACN mapping: ${sys.sys_name} -> ${sys.wacn}`);
                     }
                 });
                 return;
             }
 
             const activityType = topicParts[3];
+            if (!activityType) {
+                logger.debug('Skipping message without activity type:', topicParts);
+                return;
+            }
             
+            // For non-system messages, validate required fields
             if (!message.unit || !message.sys_name) {
-                logger.debug('Skipping message without required unit data');
+                logger.debug(`Skipping ${activityType} message without required unit data:`, {
+                    unit: message.unit,
+                    sys_name: message.sys_name,
+                    message: JSON.stringify(message)
+                });
                 return;
             }
 
@@ -119,6 +146,12 @@ class UnitManager {
             }
             
             logger.debug(`Processing ${activityType} message for unit ${message.unit} on WACN ${wacn}`);
+            
+            logger.debug('Calling updateUnitState with:', {
+                message: JSON.stringify(message),
+                activityType,
+                wacn
+            });
             
             // Update the unit's current state
             await this.updateUnitState(message, activityType, wacn);
@@ -231,7 +264,8 @@ class UnitManager {
                     talkgroup: unitData.talkgroup,
                     talkgroup_tag: unitData.talkgroup_tag,
                     sys_name: unitData.sys_name,
-                    sys_num: unitData.sys_num
+                    sys_num: unitData.sys_num,
+                    details: unitData  // Store full message for comparison
                 };
 
                 // Only add if different from most recent
@@ -494,15 +528,10 @@ class UnitManager {
         if (!['location', 'ackresp', 'join'].includes(a.activity_type)) {
             return false;
         }
-        
-        // Compare all fields except timestamp, _id, and sys_name
-        const compareFields = ['unit', 'unit_alpha_tag', 'talkgroup', 
-                             'talkgroup_alpha_tag', 'talkgroup_description', 'talkgroup_group', 
-                             'talkgroup_tag', 'talkgroup_patches'];
-        
-        return compareFields.every(field => 
-            JSON.stringify(a.details[field]) === JSON.stringify(b.details[field])
-        );
+
+        // Compare unit and talkgroup fields
+        const compareFields = ['unit', 'unit_alpha_tag', 'talkgroup', 'talkgroup_tag'];
+        return compareFields.every(field => a.details[field] === b.details[field]);
     }
 
     // Helper method to filter out redundant activities
