@@ -9,6 +9,7 @@ class WebSocketManager {
         this.reconnectDelay = 1000; // Start with 1 second
         this.subscriptions = new Set();
         this.audioSubscriptions = new Map(); // talkgroup -> options
+        this.transcriptionSubscriptions = new Set(); // talkgroups for transcriptions
         this.handlers = new Map();
         this.isConnected = false;
         this.pendingReconnect = null;
@@ -50,6 +51,17 @@ class WebSocketManager {
                         options: {
                             includeMetadata: true
                         }
+                    }
+                }));
+            }
+
+            // Resubscribe to transcriptions
+            if (this.transcriptionSubscriptions.size > 0) {
+                this.ws.send(JSON.stringify({
+                    type: 'transcription.subscribe',
+                    timestamp: new Date().toISOString(),
+                    data: {
+                        talkgroups: Array.from(this.transcriptionSubscriptions)
                     }
                 }));
             }
@@ -258,6 +270,15 @@ class WebSocketManager {
         // Auto-play if no handlers are registered
         if (!handlers || handlers.size === 0) {
             audio.play().catch(console.error);
+        }
+    }
+
+    send(message) {
+        if (this.isConnected) {
+            this.ws.send(JSON.stringify({
+                ...message,
+                timestamp: new Date().toISOString()
+            }));
         }
     }
 

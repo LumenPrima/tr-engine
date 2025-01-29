@@ -26,6 +26,9 @@ class EventHandlers {
         stateEventEmitter.on('unit.location', this.handleUnitLocation.bind(this));
         stateEventEmitter.on('unit.status', this.handleUnitStatus.bind(this));
 
+        // Transcription events
+        stateEventEmitter.on('transcription.new', this.handleTranscriptionNew.bind(this));
+
         // Error events
         stateEventEmitter.on('error', this.handleError.bind(this));
     }
@@ -52,6 +55,16 @@ class EventHandlers {
         });
 
         logger.debug(`Broadcasted ${eventType} event to ${clientCount} clients`);
+    }
+
+    // Transcription event handler
+    handleTranscriptionNew(transcriptionData) {
+        try {
+            logger.debug('Processing transcription.new event');
+            this.broadcast('transcription.new', transcriptionData);
+        } catch (err) {
+            logger.error('Error handling transcription.new event:', err);
+        }
     }
 
     // Call event handlers

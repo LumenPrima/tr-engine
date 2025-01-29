@@ -13,6 +13,7 @@ class WebSocketServer {
         this.eventHandlers = new EventHandlers(this.wss);
         this.subscriptions = new Map(); // Track client subscriptions
         this.audioSubscriptions = new Map(); // Track audio subscriptions
+        this.transcriptionSubscriptions = new Map(); // Track transcription subscriptions
         this.setupWebSocketServer();
     }
 
@@ -37,6 +38,7 @@ class WebSocketServer {
         // Initialize client subscriptions
         this.subscriptions.set(ws, new Set());
         this.audioSubscriptions.set(ws, new Map()); // Map talkgroup IDs to options
+        this.transcriptionSubscriptions.set(ws, new Set()); // Set of talkgroup IDs
 
         // Send initial state to the new client
         this.sendInitialState(ws);
@@ -49,7 +51,8 @@ class WebSocketServer {
         // Send connection status
         this.sendResponse(ws, 'connection.status', {
             status: 'connected',
-            subscriptions: []
+            subscriptions: [],
+            transcriptionSubscriptions: []
         });
 
         // Start heartbeat for this client
@@ -115,6 +118,14 @@ class WebSocketServer {
                     this.handleAudioUnsubscribe(ws, data.data?.talkgroups);
                     break;
 
+                // Transcription subscription management
+                case 'transcription.subscribe':
+                    this.handleTranscriptionSubscribe(ws, data.data?.talkgroups);
+                    break;
+                case 'transcription.unsubscribe':
+                    this.handleTranscriptionUnsubscribe(ws, data.data?.talkgroups);
+                    break;
+
                 // Data requests
                 case 'get.active_calls':
                     this.handleGetActiveCalls(ws);
@@ -155,6 +166,7 @@ class WebSocketServer {
         // Clean up subscriptions
         this.subscriptions.delete(ws);
         this.audioSubscriptions.delete(ws);
+        this.transcriptionSubscriptions.delete(ws);
         // Clear heartbeat interval
         if (ws.heartbeatInterval) {
             clearInterval(ws.heartbeatInterval);
@@ -269,6 +281,38 @@ class WebSocketServer {
         });
     }
 
+    // Transcription subscription handlers
+    handleTranscriptionSubscribe(ws, talkgroups) {
+        if (!talkgroups || !Array.isArray(talkgroups)) {
+            return this.sendError(ws, 'Invalid talkgroups array', {
+                code: 'INVALID_TRANSCRIPTION_SUBSCRIPTION'
+            });
+        }
+
+        const transcriptionSubs = this.transcriptionSubscriptions.get(ws);
+        talkgroups.forEach(talkgroup => transcriptionSubs.add(talkgroup));
+        
+        this.sendResponse(ws, 'connection.status', {
+            status: 'connected',
+            transcriptionSubscriptions: Array.from(transcriptionSubs)
+        });
+    }
+
+    handleTranscriptionUnsubscribe(ws, talkgroups) {
+        const transcriptionSubs = this.transcriptionSubscriptions.get(ws);
+        
+        if (talkgroups && Array.isArray(talkgroups)) {
+            talkgroups.forEach(talkgroup => transcriptionSubs.delete(talkgroup));
+        } else {
+            transcriptionSubs.clear();
+        }
+
+        this.sendResponse(ws, 'connection.status', {
+            status: 'connected',
+            transcriptionSubscriptions: Array.from(transcriptionSubs)
+        });
+    }
+
     // Helper methods for sending responses
     sendResponse(ws, type, data) {
         if (ws.readyState === WebSocket.OPEN) {
@@ -311,6 +355,20 @@ class WebSocketServer {
                 format: format,
                 metadata: preferences.options.includeMetadata ? metadata : undefined
             });
+        });
+    }
+
+    // Method to broadcast transcriptions to subscribed clients
+    broadcastTranscription(transcription) {
+        const talkgroup = transcription.talkgroup;
+        
+        this.wss.clients.forEach(client => {
+            if (client.readyState !== WebSocket.OPEN) return;
+
+            const transcriptionSubs = this.transcriptionSubscriptions.get(client);
+            if (!transcriptionSubs || !transcriptionSubs.has(talkgroup)) return;
+
+            this.sendResponse(client, 'transcription.new', transcription);
         });
     }
 

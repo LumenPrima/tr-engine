@@ -77,6 +77,12 @@ class StateEventEmitter extends EventEmitter {
         logger.debug(`Emitting ${eventName} event`);
         this.emit(eventName, data);
     }
+
+    // Transcription event
+    emitTranscriptionNew(transcriptionData) {
+        logger.debug(`Emitting transcription.new event for call ${transcriptionData.call_id}`);
+        this.emit('transcription.new', transcriptionData);
+    }
 }
 
 // Export singleton instance

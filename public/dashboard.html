@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TR Engine Dashboard</title>
+    <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+    <div class="status-bar" id="status-bar"></div>
+    <div class="dashboard">
+        <div class="card" id="systems-card">
+            <h2>Systems <span class="activity-indicator" id="systems-activity"></span></h2>
+            <div class="stat" id="systems-count">-</div>
+            <div id="systems-details">
+                <table class="details-table">
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card" id="units-card">
+            <h2>Active Units <span class="activity-indicator" id="units-activity"></span></h2>
+            <div class="stat" id="units-count">-</div>
+            <div id="units-details">
+                <table class="details-table">
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card" id="talkgroups-card">
+            <h2>Active Talkgroups <span class="activity-indicator" id="talkgroups-activity"></span></h2>
+            <div class="stat" id="talkgroups-count">-</div>
+            <div id="talkgroups-details">
+                <table class="details-table">
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card" id="calls-card">
+            <h2>Active Calls <span class="activity-indicator" id="calls-activity"></span></h2>
+            <div class="stat" id="calls-count">-</div>
+            <div id="calls-details">
+                <table class="details-table">
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="console-container">
+        <div class="card console-card">
+            <h2>Event Console</h2>
+            <div class="console" id="message-console"></div>
+        </div>
+
+        <div class="card console-card">
+            <h2>Transcription Feed</h2>
+            <div class="console" id="transcription-console"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Initial State</h2>
+        <div class="console" id="initial-state-console"></div>
+    </div>
+
+    <script type="module">
+        import dashboard from './js/modules/dashboard/index.js';
+        dashboard.initDashboard().catch(console.error);
+    </script>
+</body>
+</html>

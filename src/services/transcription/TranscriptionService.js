@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const { getGridFSBucket } = require('../../config/mongodb');
 const os = require('os');
 const path = require('path');
+const stateEventEmitter = require('../events/emitter');
 
 // Queue for managing transcription requests
 class RequestQueue {
@@ -255,6 +256,7 @@ class TranscriptionService {
             );
             
             logger.info(`Saved transcription for call ${callId}, duration: ${processingTime}s`);
+            stateEventEmitter.emitTranscriptionNew(transcription);
             return transcription;
         } catch (error) {
             logger.error(`Failed to save transcription for call ${callId}:`, error);

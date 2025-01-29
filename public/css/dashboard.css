@@ -1,0 +1,223 @@
+:root {
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #2d2d2d;
+    --text-primary: #ffffff;
+    --text-secondary: #b3b3b3;
+    --accent: #007bff;
+    --danger: #dc3545;
+    --success: #28a745;
+    --warning: #ffc107;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    padding: 20px;
+}
+
+.dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.card {
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    overflow-y: auto;
+    max-height: 400px;
+}
+
+.details-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 0.9rem;
+}
+
+.details-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--bg-primary);
+}
+
+.details-table td:first-child {
+    color: var(--text-secondary);
+}
+
+.details-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--bg-primary);
+    font-size: 0.9rem;
+}
+
+.details-row .label {
+    color: var(--text-secondary);
+}
+
+.details-row .value {
+    color: var(--text-primary);
+}
+
+.emergency {
+    color: var(--danger);
+}
+
+.status-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px;
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.status-indicator {
+    padding: 6px 12px;
+    border-radius: 4px;
+    background-color: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    transition: background-color 0.3s;
+}
+
+.status-indicator.flash {
+    animation: indicator-flash 0.5s;
+}
+
+.card h2 {
+    color: var(--text-secondary);
+    font-size: 1.2rem;
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stat {
+    font-size: 2rem;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+.activity-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+.activity-indicator.active {
+    background-color: var(--success);
+    box-shadow: 0 0 10px var(--success);
+    animation: pulse 1s infinite;
+}
+
+.activity-indicator.inactive {
+    background-color: var(--text-secondary);
+}
+
+.console-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.console-card {
+    margin: 0;
+}
+
+.console {
+    font-family: 'Consolas', 'Monaco', monospace;
+    height: 500px;
+    background-color: #000;
+    padding: 10px;
+    border-radius: 8px;
+    overflow: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 4px;
+}
+
+.console#transcription-console {
+    flex-direction: column;
+    flex-wrap: nowrap;
+}
+
+.console#transcription-console .console-message {
+    white-space: normal;
+    flex-shrink: 1;
+}
+
+.console-message {
+    margin: 2px;
+    font-size: 0.9rem;
+    opacity: 0.8;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background-color: var(--bg-secondary);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.console-message.new {
+    opacity: 1;
+    color: var(--success);
+    background-color: rgba(40, 167, 69, 0.2);
+}
+
+.console-message .timestamp {
+    color: var(--text-secondary);
+    margin-right: 8px;
+}
+
+.console-message .type {
+    color: var(--accent);
+    margin-right: 8px;
+}
+
+.console-message .content {
+    color: var(--text-primary);
+}
+
+.console-message .content.emergency {
+    color: var(--danger);
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.8; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes indicator-flash {
+    0% { background-color: var(--accent); color: white; }
+    100% { background-color: var(--bg-primary); color: var(--text-secondary); }
+}
+
+@keyframes flash {
+    0% { background-color: var(--accent); }
+    100% { background-color: var(--bg-secondary); }
+}
+
+.event-flash {
+    animation: flash 0.5s;
+}
