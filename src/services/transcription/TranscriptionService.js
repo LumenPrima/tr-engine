@@ -53,15 +53,15 @@ class TranscriptionService {
         logger.info('TranscriptionService initialized');
     }
 
-    async processAudioMessage(audioMessage) {
+    async processAudioFile(audioFile) {
         try {
-            // Validate audio message
-            if (!audioMessage || !audioMessage.filename) {
-                throw new Error('Invalid audio message format');
+            // Validate audio file
+            if (!audioFile || !audioFile.filename) {
+                throw new Error('Invalid audio file format');
             }
 
             // Get audio metadata
-            const metadata = await this.getAudioMetadata(audioMessage);
+            const metadata = await this.getAudioMetadata(audioFile);
             if (!metadata) {
                 throw new Error('Invalid call duration in metadata');
             }
@@ -77,7 +77,7 @@ class TranscriptionService {
                         // Create a temporary file from GridFS stream
                         const tempFilePath = path.join(os.tmpdir(), `temp-${timestamps.getCurrentUnix()}.wav`);
                         const writeStream = fs.createWriteStream(tempFilePath);
-                        const downloadStream = gridFSBucket.openDownloadStream(wavFile._id);
+                        const downloadStream = metadata.gridFSBucket.openDownloadStream(metadata.fileId);
 
                         await new Promise((resolve, reject) => {
                             downloadStream.pipe(writeStream)
@@ -95,7 +95,7 @@ class TranscriptionService {
                     };
 
                     const transcription = await this.queue.add(processTranscription);
-                    await this.saveTranscription(audioMessage.call_id, transcription, startTime, audioMessage);
+                    await this.saveTranscription(audioFile.call_id, transcription, startTime, audioFile);
                     return transcription;
 
                 } catch (error) {
@@ -108,7 +108,61 @@ class TranscriptionService {
             throw lastError || new Error('Failed to process transcription after retries');
 
         } catch (error) {
-            logger.error('Error processing audio message:', error);
+            logger.error('Error processing audio file:', error);
+            throw error;
+        }
+    }
+
+    async getAudioMetadata(audioFile) {
+        try {
+            const db = mongoose.connection.db;
+            const gridFSBucket = new mongoose.mongo.GridFSBucket(db, {
+                bucketName: 'audio'
+            });
+
+            // Find the audio file in GridFS
+            const files = await db.collection('audio.files')
+                .find({ filename: audioFile.filename })
+                .toArray();
+
+            if (!files || files.length === 0) {
+                logger.error('Audio file not found in GridFS:', audioFile.filename);
+                return null;
+            }
+
+            const wavFile = files[0];
+            if (!wavFile || !wavFile.length) {
+                logger.error('Invalid audio file metadata:', wavFile);
+                return null;
+            }
+
+            return {
+                gridFSBucket,
+                fileId: wavFile._id,
+                duration: wavFile.length
+            };
+
+        } catch (error) {
+            logger.error('Error getting audio metadata:', error);
+            return null;
+        }
+    }
+
+    async transcribeAudio(filePath) {
+        try {
+            const transcription = await this.openai.audio.transcriptions.create({
+                file: fs.createReadStream(filePath),
+                model: process.env.WHISPER_MODEL || "whisper-1",
+                language: "en"
+            });
+
+            return {
+                text: transcription.text,
+                duration: transcription.duration || 0
+            };
+
+        } catch (error) {
+            logger.error('Error transcribing audio:', error);
             throw error;
         }
     }
