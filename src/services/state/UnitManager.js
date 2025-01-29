@@ -300,36 +300,66 @@ class UnitManager {
                 { upsert: true }
             );
             
-            // Emit unit activity event
-            stateEventEmitter.emitUnitActivity({
-                unit: unitData.unit,
-                unit_alpha_tag: unitData.unit_alpha_tag,
-                activity_type: activityType,
-                talkgroup: unitData.talkgroup,
-                talkgroup_tag: unitData.talkgroup_tag,
-                wacn: wacn,
-                sys_name: unitData.sys_name,
-                ...newState
-            });
+            // For call events, only emit if this is the first system to report it
+            if (callId) {
+                const isFirstSystem = !activities.some(a => 
+                    a !== activity && // Not the current activity
+                    a.call_id === callId && // Same call
+                    a.activity_type === activityType && // Same type (start/end)
+                    new Date(a.timestamp).getTime() < new Date().getTime() // Earlier timestamp
+                );
 
-            // Emit specific events based on activity type
-            if (activityType === 'location') {
-                stateEventEmitter.emitUnitLocation({
-                    unit: unitData.unit,
-                    unit_alpha_tag: unitData.unit_alpha_tag,
-                    wacn: wacn,
-                    sys_name: unitData.sys_name,
-                    ...unitData
-                });
-            } else if (['on', 'off'].includes(activityType)) {
-                stateEventEmitter.emitUnitStatus({
-                    unit: unitData.unit,
-                    unit_alpha_tag: unitData.unit_alpha_tag,
-                    status: activityType === 'on' ? 'online' : 'offline',
-                    wacn: wacn,
-                    sys_name: unitData.sys_name,
-                    ...unitData
-                });
+                if (isFirstSystem) {
+                    stateEventEmitter.emitUnitActivity({
+                        unit: unitData.unit,
+                        unit_alpha_tag: unitData.unit_alpha_tag,
+                        activity_type: activityType,
+                        talkgroup: unitData.talkgroup,
+                        talkgroup_tag: unitData.talkgroup_tag,
+                        wacn: wacn,
+                        call_id: callId,
+                        systems: [unitData.sys_name],
+                        ...newState
+                    });
+                }
+            } else {
+                // For non-call events, handle differently based on type
+                if (activityType === 'location') {
+                    // Always emit location events as they might have different coordinates
+                    stateEventEmitter.emitUnitLocation({
+                        unit: unitData.unit,
+                        unit_alpha_tag: unitData.unit_alpha_tag,
+                        wacn: wacn,
+                        sys_name: unitData.sys_name,
+                        ...unitData
+                    });
+                } else if (['on', 'off'].includes(activityType)) {
+                    // For status events, only emit if status actually changed
+                    const prevStatus = currentState.status?.online;
+                    const newStatus = activityType === 'on';
+                    if (prevStatus !== newStatus) {
+                        stateEventEmitter.emitUnitStatus({
+                            unit: unitData.unit,
+                            unit_alpha_tag: unitData.unit_alpha_tag,
+                            status: newStatus ? 'online' : 'offline',
+                            wacn: wacn,
+                            sys_name: unitData.sys_name,
+                            ...unitData
+                        });
+                    }
+                } else {
+                    // For other events (like affiliations), emit normally
+                    stateEventEmitter.emitUnitActivity({
+                        unit: unitData.unit,
+                        unit_alpha_tag: unitData.unit_alpha_tag,
+                        activity_type: activityType,
+                        talkgroup: unitData.talkgroup,
+                        talkgroup_tag: unitData.talkgroup_tag,
+                        wacn: wacn,
+                        sys_name: unitData.sys_name,
+                        ...newState
+                    });
+                }
             }
         } catch (err) {
             logger.error('Error updating unit state:', err);
