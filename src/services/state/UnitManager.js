@@ -265,7 +265,12 @@ class UnitManager {
                     talkgroup_tag: unitData.talkgroup_tag,
                     sys_name: unitData.sys_name,
                     sys_num: unitData.sys_num,
-                    details: unitData  // Store full message for comparison
+                    details: {  // Store only necessary fields for comparison
+                        unit: unitData.unit,
+                        unit_alpha_tag: unitData.unit_alpha_tag,
+                        talkgroup: unitData.talkgroup,
+                        talkgroup_tag: unitData.talkgroup_tag
+                    }
                 };
 
                 // Only add if different from most recent
@@ -521,6 +526,7 @@ class UnitManager {
 
     // Helper to check if two activities are similar (ignoring timestamp)
     areSimilarActivities(a, b) {
+        if (!a || !b) return false;
         if (a.activity_type !== b.activity_type) return false;
         if (a.talkgroup !== b.talkgroup) return false;
         
@@ -529,9 +535,15 @@ class UnitManager {
             return false;
         }
 
+        // If either activity doesn't have details, treat them as different
+        if (!a.details || !b.details) return false;
+
         // Compare unit and talkgroup fields
         const compareFields = ['unit', 'unit_alpha_tag', 'talkgroup', 'talkgroup_tag'];
-        return compareFields.every(field => a.details[field] === b.details[field]);
+        return compareFields.every(field => 
+            a.details[field] === b.details[field] && 
+            a.details[field] !== undefined
+        );
     }
 
     // Helper method to filter out redundant activities
