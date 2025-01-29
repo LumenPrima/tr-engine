@@ -3,7 +3,6 @@ const { query, param, validationResult } = require('express-validator');
 const mongoose = require('mongoose');
 const { errorHandler } = require('../middleware');
 const logger = require('../../utils/logger');
-const timestamps = require('../../utils/timestamps');
 
 // Get talkgroups with advanced filtering
 router.get('/', 
@@ -22,7 +21,7 @@ router.get('/',
         return res.status(400).json({ 
           status: 'error',
           errors: errors.array(),
-          timestamp: timestamps.getCurrentTimeISO()
+          timestamp: new Date().toISOString()
         });
       }
 
@@ -52,7 +51,7 @@ router.get('/',
         status: 'success',
         count: formattedTalkgroups.length,
         data: formattedTalkgroups,
-        timestamp: timestamps.getCurrentTimeISO()
+        timestamp: new Date().toISOString()
       });
     } catch (err) {
       logger.error('Error getting talkgroups:', err);
@@ -71,7 +70,7 @@ router.get('/:talkgroup_id',
         return res.status(400).json({
           status: 'error',
           errors: errors.array(),
-          timestamp: timestamps.getCurrentTimeISO()
+          timestamp: new Date().toISOString()
         });
       }
 
@@ -83,7 +82,7 @@ router.get('/:talkgroup_id',
         return res.status(404).json({
           status: 'error',
           message: 'Talkgroup not found',
-          timestamp: timestamps.getCurrentTimeISO()
+          timestamp: new Date().toISOString()
         });
       }
 
@@ -101,7 +100,7 @@ router.get('/:talkgroup_id',
       res.json({
         status: 'success',
         data: formattedTalkgroup,
-        timestamp: timestamps.getCurrentTimeISO()
+        timestamp: new Date().toISOString()
       });
     } catch (err) {
       logger.error('Error getting talkgroup:', err);

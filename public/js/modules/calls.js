@@ -1,7 +1,7 @@
 // Call-related functionality
-import { formatTime, formatDuration, formatUnits, isValidISOString } from '../utils.js';
-import { getApiBaseUrl } from '../utils.js';
+import { formatTime, formatDuration, formatUnits } from '../utils.js';
 
+import { getApiBaseUrl } from '../utils.js';
 const API_BASE_URL = getApiBaseUrl();
 
 // Fetch and display active calls
@@ -74,14 +74,7 @@ export async function fetchRecentHistory() {
         // Fetch transcriptions for each call
         const callsWithTranscriptions = await Promise.all(data.data.calls.map(async call => {
             try {
-                // Use ISO timestamp for call ID construction
-                const timestamp = call.start_time || call.timestamp;
-                const unixTime = new Date(timestamp).getTime() / 1000;
-                const callId = call.sys_num ? 
-                    `${call.sys_num}_${call.talkgroup}_${unixTime}` : 
-                    `${call.talkgroup}_${unixTime}`;
-                
-                const transcriptionResponse = await fetch(`${API_BASE_URL}/transcription/${callId}`);
+                const transcriptionResponse = await fetch(`${API_BASE_URL}/transcription/${call.call_id}`);
                 if (transcriptionResponse.ok) {
                     const transcriptionData = await transcriptionResponse.json();
                     if (transcriptionData.status === 'success') {
@@ -153,14 +146,7 @@ export async function fetchRecentCalls() {
         const calls = showTranscriptions ? 
             await Promise.all(data.data.calls.map(async call => {
                 try {
-                    // Use ISO timestamp for call ID construction
-                    const timestamp = call.start_time || call.timestamp;
-                    const unixTime = new Date(timestamp).getTime() / 1000;
-                    const callId = call.sys_num ? 
-                        `${call.sys_num}_${call.talkgroup}_${unixTime}` : 
-                        `${call.talkgroup}_${unixTime}`;
-                    
-                    const transcriptionResponse = await fetch(`${API_BASE_URL}/transcription/${callId}`);
+                    const transcriptionResponse = await fetch(`${API_BASE_URL}/transcription/${call.call_id}`);
                     if (transcriptionResponse.ok) {
                         const transcriptionData = await transcriptionResponse.json();
                         if (transcriptionData.status === 'success') {
@@ -174,14 +160,7 @@ export async function fetchRecentCalls() {
             })) : 
             data.data.calls;
 
-        // Sort calls by timestamp in descending order
-        const sortedCalls = [...calls].sort((a, b) => {
-            const timeA = new Date(a.timestamp || a.start_time);
-            const timeB = new Date(b.timestamp || b.start_time);
-            return timeB - timeA;
-        });
-
-        content.innerHTML = sortedCalls.map(call => `
+        content.innerHTML = calls.map(call => `
             <div class="status-item">
                 <div>
                     <div>
@@ -191,7 +170,7 @@ export async function fetchRecentCalls() {
                     <div>TG: ${call.talkgroup || 'Unknown'} - ${call.talkgroup_tag || 'Unknown'}</div>
                     <div>Units: ${formatUnits(call.units)}</div>
                     <div>Duration: ${formatDuration(call.duration)}</div>
-                    <div class="timestamp">${formatTime(call.start_time || call.timestamp)}</div>
+                    <div class="timestamp">${formatTime(call.start_time)}</div>
                     ${showTranscriptions ? 
                         (call.transcription ? `
                             <div class="transcription">
@@ -214,7 +193,7 @@ export async function fetchRecentCalls() {
 
         // Update count in header
         const header = document.querySelector('#recent-calls h2');
-        header.innerHTML = `Recent Calls <span class="count">${sortedCalls.length}</span>`;
+        header.innerHTML = `Recent Calls <span class="count">${calls.length}</span>`;
     } catch (error) {
         document.querySelector('#recent-calls .content').innerHTML = 
             `<div class="error">Error loading recent calls: ${error.message}</div>`;

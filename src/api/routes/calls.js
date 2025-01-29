@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('../../utils/logger');
-const timestamps = require('../../utils/timestamps');
 const activeCallManager = require('../../services/state/ActiveCallManager');
 const mongoose = require('mongoose');
 
@@ -11,14 +10,14 @@ router.get('/', async (req, res) => {
         const options = {
             limit: parseInt(req.query.limit) || 100,
             offset: parseInt(req.query.offset) || 0,
-            startTime: req.query.start || timestamps.toISO(timestamps.getCurrentTimeUnix() - 24 * 60 * 60), // 24 hours ago
-            endTime: req.query.end || timestamps.toISO(timestamps.getCurrentTimeUnix())
+            startTime: req.query.start ? new Date(req.query.start) : new Date(Date.now() - 24 * 60 * 60 * 1000),
+            endTime: req.query.end ? new Date(req.query.end) : new Date()
         };
 
         const filter = {
-            timestamp: {
-                $gte: timestamps.toUnix(options.startTime),
-                $lte: timestamps.toUnix(options.endTime)
+            timestamp: { 
+                $gte: Math.floor(options.startTime.getTime() / 1000),
+                $lte: Math.floor(options.endTime.getTime() / 1000)
             }
         };
 
@@ -48,8 +47,7 @@ router.get('/', async (req, res) => {
 
         const formattedCalls = calls.map(call => ({
             call_id: call.id,
-            timestamp: timestamps.toISO(call.timestamp),
-            start_time: timestamps.toISO(call.timestamp), // Consistent ISO format
+            timestamp: new Date(call.timestamp * 1000),
             sys_name: call.sys_name,
             talkgroup: call.talkgroup,
             talkgroup_tag: call.talkgroup_alpha_tag,
@@ -64,7 +62,7 @@ router.get('/', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: {
                 pagination: {
                     total: totalCount,
@@ -119,7 +117,7 @@ router.get('/active', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: {
                 count: formattedCalls.length,
                 calls: formattedCalls
@@ -140,8 +138,8 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
         const talkgroupId = parseInt(req.params.talkgroup_id);
         const options = {
             limit: parseInt(req.query.limit) || 100,
-            startTime: req.query.start || timestamps.toISO(timestamps.getCurrentTimeUnix() - 24 * 60 * 60), // 24 hours ago
-            endTime: req.query.end || timestamps.toISO(timestamps.getCurrentTimeUnix())
+            startTime: req.query.start ? new Date(req.query.start) : new Date(Date.now() - 24 * 60 * 60 * 1000),
+            endTime: req.query.end ? new Date(req.query.end) : new Date()
         };
 
         const db = mongoose.connection.db;
@@ -150,9 +148,9 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
         const [calls, joins] = await Promise.all([
             db.collection('call_start').find({
                 talkgroup: talkgroupId,
-                timestamp: {
-                    $gte: timestamps.toUnix(options.startTime),
-                    $lte: timestamps.toUnix(options.endTime)
+                timestamp: { 
+                    $gte: Math.floor(options.startTime.getTime() / 1000),
+                    $lte: Math.floor(options.endTime.getTime() / 1000)
                 }
             })
             .limit(options.limit)
@@ -160,9 +158,9 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
             .toArray(),
             db.collection('join').find({
                 talkgroup: talkgroupId,
-                timestamp: {
-                    $gte: timestamps.toUnix(options.startTime),
-                    $lte: timestamps.toUnix(options.endTime)
+                timestamp: { 
+                    $gte: Math.floor(options.startTime.getTime() / 1000),
+                    $lte: Math.floor(options.endTime.getTime() / 1000)
                 }
             })
             .limit(options.limit)
@@ -173,7 +171,7 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
         // Transform calls to standardized format
         const formattedCalls = calls.map(call => ({
             call_id: call.id,
-            timestamp: timestamps.toISO(call.timestamp),
+            timestamp: new Date(call.timestamp * 1000),
             activity_type: 'call',
             units: call.unit ? [call.unit] : [],
             emergency: call.emergency || false,
@@ -185,7 +183,7 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
 
         // Transform joins to standardized format
         const formattedJoins = joins.map(join => ({
-            timestamp: timestamps.toISO(join.timestamp),
+            timestamp: new Date(join.timestamp * 1000),
             activity_type: 'join',
             unit: join.unit,
             unit_alpha_tag: join.unit_alpha_tag,
@@ -199,7 +197,7 @@ router.get('/talkgroup/:talkgroup_id', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: {
                 talkgroup: {
                     talkgroup: talkgroupId,
@@ -255,7 +253,7 @@ router.get('/events', async (req, res) => {
         
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: {
                 count: totalEvents,
                 events: {

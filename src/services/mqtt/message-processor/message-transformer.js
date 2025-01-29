@@ -1,25 +1,12 @@
 const logger = require('../../../utils/logger');
-const timestamps = require('../../../utils/timestamps');
 
 class MessageTransformer {
   transformMessage(message) {
     const transformed = {
       ...this.flattenObject(message),
-      _processed_at: timestamps.getCurrentTimeISO(),
-      _mqtt_received_at: timestamps.getCurrentTimeISO()
+      _processed_at: new Date(),
+      _mqtt_received_at: new Date()
     };
-
-    // Ensure all timestamps are proper Unix timestamps (seconds since epoch)
-    // MQTT messages already provide Unix timestamps, so we just need to ensure they're valid
-    if (transformed.timestamp && !timestamps.isValidUnix(transformed.timestamp)) {
-      logger.warn('Invalid Unix timestamp received:', transformed.timestamp);
-    }
-    if (transformed.start_time && !timestamps.isValidUnix(transformed.start_time)) {
-      logger.warn('Invalid start_time timestamp received:', transformed.start_time);
-    }
-    if (transformed.end_time && !timestamps.isValidUnix(transformed.end_time)) {
-      logger.warn('Invalid end_time timestamp received:', transformed.end_time);
-    }
 
     logger.debug('Transformed message:', {
       original: message,

@@ -4,7 +4,6 @@ const logger = require('../../utils/logger');
 const mongoose = require('mongoose');
 const TranscriptionService = require('../../services/transcription/TranscriptionService');
 const path = require('path');
-const timestamps = require('../../utils/timestamps');
 
 const transcriptionService = new TranscriptionService();
 
@@ -12,19 +11,21 @@ const transcriptionService = new TranscriptionService();
 const parseCallId = (callId) => {
     let talkgroup, targetTime, sysNum;
     
-    // First try the new format with system number
+    // Parse call ID formats
     const parts = callId.split('_');
+    
     if (parts.length === 3) {
         // Format: sys_num_talkgroup_timestamp (e.g., 2_58259_1738107954)
         [sysNum, talkgroup, targetTime] = parts.map(p => parseInt(p));
     } else if (parts.length === 2) {
         // Format: talkgroup_timestamp (e.g., 58259_1738107954)
         [talkgroup, targetTime] = parts.map(p => parseInt(p));
-    } else if (callId.includes('-')) {
-        // Legacy format: talkgroup-starttime (e.g. "53039-1738112065")
-        const [tg, time] = callId.split('-');
-        talkgroup = parseInt(tg);
-        targetTime = parseInt(time);
+    } else {
+        // Try legacy format: talkgroup-starttime
+        const legacyParts = callId.split('-');
+        if (legacyParts.length === 2) {
+            [talkgroup, targetTime] = legacyParts.map(p => parseInt(p));
+        }
     }
 
     if (isNaN(talkgroup) || isNaN(targetTime)) {
@@ -68,7 +69,7 @@ router.post('/process/:callId', async (req, res) => {
             return res.status(404).json({
                 status: 'error',
                 message: 'Audio metadata not found',
-                timestamp: timestamps.getCurrentTimeISO()
+                timestamp: new Date().toISOString()
             });
         }
 
@@ -80,7 +81,7 @@ router.post('/process/:callId', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: transcription
         });
     } catch (error) {
@@ -88,7 +89,7 @@ router.post('/process/:callId', async (req, res) => {
         res.status(500).json({
             status: 'error',
             message: error.message || 'Failed to process transcription',
-            timestamp: timestamps.getCurrentTimeISO()
+            timestamp: new Date().toISOString()
         });
     }
 });
@@ -99,10 +100,7 @@ router.get('/:callId', async (req, res) => {
         const collection = mongoose.connection.db.collection('transcriptions');
         const { talkgroup, targetTime, sysNum } = parseCallId(req.params.callId);
 
-        // Convert targetTime to ISODate for comparison
-        const targetDate = new Date(targetTime * 1000);
-
-        // Find transcription with closest timestamp
+        // Find transcription with closest start_time
         const transcription = await collection.aggregate([
             { 
                 $match: {
@@ -112,14 +110,7 @@ router.get('/:callId', async (req, res) => {
             },
             {
                 $addFields: {
-                    timeDiff: { 
-                        $abs: { 
-                            $subtract: [
-                                '$timestamp', 
-                                targetDate
-                            ] 
-                        } 
-                    }
+                    timeDiff: { $abs: { $subtract: ['$timestamp', targetTime] } }
                 }
             },
             {
@@ -134,20 +125,20 @@ router.get('/:callId', async (req, res) => {
             return res.status(404).json({
                 status: 'error',
                 message: 'Transcription not found',
-                timestamp: timestamps.getCurrentTimeISO()
+                timestamp: new Date().toISOString()
             });
         }
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: {
                 call_id: req.params.callId,
                 text: transcription.text,
                 audio_duration: transcription.audio_duration,
                 processing_time: transcription.processing_time,
                 model: transcription.model,
-                created_at: transcription.timestamp
+                created_at: new Date(transcription.timestamp * 1000)
             }
         });
     } catch (error) {
@@ -155,7 +146,7 @@ router.get('/:callId', async (req, res) => {
         res.status(500).json({
             status: 'error',
             message: 'Failed to retrieve transcription',
-            timestamp: timestamps.getCurrentTimeISO()
+            timestamp: new Date().toISOString()
         });
     }
 });
@@ -165,16 +156,16 @@ router.get('/:talkgroupId/recent', async (req, res) => {
     try {
         const options = {
             limit: parseInt(req.query.limit) || 10,
-            startTime: req.query.start || timestamps.getCurrentTimeISO(-24 * 60 * 60), // 24 hours ago
-            endTime: req.query.end || timestamps.getCurrentTimeISO()
+            startTime: req.query.start ? new Date(req.query.start) : new Date(Date.now() - 24 * 60 * 60 * 1000),
+            endTime: req.query.end ? new Date(req.query.end) : new Date()
         };
 
         const collection = mongoose.connection.db.collection('transcriptions');
         const transcriptions = await collection.find({
             talkgroup: parseInt(req.params.talkgroupId),
             timestamp: { 
-                $gte: options.startTime,
-                $lte: options.endTime
+                $gte: Math.floor(options.startTime.getTime() / 1000),
+                $lte: Math.floor(options.endTime.getTime() / 1000)
             }
         })
         .sort({ timestamp: -1 })
@@ -186,7 +177,7 @@ router.get('/:talkgroupId/recent', async (req, res) => {
                 `${t.sys_num}_${t.talkgroup}_${t.timestamp}` : 
                 `${t.talkgroup}_${t.timestamp}`,
             text: t.text,
-            timestamp: t.timestamp,
+            timestamp: new Date(t.timestamp * 1000),
             metadata: {
                 audio_duration: t.audio_duration,
                 processing_time: t.processing_time,
@@ -196,7 +187,7 @@ router.get('/:talkgroupId/recent', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: {
                 count: formattedTranscriptions.length,
                 transcriptions: formattedTranscriptions,
@@ -211,7 +202,7 @@ router.get('/:talkgroupId/recent', async (req, res) => {
         res.status(500).json({
             status: 'error',
             message: 'Failed to retrieve transcriptions',
-            timestamp: timestamps.getCurrentTimeISO()
+            timestamp: new Date().toISOString()
         });
     }
 });
@@ -227,8 +218,8 @@ router.get('/stats', async (req, res) => {
         }
         if (req.query.start || req.query.end) {
             match.timestamp = {};
-            if (req.query.start) match.timestamp.$gte = new Date(req.query.start);
-            if (req.query.end) match.timestamp.$lte = new Date(req.query.end);
+            if (req.query.start) match.timestamp.$gte = Math.floor(new Date(req.query.start).getTime() / 1000);
+            if (req.query.end) match.timestamp.$lte = Math.floor(new Date(req.query.end).getTime() / 1000);
         }
 
         const [stats] = await collection.aggregate([
@@ -265,7 +256,7 @@ router.get('/stats', async (req, res) => {
         if (!stats) {
             return res.json({
                 status: 'success',
-                timestamp: timestamps.getCurrentTimeISO(),
+                timestamp: new Date().toISOString(),
                 data: {
                     total_transcriptions: 0,
                     total_duration: 0,
@@ -279,7 +270,7 @@ router.get('/stats', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: stats
         });
     } catch (error) {
@@ -302,7 +293,7 @@ router.get('/group', async (req, res) => {
             return res.status(400).json({
                 status: 'error',
                 message: 'Invalid timestamp format',
-                timestamp: timestamps.getCurrentTimeISO()
+                timestamp: new Date().toISOString()
             });
         }
 
@@ -327,7 +318,7 @@ router.get('/group', async (req, res) => {
                 `${t.talkgroup}_${t.timestamp}`,
             talkgroup: t.talkgroup,
             text: t.text,
-            timestamp: t.timestamp,
+            timestamp: new Date(t.timestamp * 1000),
             time_diff_seconds: t.timeDiff,
             metadata: {
                 audio_duration: t.audio_duration,
@@ -338,11 +329,11 @@ router.get('/group', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: {
                 count: formattedTranscriptions.length,
                 transcriptions: formattedTranscriptions,
-                target: new Date(targetTime * 1000) // Keep this one as is since targetTime comes from query param
+                target: new Date(targetTime * 1000)
             }
         });
     } catch (error) {
@@ -366,7 +357,7 @@ router.get('/:talkgroupId/group', async (req, res) => {
             return res.status(400).json({
                 status: 'error',
                 message: 'Invalid talkgroup or timestamp format',
-                timestamp: timestamps.getCurrentTimeISO()
+                timestamp: new Date().toISOString()
             });
         }
 
@@ -393,7 +384,7 @@ router.get('/:talkgroupId/group', async (req, res) => {
                 `${t.sys_num}_${t.talkgroup}_${t.timestamp}` : 
                 `${t.talkgroup}_${t.timestamp}`,
             text: t.text,
-            timestamp: t.timestamp,
+            timestamp: new Date(t.timestamp * 1000),
             time_diff_seconds: t.timeDiff,
             metadata: {
                 audio_duration: t.audio_duration,
@@ -404,11 +395,11 @@ router.get('/:talkgroupId/group', async (req, res) => {
 
         res.json({
             status: 'success',
-            timestamp: timestamps.getCurrentTimeISO(),
+            timestamp: new Date().toISOString(),
             data: {
                 count: formattedTranscriptions.length,
                 transcriptions: formattedTranscriptions,
-                target: new Date(targetTime * 1000) // Keep this one as is since targetTime comes from query param
+                target: new Date(targetTime * 1000)
             }
         });
     } catch (error) {
