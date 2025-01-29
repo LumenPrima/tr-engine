@@ -1,4 +1,5 @@
 const logger = require('../../utils/logger');
+const timestamps = require('../../utils/timestamps');
 const stateEventEmitter = require('../events/emitter');
 
 class ActiveCallManager {
@@ -237,7 +238,7 @@ class ActiveCallManager {
             // Update our recorder state cache
             this.recorderStates.set(message.id, {
                 ...message,
-                last_update: new Date()
+                last_update: timestamps.getCurrentUnix()
             });
 
             logger.debug(`Recorder ${message.id} state updated to ${message.rec_state_type}`);
@@ -285,7 +286,7 @@ class ActiveCallManager {
                 if (!recorder || !recorder.id) return;
                 this.recorderStates.set(recorder.id, {
                     ...recorder,
-                    last_update: new Date()
+                    last_update: timestamps.getCurrentUnix()
                 });
             });
     
@@ -333,7 +334,10 @@ class ActiveCallManager {
                 if (!sysName || call.sys_name === sysName) {
                     const updatedCall = {
                         ...call,
-                        duration: (Date.now() / 1000) - call.start_time,
+                        duration: timestamps.diffSeconds(
+                            timestamps.getCurrentUnix(),
+                            call.start_time
+                        ),
                         unit_count: this.participatingUnits.get(callId)?.size || 0
                     };
                     
@@ -352,13 +356,16 @@ class ActiveCallManager {
     
     cleanupStaleCalls(sysName = null) {
         try {
-            const staleThreshold = Date.now() - (5 * 60 * 1000); // 5 minutes
+            const staleThreshold = timestamps.addSeconds(
+                timestamps.getCurrentUnix(),
+                -300 // 5 minutes ago
+            );
             let staleCount = 0;
             
             // Find and remove stale calls
             for (const [callId, call] of this.activeCallsCache.entries()) {
                 if ((!sysName || call.sys_name === sysName) && 
-                    call.start_time * 1000 < staleThreshold) {
+                    call.start_time < staleThreshold) {
                     this.activeCallsCache.delete(callId);
                     this.audioFiles.delete(callId);
                     this.participatingUnits.delete(callId);
