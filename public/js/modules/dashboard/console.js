@@ -3,7 +3,6 @@ export class ConsoleManager {
     constructor() {
         this.messageConsole = document.getElementById('message-console');
         this.transcriptionConsole = document.getElementById('transcription-console');
-        this.initialStateConsole = document.getElementById('initial-state-console');
         this.maxMessages = 100;
         this.messages = [];
         this.transcriptions = [];
@@ -55,8 +54,8 @@ export class ConsoleManager {
         message.appendChild(typeSpan);
         message.appendChild(content);
         
-        this.messageConsole.appendChild(message);
-        this.messages.push(message);
+        this.messageConsole.insertBefore(message, this.messageConsole.firstChild);
+        this.messages.unshift(message);
         
         // Remove 'new' class after animation
         setTimeout(() => {
@@ -65,17 +64,9 @@ export class ConsoleManager {
         
         // Remove old messages if we exceed maxMessages
         while (this.messages.length > this.maxMessages) {
-            const oldMessage = this.messages.shift();
+            const oldMessage = this.messages.pop();
             oldMessage.remove();
         }
-        
-        // Auto-scroll to bottom-right
-        this.messageConsole.scrollTop = this.messageConsole.scrollHeight;
-        this.messageConsole.scrollLeft = this.messageConsole.scrollWidth;
-    }
-
-    setInitialState(data) {
-        this.initialStateConsole.textContent = JSON.stringify(data, null, 2);
     }
 
     addTranscription(data) {
@@ -108,8 +99,8 @@ export class ConsoleManager {
         message.appendChild(typeSpan);
         message.appendChild(content);
         
-        this.transcriptionConsole.appendChild(message);
-        this.transcriptions.push(message);
+        this.transcriptionConsole.insertBefore(message, this.transcriptionConsole.firstChild);
+        this.transcriptions.unshift(message);
         
         // Remove 'new' class after animation
         setTimeout(() => {
@@ -118,12 +109,9 @@ export class ConsoleManager {
         
         // Remove old transcriptions if we exceed maxMessages
         while (this.transcriptions.length > this.maxMessages) {
-            const oldMessage = this.transcriptions.shift();
+            const oldMessage = this.transcriptions.pop();
             oldMessage.remove();
         }
-        
-        // Auto-scroll to bottom
-        this.transcriptionConsole.scrollTop = this.transcriptionConsole.scrollHeight;
     }
 }
 

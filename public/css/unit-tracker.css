@@ -2,8 +2,8 @@ body {
     margin: 0;
     padding: 0;
     font-family: Arial, sans-serif;
-    background-color: #1a1a1a;
-    color: #ffffff;
+    background-color: #1a1a1a; /* Dark background */
+    color: #ffffff; /* Light text */
 }
 
 main {
@@ -12,16 +12,17 @@ main {
 
 #unit-groups-container {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 12px;
     padding: 12px;
+    box-sizing: border-box;
 }
 
 .unit-group {
-    background-color: #2a2a2a;
+    background-color: #2a2a2a; /* Slightly lighter dark background for groups */
     border-radius: 6px;
     padding: 10px;
-    min-height: 150px;
+    min-height: 100px;
     position: relative;
 }
 
@@ -80,6 +81,20 @@ main {
     line-height: 1.2;
 }
 
+.talkgroup-stats {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 0.7em;
+    color: #888888;
+}
+
+.talkgroup-stats span {
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
 .units-container {
     display: flex;
     flex-wrap: wrap;
@@ -100,41 +115,159 @@ main {
     transform: scale(1.2);
 }
 
-/* Status colors */
+/* Unit status colors and states */
+.unit-dot {
+    transition: background-color 0.3s ease;
+}
+
+/* Active states */
 .unit-dot.active {
-    background-color: #4CAF50;
+    background-color: #4CAF50; /* Normal active */
 }
 
-.unit-dot.active.pale {
-    background-color: rgba(76, 175, 80, 0.5);
+.unit-dot.active.recent {
+    background-color: #69F0AE; /* Bright green for recent activity */
 }
 
-.unit-dot.inactive {
-    background-color: #9e9e9e;
+.unit-dot.active.stale {
+    background-color: rgba(76, 175, 80, 0.5); /* Dim green for stale */
 }
 
-.unit-dot.inactive.pale {
-    background-color: rgba(158, 158, 158, 0.5);
+/* Transmission types */
+.unit-dot.transmitting-call {
+    background-color: #2196F3; /* Blue */
+    animation: pulse-call 1.5s infinite;
 }
 
-.unit-dot.transmitting {
-    background-color: #2196F3;
-    animation: pulse 1.5s infinite;
+.unit-dot.transmitting-location {
+    background-color: #9C27B0; /* Purple */
+    animation: pulse-location 1.5s infinite;
 }
 
-.unit-dot.transmitting.pale {
+.unit-dot.transmitting-data {
+    background-color: #009688; /* Teal */
+    animation: pulse-data 1.5s infinite;
+}
+
+.unit-dot.transmitting-ackresp {
+    background-color: #FF9800; /* Orange */
+    animation: pulse-ackresp 1.5s infinite;
+}
+
+.unit-dot.transmitting-join {
+    background-color: #FFC107; /* Yellow for join activity */
+    animation: pulse-join 1.5s infinite;
+}
+
+/* Recent states */
+.unit-dot.transmitting-call.recent {
+    background-color: #40C4FF; /* Brighter blue */
+}
+
+.unit-dot.transmitting-location.recent {
+    background-color: #E040FB; /* Brighter purple */
+}
+
+.unit-dot.transmitting-data.recent {
+    background-color: #1DE9B6; /* Brighter teal */
+}
+
+.unit-dot.transmitting-ackresp.recent {
+    background-color: #FFB74D; /* Brighter orange */
+}
+
+.unit-dot.transmitting-join.recent {
+    background-color: #FFD54F; /* Brighter yellow */
+}
+
+/* Stale states */
+.unit-dot.transmitting-call.stale {
     background-color: rgba(33, 150, 243, 0.5);
     animation: none;
 }
 
+.unit-dot.transmitting-location.stale {
+    background-color: rgba(156, 39, 176, 0.5);
+    animation: none;
+}
+
+.unit-dot.transmitting-data.stale {
+    background-color: rgba(0, 150, 136, 0.5);
+    animation: none;
+}
+
+.unit-dot.transmitting-ackresp.stale {
+    background-color: rgba(255, 152, 0, 0.5);
+    animation: none;
+}
+
+.unit-dot.transmitting-join.stale {
+    background-color: rgba(255, 193, 7, 0.5); /* Dim yellow for stale join activity */
+    animation: none;
+}
+
+/* Pulse animations for each type */
+@keyframes pulse-call {
+    0% { box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(33, 150, 243, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(33, 150, 243, 0); }
+}
+
+@keyframes pulse-location {
+    0% { box-shadow: 0 0 0 0 rgba(156, 39, 176, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(156, 39, 176, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(156, 39, 176, 0); }
+}
+
+@keyframes pulse-data {
+    0% { box-shadow: 0 0 0 0 rgba(0, 150, 136, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(0, 150, 136, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 150, 136, 0); }
+}
+
+@keyframes pulse-ackresp {
+    0% { box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 152, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 152, 0, 0); }
+}
+
+@keyframes pulse-join {
+    0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+}
+
+/* Emergency states */
 .unit-dot.emergency {
-    background-color: #f44336;
+    background-color: #f44336; /* Red */
     animation: emergency-pulse 1s infinite;
 }
 
-.unit-dot.emergency.pale {
-    background-color: rgba(244, 67, 54, 0.5);
+.unit-dot.emergency.recent {
+    background-color: #FF1744; /* Bright red for recent emergency */
+    animation: emergency-pulse 1s infinite;
+}
+
+.unit-dot.emergency.stale {
+    background-color: rgba(244, 67, 54, 0.5); /* Dim red */
     animation: none;
+}
+
+/* Offline state - always dim but keep in talkgroup */
+.unit-dot.offline {
+    background-color: #9e9e9e;
+    opacity: 0.5;
+}
+
+/* Recent join/location update */
+.unit-dot.location-update {
+    animation: location-flash 2s ease-out;
+}
+
+@keyframes location-flash {
+    0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
+    70% { box-shadow: 0 0 10px 5px rgba(255, 255, 255, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
 }
 
 /* Tooltip */
@@ -200,6 +333,90 @@ main {
     }
 }
 
+/* Color Key */
+.color-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: #2a2a2a;
+    border-radius: 6px;
+    margin: 0 12px 12px 12px;
+}
+
+.key-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    color: #b3b3b3;
+}
+
+.key-item.filter {
+    margin-left: auto;
+}
+
+.time-filter {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: none;
+    background-color: #1a1a1a;
+    color: #ffffff;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.time-filter:hover {
+    background-color: #3a3a3a;
+}
+
+.key-item .unit-dot {
+    cursor: default;
+    transform: none !important;
+}
+
+/* Sort Controls */
+.sort-controls {
+    display: flex;
+    gap: 8px;
+    padding: 0 12px;
+    margin-bottom: 12px;
+}
+
+.sort-select {
+    flex: 1;
+    padding: 6px 12px;
+    border-radius: 4px;
+    border: none;
+    background-color: #2a2a2a;
+    color: #ffffff;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.sort-select:hover {
+    background-color: #3a3a3a;
+}
+
+.sort-button {
+    padding: 6px 12px;
+    border-radius: 4px;
+    border: none;
+    background-color: #2a2a2a;
+    color: #ffffff;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.sort-button:hover {
+    background-color: #3a3a3a;
+}
+
+.sort-button.asc {
+    transform: rotate(180deg);
+}
+
 /* Stats Bar */
 .stats-bar {
     display: flex;
@@ -207,7 +424,7 @@ main {
     padding: 12px;
     background-color: #2a2a2a;
     border-radius: 8px;
-    margin-bottom: 20px;
+    margin-bottom: 12px;
 }
 
 .stat-box {
@@ -239,19 +456,21 @@ main {
 .status-bar {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 10px;
+    gap: 4px;
+    padding: 6px;
     background-color: #2a2a2a;
-    border-radius: 8px;
-    margin-bottom: 20px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    max-height: 60px;
+    overflow-y: auto;
 }
 
 .status-indicator {
-    padding: 6px 12px;
-    border-radius: 4px;
+    padding: 2px 6px;
+    border-radius: 3px;
     background-color: #1a1a1a;
     color: #b3b3b3;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     font-family: 'Consolas', 'Monaco', monospace;
     transition: background-color 0.3s;
 }
@@ -263,45 +482,4 @@ main {
 @keyframes indicator-flash {
     0% { background-color: #007bff; color: white; }
     100% { background-color: #1a1a1a; color: #b3b3b3; }
-}
-
-/* Log styles */
-.response-log,
-.event-log,
-.error-log {
-    margin: 20px;
-    padding: 15px;
-    border-radius: 8px;
-    background-color: #2a2a2a;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.response-log h3 {
-    color: #4CAF50;
-    margin: 0 0 10px 0;
-}
-
-.event-log h3 {
-    color: #2196F3;
-    margin: 0 0 10px 0;
-}
-
-.error-log h3 {
-    color: #f44336;
-    margin: 0 0 10px 0;
-}
-
-.response-log pre,
-.event-log pre,
-.error-log pre {
-    margin: 0;
-    padding: 10px;
-    background-color: #1a1a1a;
-    border-radius: 4px;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    font-family: monospace;
-    font-size: 14px;
-    line-height: 1.4;
 }

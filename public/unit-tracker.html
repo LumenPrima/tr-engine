@@ -33,12 +33,67 @@
                 <div class="stat-label">Emergency Units</div>
             </div>
         </div>
+        <div class="color-key">
+            <div class="key-item">
+                <div class="unit-dot active"></div>
+                <span>Active</span>
+            </div>
+            <div class="key-item">
+                <div class="unit-dot transmitting-call"></div>
+                <span>Voice Call</span>
+            </div>
+            <div class="key-item">
+                <div class="unit-dot transmitting-location"></div>
+                <span>Location Update</span>
+            </div>
+            <div class="key-item">
+                <div class="unit-dot transmitting-data"></div>
+                <span>Data</span>
+            </div>
+            <div class="key-item">
+                <div class="unit-dot transmitting-ackresp"></div>
+                <span>ACK/Response</span>
+            </div>
+            <div class="key-item">
+                <div class="unit-dot emergency"></div>
+                <span>Emergency</span>
+            </div>
+            <div class="key-item">
+                <div class="unit-dot offline"></div>
+                <span>Offline</span>
+            </div>
+            <div class="key-item">
+                <div class="unit-dot active recent"></div>
+                <span>Recent</span>
+            </div>
+            <div class="key-item">
+                <div class="unit-dot active stale"></div>
+                <span>Stale</span>
+            </div>
+            <div class="key-item filter">
+                <select id="time-filter" class="time-filter">
+                    <option value="0">Show All</option>
+                    <option value="1">Last 1 min</option>
+                    <option value="5">Last 5 min</option>
+                    <option value="10">Last 10 min</option>
+                    <option value="15">Last 15 min</option>
+                    <option value="30">Last 30 min</option>
+                    <option value="60">Last 60 min</option>
+                </select>
+            </div>
+        </div>
+        <div class="sort-controls">
+            <select id="talkgroup-sort" class="sort-select">
+                <option value="id">Talkgroup ID</option>
+                <option value="first-seen">First Seen</option>
+                <option value="last-seen">Last Seen</option>
+                <option value="unit-count">Unit Count</option>
+                <option value="event-count">Event Count</option>
+            </select>
+            <button id="sort-direction" class="sort-button">↓</button>
+        </div>
         <div class="dashboard">
             <div id="unit-groups-container">
-                <div id="unassociated-group" class="unit-group">
-                    <h2>Unassociated Units</h2>
-                    <div class="units-container"></div>
-                </div>
                 <!-- Talkgroups will be dynamically added here -->
             </div>
         </div>

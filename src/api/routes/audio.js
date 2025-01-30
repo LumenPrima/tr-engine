@@ -43,11 +43,28 @@ const findAudioFiles = async (callIdOrFilename) => {
         query.sys_num = sysNum;
     }
 
-    // Find metadata with closest start_time
+    // Validate system number if provided
+    if (typeof sysNum === 'number' && (sysNum < 1 || sysNum > 999)) {
+        logger.debug(`Invalid system number: ${sysNum}`);
+        return { metadata: null, files: [] };
+    }
+
+    // Validate timestamp
+    if (targetTime < 946684800 || targetTime > 2524608000) { // 2000-01-01 to 2050-01-01
+        logger.debug(`Invalid timestamp: ${targetTime}`);
+        return { metadata: null, files: [] };
+    }
+
+    // Find metadata with closest start_time within a 5-minute window
+    const TIME_WINDOW = 300; // 5 minutes in seconds
     const metadata = await collection.aggregate([
         { 
             $match: {
                 talkgroup: talkgroup,
+                start_time: {
+                    $gte: targetTime - TIME_WINDOW,
+                    $lte: targetTime + TIME_WINDOW
+                },
                 ...(typeof sysNum === 'number' ? { sys_num: sysNum } : {})
             }
         },
@@ -179,6 +196,10 @@ router.get('/call/:call_id/metadata', async (req, res) => {
             });
         }
 
+        // Get transcription data if it exists
+        const transcriptionCollection = mongoose.connection.db.collection('transcriptions');
+        const transcription = await transcriptionCollection.findOne({ call_id: req.params.call_id });
+
         // Format response
         const response = {
             call_id: req.params.call_id,
@@ -202,7 +223,12 @@ router.get('/call/:call_id/metadata', async (req, res) => {
                 length: file.length,
                 upload_date: file.uploadDate,
                 md5: file.md5
-            }))
+            })),
+            transcription: transcription ? {
+                text: transcription.text,
+                model: transcription.model,
+                timestamp: transcription.timestamp
+            } : null
         };
 
         res.json({
@@ -253,6 +279,33 @@ router.delete('/call/:call_id', async (req, res) => {
     }
 });
 
+// GET /call/{call_id}/raw
+// Get raw audio document as stored in MongoDB
+router.get('/call/:call_id/raw', async (req, res) => {
+    try {
+        const { metadata } = await findAudioFiles(req.params.call_id);
+
+        if (!metadata) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Audio document not found'
+            });
+        }
+
+        res.json({
+            status: 'success',
+            timestamp: new Date().toISOString(),
+            data: metadata
+        });
+    } catch (err) {
+        logger.error('Error getting raw audio document:', err);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to retrieve audio document'
+        });
+    }
+});
+
 // GET /archive
 // Search archived audio recordings
 router.get('/archive', async (req, res) => {
@@ -296,17 +349,6 @@ router.get('/archive', async (req, res) => {
         // Transform files to standardized format
         const formattedFiles = files.map(file => ({
             id: file._id.toString(),
-            filename: file.filename,
-            timestamp: new Date(file.start_time * 1000),
-            talkgroup: file.talkgroup,
-            talkgroup_tag: file.talkgroup_tag,
-            talkgroup_description: file.talkgroup_description,
-            talkgroup_group: file.talkgroup_group,
-            talkgroup_group_tag: file.talkgroup_group_tag,
-            start_time: file.start_time,
-            stop_time: file.stop_time,
-            call_length: file.call_length,
-            emergency: file.emergency === 1,
             encrypted: file.encrypted === 1,
             freq: file.freq,
             audio_type: file.audio_type,

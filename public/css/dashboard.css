@@ -36,8 +36,12 @@ body {
     border-radius: 8px;
     padding: 20px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Add max-height only to dashboard cards */
+.dashboard .card {
+    max-height: 300px;
     overflow-y: auto;
-    max-height: 400px;
 }
 
 .details-table {
@@ -142,6 +146,7 @@ body {
 
 .console-card {
     margin: 0;
+    overflow: hidden;
 }
 
 .console {
@@ -150,16 +155,15 @@ body {
     background-color: #000;
     padding: 10px;
     border-radius: 8px;
-    overflow: auto;
+    overflow-y: auto;
     display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
+    flex-direction: column;
+    flex-wrap: nowrap;
     gap: 4px;
 }
 
 .console#transcription-console {
-    flex-direction: column;
-    flex-wrap: nowrap;
+    /* Inherits column settings */
 }
 
 .console#transcription-console .console-message {
@@ -220,4 +224,29 @@ body {
 
 .event-flash {
     animation: flash 0.5s;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #444 var(--bg-primary);
 }
