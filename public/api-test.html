@@ -4,11 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Endpoint Tester</title>
-    <link rel="stylesheet" href="/css/api-test.css">
+    <link rel="stylesheet" href="css/header.css">
+    <link rel="stylesheet" href="css/api-test.css">
     <script src="/js/api-test.js" defer></script>
 </head>
 <body>
-    <div class="container">
+    <div class="page-container">
+        <div class="container">
         <div class="endpoints">
             <h1>API Endpoint Tester</h1>
     
@@ -238,7 +240,12 @@
                 <pre><code>Click an endpoint to see its response...</code></pre>
             </div>
         </div>
+        </div>
     </div>
 
+    <script type="module">
+        import { initHeader } from './js/modules/header.js';
+        initHeader();
+    </script>
 </body>
 </html>

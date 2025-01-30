@@ -190,6 +190,8 @@ function handleNewAudio({ audio, metadata }) {
 
     const audioElement = audio;
     audioElement.controls = true;
+    audioElement.preload = 'auto';
+    audioElement.crossOrigin = 'anonymous';
     
     const audioWrapper = document.createElement('div');
     audioWrapper.className = 'audio-item';
@@ -215,7 +217,13 @@ function handleNewAudio({ audio, metadata }) {
 
     // Auto-play if enabled
     if (document.getElementById('auto-play-audio')?.checked) {
-        audio.play().catch(console.error);
+        audioElement.play().catch(error => {
+            console.error('Error playing audio:', error);
+            // Try playing again after a short delay
+            setTimeout(() => {
+                audioElement.play().catch(console.error);
+            }, 100);
+        });
     }
 }
 

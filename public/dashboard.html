@@ -4,11 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TR Engine Dashboard</title>
+    <link rel="stylesheet" href="css/header.css">
     <link rel="stylesheet" href="css/dashboard.css">
 </head>
 <body>
-    <div class="status-bar" id="status-bar"></div>
-    <div class="dashboard">
+    <div class="page-container">
+        <div class="status-bar" id="status-bar"></div>
+        <div class="dashboard">
         <div class="card" id="systems-card">
             <h2>Systems <span class="activity-indicator" id="systems-activity"></span></h2>
             <div class="stat" id="systems-count">-</div>
@@ -68,7 +70,9 @@
     </div>
 
     <script type="module">
+        import { initHeader } from './js/modules/header.js';
         import dashboard from './js/modules/dashboard/index.js';
+        initHeader();
         dashboard.initDashboard().catch(console.error);
     </script>
 </body>

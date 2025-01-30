@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TR-Engine Monitor</title>
+    <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGwSURBVFhH7ZY9TsNAEIVnbQkhJCSkSBQUFJRIlJTQ0yAKJI7AETgCR+AIHIEjcASOwBEQBQUFBQUFEhISQiDx4zfOLI7XWfPjNaLIJ43Wa3vfeN7MrJ2mGjVqjI4wvAyTZJGxCJtNxhwsw2H4HN6Fp+F+eAEmYTyPQhR/Ca/D5/AjxE8hPg3vQ3wSLsAJGM+jEMXxdXgT3ofv4WeIr8LH8Da8DPGpRXEK4vMQxXfhQ/gWfoT4LHwK70IUX4SzMJ5HIYpPwbPwInwJUZz7PQ9RHJ+HszCeRyGKz8GV8Dp8DlEcn4Qojq/CJRjPoxDFl+FG+BS+hiiOT0IUxwfhBoznUYjiW+FheBKiOD4JURzvheswnkchiu+Ex+FpiOL4JERxvBtuwHgehSh+EB6FpyGK45MQxfFOuAXjeRSi+FF4Ep6FKI5PQhTH2+EmjOdRiOKn4Xl4EaI4PglRHG+FWzCeRyGKX4aX4XmI4vgkRHG8GW7DeB6FKH4dXoXnIYrjkxDF8Ua4A+N5FNZfxRo1/jdS6Qu/J+AgmA5g7gAAAABJRU5ErkJggg==">
+    <link rel="stylesheet" href="css/header.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="page-container">
+        <div class="dashboard">
+        <div class="card" id="system-performance">
+            <h2>System Performance</h2>
+            <div class="content"></div>
+        </div>
+        <div class="card" id="active-calls">
+            <h2>Active Calls</h2>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>System:</label>
+                    <select id="active-calls-system-filter">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Emergency Only:</label>
+                    <input type="checkbox" id="active-calls-emergency-filter">
+                </div>
+            </div>
+            <div class="content"></div>
+        </div>
+        <div class="card" id="active-units">
+            <h2>Active Units</h2>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>System:</label>
+                    <select id="active-units-system-filter">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Talkgroup:</label>
+                    <select id="active-units-talkgroup-filter">
+                        <option value="">All</option>
+                    </select>
+                </div>
+            </div>
+            <div class="content"></div>
+        </div>
+        <div class="card" id="recent-history">
+            <h2>Recent History</h2>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>System:</label>
+                    <select id="history-system-filter">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Emergency Only:</label>
+                    <input type="checkbox" id="history-emergency-filter">
+                </div>
+            </div>
+            <div class="content"></div>
+        </div>
+        <div class="card" id="recent-calls">
+            <h2>Recent Calls</h2>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>System:</label>
+                    <select id="recent-calls-system-filter">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Show Transcriptions:</label>
+                    <input type="checkbox" id="recent-calls-transcription-filter" checked>
+                </div>
+            </div>
+            <div class="content"></div>
+        </div>
+        <div class="card" id="talkgroup-activity">
+            <h2>Talkgroup Activity</h2>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>Talkgroup:</label>
+                    <select id="talkgroup-select">
+                        <option value="">Select Talkgroup</option>
+                    </select>
+                </div>
+            </div>
+            <div class="content"></div>
+        </div>
+        <div class="card" id="audio-streaming">
+            <h2>Audio Streaming</h2>
+            <div id="audio-controls" class="filters">
+                <div class="filter-group">
+                    <label>Talkgroups:</label>
+                    <select id="audio-talkgroup-select" multiple size="5">
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Emergency Only:</label>
+                    <input type="checkbox" id="emergency-only-audio">
+                </div>
+                <div class="filter-group">
+                    <label>Auto-Play:</label>
+                    <input type="checkbox" id="auto-play-audio" checked>
+                </div>
+                <div class="button-group">
+                    <button id="subscribe-audio-btn" class="action-button">Subscribe</button>
+                    <button id="unsubscribe-audio-btn" class="action-button">Unsubscribe</button>
+                </div>
+            </div>
+            <div id="audio-container" class="content">
+                <!-- Audio elements will be added here dynamically -->
+            </div>
+        </div>
+    </div>
+        <button class="refresh-button" onclick="window.refreshAll()">Refresh All</button>
+    </div>
+
+    <!-- Load JavaScript files -->
+    <script type="module">
+        import { initHeader } from './js/modules/header.js';
+        initHeader();
+    </script>
+    <script src="js/utils.js" type="module"></script>
+    <script src="js/app.js" type="module"></script>
+</body>
+</html>

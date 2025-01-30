@@ -250,9 +250,13 @@ class WebSocketManager {
         const url = URL.createObjectURL(blob);
         audio.src = url;
         
-        // Clean up object URL after audio loads
-        audio.onload = () => {
+        // Clean up object URL after audio loads and when it finishes playing
+        audio.onloadeddata = () => {
+            console.log('Audio loaded:', url);
+        };
+        audio.onended = () => {
             URL.revokeObjectURL(url);
+            console.log('Audio finished, cleaned up:', url);
         };
 
         // Notify handlers

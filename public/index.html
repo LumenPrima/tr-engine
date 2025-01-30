@@ -5,123 +5,85 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TR-Engine Demo</title>
     <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGwSURBVFhH7ZY9TsNAEIVnbQkhJCSkSBQUFJRIlJTQ0yAKJI7AETgCR+AIHIEjcASOwBEQBQUFBQUFEhISQiDx4zfOLI7XWfPjNaLIJ43Wa3vfeN7MrJ2mGjVqjI4wvAyTZJGxCJtNxhwsw2H4HN6Fp+F+eAEmYTyPQhR/Ca/D5/AjxE8hPg3vQ3wSLsAJGM+jEMXxdXgT3ofv4WeIr8LH8Da8DPGpRXEK4vMQxXfhQ/gWfoT4LHwK70IUX4SzMJ5HIYpPwbPwInwJUZz7PQ9RHJ+HszCeRyGKz8GV8Dp8DlEcn4Qojq/CJRjPoxDFl+FG+BS+hiiOT0IUxwfhBoznUYjiW+FheBKiOD4JURzvheswnkchiu+Ex+FpiOL4JERxvBtuwHgehSh+EB6FpyGK45MQxfFOuAXjeRSi+FF4Ep6FKI5PQhTH2+EmjOdRiOKn4Xl4EaI4PglRHG+FWzCeRyGKX4aX4XmI4vgkRHG8GW7DeB6FKH4dXoXnIYrjkxDF8Ua4A+N5FNZfxRo1/jdS6Qu/J+AgmA5g7gAAAABJRU5ErkJggg==">
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/header.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .page-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .pages {
+            display: grid;
+            gap: 20px;
+        }
+        .page-link {
+            display: block;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #333;
+            transition: all 0.3s ease;
+        }
+        .page-link:hover {
+            background-color: #e9ecef;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin: 0 0 10px 0;
+            color: #007bff;
+        }
+        p {
+            margin: 0;
+            color: #6c757d;
+        }
+    </style>
 </head>
 <body>
-    <div class="dashboard">
-        <div class="card" id="system-performance">
-            <h2>System Performance</h2>
-            <div class="content"></div>
-        </div>
-        <div class="card" id="active-calls">
-            <h2>Active Calls</h2>
-            <div class="filters">
-                <div class="filter-group">
-                    <label>System:</label>
-                    <select id="active-calls-system-filter">
-                        <option value="">All</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Emergency Only:</label>
-                    <input type="checkbox" id="active-calls-emergency-filter">
-                </div>
-            </div>
-            <div class="content"></div>
-        </div>
-        <div class="card" id="active-units">
-            <h2>Active Units</h2>
-            <div class="filters">
-                <div class="filter-group">
-                    <label>System:</label>
-                    <select id="active-units-system-filter">
-                        <option value="">All</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Talkgroup:</label>
-                    <select id="active-units-talkgroup-filter">
-                        <option value="">All</option>
-                    </select>
-                </div>
-            </div>
-            <div class="content"></div>
-        </div>
-        <div class="card" id="recent-history">
-            <h2>Recent History</h2>
-            <div class="filters">
-                <div class="filter-group">
-                    <label>System:</label>
-                    <select id="history-system-filter">
-                        <option value="">All</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Emergency Only:</label>
-                    <input type="checkbox" id="history-emergency-filter">
-                </div>
-            </div>
-            <div class="content"></div>
-        </div>
-        <div class="card" id="recent-calls">
-            <h2>Recent Calls</h2>
-            <div class="filters">
-                <div class="filter-group">
-                    <label>System:</label>
-                    <select id="recent-calls-system-filter">
-                        <option value="">All</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Show Transcriptions:</label>
-                    <input type="checkbox" id="recent-calls-transcription-filter" checked>
-                </div>
-            </div>
-            <div class="content"></div>
-        </div>
-        <div class="card" id="talkgroup-activity">
-            <h2>Talkgroup Activity</h2>
-            <div class="filters">
-                <div class="filter-group">
-                    <label>Talkgroup:</label>
-                    <select id="talkgroup-select">
-                        <option value="">Select Talkgroup</option>
-                    </select>
-                </div>
-            </div>
-            <div class="content"></div>
-        </div>
-        <div class="card" id="audio-streaming">
-            <h2>Audio Streaming</h2>
-            <div id="audio-controls" class="filters">
-                <div class="filter-group">
-                    <label>Talkgroups:</label>
-                    <select id="audio-talkgroup-select" multiple size="5">
-                        <!-- Options will be populated by JavaScript -->
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Emergency Only:</label>
-                    <input type="checkbox" id="emergency-only-audio">
-                </div>
-                <div class="filter-group">
-                    <label>Auto-Play:</label>
-                    <input type="checkbox" id="auto-play-audio" checked>
-                </div>
-                <div class="button-group">
-                    <button id="subscribe-audio-btn" class="action-button">Subscribe</button>
-                    <button id="unsubscribe-audio-btn" class="action-button">Unsubscribe</button>
-                </div>
-            </div>
-            <div id="audio-container" class="content">
-                <!-- Audio elements will be added here dynamically -->
-            </div>
+    <div class="page-container">
+        <div class="container">
+        <h1>TR-Engine Demo</h1>
+        <div class="pages">
+            <a href="monitor.html" class="page-link">
+                <h2>System Monitor</h2>
+                <p>Real-time monitoring dashboard for active calls, units, and system performance</p>
+            </a>
+            <a href="dashboard.html" class="page-link">
+                <h2>System Dashboard</h2>
+                <p>System status, active units, talkgroups, and event console</p>
+            </a>
+            <a href="api-test.html" class="page-link">
+                <h2>API Endpoint Tester</h2>
+                <p>Interactive documentation and testing interface for TR-Engine API endpoints</p>
+            </a>
+            <a href="unit-tracker.html" class="page-link">
+                <h2>Unit Tracker</h2>
+                <p>Visual tracking of units and their talkgroup associations with real-time status updates</p>
+            </a>
         </div>
     </div>
-    <button class="refresh-button" onclick="window.refreshAll()">Refresh All</button>
-
-    <!-- Load JavaScript files -->
-    <script src="js/utils.js" type="module"></script>
-    <script src="js/app.js" type="module"></script>
+    <script type="module">
+        import { initHeader } from './js/modules/header.js';
+        initHeader();
+    </script>
+    </div>
 </body>
 </html>

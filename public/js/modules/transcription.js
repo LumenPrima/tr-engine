@@ -13,11 +13,17 @@ export async function fetchTalkgroupTranscriptions(talkgroupId) {
         
         const content = document.querySelector('#talkgroup-activity .content');
         if (!data.data?.transcriptions || data.data.transcriptions.length === 0) {
-            content.innerHTML += '<div class="status-item">No recent transcriptions</div>';
+            content.innerHTML = '<div class="status-item">No recent transcriptions</div>';
             return;
         }
 
-        content.innerHTML += `
+        // Remove existing transcription section if present
+        const existingSection = content.querySelector('.transcription-section');
+        if (existingSection) {
+            existingSection.remove();
+        }
+
+        content.innerHTML = `
             <div class="transcription-section">
                 <h4>Recent Transcriptions</h4>
                 ${data.data.transcriptions.map(t => `
@@ -50,6 +56,12 @@ export async function fetchTranscriptionStats() {
         const content = document.querySelector('#system-performance .content');
         if (!data?.data) {
             return;
+        }
+
+        // Remove existing stats section if present
+        const existingSection = content.querySelector('.stat-section');
+        if (existingSection) {
+            existingSection.remove();
         }
 
         const stats = data.data;

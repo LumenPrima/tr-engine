@@ -81,21 +81,56 @@ export function getWsBaseUrl() {
 // Audio playback
 export async function playAudio(callId) {
     try {
-        const response = await fetch(`${getApiBaseUrl()}/audio/${callId}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        
-        // Clean up object URL after audio loads
-        audio.onload = () => URL.revokeObjectURL(url);
-        
-        // Play the audio
-        await audio.play();
+        // Try m4a format first
+        const response = await fetch(`${getApiBaseUrl()}/audio/call/${callId}?format=m4a`);
+        if (!response.ok) {
+            // If m4a fails, try wav format
+            const wavResponse = await fetch(`${getApiBaseUrl()}/audio/call/${callId}?format=wav`);
+            if (!wavResponse.ok) {
+                throw new Error(`HTTP error! status: ${wavResponse.status}`);
+            }
+            return await handleAudioResponse(wavResponse, 'audio/wav');
+        }
+        return await handleAudioResponse(response, 'audio/mp4');
     } catch (error) {
         console.error('Error playing audio:', error);
         alert('Error playing audio: ' + error.message);
     }
+}
+
+async function handleAudioResponse(response, mimeType) {
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    
+    // Set audio properties
+    audio.controls = true;
+    audio.preload = 'auto';
+    
+    // Clean up object URL when audio loads and ends
+    audio.onloadeddata = () => {
+        console.log('Audio loaded successfully');
+    };
+    audio.onended = () => {
+        URL.revokeObjectURL(url);
+        console.log('Audio finished, cleaned up resources');
+    };
+    
+    // Play the audio
+    try {
+        await audio.play();
+    } catch (error) {
+        console.error('Playback failed, retrying...', error);
+        // Try playing again after a short delay
+        setTimeout(() => {
+            audio.play().catch(e => {
+                console.error('Retry failed:', e);
+                URL.revokeObjectURL(url);
+            });
+        }, 100);
+    }
+    
+    return audio;
 }
 
 // Export for use in HTML
