@@ -7,9 +7,9 @@ This document specifies how TR Engine handles calls and audio recordings that ar
 
 ### Call ID Format
 Calls maintain system-agnostic identification:
-- Simple format: `{talkgroup}-{timestamp}`
-  Example: "9131-1737430014"
-- Full format: `{talkgroup}-{timestamp}_{frequency}-call_{id}.{ext}`
+- Simple format: `{talkgroup}_{timestamp}`
+  Example: "9131_1737430014"
+- Full filename format: `{talkgroup}-{timestamp}_{frequency}-call_{id}.{ext}`
   Example: "9131-1737430014_851350000.0-call_1571.wav"
 
 ### Call Uniqueness
@@ -33,7 +33,7 @@ Calls maintain system-agnostic identification:
 ### Metadata Handling
 ```json
 {
-  "call_id": "9131-1737430014",
+  "call_id": "9131_1737430014",
   "talkgroup": 9131,
   "talkgroup_tag": "09 WC HOSP SEC",
   "start_time": 1737430014,
@@ -96,10 +96,10 @@ Returns comprehensive metadata including:
   "status": "success",
   "timestamp": "2025-01-27T14:45:59.000Z",
   "metadata": {
-    "call_id": "9131-1737430014",
+    "call_id": "9131_1737430014",
     "formats": {
       "wav": {
-        "filename": "9131-1737430014_851350000.0-call_1571.wav",
+  "filename": "9131-1737430014_851350000.0-call_1571.wav",
         "length": 123456,
         "recording_systems": [
           {

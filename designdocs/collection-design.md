@@ -17,6 +17,46 @@ TR-Engine stores all MQTT messages in MongoDB collections based on the message `
 
 ## Message Transformation Rules
 
+### Flattening Strategy
+1. On Initial Ingest:
+   - Flatten all nested objects to a single level
+   - Preserve arrays in their original structure
+   - Remove type wrappers
+   - Promote top-level fields
+
+2. Post-Processing:
+   - Maintain minimal nesting
+   - Keep arrays in their original form
+   - Allow limited nesting for specific use cases (e.g., transcription segments)
+
+### Example Transformation
+Original Message:
+```javascript
+{
+  type: "call_start",
+  call: {
+    id: "9131_1737430014",
+    metadata: {
+      frequency: 851350000,
+      emergency: false
+    },
+    units: [976109, 976110]
+  }
+}
+```
+
+Transformed Message:
+```javascript
+{
+  id: "9131_1737430014",
+  frequency: 851350000,
+  emergency: false,
+  units: [976109, 976110],  // Array preserved
+  timestamp: 1737430014,
+  _processed_at: 1737430015
+}
+```
+
 ### Standard Messages
 For all message types except audio:
 
@@ -51,6 +91,42 @@ Example:
 
 ### Audio Messages
 Audio messages require special handling due to their binary content and metadata structure.
+
+### Transcription Storage
+Transcriptions are stored in two locations:
+
+1. Transcriptions Collection
+```javascript
+{
+  call_id: "9131_1737430014",
+  text: "1469 1 with 10.30",
+  segments: [
+    {
+      start_time: 1.18,
+      end_time: 18.16,
+      text: "1469 1 with 10.30",
+      confidence: 0.85
+    }
+  ],
+  metadata: {
+    model: "faster-whisper-base.en",
+    processing_time: 1.226
+  }
+}
+```
+
+2. Audio Collection (Referenced)
+```javascript
+{
+  call_id: "9131_1737430014",
+  // ... other audio metadata
+  transcription: {
+    id: "trans_12345",  // Reference to transcription document
+    text: "1469 1 with 10.30",  // Cached copy of text
+    completed_at: 1737430020
+  }
+}
+```
 
 1. Metadata Storage (audio collection):
 ```javascript

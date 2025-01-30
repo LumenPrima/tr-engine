@@ -67,7 +67,12 @@ class FileStorage {
         // Trigger transcription for audio files
         if (bucketName === 'audioFiles' && filename.endsWith('.wav')) {
           try {
-            const callId = `${essentialMetadata.talkgroup}-${essentialMetadata.start_time}`;
+            // For single-system setups, use talkgroup_timestamp format
+            // For multi-system setups, use sysnum_talkgroup_timestamp format
+            const sysNum = message?.call?.metadata?.short_name?.replace('sys', '');
+            const callId = sysNum ? 
+                `${sysNum}_${essentialMetadata.talkgroup}_${essentialMetadata.start_time}` :
+                `${essentialMetadata.talkgroup}_${essentialMetadata.start_time}`;
             
             // Format metadata for transcription
             const audioMessage = {

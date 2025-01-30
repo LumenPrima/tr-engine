@@ -90,7 +90,11 @@ class AudioHandler {
         // Broadcast audio to subscribed WebSocket clients
         if (this.wsServer) {
           const metadata = {
-            call_id: transformedMessage.call_id || `${transformedMessage.talkgroup}-${transformedMessage.start_time}`,
+            call_id: transformedMessage.call_id || (
+                transformedMessage.short_name ? 
+                `${transformedMessage.short_name.replace('sys', '')}_${transformedMessage.talkgroup}_${transformedMessage.start_time}` :
+                `${transformedMessage.talkgroup}_${transformedMessage.start_time}`
+            ),
             talkgroup: transformedMessage.talkgroup,
             talkgroup_tag: transformedMessage.talkgroup_tag,
             talkgroup_description: transformedMessage.talkgroup_description,
