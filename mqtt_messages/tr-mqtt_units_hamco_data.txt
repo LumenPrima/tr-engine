@@ -1,0 +1,3 @@
+{"type":"data","data":{"sys_num":1,"sys_name":"hamco","unit":3161910,"unit_alpha_tag":""},"timestamp":1738340176,"instance_id":"trunk-recorder"}
+{"type":"data","data":{"sys_num":1,"sys_name":"hamco","unit":3161910,"unit_alpha_tag":""},"timestamp":1738340176,"instance_id":"trunk-recorder"}
+{"type":"data","data":{"sys_num":1,"sys_name":"hamco","unit":3161910,"unit_alpha_tag":""},"timestamp":1738340176,"instance_id":"trunk-recorder"}

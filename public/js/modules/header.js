@@ -18,8 +18,9 @@ export async function initHeader() {
     const pageDefinitions = {
         'monitor.html': { title: 'System Monitor', order: 1 },
         'dashboard.html': { title: 'System Dashboard', order: 2 },
-        'unit-tracker.html': { title: 'Unit Tracker', order: 3 },
-        'api-test.html': { title: 'API Tester', order: 4 }
+        'recorders.html': { title: 'Recorder Status', order: 3 },
+        'unit-tracker.html': { title: 'Unit Tracker', order: 4 },
+        'api-test.html': { title: 'API Tester', order: 5 }
     };
     
     // Create navigation links

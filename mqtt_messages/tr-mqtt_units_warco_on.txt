@@ -1,0 +1,5 @@
+{"type":"on","on":{"sys_num":3,"sys_name":"warco","unit":8314319,"unit_alpha_tag":""},"timestamp":1738340217,"instance_id":"trunk-recorder"}
+{"type":"on","on":{"sys_num":3,"sys_name":"warco","unit":5757200,"unit_alpha_tag":""},"timestamp":1738340219,"instance_id":"trunk-recorder"}
+{"type":"on","on":{"sys_num":3,"sys_name":"warco","unit":5757200,"unit_alpha_tag":""},"timestamp":1738340219,"instance_id":"trunk-recorder"}
+{"type":"on","on":{"sys_num":3,"sys_name":"warco","unit":8311588,"unit_alpha_tag":""},"timestamp":1738340220,"instance_id":"trunk-recorder"}
+{"type":"on","on":{"sys_num":3,"sys_name":"warco","unit":8311588,"unit_alpha_tag":""},"timestamp":1738340220,"instance_id":"trunk-recorder"}

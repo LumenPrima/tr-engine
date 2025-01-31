@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TR Engine Recorders</title>
+    <link rel="stylesheet" href="css/header.css">
+    <link rel="stylesheet" href="css/recorders.css">
+</head>
+<body>
+    <div class="page-container">
+        <div class="status-bar" id="status-bar"></div>
+        <div class="recorders-grid">
+            <div class="card" id="stats-card">
+                <h2>Recorder Stats <span class="activity-indicator" id="recorders-activity"></span></h2>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-label">Total</div>
+                        <div class="stat-value" id="total-count">-</div>
+                    </div>
+                    <div class="stat-box recording">
+                        <div class="stat-label">Recording</div>
+                        <div class="stat-value" id="recording-count">-</div>
+                    </div>
+                    <div class="stat-box idle">
+                        <div class="stat-label">Idle</div>
+                        <div class="stat-value" id="idle-count">-</div>
+                    </div>
+                    <div class="stat-box available">
+                        <div class="stat-label">Available</div>
+                        <div class="stat-value" id="available-count">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="recorders-card">
+                <h2>Active Recorders</h2>
+                <div class="recorders-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Frequency</th>
+                                <th>Status</th>
+                                <th>Duration</th>
+                                <th>Count</th>
+                                <th>Talkgroup</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recorders-list">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card" id="events-card">
+                <h2>Recorder Events</h2>
+                <div class="events-console" id="events-console"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initHeader } from './js/modules/header.js';
+        import { initRecorders } from './js/modules/recorders.js';
+        initHeader();
+        initRecorders().catch(console.error);
+    </script>
+</body>
+</html>

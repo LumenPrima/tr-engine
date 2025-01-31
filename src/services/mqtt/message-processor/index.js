@@ -4,6 +4,7 @@ const ActiveCallManager = require('../../state/ActiveCallManager');
 const SystemManager = require('../../state/SystemManager');
 const UnitManager = require('../../state/UnitManager');
 const TalkgroupManager = require('../../state/TalkgroupManager');
+const RecorderManager = require('../../state/RecorderManager');
 
 const messageTransformer = require('./message-transformer');
 const collectionManager = require('./collection-manager');
@@ -85,12 +86,30 @@ class MessageProcessor {
             message: JSON.stringify(transformedMessage)
           });
           await UnitManager.processMessage(topic, transformedMessage, messageId);
-        } else if (['call_start', 'call_end', 'calls_active', 'recorder', 'recorders'].includes(topicParts[2])) {
+        } else if (['call_start', 'call_end', 'calls_active'].includes(topicParts[2])) {
           await ActiveCallManager.processMessage(topic, transformedMessage, messageId);
           
           if (transformedMessage.talkgroup) {
             await TalkgroupManager.processMessage(topic, transformedMessage, messageId);
           }
+
+          // Route call messages to RecorderManager for talkgroup tracking
+          if (transformedMessage.type === 'call_start' || transformedMessage.type === 'call_end') {
+            logger.debug('Routing call message to RecorderManager:', {
+              topic,
+              type: transformedMessage.type,
+              rec_num: transformedMessage.rec_num,
+              talkgroup: transformedMessage.talkgroup
+            });
+            await RecorderManager.processMessage(topic, transformedMessage, messageId);
+          }
+        } else if (topicParts[2] === 'recorder' || topicParts[2] === 'recorders') {
+          logger.debug('Processing recorder message:', {
+            topic,
+            type: transformedMessage.type,
+            transformed: JSON.stringify(transformedMessage)
+          });
+          await RecorderManager.processMessage(topic, transformedMessage, messageId);
         }
       }
 

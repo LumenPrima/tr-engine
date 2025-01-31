@@ -1,9 +1,11 @@
 const WebSocket = require('ws');
 const logger = require('../../utils/logger');
 const EventHandlers = require('../../services/events/handlers');
+const stateEventEmitter = require('../../services/events/emitter');
 const activeCallManager = require('../../services/state/ActiveCallManager');
 const systemManager = require('../../services/state/SystemManager');
 const unitManager = require('../../services/state/UnitManager');
+const recorderManager = require('../../services/state/RecorderManager');
 
 class WebSocketServer {
     constructor(server) {
@@ -48,6 +50,28 @@ class WebSocketServer {
         ws.on('close', () => this.handleClientDisconnect(ws));
         ws.on('error', (error) => this.handleClientError(ws, error));
 
+        // Set up recorder event listeners
+        stateEventEmitter.on('recorder.stateChange', (data) => {
+            const currentSubs = this.subscriptions.get(ws);
+            if (currentSubs?.has('recorder.stateChange')) {
+                this.sendResponse(ws, 'recorder.stateChange', data);
+            }
+        });
+
+        stateEventEmitter.on('recorders.status', (data) => {
+            const currentSubs = this.subscriptions.get(ws);
+            if (currentSubs?.has('recorders.status')) {
+                this.sendResponse(ws, 'recorders.status', data);
+            }
+        });
+
+        stateEventEmitter.on('recorder.update', (data) => {
+            const currentSubs = this.subscriptions.get(ws);
+            if (currentSubs?.has('recorder.update')) {
+                this.sendResponse(ws, 'recorder.update', data);
+            }
+        });
+
         // Send connection status
         this.sendResponse(ws, 'connection.status', {
             status: 'connected',
@@ -73,6 +97,8 @@ class WebSocketServer {
             const activeCalls = await activeCallManager.getActiveCalls();
             const activeSystems = await systemManager.getActiveSystems();
             const activeUnits = await unitManager.getActiveUnits();
+            const recorderStates = await recorderManager.getAllRecorderStates();
+            const recorderStats = await recorderManager.getRecorderStats();
 
             // Send initial state messages
             if (ws.readyState === WebSocket.OPEN) {
@@ -82,7 +108,11 @@ class WebSocketServer {
                     data: {
                         calls: activeCalls,
                         systems: activeSystems,
-                        units: activeUnits
+                        units: activeUnits,
+                        recorders: {
+                            states: recorderStates,
+                            stats: recorderStats
+                        }
                     }
                 }));
                 logger.debug('Sent initial state to new client');
@@ -136,6 +166,12 @@ class WebSocketServer {
                 case 'get.unit_status':
                     this.handleGetUnitStatus(ws, data.unit);
                     break;
+                case 'get.recorder_status':
+                    this.handleGetRecorderStatus(ws, data.recorder);
+                    break;
+                case 'get.recorder_stats':
+                    this.handleGetRecorderStats(ws);
+                    break;
                 case 'transcription.request':
                     this.handleTranscriptionRequest(ws, data.data);
                     break;
@@ -167,6 +203,10 @@ class WebSocketServer {
         this.subscriptions.delete(ws);
         this.audioSubscriptions.delete(ws);
         this.transcriptionSubscriptions.delete(ws);
+
+        // Clean up event listeners
+        stateEventEmitter.removeAllListeners('recorder.stateChange');
+        stateEventEmitter.removeAllListeners('recorders.status');
         // Clear heartbeat interval
         if (ws.heartbeatInterval) {
             clearInterval(ws.heartbeatInterval);
@@ -199,6 +239,27 @@ class WebSocketServer {
         } catch (err) {
             logger.error('Error getting system status:', err);
             this.sendError(ws, 'Failed to get system status');
+        }
+    }
+
+    // Recorder status handlers
+    async handleGetRecorderStatus(ws, recorderId) {
+        try {
+            const recorderState = await recorderManager.getRecorderState(recorderId);
+            this.sendResponse(ws, 'recorder_status', recorderState);
+        } catch (err) {
+            logger.error('Error getting recorder status:', err);
+            this.sendError(ws, 'Failed to get recorder status');
+        }
+    }
+
+    async handleGetRecorderStats(ws) {
+        try {
+            const stats = await recorderManager.getRecorderStats();
+            this.sendResponse(ws, 'recorder_stats', stats);
+        } catch (err) {
+            logger.error('Error getting recorder stats:', err);
+            this.sendError(ws, 'Failed to get recorder stats');
         }
     }
 

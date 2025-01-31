@@ -1,0 +1,5 @@
+{"type":"data","data":{"sys_num":0,"sys_name":"butco","unit":944422,"unit_alpha_tag":""},"timestamp":1738340208,"instance_id":"trunk-recorder"}
+{"type":"data","data":{"sys_num":0,"sys_name":"butco","unit":909024,"unit_alpha_tag":""},"timestamp":1738340216,"instance_id":"trunk-recorder"}
+{"type":"data","data":{"sys_num":0,"sys_name":"butco","unit":909024,"unit_alpha_tag":""},"timestamp":1738340216,"instance_id":"trunk-recorder"}
+{"type":"data","data":{"sys_num":0,"sys_name":"butco","unit":909024,"unit_alpha_tag":""},"timestamp":1738340216,"instance_id":"trunk-recorder"}
+{"type":"data","data":{"sys_num":0,"sys_name":"butco","unit":943224,"unit_alpha_tag":""},"timestamp":1738340225,"instance_id":"trunk-recorder"}

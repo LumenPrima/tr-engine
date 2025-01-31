@@ -1,0 +1,5 @@
+{"type":"off","off":{"sys_num":1,"sys_name":"hamco","unit":3116458,"unit_alpha_tag":""},"timestamp":1738340186,"instance_id":"trunk-recorder"}
+{"type":"off","off":{"sys_num":1,"sys_name":"hamco","unit":3116107,"unit_alpha_tag":""},"timestamp":1738340190,"instance_id":"trunk-recorder"}
+{"type":"off","off":{"sys_num":1,"sys_name":"hamco","unit":3142349,"unit_alpha_tag":""},"timestamp":1738340194,"instance_id":"trunk-recorder"}
+{"type":"off","off":{"sys_num":1,"sys_name":"hamco","unit":9000537,"unit_alpha_tag":""},"timestamp":1738340197,"instance_id":"trunk-recorder"}
+{"type":"off","off":{"sys_num":1,"sys_name":"hamco","unit":3145349,"unit_alpha_tag":""},"timestamp":1738340206,"instance_id":"trunk-recorder"}
