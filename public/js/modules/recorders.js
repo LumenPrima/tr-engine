@@ -121,10 +121,17 @@ async function updateRecorderRow(recorder) {
         row.id = `recorder-${recorder.id}`;
         
         // Find the correct position to insert the new row
+        if (!recorder?.id) {
+            elements.recordersList.appendChild(row);
+            return;
+        }
+
         const [newSystem, newNum] = recorder.id.split('_').map(Number);
         const rows = Array.from(elements.recordersList.children);
         const insertIndex = rows.findIndex(existingRow => {
             const existingId = existingRow.id.replace('recorder-', '');
+            if (!existingId) return false;
+            
             const [existingSystem, existingNum] = existingId.split('_').map(Number);
             return (existingSystem > newSystem) || 
                    (existingSystem === newSystem && existingNum > newNum);
@@ -140,9 +147,12 @@ async function updateRecorderRow(recorder) {
     row.className = `recorder-row ${recorder.rec_state_type.toLowerCase()}`;
     
     // Update all fields except talkgroup first
+    // Format ID to show just the number (e.g., "01" instead of "0_1")
+    const [system, num] = recorder.id.split('_').map(Number);
+    const formattedId = num.toString().padStart(2, '0');
+    
     row.innerHTML = `
-        <td>${recorder.id}</td>
-        <td>${formatFrequency(recorder.freq)} MHz</td>
+        <td>${formattedId}</td>
         <td>
             <span class="status-indicator status-${recorder.rec_state_type.toLowerCase()}">
                 ${recorder.rec_state_type}
@@ -167,6 +177,9 @@ async function initRecordersList(recorders) {
     state.recorders.clear();
     
     const sortedRecorders = [...recorders].sort((a, b) => {
+        // Handle cases where recorder or id might be undefined
+        if (!a?.id || !b?.id) return 0;
+        
         // Split IDs into parts (e.g. "0_2" -> [0, 2])
         const [aSystem, aNum] = a.id.split('_').map(Number);
         const [bSystem, bNum] = b.id.split('_').map(Number);
