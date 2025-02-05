@@ -71,8 +71,8 @@ export function getWsBaseUrl() {
     
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
-    const port = apiConfig?.port || window.location.port || 3000;
-    const wsUrl = `${protocol}//${host}${port ? `:${port}` : ''}`;
+    const wsPort = 3001; // WebSocket server runs on port 3001 (WS_PORT)
+    const wsUrl = `${protocol}//${host}:${wsPort}`;
     
     console.log('WebSocket URL:', wsUrl);
     return wsUrl;
