@@ -71,8 +71,8 @@ export function getWsBaseUrl() {
     
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
-    const wsPort = 3001; // WebSocket server runs on port 3001 (WS_PORT)
-    const wsUrl = `${protocol}//${host}:${wsPort}`;
+    // Use the same port as the main application since Nginx handles the proxy
+    const wsUrl = `${protocol}//${host}/ws`;
     
     console.log('WebSocket URL:', wsUrl);
     return wsUrl;
