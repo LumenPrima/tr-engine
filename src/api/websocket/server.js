@@ -9,8 +9,11 @@ const recorderManager = require('../../services/state/RecorderManager');
 
 class WebSocketServer {
     constructor(server) {
-        this.wss = new WebSocket.Server({ server });
-        logger.info('WebSocket server attached to HTTP server');
+        this.wss = new WebSocket.Server({ 
+            server,
+            path: '/ws'  // Match the Nginx location
+        });
+        logger.info('WebSocket server attached to HTTP server on path /ws');
         
         this.eventHandlers = new EventHandlers(this.wss);
         this.subscriptions = new Map(); // Track client subscriptions
