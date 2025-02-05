@@ -10,40 +10,35 @@ class UnitManager {
         this.unitsByTalkgroup = new Map(); // talkgroup -> Set of wacn+unit
         this.wacnBySystem = new Map(); // sys_name -> wacn mapping
 
-        // Initialize after MongoDB connection
-        mongoose.connection.on('connected', () => {
-            // Listen for WACN updates from SystemManager
-            stateEventEmitter.on('system.wacn', ({ sys_name, wacn }) => {
-                if (sys_name && wacn) {
-                    this.wacnBySystem.set(sys_name, wacn);
-                    logger.debug(`Updated WACN mapping for system ${sys_name}: ${wacn}`);
-                }
-            });
-
-            this.collection = mongoose.connection.db.collection('units');
-            
-            // Create indexes
-            this.setupIndexes().catch(err => 
-                logger.error('Error setting up unit indexes:', err)
-            );
-
-            // Load existing data into cache
-            this.loadCacheFromDB().catch(err => 
-                logger.error('Error loading unit cache from DB:', err)
-            );
+        // Listen for WACN updates from SystemManager
+        stateEventEmitter.on('system.wacn', ({ sys_name, wacn }) => {
+            if (sys_name && wacn) {
+                this.wacnBySystem.set(sys_name, wacn);
+                logger.debug(`Updated WACN mapping for system ${sys_name}: ${wacn}`);
+            }
         });
+
+        // Only initialize MongoDB if it's available
+        if (process.env.MONGODB_URI) {
+            mongoose.connection.on('connected', () => {
+                this.collection = mongoose.connection.db.collection('units');
+                
+                // Load existing data into cache
+                this.loadCacheFromDB().catch(err => 
+                    logger.error('Error loading unit cache from DB:', err)
+                );
+            });
+        }
 
         logger.info('UnitManager initialized');
     }
 
-    async setupIndexes() {
-        await this.collection.createIndex({ wacn: 1, unit: 1 }, { unique: true });
-        await this.collection.createIndex({ 'status.last_seen': 1 });
-        await this.collection.createIndex({ 'status.current_talkgroup': 1 });
-        await this.collection.createIndex({ 'systems.sys_name': 1 });
-    }
-
     async loadCacheFromDB() {
+        if (!this.collection) {
+            logger.debug('MongoDB not available, skipping cache load');
+            return;
+        }
+
         logger.debug('Loading unit cache from database...');
         const units = await this.collection.find({}).toArray();
         
@@ -75,13 +70,14 @@ class UnitManager {
         logger.info(`Loaded ${units.length} units into cache`);
     }
 
-    cleanup() {
+    async cleanup() {
         logger.debug('Cleaning up UnitManager...');
         this.unitStates.clear();
         this.recentActivity.clear();
         this.unitsByTalkgroup.clear();
         this.wacnBySystem.clear();
         logger.debug('Cleared in-memory caches');
+        return Promise.resolve();
     }
     
     // Generate a unique key for unit+wacn
@@ -326,18 +322,22 @@ class UnitManager {
                 this.unitsByTalkgroup.get(unitData.talkgroup).add(unitKey);
             }
             
-            // Update both cache and database
+            // Update cache
             this.unitStates.set(unitKey, newState);
-            await this.collection.updateOne(
-                { wacn: wacn, unit: unitData.unit },
-                {
-                    $set: {
-                        ...newState,
-                        recent_activity: activities
-                    }
-                },
-                { upsert: true }
-            );
+            
+            // Update database if available
+            if (this.collection) {
+                await this.collection.updateOne(
+                    { wacn: wacn, unit: unitData.unit },
+                    {
+                        $set: {
+                            ...newState,
+                            recent_activity: activities
+                        }
+                    },
+                    { upsert: true }
+                );
+            }
             
             // For call events, only emit if this is the first system to report it
             if (callId) {

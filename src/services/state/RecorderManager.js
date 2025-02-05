@@ -14,11 +14,6 @@ class RecorderManager {
         mongoose.connection.on('connected', () => {
             this.collection = mongoose.connection.db.collection('recorders');
             
-            // Create indexes
-            this.setupIndexes().catch(err => 
-                logger.error('Error setting up recorder indexes:', err)
-            );
-
             // Load existing data into cache
             this.loadCacheFromDB().catch(err => 
                 logger.error('Error loading recorder cache from DB:', err)
@@ -28,14 +23,12 @@ class RecorderManager {
         logger.info('RecorderManager initialized');
     }
 
-    async setupIndexes() {
-        await this.collection.createIndex({ id: 1 }, { unique: true });
-        await this.collection.createIndex({ 'status.last_update': 1 });
-        await this.collection.createIndex({ freq: 1 });
-        await this.collection.createIndex({ rec_state: 1 });
-    }
-
     async loadCacheFromDB() {
+        if (!this.collection) {
+            logger.debug('MongoDB not available, skipping cache load');
+            return;
+        }
+
         logger.debug('Loading recorder cache from database...');
         const recorders = await this.collection.find({}).toArray();
         
@@ -59,12 +52,13 @@ class RecorderManager {
         logger.info(`Loaded ${recorders.length} recorders into cache`);
     }
 
-    cleanup() {
+    async cleanup() {
         logger.debug('Cleaning up RecorderManager...');
         this.recorderStates.clear();
         this.recordersByFreq.clear();
         this.recordingRecorders.clear();
         logger.debug('Cleared in-memory caches');
+        return Promise.resolve();
     }
 
     async processMessage(topic, message) {

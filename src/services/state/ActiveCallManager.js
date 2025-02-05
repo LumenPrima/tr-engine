@@ -1,6 +1,7 @@
 const logger = require('../../utils/logger');
 const timestamps = require('../../utils/timestamps');
 const stateEventEmitter = require('../events/emitter');
+const config = require('../../config');
 
 class ActiveCallManager {
     constructor() {
@@ -21,6 +22,7 @@ class ActiveCallManager {
         logger.debug('Cleaning up ActiveCallManager...');
         this.activeCallsCache.clear();
         this.recorderStates.clear();
+        return Promise.resolve();
     }
 
     async processMessage(topic, message, messageId) {

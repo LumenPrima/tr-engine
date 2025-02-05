@@ -11,40 +11,35 @@ class TalkgroupManager {
         this.patchedTalkgroups = new Map(); // talkgroup -> Set of patched talkgroups
         this.wacnBySystem = new Map(); // sys_name -> wacn mapping
 
-        // Initialize after MongoDB connection
-        mongoose.connection.on('connected', () => {
-            // Listen for WACN updates from SystemManager
-            stateEventEmitter.on('system.wacn', ({ sys_name, wacn }) => {
-                if (sys_name && wacn) {
-                    this.wacnBySystem.set(sys_name, wacn);
-                    logger.debug(`Updated WACN mapping for system ${sys_name}: ${wacn}`);
-                }
-            });
-
-            this.collection = mongoose.connection.db.collection('talkgroups');
-            
-            // Create indexes
-            this.setupIndexes().catch(err => 
-                logger.error('Error setting up talkgroup indexes:', err)
-            );
-
-            // Load existing data into cache
-            this.loadCacheFromDB().catch(err => 
-                logger.error('Error loading talkgroup cache from DB:', err)
-            );
+        // Listen for WACN updates from SystemManager
+        stateEventEmitter.on('system.wacn', ({ sys_name, wacn }) => {
+            if (sys_name && wacn) {
+                this.wacnBySystem.set(sys_name, wacn);
+                logger.debug(`Updated WACN mapping for system ${sys_name}: ${wacn}`);
+            }
         });
+
+        // Only initialize MongoDB if it's available
+        if (process.env.MONGODB_URI) {
+            mongoose.connection.on('connected', () => {
+                this.collection = mongoose.connection.db.collection('talkgroups');
+                
+                // Load existing data into cache
+                this.loadCacheFromDB().catch(err => 
+                    logger.error('Error loading talkgroup cache from DB:', err)
+                );
+            });
+        }
 
         logger.info('TalkgroupManager initialized');
     }
 
-    async setupIndexes() {
-        await this.collection.createIndex({ wacn: 1, talkgroup: 1 }, { unique: true });
-        await this.collection.createIndex({ emergency: 1 });
-        await this.collection.createIndex({ last_heard: 1 });
-        await this.collection.createIndex({ 'systems.sys_name': 1 });
-    }
-
     async loadCacheFromDB() {
+        if (!this.collection) {
+            logger.debug('MongoDB not available, skipping cache load');
+            return;
+        }
+
         logger.debug('Loading talkgroup cache from database...');
         const talkgroups = await this.collection.find({}).toArray();
         
@@ -78,7 +73,7 @@ class TalkgroupManager {
         logger.info(`Loaded ${talkgroups.length} talkgroups into cache`);
     }
 
-    cleanup() {
+    async cleanup() {
         logger.debug('Cleaning up TalkgroupManager...');
         this.talkgroupStates.clear();
         this.recentActivity.clear();
@@ -86,6 +81,7 @@ class TalkgroupManager {
         this.patchedTalkgroups.clear();
         this.wacnBySystem.clear();
         logger.debug('Cleared in-memory caches');
+        return Promise.resolve();
     }
     
     // Generate a unique key for talkgroup+wacn
@@ -259,18 +255,22 @@ class TalkgroupManager {
                 newState.activity_summary.total_affiliations++;
             }
 
-            // Update talkgroup state in cache and database
+            // Update talkgroup state in cache
             this.talkgroupStates.set(tgKey, newState);
-            await this.collection.updateOne(
-                { wacn: wacn, talkgroup: message.talkgroup },
-                {
-                    $set: {
-                        ...newState,
-                        recent_activity: activities
-                    }
-                },
-                { upsert: true }
-            );
+            
+            // Update database if available
+            if (this.collection) {
+                await this.collection.updateOne(
+                    { wacn: wacn, talkgroup: message.talkgroup },
+                    {
+                        $set: {
+                            ...newState,
+                            recent_activity: activities
+                        }
+                    },
+                    { upsert: true }
+                );
+            }
 
             // Emit talkgroup activity event
             stateEventEmitter.emitEvent('talkgroup.activity', {

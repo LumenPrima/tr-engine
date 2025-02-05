@@ -111,28 +111,163 @@ class TREngine {
       // Get database instance
       const db = mongoose.connection.db;
 
-      // Create standard message collections with indexes
-      const standardCollections = [
-        'call_start', 'call_end', 'calls_active', 'audio', 'config',
-        'recorder', 'systems', 'rates', 'call', 'data', 'join',
-        'location', 'on', 'off', 'ackresp', 'unclassified'
-      ];
+      // Create collections and indexes for all managers
+      const collections = {
+        // Standard message collections
+        'call_start': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'call_end': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'calls_active': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'audio': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 },
+          { talkgroup: 1 },
+          { start_time: 1 },
+          { filename: 1 }
+        ],
+        'config': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'recorder': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'systems': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'rates': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'call': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'data': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'join': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'location': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'on': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'off': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'ackresp': [
+          { timestamp: 1 },
+          { instance_id: 1 },
+          { sys_name: 1 }
+        ],
+        'unclassified': [
+          { timestamp: 1 },
+          { instance_id: 1 }
+        ],
+        // Manager-specific collections
+        'units': [
+          { wacn: 1, unit: 1 },
+          { 'status.last_seen': 1 },
+          { 'status.current_talkgroup': 1 },
+          { 'systems.sys_name': 1 }
+        ],
+        'talkgroups': [
+          { wacn: 1, talkgroup: 1 },
+          { emergency: 1 },
+          { last_heard: 1 },
+          { 'systems.sys_name': 1 }
+        ],
+        'recorders': [
+          { id: 1 },
+          { 'status.last_update': 1 },
+          { freq: 1 },
+          { rec_state: 1 }
+        ]
+      };
 
-      for (const collection of standardCollections) {
-        await db.createCollection(collection);
-        const coll = db.collection(collection);
-        await coll.createIndex({ timestamp: 1 });
-        await coll.createIndex({ instance_id: 1 });
-        if (collection !== 'unclassified') {
-          await coll.createIndex({ sys_name: 1 });
+      // Create collections and indexes
+      for (const [collectionName, indexes] of Object.entries(collections)) {
+        try {
+          await db.createCollection(collectionName);
+        } catch (err) {
+          // Collection might already exist, which is fine
+          if (!err.message.includes('Collection already exists')) {
+            throw err;
+          }
+        }
+        
+        const collection = db.collection(collectionName);
+        
+        // Create indexes with proper options
+        const indexOps = indexes.map(index => {
+          const options = {};
+          
+          // Add unique constraint for specific indexes
+          if (collectionName === 'units' && 
+              index.wacn === 1 && index.unit === 1) {
+            options.unique = true;
+          }
+          if (collectionName === 'talkgroups' && 
+              index.wacn === 1 && index.talkgroup === 1) {
+            options.unique = true;
+          }
+          if (collectionName === 'recorders' && 
+              index.id === 1) {
+            options.unique = true;
+            options.sparse = true; // Only index documents where id exists
+          }
+          
+          return {
+            key: index,
+            ...options
+          };
+        });
+
+        // Drop existing indexes except _id
+        const existingIndexes = await collection.indexes();
+        for (const existingIndex of existingIndexes) {
+          if (existingIndex.name !== '_id_') {
+            await collection.dropIndex(existingIndex.name);
+          }
+        }
+
+        // Create new indexes
+        if (indexOps.length > 0) {
+          await collection.createIndexes(indexOps);
         }
       }
-
-      // Create audio-specific indexes
-      const audioColl = db.collection('audio');
-      await audioColl.createIndex({ talkgroup: 1 });
-      await audioColl.createIndex({ start_time: 1 });
-      await audioColl.createIndex({ filename: 1 });
 
       // Create GridFS bucket and indexes for audio files
       const bucket = new mongoose.mongo.GridFSBucket(db, { bucketName: 'audioFiles' });

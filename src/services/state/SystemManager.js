@@ -15,11 +15,12 @@ class SystemManager {
         logger.info('SystemManager initialized');
     }
 
-    cleanup() {
+    async cleanup() {
         logger.debug('Cleaning up SystemManager...');
         this.systemStates.clear();
         this.recentRates.clear();
         this.activeRecorders.clear();
+        return Promise.resolve();
     }
     
     async processMessage(topic, message, messageId) {
