@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3002:3002"  # Main application port
+      - "3001:3001"  # WebSocket port
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/tr-engine
+      - MQTT_BROKER_URL=mqtt://mosquitto:1883
+      - MQTT_CLIENT_ID=tr-engine-dev-client
+      - MQTT_TOPIC_PREFIX=tr-mqtt
+      - MQTT_QOS=1
+      - PORT=3002
+      - WS_PORT=3001
+      - NODE_ENV=development
+      - LOG_LEVEL=info
+      - SYSTEM_NAME=TR-ENGINE-DEV
+      - TIMEZONE=America/New_York
+    volumes:
+      - ./logs:/usr/src/app/logs
+    depends_on:
+      - mongodb
+      - mosquitto
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"  # MQTT default port
+      - "9001:9001"  # WebSockets port
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
+volumes:
+  mongodb_data:
