@@ -80,7 +80,7 @@ class MessageProcessor {
         
         if (topicParts[2] === 'systems' || topicParts[2] === 'rates' || topicParts[2] === 'config') {
           await SystemManager.processMessage(topic, transformedMessage, messageId);
-        } else if (topic.startsWith('tr-mqtt/units/')) {
+        } else if (topic.startsWith(`${config.mqtt.topicPrefix}/units/`)) {
           logger.debug('Routing unit message:', {
             topic,
             message: JSON.stringify(transformedMessage)
