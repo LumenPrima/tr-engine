@@ -135,7 +135,7 @@ class MQTTClient {
   }
 
   subscribeToTopics() {
-    const topic = 'tr-mqtt/#';
+    const topic = `${config.mqtt.topicPrefix}/#`;
     
     this.client.subscribe(topic, { qos: config.mqtt.qos || 1 }, (err) => {
       if (err) {

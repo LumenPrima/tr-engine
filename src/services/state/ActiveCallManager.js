@@ -64,7 +64,7 @@ class ActiveCallManager {
                     await this.handleCallEnd(message, messageId);
                     break;
                 default:
-                    if (topic.startsWith('tr-mqtt/units/')) {
+                    if (topic.startsWith(`${config.mqtt.topicPrefix}/units/`)) {
                         await this.handleUnitMessage(topic, message, messageId);
                     }
             }

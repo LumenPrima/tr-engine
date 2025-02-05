@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const config = require('./src/config');
 
 const flattenObject = (obj, prefix = '') => {
   return Object.keys(obj).reduce((acc, k) => {
@@ -90,9 +91,9 @@ async function processAllDirectories(baseDir, outputBaseDir) {
   // Read all directories in the base directory
   const entries = await fs.readdir(baseDir, { withFileTypes: true });
   
-  // Filter for directories that start with 'tr-mqtt'
+  // Filter for directories that start with the configured MQTT topic prefix
   const mqttDirs = entries
-    .filter(entry => entry.isDirectory() && entry.name.startsWith('tr-mqtt'))
+    .filter(entry => entry.isDirectory() && entry.name.startsWith(config.mqtt.topicPrefix))
     .map(entry => path.join(baseDir, entry.name));
 
   // Process each MQTT directory
