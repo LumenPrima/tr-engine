@@ -196,13 +196,16 @@ class SystemManager {
     
     updateSystemConfig(message) {
         try {
-            if (!message.config?.systems || !Array.isArray(message.config.systems)) {
+            // Handle both direct systems array and nested config.systems array
+            const systems = message.systems || (message.config && message.config.systems);
+            
+            if (!systems || !Array.isArray(systems)) {
                 logger.warn('Config message missing systems array');
                 return;
             }
 
             // Process each system's config
-            message.config.systems.forEach(system => {
+            systems.forEach(system => {
                 logger.debug(`Updating config for system ${system.sys_name}`);
                 
                 // Get current state

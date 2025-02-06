@@ -40,7 +40,10 @@ class MessageTransformer {
     }
 
     return Object.entries(obj).reduce((acc, [key, value]) => {
-      if (Array.isArray(value)) {
+      // Special handling for systems array and other key arrays we want to preserve
+      if (key === 'systems' || key === 'recorders' || key === 'rates') {
+        acc[key] = value;
+      } else if (Array.isArray(value)) {
         acc[key] = value;
       } else if (value && typeof value === 'object') {
         Object.assign(acc, this.flattenObject(value));
