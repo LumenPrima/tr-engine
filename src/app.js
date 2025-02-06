@@ -344,16 +344,8 @@ class TREngine {
   }
 
   async setupWebSocket() {
-    // Create a separate HTTP server for WebSocket on port 3001
-    const http = require('http');
-    const wsPort = process.env.WS_PORT || 3001;
-    this.wsServer = http.createServer();
-    this.wsServer.listen(wsPort, '0.0.0.0', () => {
-      logger.info(`WebSocket server listening on 0.0.0.0:${wsPort}`);
-    });
-
-    // Initialize WebSocket server with dedicated HTTP server
-    this.wss = new WebSocketServer(this.wsServer);
+    // Use the main HTTP server for WebSocket
+    this.wss = new WebSocketServer(this.server);
     // Connect AudioHandler to WebSocket server
     audioHandler.setWebSocketServer(this.wss);
     logger.info('WebSocket server initialized and connected to AudioHandler');
@@ -486,16 +478,6 @@ class TREngine {
         );
       }
 
-      if (this.wsServer) {
-        cleanupTasks.push(
-          new Promise(resolve => {
-            this.wsServer.close(() => {
-              logger.info('WebSocket HTTP server closed');
-              resolve();
-            });
-          })
-        );
-      }
 
       // Wait for all cleanup tasks to complete
       await Promise.all(cleanupTasks);

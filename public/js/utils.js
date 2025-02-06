@@ -69,20 +69,9 @@ export function getWsBaseUrl() {
         console.warn('API config not initialized, using default WebSocket configuration');
     }
     
+    // Use the same host:port as the current page, just change the protocol and path
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    
-    // Check if we're running behind Nginx (production with SSL)
-    const isNginx = window.location.protocol === 'https:' || window.location.port === '80' || window.location.port === '443';
-    
-    let wsUrl;
-    if (isNginx) {
-        // Use /ws path when behind Nginx
-        wsUrl = `${protocol}//${host}/ws`;
-    } else {
-        // Use direct WebSocket port for local development
-        wsUrl = `${protocol}//${host}:3001`;
-    }
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
     
     console.log('WebSocket URL:', wsUrl);
     return wsUrl;
