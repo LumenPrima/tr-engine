@@ -7,7 +7,7 @@ const path = require('path');
 const rateLimit = require('express-rate-limit');
 
 // Initialize services
-const transcriptionService = new TranscriptionService();
+const transcriptionService = TranscriptionService.getInstance();
 
 // Rate limiting middleware
 const apiLimiter = rateLimit({

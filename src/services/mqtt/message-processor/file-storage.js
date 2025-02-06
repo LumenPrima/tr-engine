@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const logger = require('../../../utils/logger');
 const TranscriptionService = require('../../transcription/TranscriptionService');
 
-const transcriptionService = new TranscriptionService();
+const transcriptionService = TranscriptionService.getInstance();
 
 class FileStorage {
   async storeFile(base64Data, message, filename) {

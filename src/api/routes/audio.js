@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const TranscriptionService = require('../../services/transcription/TranscriptionService');
 const path = require('path');
 
-const transcriptionService = new TranscriptionService();
+const transcriptionService = TranscriptionService.getInstance();
 
 // Helper function to find audio metadata and files
 const findAudioFiles = async (callIdOrFilename) => {
