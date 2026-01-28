@@ -192,13 +192,15 @@ func main() {
 
 	// Initialize storage manager
 	storageDone := con.StartTask("Initializing audio storage")
-	audioStorage := storage.NewAudioStorage(cfg.Storage.AudioPath, logger)
-	// Verify the directory is writable
-	if err := verifyWritable(cfg.Storage.AudioPath); err != nil {
-		storageDone(false, fmt.Sprintf("cannot write to %s: %v", cfg.Storage.AudioPath, err))
-		os.Exit(1)
+	audioStorage := storage.NewAudioStorage(cfg.Storage.AudioPath, cfg.Storage.Mode, logger)
+	// Verify the directory is writable (only for copy mode)
+	if cfg.Storage.Mode != "external" {
+		if err := verifyWritable(cfg.Storage.AudioPath); err != nil {
+			storageDone(false, fmt.Sprintf("cannot write to %s: %v", cfg.Storage.AudioPath, err))
+			os.Exit(1)
+		}
 	}
-	storageDone(true, cfg.Storage.AudioPath)
+	storageDone(true, fmt.Sprintf("%s (mode: %s)", cfg.Storage.AudioPath, cfg.Storage.Mode))
 
 	// Initialize deduplication engine
 	dedupEngine := dedup.NewEngine(db, cfg.Deduplication, logger)

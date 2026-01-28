@@ -661,5 +661,6 @@ func (h *Handlers) convertCallData(instanceID string, timestamp int64, call *Cal
 		SignalDB:      call.SignalDB,
 		NoiseDB:       call.NoiseDB,
 		Timestamp:     ParseTimestamp(timestamp),
+		CallFilename:  call.CallFilename,
 	}
 }

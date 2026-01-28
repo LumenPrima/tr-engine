@@ -31,7 +31,11 @@ mqtt:
   qos: 1
 
 storage:
-  # Path where audio files will be stored
+  # Storage mode: "copy" (default) or "external"
+  # copy: save audio received via MQTT
+  # external: reference trunk-recorder's audio files directly
+  mode: "copy"
+  # Path where audio files will be stored (or TR's audio path for external mode)
   audio_path: "./data/audio"
 
 deduplication:

@@ -638,6 +638,7 @@ type CallEventData struct {
 	SignalDB      float32
 	NoiseDB       float32
 	Timestamp     time.Time
+	CallFilename  string // Path to audio file from trunk-recorder
 	RawJSON       []byte
 }
 

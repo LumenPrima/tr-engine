@@ -33,7 +33,24 @@ mqtt:
   qos: 1
 
 storage:
-  # Path where audio files will be stored
+  # Storage mode: "copy" (default) or "external"
+  #
+  # copy mode (default):
+  #   - Audio is received via MQTT (base64 encoded) and saved to audio_path
+  #   - Full control over file organization
+  #   - Higher MQTT bandwidth usage
+  #
+  # external mode:
+  #   - References trunk-recorder's audio files directly (no copying)
+  #   - Set audio_path to trunk-recorder's audio output directory
+  #   - Lower bandwidth, requires shared filesystem (Docker volume, NFS, etc.)
+  #   - Reads .json sidecar files for transmission timing metadata
+  #
+  mode: "copy"
+
+  # Path for audio files
+  # copy mode: where tr-engine saves audio files
+  # external mode: path to trunk-recorder's audio directory
   # Structure: {audio_path}/{system}/{year}/{month}/{day}/{filename}
   audio_path: "/data/tr-engine/audio"
 

@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"time"
 
 	"github.com/trunk-recorder/tr-engine/internal/database/models"
@@ -362,6 +363,91 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 
 	if err := p.db.UpdateCall(ctx, call); err != nil {
 		return err
+	}
+
+	// Handle external audio mode: reference TR's audio files instead of copying
+	if p.storage != nil && p.storage.IsExternalMode() && data.CallFilename != "" {
+		relativePath := p.storage.GetRelativePathFromExternal(data.CallFilename, data.ShortName)
+		fullPath := p.storage.MapExternalPath(data.CallFilename, data.ShortName)
+
+		// Check if the audio file exists
+		if p.storage.AudioExists(relativePath) {
+			// Get file size
+			if fi, err := os.Stat(fullPath); err == nil {
+				call.AudioPath = relativePath
+				call.AudioSize = int(fi.Size())
+
+				// Read JSON sidecar for transmission/frequency details
+				if sidecar, err := p.storage.ReadAudioSidecar(fullPath); err == nil {
+					// Convert sidecar srcList to our SourceUnitData format and process
+					if len(sidecar.SrcList) > 0 {
+						srcList := make([]SourceUnitData, len(sidecar.SrcList))
+						for i, src := range sidecar.SrcList {
+							srcList[i] = SourceUnitData{
+								Src:       src.Src,
+								Time:      time.Unix(src.Time, 0),
+								Pos:       src.Pos,
+								Emergency: src.Emergency != 0,
+								Tag:       src.Tag,
+							}
+						}
+						if err := p.processTransmissions(ctx, call, sysID, srcList); err != nil {
+							p.logger.Error("Failed to process external audio transmissions", zap.Error(err))
+						}
+					}
+
+					// Convert sidecar freqList to our FreqEntryData format and process
+					if len(sidecar.FreqList) > 0 {
+						freqList := make([]FreqEntryData, len(sidecar.FreqList))
+						for i, f := range sidecar.FreqList {
+							freqList[i] = FreqEntryData{
+								Freq:       f.Freq,
+								Time:       time.Unix(f.Time, 0),
+								Pos:        f.Pos,
+								Len:        f.Len,
+								ErrorCount: f.ErrorCount,
+								SpikeCount: f.SpikeCount,
+							}
+						}
+						if err := p.processFrequencies(ctx, call.ID, freqList); err != nil {
+							p.logger.Error("Failed to process external audio frequencies", zap.Error(err))
+						}
+					}
+
+					p.logger.Debug("Processed external audio sidecar",
+						zap.String("path", relativePath),
+						zap.Int("transmissions", len(sidecar.SrcList)),
+						zap.Int("frequencies", len(sidecar.FreqList)),
+					)
+				} else {
+					p.logger.Debug("No sidecar file for external audio",
+						zap.String("path", relativePath),
+						zap.Error(err),
+					)
+				}
+
+				// Update call with audio path
+				if err := p.db.UpdateCall(ctx, call); err != nil {
+					p.logger.Error("Failed to update call with external audio path", zap.Error(err))
+				}
+
+				// Broadcast audio availability
+				p.broadcast("audio_available", map[string]interface{}{
+					"call_id":             call.ID,
+					"tr_call_id":          data.CallID,
+					"talkgroup":           data.TGID,
+					"talkgroup_alpha_tag": data.TGAlphaTag,
+					"system":              data.ShortName,
+					"audio_size":          call.AudioSize,
+					"duration":            call.Duration,
+				})
+			}
+		} else {
+			p.logger.Debug("External audio file not found",
+				zap.String("call_filename", data.CallFilename),
+				zap.String("mapped_path", fullPath),
+			)
+		}
 	}
 
 	// Run deduplication if enabled

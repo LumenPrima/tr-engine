@@ -65,6 +65,8 @@ type MQTTTopics struct {
 // StorageConfig holds file storage configuration
 type StorageConfig struct {
 	AudioPath string `mapstructure:"audio_path"`
+	// Mode is "copy" (default) to save audio from MQTT, or "external" to reference TR's files
+	Mode string `mapstructure:"mode"`
 }
 
 // DeduplicationConfig holds deduplication settings
@@ -148,6 +150,7 @@ func setDefaults(v *viper.Viper) {
 
 	// Storage defaults
 	v.SetDefault("storage.audio_path", "/data/tr-engine/audio")
+	v.SetDefault("storage.mode", "copy") // "copy" or "external"
 
 	// Deduplication defaults
 	v.SetDefault("deduplication.enabled", true)
