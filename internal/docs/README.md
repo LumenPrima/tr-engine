@@ -41,11 +41,15 @@ Starts embedded PostgreSQL (port 5432), MQTT broker (port 1883), and HTTP server
 Run the pre-built image (self-contained mode with embedded PostgreSQL and MQTT):
 
 ```bash
+mkdir -p data config
 docker run -d \
-  -p 8080:8080 -p 1883:1883 -p 5432:5432 \
+  -p 8080:8080 -p 1883:1883 \
   -v ./data:/data \
+  -v ./config:/app/config \
   ghcr.io/lumenprima/tr-engine:latest
 ```
+
+First run creates `config/config.yaml`, then restart the container to start the service.
 
 ### Option 3: Docker Compose (TimescaleDB)
 
