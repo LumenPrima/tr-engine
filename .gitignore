@@ -75,3 +75,6 @@ web/
 
 # External repos (cloned for reference)
 trunk-recorder-mqtt-status/
+
+# Import checkpoint
+.tr-engine-import-checkpoint

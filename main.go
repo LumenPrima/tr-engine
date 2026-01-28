@@ -18,6 +18,7 @@ import (
 	embeddeddocs "github.com/trunk-recorder/tr-engine/internal/docs"
 	"github.com/trunk-recorder/tr-engine/internal/embeddedmqtt"
 	"github.com/trunk-recorder/tr-engine/internal/embeddedpg"
+	"github.com/trunk-recorder/tr-engine/internal/importer"
 	"github.com/trunk-recorder/tr-engine/internal/ingest"
 	"github.com/trunk-recorder/tr-engine/internal/mqtt"
 	"github.com/trunk-recorder/tr-engine/internal/storage"
@@ -25,11 +26,14 @@ import (
 )
 
 var (
-	configPath  = flag.String("config", "config.yaml", "Path to configuration file")
-	migrateCmd  = flag.String("migrate", "", "Run migrations: up, down, or version")
-	showVersion = flag.Bool("version", false, "Show version information")
-	quietMode   = flag.Bool("quiet", false, "Suppress status output")
-	noColor     = flag.Bool("no-color", false, "Disable colored output")
+	configPath     = flag.String("config", "config.yaml", "Path to configuration file")
+	migrateCmd     = flag.String("migrate", "", "Run migrations: up, down, or version")
+	showVersion    = flag.Bool("version", false, "Show version information")
+	quietMode      = flag.Bool("quiet", false, "Suppress status output")
+	noColor        = flag.Bool("no-color", false, "Disable colored output")
+	importPath     = flag.String("import", "", "Import historical audio from trunk-recorder directory")
+	importBatch    = flag.Int("batch-size", 1000, "Batch size for import operations")
+	importThrottle = flag.Int("throttle", 0, "Max calls per second during import (0 = unlimited)")
 )
 
 const version = "0.1.1-beta1"
@@ -188,6 +192,12 @@ func main() {
 			os.Exit(1)
 		}
 		migrateDone(true, "")
+	}
+
+	// Handle import mode
+	if *importPath != "" {
+		runImport(db, *importPath, *importBatch, *importThrottle, logger)
+		return
 	}
 
 	// Initialize storage manager
@@ -422,4 +432,55 @@ func verifyWritable(path string) error {
 		return err
 	}
 	return os.Remove(testFile)
+}
+
+// runImport handles the --import mode for bulk importing historical audio
+func runImport(db *database.DB, audioPath string, batchSize, throttle int, logger *zap.Logger) {
+	fmt.Println()
+	fmt.Println("=== tr-engine Historical Import ===")
+	fmt.Printf("Audio path:   %s\n", audioPath)
+	fmt.Printf("Batch size:   %d\n", batchSize)
+	if throttle > 0 {
+		fmt.Printf("Throttle:     %d calls/sec\n", throttle)
+	} else {
+		fmt.Printf("Throttle:     unlimited\n")
+	}
+	fmt.Printf("Checkpoint:   .tr-engine-import-checkpoint (in current directory)\n")
+	fmt.Println()
+
+	// Verify the path exists
+	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Error: audio path does not exist: %s\n", audioPath)
+		os.Exit(1)
+	}
+
+	// Create importer
+	imp := importer.New(db, importer.Config{
+		AudioPath: audioPath,
+		BatchSize: batchSize,
+		Throttle:  throttle,
+	}, logger)
+
+	// Set up signal handling for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		fmt.Println("\nInterrupted - saving checkpoint and exiting...")
+		cancel()
+	}()
+
+	// Run import
+	if err := imp.Run(ctx); err != nil {
+		if ctx.Err() != nil {
+			fmt.Println("Import interrupted. Run again to resume from checkpoint.")
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "Import failed: %v\n", err)
+		os.Exit(1)
+	}
 }
