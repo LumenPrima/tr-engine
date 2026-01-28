@@ -6,7 +6,7 @@ Backend service for aggregating [trunk-recorder](https://github.com/robotastic/t
 
 ## Highlights
 
-- **Self-contained deployment** - Single binary with embedded PostgreSQL and MQTT broker. No external dependencies.
+- **Self-contained deployment** - Single binary with embedded PostgreSQL and MQTT broker. No external dependencies required. Optional external services for high-volume scaling.
 - **Data ingestion** - Receives calls, audio, unit events, recorder status via MQTT. Stores audio with per-unit transmission metadata.
 - **Cross-site deduplication** - Links duplicate P25 call recordings from multi-site systems.
 - **REST API** - Historical queries for calls, talkgroups, units, statistics.
@@ -72,7 +72,7 @@ Navigate to `http://<tr-engine-host>:8080/`
 
 ### Self-Contained (Default)
 
-Single binary, zero dependencies. Data stored in `./data/`.
+Single binary, zero dependencies. Data stored in `./data/`. Suitable for most deployments including multi-site systems with moderate call volume.
 
 ```yaml
 database:
@@ -87,9 +87,9 @@ storage:
   audio_path: "./data/audio"
 ```
 
-### External Services (Production)
+### External Services (Optional)
 
-For high-volume deployments with TimescaleDB.
+External PostgreSQL and MQTT are **optional** but recommended for high-volume deployments (multiple busy systems, long-term retention). Benefits include TimescaleDB for time-series optimization, easier backups, and horizontal scaling.
 
 ```yaml
 database:
