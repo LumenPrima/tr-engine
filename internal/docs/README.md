@@ -91,6 +91,7 @@ Install the [MQTT status plugin](https://github.com/TrunkRecorder/tr-plugin-mqtt
 - `topic` and `unit_topic` are arbitrary - just ensure they match tr-engine's config (`mqtt.topics.status` and `mqtt.topics.units` patterns)
 - `mqtt_audio_type` can be `m4a`, `wav`, or `both`
 - **Note:** MQTT authentication is not currently implemented. Run on a trusted network or use a firewall.
+- **Note:** If running multiple tr-engine instances against the same MQTT broker, each must have a unique `mqtt.client_id` in config.
 
 ### Open the dashboard
 
