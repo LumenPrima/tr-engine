@@ -48,15 +48,17 @@ mkdir -p data config
 docker run --rm \
   -v ./data:/data \
   -v ./config:/app/config \
-  ghcr.io/lumenprima/tr-engine:latest
+  ghcr.io/lumenprima/tr-engine:0.1.1-beta4
 
 # Second run starts the service
 docker run -d \
   -p 8080:8080 -p 1883:1883 \
   -v ./data:/data \
   -v ./config:/app/config \
-  ghcr.io/lumenprima/tr-engine:latest
+  ghcr.io/lumenprima/tr-engine:0.1.1-beta4
 ```
+
+**Note:** Beta releases require the specific version tag (e.g., `:0.1.1-beta4`). The `:latest` tag is only applied to stable releases.
 
 ### Option 3: Docker Compose (TimescaleDB)
 
