@@ -250,6 +250,15 @@ GOOS=windows GOARCH=amd64 go build -o tr-engine.exe
 
 ---
 
+## Disclaimer
+
+This project was vibe-coded with AI assistance (Claude). While functional and tested against real trunk-recorder deployments, the code has not been formally audited. Use at your own risk. The binaries may or may not:
+- Crash your PC
+- Befriend your pets
+- Develop aspirations of world domination
+
+Bug reports welcome. Pull requests even more so.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
