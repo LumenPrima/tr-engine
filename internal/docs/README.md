@@ -1,6 +1,6 @@
 # tr-engine
 
-Backend service for aggregating [trunk-recorder](https://github.com/robotastic/trunk-recorder) data via MQTT. Works with [taclane's trunk-recorder MQTT plugin](https://github.com/taclane/trunk-recorder-mqtt-status).
+Backend service for aggregating [trunk-recorder](https://github.com/robotastic/trunk-recorder) data via MQTT. Works with the [trunk-recorder MQTT plugin](https://github.com/TrunkRecorder/tr-plugin-mqtt).
 
 **Designed as a backend for frontend developers** - build your own UI using any platform/language with the REST and WebSocket APIs. Included web dashboards are functional demos, not feature-complete applications.
 
@@ -46,7 +46,7 @@ docker-compose up -d
 
 ### Configure trunk-recorder
 
-Install the [MQTT status plugin](https://github.com/taclane/trunk-recorder-mqtt-status) and add to your trunk-recorder config:
+Install the [MQTT status plugin](https://github.com/TrunkRecorder/tr-plugin-mqtt) and add to your trunk-recorder config:
 
 ```json
 "plugins": [
