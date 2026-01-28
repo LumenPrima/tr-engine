@@ -38,10 +38,9 @@ Starts embedded PostgreSQL (port 5432), MQTT broker (port 1883), and HTTP server
 
 ### Option 2: Docker Compose
 
-Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker.
+Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker. Data stored in local `./data/` folder.
 
 ```bash
-cd docker
 docker-compose up -d
 ```
 
