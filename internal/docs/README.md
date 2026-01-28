@@ -36,9 +36,20 @@ Creates `config.yaml` with embedded mode defaults, then exits.
 ```
 Starts embedded PostgreSQL (port 5432), MQTT broker (port 1883), and HTTP server (port 8080).
 
-### Option 2: Docker Compose
+### Option 2: Docker
 
-Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker. Data stored in local `./data/` folder.
+Run the pre-built image (self-contained mode with embedded PostgreSQL and MQTT):
+
+```bash
+docker run -d \
+  -p 8080:8080 -p 1883:1883 -p 5432:5432 \
+  -v ./data:/data \
+  ghcr.io/lumenprima/tr-engine:latest
+```
+
+### Option 3: Docker Compose (TimescaleDB)
+
+Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker. Use this for high-volume deployments where time-series optimizations and long-term retention matter. Data stored in local `./data/` folder.
 
 ```bash
 docker-compose up -d
@@ -89,7 +100,7 @@ Navigate to `http://<tr-engine-host>:8080/`
 
 ### Self-Contained (Default)
 
-Single binary, zero dependencies. Data stored in `./data/`. Suitable for most deployments including multi-site systems with moderate call volume.
+Single binary or Docker image with embedded PostgreSQL and MQTT broker. Zero external dependencies. Data stored in `./data/`. Suitable for most deployments including multi-site systems with moderate call volume.
 
 ```yaml
 database:
@@ -227,4 +238,4 @@ GOOS=windows GOARCH=amd64 go build -o tr-engine.exe
 
 ## License
 
-This project is part of the trunk-recorder ecosystem.
+MIT License - see [LICENSE](LICENSE) for details.
