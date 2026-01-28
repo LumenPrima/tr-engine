@@ -17,14 +17,7 @@ Backend service for aggregating [trunk-recorder](https://github.com/robotastic/t
 
 ## Quick Start
 
-### Option 1: Docker Compose (Easiest)
-
-```bash
-cd docker
-docker-compose up -d
-```
-
-### Option 2: Self-Contained Binary
+### Option 1: Self-Contained Binary (Easiest)
 
 **1. Build or download the binary:**
 ```bash
@@ -42,6 +35,15 @@ Creates `config.yaml` with embedded mode defaults, then exits.
 ./tr-engine
 ```
 Starts embedded PostgreSQL (port 5432), MQTT broker (port 1883), and HTTP server (port 8080).
+
+### Option 2: Docker Compose
+
+Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker.
+
+```bash
+cd docker
+docker-compose up -d
+```
 
 **4. Configure trunk-recorder:**
 

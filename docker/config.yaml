@@ -1,0 +1,38 @@
+# Docker Compose configuration
+# Uses external PostgreSQL and MQTT from docker-compose services
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+database:
+  # External PostgreSQL (from docker-compose)
+  embedded: false
+  host: "postgres"
+  port: 5432
+  name: "tr_engine"
+  user: "tr_engine"
+  password: "tr_engine_dev"
+  max_connections: 50
+
+mqtt:
+  # External MQTT broker (from docker-compose)
+  embedded: false
+  broker: "tcp://mqtt:1883"
+  client_id: "tr-engine"
+  topics:
+    status: "feeds/#"
+    units: "units/#"
+  qos: 1
+
+storage:
+  audio_path: "/data/audio"
+
+deduplication:
+  enabled: true
+  time_window_seconds: 3
+  threshold: 0.7
+
+logging:
+  level: "info"
+  format: "json"

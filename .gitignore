@@ -34,6 +34,7 @@ Thumbs.db
 # Config files with secrets
 config.yaml
 !config/config.example.yaml
+!docker/config.yaml
 
 # Data directories
 /data/
