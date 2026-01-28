@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TR-Engine</title>
+<style>
+:root {
+  --bg-base: #0a0a0a;
+  --bg-card: #111;
+  --bg-hover: #1a1a1a;
+  --border: #333;
+  --text: #e0e0e0;
+  --text-dim: #888;
+  --text-muted: #555;
+  --accent: #7af;
+  --accent-dim: #469;
+  --green: #4a4;
+  --radius: 4px;
+  --mono: 'Courier New', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--mono);
+  background: var(--bg-base);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+}
+h1 {
+  font-size: 14px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+}
+.version {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 40px;
+}
+.section {
+  width: 100%;
+  max-width: 500px;
+  margin-bottom: 32px;
+}
+.section-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+.card-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card {
+  display: block;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.card:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-dim);
+  text-decoration: none;
+}
+.card-title {
+  color: var(--accent);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.card-desc {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.card-path {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 8px;
+}
+footer {
+  margin-top: auto;
+  padding-top: 40px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+footer a {
+  color: var(--text-dim);
+}
+footer a:hover {
+  color: var(--accent);
+}
+</style>
+</head>
+<body>
+
+<h1>TR-Engine</h1>
+<div class="version">Real-time trunk-recorder data aggregation</div>
+
+<div class="section">
+  <div class="section-title">Dashboards</div>
+  <div class="card-grid">
+    <a href="/dashboard" class="card">
+      <div class="card-title">Dashboard</div>
+      <div class="card-desc">Real-time calls, talkgroups, units, and system activity</div>
+      <div class="card-path">/dashboard</div>
+    </a>
+    <a href="/recorders" class="card">
+      <div class="card-title">Recorder Monitor</div>
+      <div class="card-desc">Live recorder status grid with call context</div>
+      <div class="card-path">/recorders</div>
+    </a>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">API & Documentation</div>
+  <div class="card-grid">
+    <a href="/swagger/index.html" class="card">
+      <div class="card-title">REST API Documentation</div>
+      <div class="card-desc">Interactive OpenAPI/Swagger documentation</div>
+      <div class="card-path">/swagger/</div>
+    </a>
+    <a href="/websocket" class="card">
+      <div class="card-title">WebSocket API Documentation</div>
+      <div class="card-desc">Real-time event stream with live tester</div>
+      <div class="card-path">/websocket</div>
+    </a>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Operations</div>
+  <div class="card-grid">
+    <a href="/metrics" class="card">
+      <div class="card-title">Prometheus Metrics</div>
+      <div class="card-desc">Application metrics in Prometheus format</div>
+      <div class="card-path">/metrics</div>
+    </a>
+    <a href="/health" class="card">
+      <div class="card-title">Health Check</div>
+      <div class="card-desc">Service health status endpoint</div>
+      <div class="card-path">/health</div>
+    </a>
+  </div>
+</div>
+
+<footer>
+  <a href="https://github.com/trunk-recorder/trunk-recorder" target="_blank">trunk-recorder</a>
+</footer>
+
+</body>
+</html>

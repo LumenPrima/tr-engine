@@ -1,0 +1,1847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TR-Engine Dashboard</title>
+<style>
+:root {
+  --bg-base: #0a0a0a;
+  --bg-card: #111;
+  --bg-hover: #1a1a1a;
+  --bg-input: #181818;
+  --border: #333;
+  --border-light: #444;
+  --text: #e0e0e0;
+  --text-dim: #888;
+  --text-muted: #555;
+  --accent: #7af;
+  --accent-dim: #469;
+  --green: #4a4;
+  --green-bg: #001a00;
+  --red: #f44;
+  --red-bg: #1a0800;
+  --amber: #fa0;
+  --amber-bg: #1a1200;
+  --blue: #48f;
+  --radius: 4px;
+  --mono: 'Courier New', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--mono); background: var(--bg-base); color: var(--text); overflow-x: hidden; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { cursor: pointer; font-family: var(--mono); }
+
+/* Header */
+#header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: #0d0d0d; position: sticky; top: 0; z-index: 100;
+}
+#header h1 { font-size: 14px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; }
+#header-right { display: flex; align-items: center; gap: 12px; }
+#system-select {
+  background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
+  padding: 4px 8px; border-radius: var(--radius); font-family: var(--mono); font-size: 12px;
+}
+#ws-status { font-size: 11px; display: flex; align-items: center; gap: 4px; }
+#ws-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); display: inline-block; }
+#ws-dot.connected { background: var(--green); }
+
+/* Tab Nav */
+#tab-nav {
+  display: flex; border-bottom: 1px solid var(--border); background: #0d0d0d;
+  position: sticky; top: 39px; z-index: 99;
+}
+.tab-btn {
+  padding: 8px 16px; font-size: 12px; color: var(--text-dim); background: none;
+  border: none; border-bottom: 2px solid transparent; text-transform: uppercase;
+  letter-spacing: 1px; transition: color 0.2s, border-color 0.2s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Content */
+#content { padding: 16px; min-height: calc(100vh - 120px); transition: padding-bottom 0.25s ease; }
+body.player-open #content { padding-bottom: 92px; }
+body.player-open #slide-panel { height: calc(100vh - 80px); }
+
+/* Stat cards */
+.stat-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px; margin-bottom: 16px;
+}
+.stat-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px; text-align: center;
+}
+.stat-card .val { font-size: 22px; font-weight: bold; color: var(--accent); }
+.stat-card .label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; margin-top: 2px; }
+
+/* Columns layout */
+.columns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+@media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }
+.col-header {
+  font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+
+/* Lists */
+.list-item {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 8px; margin-bottom: 4px; font-size: 11px; transition: background 0.15s;
+  cursor: pointer;
+}
+.list-item:hover { background: var(--bg-hover); }
+.list-item.slide-in {
+  animation: slideIn 0.35s ease both;
+}
+@keyframes slideIn {
+  from { opacity: 0; max-height: 0; padding: 0 8px; margin-bottom: 0; transform: translateY(-8px); overflow: hidden; }
+  to   { opacity: 1; max-height: 120px; padding: 8px; margin-bottom: 4px; transform: translateY(0); overflow: hidden; }
+}
+.entity-card.slide-in {
+  animation: fadeIn 0.3s ease both;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.list-item .primary { color: var(--text); font-weight: bold; }
+.list-item .secondary { color: var(--text-dim); margin-top: 2px; }
+.list-item .meta { color: var(--text-muted); margin-top: 2px; font-size: 10px; }
+
+/* Badges */
+.badge { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
+.badge-emergency { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); animation: pulse-red 1.5s infinite; }
+.badge-encrypted { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); }
+.badge-active { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
+.badge-audio { background: #0a0a1a; color: var(--blue); border: 1px solid var(--blue); }
+@keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* Event type colors */
+.evt-call { color: #f44; font-weight: bold; }
+.evt-end { color: #fa0; }
+.evt-on { color: #4a4; }
+.evt-off { color: #666; }
+.evt-join { color: #4af; }
+.evt-ackresp { color: #888; }
+.evt-ans_req { color: #c8f; }
+.evt-data { color: #8af; }
+.evt-location { color: #af8; }
+.evt-unknown { color: var(--text-dim); }
+.evt-tg { color: var(--accent); }
+
+/* Play button */
+.btn-play {
+  background: var(--accent-dim); color: #fff; border: none; border-radius: 3px;
+  padding: 2px 8px; font-size: 10px; cursor: pointer;
+}
+.btn-play:hover { background: var(--accent); }
+
+/* Charts */
+.chart-container {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 8px; margin-bottom: 12px;
+}
+.chart-container canvas { width: 100%; height: 160px; display: block; }
+.chart-title { font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 6px; }
+
+/* Tables */
+.data-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.data-table th {
+  text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border);
+  color: var(--text-dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px;
+}
+.data-table td { padding: 5px 8px; border-bottom: 1px solid #1a1a1a; }
+.data-table tr:hover td { background: var(--bg-hover); }
+
+/* Filters bar */
+.filters {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: flex-end;
+}
+.filter-group { display: flex; flex-direction: column; gap: 2px; }
+.filter-group label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
+.filter-group input, .filter-group select {
+  background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
+  padding: 4px 8px; border-radius: var(--radius); font-family: var(--mono); font-size: 11px;
+}
+.filter-group input[type="checkbox"] { width: 14px; height: 14px; }
+.btn-filter {
+  background: var(--accent-dim); color: #fff; border: none; border-radius: var(--radius);
+  padding: 5px 12px; font-size: 11px; cursor: pointer; align-self: flex-end;
+}
+.btn-filter:hover { background: var(--accent); }
+
+/* Pagination */
+.pagination { display: flex; gap: 8px; margin-top: 8px; align-items: center; font-size: 11px; color: var(--text-dim); }
+.pagination button {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 3px 10px; border-radius: var(--radius); font-size: 11px;
+}
+.pagination button:hover { background: var(--bg-hover); }
+.pagination button:disabled { opacity: 0.3; cursor: default; }
+
+/* Slide Panel */
+#slide-panel {
+  position: fixed; top: 0; right: -620px; width: 600px; height: 100vh;
+  background: #0d0d0d; border-left: 1px solid var(--border); z-index: 200;
+  transition: right 0.25s ease, height 0.25s ease; overflow-y: auto; padding: 16px;
+}
+#slide-panel.open { right: 0; }
+#panel-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5); z-index: 199; display: none;
+}
+#panel-overlay.open { display: block; }
+.panel-close {
+  position: absolute; top: 8px; right: 12px; background: none; border: none;
+  color: var(--text-dim); font-size: 20px; cursor: pointer;
+}
+.panel-close:hover { color: var(--text); }
+.panel-title { font-size: 14px; color: var(--accent); margin-bottom: 12px; padding-right: 30px; }
+.panel-section { margin-bottom: 16px; }
+.panel-section-title { font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+
+/* Entity grid */
+.entity-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.entity-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.entity-card:hover { background: var(--bg-hover); border-color: var(--accent-dim); }
+.entity-card .title { font-size: 12px; color: var(--accent); font-weight: bold; }
+.entity-card .detail { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+
+/* Sub-tabs */
+.sub-tabs { display: flex; gap: 0; margin-bottom: 12px; }
+.sub-tab {
+  padding: 6px 12px; font-size: 11px; color: var(--text-dim); background: var(--bg-card);
+  border: 1px solid var(--border); cursor: pointer; text-transform: uppercase;
+}
+.sub-tab:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.sub-tab:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.sub-tab + .sub-tab { border-left: none; }
+.sub-tab.active { color: var(--accent); background: var(--bg-hover); border-color: var(--accent-dim); }
+
+/* Monitor Tab */
+.monitor-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px;
+}
+.monitor-card {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.monitor-card:hover { background: var(--bg-hover); }
+.monitor-card.checked { border-color: var(--accent); background: rgba(64,255,255,0.05); }
+.monitor-card input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+.monitor-card label { flex: 1; cursor: pointer; font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mon-label { flex: 1; cursor: pointer; font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mon-label:hover { color: var(--accent); text-decoration: underline; }
+.enc-icon { font-size: 12px; cursor: default; flex-shrink: 0; }
+.enc-icon.none { color: var(--text-dim); opacity: 0.5; }
+.enc-icon.encrypted { color: #f59e0b; }
+.enc-icon.clear { color: #22c55e; }
+.enc-icon.mixed { color: #a855f7; }
+.monitor-controls { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+.monitor-controls .btn-filter { padding: 6px 12px; }
+.monitor-stats { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+
+/* Audio Player */
+#audio-player {
+  position: fixed; bottom: -80px; left: 0; right: 0; height: 76px;
+  background: #0d0d0d; border-top: 1px solid var(--border); z-index: 300;
+  display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  transition: bottom 0.25s ease;
+}
+#audio-player.visible { bottom: 0; }
+.ap-info { flex: 0 0 180px; font-size: 10px; overflow: hidden; }
+.ap-info .ap-tg { color: var(--accent); font-weight: bold; font-size: 11px; }
+.ap-info .ap-meta { color: var(--text-dim); margin-top: 2px; }
+.ap-timeline { flex: 1; position: relative; height: 36px; background: #181818; border-radius: 6px; overflow: hidden; cursor: pointer; border: 1px solid var(--border); box-shadow: inset 0 1px 3px rgba(0,0,0,0.4); }
+.ap-timeline canvas { width: 100%; height: 100%; display: block; }
+.ap-controls { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.ap-btn {
+  background: none; border: 1px solid var(--border); color: var(--text);
+  padding: 4px 8px; border-radius: var(--radius); font-size: 11px;
+}
+.ap-btn:hover { background: var(--bg-hover); }
+.ap-monitor.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.ap-monitor.active:hover { background: #5ff; }
+.ap-status { display: flex; align-items: center; gap: 8px; font-size: 10px; margin: 0 4px; }
+.ap-queue { color: var(--text-dim); }
+.ap-queue.has-items { color: var(--accent); font-weight: bold; }
+.ap-mon-count { color: var(--text-dim); text-decoration: none; }
+.ap-mon-count:hover { color: var(--accent); }
+.ap-mon-count.active { color: var(--accent); }
+.ap-time { font-size: 11px; color: var(--text-dim); min-width: 40px; text-align: center; }
+.ap-volume { width: 60px; accent-color: var(--accent); }
+.ap-close { background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; margin-left: 4px; }
+.ap-close:hover { color: var(--text); }
+
+/* Toast */
+#toast-container { position: fixed; top: 50px; right: 16px; z-index: 500; }
+.toast {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 8px 12px; margin-bottom: 4px; font-size: 11px; animation: toast-in 0.3s ease;
+  max-width: 300px;
+}
+.toast.fade-out { animation: toast-out 0.3s ease forwards; }
+.toast.clickable { border-left: 3px solid var(--accent); cursor: pointer; }
+.toast.clickable:hover { background: var(--bg-hover); border-color: var(--accent); }
+.toast-play {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; margin-right: 8px; border-radius: 50%;
+  background: var(--accent); color: #000; font-size: 10px; cursor: pointer;
+  vertical-align: middle; transition: transform 0.15s, background 0.15s;
+}
+.toast-play:hover { transform: scale(1.15); background: #5ff; }
+.toast-label { vertical-align: middle; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateX(20px); } }
+
+/* Loading */
+.loading { color: var(--text-muted); font-size: 11px; padding: 20px; text-align: center; }
+.empty { color: var(--text-muted); font-size: 11px; padding: 20px; text-align: center; font-style: italic; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <h1>TR-Engine Dashboard</h1>
+  <div id="header-right">
+    <select id="system-select"><option value="">All Systems</option></select>
+    <div id="ws-status"><span id="ws-dot"></span><span id="ws-text">Disconnected</span></div>
+  </div>
+</div>
+
+<!-- Tab Nav -->
+<div id="tab-nav">
+  <button class="tab-btn active" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="calls">Calls</button>
+  <button class="tab-btn" data-tab="talkgroups">Talkgroups</button>
+  <button class="tab-btn" data-tab="units">Units</button>
+  <button class="tab-btn" data-tab="systems">Systems</button>
+  <button class="tab-btn" data-tab="monitor">Monitor</button>
+</div>
+
+<!-- Content -->
+<div id="content"></div>
+
+<!-- Slide Panel -->
+<div id="panel-overlay"></div>
+<div id="slide-panel">
+  <button class="panel-close" onclick="Panel.close()">&times;</button>
+  <div id="panel-content"></div>
+</div>
+
+<!-- Audio Player -->
+<div id="audio-player">
+  <div class="ap-info">
+    <div class="ap-tg" id="ap-tg">--</div>
+    <div class="ap-meta" id="ap-meta">--</div>
+  </div>
+  <div class="ap-timeline" id="ap-timeline">
+    <canvas id="ap-canvas"></canvas>
+  </div>
+  <div class="ap-controls">
+    <button class="ap-btn" id="ap-restart" title="Restart">&#8634;</button>
+    <button class="ap-btn" id="ap-back" title="Back 10s">-10</button>
+    <button class="ap-btn" id="ap-play" title="Play/Pause">&#9654;</button>
+    <button class="ap-btn" id="ap-fwd" title="Forward 10s">+10</button>
+    <span class="ap-time" id="ap-time">0:00</span>
+    <button class="ap-btn ap-monitor" id="ap-monitor" title="Toggle monitoring this talkgroup">&#128226;</button>
+    <span class="ap-status" id="ap-status">
+      <span class="ap-queue" id="ap-queue" title="Queued calls">Q: 0</span>
+      <a class="ap-mon-count" id="ap-mon-count" href="#monitor" title="Monitored talkgroups">0 TGs</a>
+    </span>
+    <input type="range" class="ap-volume" id="ap-volume" min="0" max="100" value="80" title="Volume">
+    <button class="ap-close" id="ap-close" title="Close">&times;</button>
+  </div>
+</div>
+<audio id="ap-audio" preload="auto"></audio>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+// ===== Utilities =====
+const UI = {
+  esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); },
+  formatFreq(hz) { return hz ? (hz / 1e6).toFixed(4) + ' MHz' : '--'; },
+  formatDuration(s) { if (!s && s !== 0) return '--'; const m = Math.floor(s/60), sec = Math.floor(s%60); return m + ':' + String(sec).padStart(2,'0'); },
+  formatTime(iso) {
+    if (!iso) return '--';
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  },
+  formatDateTime(iso) {
+    if (!iso) return '--';
+    const d = new Date(iso);
+    return d.toLocaleDateString([], {month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  },
+  unitLabel(u) {
+    // u can be a unit object or a number
+    if (typeof u === 'number' || typeof u === 'string') return String(u);
+    const tag = u.alpha_tag || u.unit_alpha_tag;
+    const id = u.unit_id || u.id;
+    if (tag) return tag + ' (' + id + ')';
+    return 'Unit ' + id;
+  },
+  unitTitle(u) {
+    // Primary display: alpha_tag if available, otherwise "Unit {id}"
+    const tag = u.alpha_tag || u.unit_alpha_tag;
+    const id = u.unit_id || u.id;
+    if (tag) return tag;
+    return 'Unit ' + id;
+  },
+  unitSubtitle(u) {
+    // Secondary line: show unit_id when alpha_tag is the title
+    const tag = u.alpha_tag || u.unit_alpha_tag;
+    const id = u.unit_id || u.id;
+    if (tag) return 'Unit ' + id;
+    return '';
+  },
+  callId(call) {
+    // Return the best identifier for API calls — tr_call_id if available, else numeric id
+    return call.tr_call_id || call.call_id || (call.id ? String(call.id) : '');
+  },
+  formatBytes(b) {
+    if (!b) return '0 B';
+    const units = ['B','KB','MB','GB','TB'];
+    let i = 0;
+    while (b >= 1024 && i < units.length - 1) { b /= 1024; i++; }
+    return b.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+  },
+  ago(iso) {
+    if (!iso) return '';
+    const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return s + 's ago';
+    if (s < 3600) return Math.floor(s/60) + 'm ago';
+    if (s < 86400) return Math.floor(s/3600) + 'h ago';
+    return Math.floor(s/86400) + 'd ago';
+  },
+  badges(call) {
+    let h = '';
+    if (call.emergency) h += '<span class="badge badge-emergency">EMERG</span> ';
+    if (call.encrypted) h += '<span class="badge badge-encrypted">ENCR</span> ';
+    if (call.audio_path || call.has_audio) h += '<span class="badge badge-audio">AUDIO</span> ';
+    return h;
+  },
+  toast(msg, duration, opts) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    if (opts && opts.html) {
+      el.innerHTML = msg;
+    } else {
+      el.textContent = msg;
+    }
+    if (opts && opts.onClick) {
+      el.classList.add('clickable');
+      el.addEventListener('click', () => { opts.onClick(); el.remove(); });
+    }
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => { el.classList.add('fade-out'); setTimeout(() => el.remove(), 300); }, duration || 3000);
+  },
+  $(id) { return document.getElementById(id); },
+};
+
+// ===== Preferences =====
+const Prefs = {
+  get(k, def) { try { const v = localStorage.getItem('trengine.' + k); return v !== null ? JSON.parse(v) : def; } catch { return def; } },
+  set(k, v) { try { localStorage.setItem('trengine.' + k, JSON.stringify(v)); } catch {} },
+};
+
+// ===== Monitor Manager =====
+const Monitor = {
+  tgids: new Set(), // Set of monitored TGID numbers
+  queue: [], // Queue of call objects to play
+  init() {
+    // Load from localStorage
+    const saved = Prefs.get('monitoredTGs', []);
+    this.tgids = new Set(saved);
+    this.updateUI();
+  },
+  save() {
+    Prefs.set('monitoredTGs', [...this.tgids]);
+  },
+  isMonitored(tgid) {
+    return this.tgids.has(Number(tgid));
+  },
+  add(tgid) {
+    this.tgids.add(Number(tgid));
+    this.save();
+    this.updateUI();
+  },
+  remove(tgid) {
+    this.tgids.delete(Number(tgid));
+    this.save();
+    this.updateUI();
+  },
+  toggle(tgid) {
+    const id = Number(tgid);
+    if (this.tgids.has(id)) {
+      this.tgids.delete(id);
+    } else {
+      this.tgids.add(id);
+    }
+    this.save();
+    this.updateUI();
+  },
+  clear() {
+    this.tgids.clear();
+    this.save();
+    this.updateUI();
+  },
+  count() {
+    return this.tgids.size;
+  },
+  queueCall(callObj) {
+    // Don't queue duplicates
+    const cid = UI.callId(callObj);
+    if (this.queue.some(c => UI.callId(c) === cid)) return;
+    this.queue.push(callObj);
+    this.updateUI();
+  },
+  dequeue() {
+    const call = this.queue.shift();
+    this.updateUI();
+    return call;
+  },
+  clearQueue() {
+    this.queue = [];
+    this.updateUI();
+  },
+  queueCount() {
+    return this.queue.length;
+  },
+  updateUI() {
+    // Update player monitor button state
+    const currentTGID = AudioPlayer.callData ? (AudioPlayer.callData.tgid || AudioPlayer.callData.talkgroup_id) : null;
+    const monBtn = UI.$('ap-monitor');
+    if (monBtn) {
+      if (currentTGID && this.isMonitored(currentTGID)) {
+        monBtn.classList.add('active');
+      } else {
+        monBtn.classList.remove('active');
+      }
+    }
+    // Update queue count
+    const queueEl = UI.$('ap-queue');
+    if (queueEl) {
+      queueEl.textContent = 'Q: ' + this.queue.length;
+      queueEl.classList.toggle('has-items', this.queue.length > 0);
+    }
+    // Update monitored count
+    const countEl = UI.$('ap-mon-count');
+    if (countEl) {
+      countEl.textContent = this.tgids.size + ' TGs';
+      countEl.classList.toggle('active', this.tgids.size > 0);
+    }
+    // Update monitor tab checkboxes if visible
+    if (TabManager.current === 'monitor') {
+      this.tgids.forEach(tgid => {
+        const cb = document.querySelector('#mon-cb-' + tgid);
+        if (cb) cb.checked = true;
+        const card = cb && cb.closest('.monitor-card');
+        if (card) card.classList.add('checked');
+      });
+    }
+  },
+};
+
+// ===== API =====
+const API = {
+  base: '/api/v1',
+  async get(path, params) {
+    const url = new URL(this.base + path, location.origin);
+    if (params) Object.entries(params).forEach(([k,v]) => { if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v); });
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('API ' + r.status);
+    return r.json();
+  },
+  stats() { return this.get('/stats'); },
+  activity() { return this.get('/stats/activity'); },
+  rates(p) { return this.get('/stats/rates', p); },
+  systems() { return this.get('/systems'); },
+  system(id) { return this.get('/systems/' + id); },
+  systemTalkgroups(id, p) { return this.get('/systems/' + id + '/talkgroups', p); },
+  talkgroups(p) { return this.get('/talkgroups', p); },
+  talkgroup(id) { return this.get('/talkgroups/' + id); },
+  talkgroupCalls(id, p) { return this.get('/talkgroups/' + id + '/calls', p); },
+  talkgroupEncryptionStats(p) { return this.get('/talkgroups/encryption-stats', p); },
+  units(p) { return this.get('/units', p); },
+  unit(id) { return this.get('/units/' + id); },
+  unitEvents(id, p) { return this.get('/units/' + id + '/events', p); },
+  unitCalls(id, p) { return this.get('/units/' + id + '/calls', p); },
+  activeUnits(p) { return this.get('/units/active', p); },
+  calls(p) { return this.get('/calls', p); },
+  call(id) { return this.get('/calls/' + id); },
+  callTransmissions(id) { return this.get('/calls/' + id + '/transmissions'); },
+  callFrequencies(id) { return this.get('/calls/' + id + '/frequencies'); },
+  activeCalls(p) { return this.get('/calls/active', p); },
+  activeCallsRealtime() { return this.get('/calls/active/realtime'); },
+  recentCalls(p) { return this.get('/calls/recent', p); },
+  recorders() { return this.get('/recorders'); },
+  callGroups(p) { return this.get('/call-groups', p); },
+  callGroup(id) { return this.get('/call-groups/' + id); },
+  audioUrl(trCallId) { return this.base + '/calls/' + encodeURIComponent(trCallId) + '/audio'; },
+};
+
+// ===== WebSocket =====
+const WS = {
+  ws: null,
+  channels: [],
+  handlers: {},
+  connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.ws = new WebSocket(proto + '//' + location.host + '/api/ws');
+    this.ws.onopen = () => {
+      UI.$('ws-dot').className = 'connected';
+      UI.$('ws-text').textContent = 'Connected';
+      this.subscribe(this.channels);
+    };
+    this.ws.onclose = () => {
+      UI.$('ws-dot').className = '';
+      UI.$('ws-text').textContent = 'Reconnecting...';
+      setTimeout(() => this.connect(), 3000);
+    };
+    this.ws.onerror = () => this.ws.close();
+    this.ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        const type = msg.type || msg.event;
+        if (type && this.handlers[type]) this.handlers[type].forEach(fn => fn(msg.data, msg));
+      } catch {}
+    };
+  },
+  subscribe(channels) {
+    this.channels = channels;
+    if (this.ws && this.ws.readyState === 1) {
+      this.ws.send(JSON.stringify({ action: 'subscribe', channels }));
+    }
+  },
+  on(event, fn) {
+    if (!this.handlers[event]) this.handlers[event] = [];
+    this.handlers[event].push(fn);
+  },
+  off(event, fn) {
+    if (this.handlers[event]) this.handlers[event] = this.handlers[event].filter(f => f !== fn);
+  },
+};
+
+// ===== Panel =====
+const Panel = {
+  open(html) {
+    UI.$('panel-content').innerHTML = html;
+    UI.$('slide-panel').classList.add('open');
+    UI.$('panel-overlay').classList.add('open');
+  },
+  close() {
+    UI.$('slide-panel').classList.remove('open');
+    UI.$('panel-overlay').classList.remove('open');
+  },
+};
+UI.$('panel-overlay').onclick = () => Panel.close();
+
+// ===== Audio Player =====
+const AudioPlayer = {
+  audio: UI.$('ap-audio'),
+  canvas: UI.$('ap-canvas'),
+  transmissions: [],
+  frequencies: [],
+  callData: null,
+  init() {
+    this.audio.volume = Prefs.get('volume', 80) / 100;
+    UI.$('ap-volume').value = Prefs.get('volume', 80);
+    UI.$('ap-restart').onclick = () => { this.audio.currentTime = 0; if (this.audio.paused) this.audio.play(); };
+    UI.$('ap-play').onclick = () => this.toggle();
+    UI.$('ap-back').onclick = () => { this.audio.currentTime = Math.max(0, this.audio.currentTime - 10); if (this.audio.paused) this.drawTimeline(); };
+    UI.$('ap-fwd').onclick = () => { this.audio.currentTime += 10; if (this.audio.paused) this.drawTimeline(); };
+    UI.$('ap-close').onclick = () => this.hide();
+    UI.$('ap-monitor').onclick = () => this.toggleMonitor();
+    UI.$('ap-mon-count').onclick = (e) => { e.preventDefault(); TabManager.switchTo('monitor'); };
+    UI.$('ap-volume').oninput = (e) => { this.audio.volume = e.target.value / 100; Prefs.set('volume', +e.target.value); };
+    this.audio.ontimeupdate = () => this.updateTimeDisplay();
+    this.audio.onplay = () => { UI.$('ap-play').innerHTML = '&#9646;&#9646;'; this.startAnimation(); };
+    this.audio.onpause = () => { UI.$('ap-play').innerHTML = '&#9654;'; this.stopAnimation(); };
+    this.audio.onended = () => { UI.$('ap-play').innerHTML = '&#9654;'; this.stopAnimation(); this.onAudioEnded(); };
+    UI.$('ap-timeline').onclick = (e) => {
+      if (!this.audio.duration) return;
+      const rect = UI.$('ap-timeline').getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      this.audio.currentTime = pct * this.audio.duration;
+      if (this.audio.paused) this.drawTimeline();
+    };
+  },
+  unitLabels: {}, // Map of unit_rid -> alpha_tag or label
+  async play(call) {
+    const cid = UI.callId(call);
+    if (!cid) { UI.toast('No call ID available'); return; }
+    this.callData = call;
+    this.audio.src = API.audioUrl(cid);
+    this.audio.play().catch(() => {});
+    const tgid = call.tgid || call.talkgroup_id;
+    const tgText = call.tg_alpha_tag || call.alpha_tag || ('TG ' + (tgid || '?'));
+    UI.$('ap-tg').textContent = tgText;
+    Monitor.updateUI(); // Update monitor button state
+    UI.$('ap-meta').textContent = UI.formatFreq(call.freq) + ' | ' + UI.formatDuration(call.duration);
+    UI.$('audio-player').classList.add('visible');
+    document.body.classList.add('player-open');
+    // Load transmissions and frequencies
+    try {
+      const [txs, freqs] = await Promise.all([
+        API.callTransmissions(cid).catch(() => []),
+        API.callFrequencies(cid).catch(() => []),
+      ]);
+      this.transmissions = Array.isArray(txs) ? txs : [];
+      this.frequencies = Array.isArray(freqs) ? freqs : [];
+      // Build unit label lookup from unit_id (DB ID) -> fetch alpha tags
+      this.unitLabels = {};
+      const uniqueUnitIds = [...new Set(this.transmissions.map(tx => tx.unit_id).filter(Boolean))];
+      await Promise.all(uniqueUnitIds.map(async (uid) => {
+        try {
+          const u = await API.unit(uid);
+          if (u) {
+            const rid = u.unit_id || uid;
+            this.unitLabels[rid] = u.alpha_tag || String(rid);
+          }
+        } catch {}
+      }));
+      this.drawTimeline();
+    } catch {}
+  },
+  toggle() {
+    if (this.audio.paused) this.audio.play().catch(()=>{});
+    else this.audio.pause();
+  },
+  hide() {
+    this.audio.pause();
+    this.audio.src = '';
+    // Don't clear monitoring - keep it running in background
+    UI.$('audio-player').classList.remove('visible');
+    document.body.classList.remove('player-open');
+  },
+  // Toggle monitoring for the current talkgroup
+  toggleMonitor() {
+    if (!this.callData) return;
+    const tgid = this.callData.tgid || this.callData.talkgroup_id;
+    if (!tgid) return;
+    Monitor.toggle(tgid);
+    const tgLabel = this.callData.tg_alpha_tag || ('TG ' + tgid);
+    if (Monitor.isMonitored(tgid)) {
+      UI.toast('Monitoring: ' + tgLabel, 2000);
+    } else {
+      UI.toast('Stopped monitoring: ' + tgLabel, 2000);
+    }
+  },
+  // Called when audio ends - play next from queue
+  onAudioEnded() {
+    if (Monitor.count() === 0) return;
+    const nextCall = Monitor.dequeue();
+    if (nextCall) {
+      this.play(nextCall);
+    }
+  },
+  animationId: null,
+  updateTimeDisplay() {
+    const ct = this.audio.currentTime, dur = this.audio.duration || 0;
+    UI.$('ap-time').textContent = UI.formatDuration(ct) + '/' + UI.formatDuration(dur);
+  },
+  startAnimation() {
+    if (this.animationId) return;
+    const animate = () => {
+      this.drawTimeline();
+      this.animationId = requestAnimationFrame(animate);
+    };
+    this.animationId = requestAnimationFrame(animate);
+  },
+  stopAnimation() {
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+    this.drawTimeline(); // Draw final position
+  },
+  drawTimeline() {
+    const c = this.canvas;
+    const rect = UI.$('ap-timeline').getBoundingClientRect();
+    c.width = rect.width * (window.devicePixelRatio || 1);
+    c.height = rect.height * (window.devicePixelRatio || 1);
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+    const dur = this.audio.duration || 1;
+    const colors = ['#48f','#f84','#4f8','#f48','#84f','#8f4','#ff4','#4ff'];
+    // Draw transmissions
+    const unitColors = {};
+    let ci = 0;
+    if (this.transmissions.length > 0) {
+      const sorted = [...this.transmissions].sort((a,b) => (a.position||0) - (b.position||0));
+      // First pass: draw colored bars
+      for (let i = 0; i < sorted.length; i++) {
+        const tx = sorted[i];
+        const rid = tx.unit_rid || tx.unit_id || 0;
+        if (!unitColors[rid]) unitColors[rid] = colors[ci++ % colors.length];
+        const x = ((tx.position || 0) / dur) * w;
+        const nextPos = (i + 1 < sorted.length) ? sorted[i+1].position : dur;
+        const barW = Math.max(2, ((nextPos - (tx.position||0)) / dur) * w);
+        ctx.fillStyle = unitColors[rid];
+        ctx.globalAlpha = 0.5;
+        ctx.fillRect(x, 2, barW, h - 4);
+        ctx.globalAlpha = 1;
+      }
+      // Second pass: draw divider lines and labels
+      for (let i = 0; i < sorted.length; i++) {
+        const tx = sorted[i];
+        const rid = tx.unit_rid || tx.unit_id || 0;
+        const x = ((tx.position || 0) / dur) * w;
+        const nextPos = (i + 1 < sorted.length) ? sorted[i+1].position : dur;
+        const barW = Math.max(2, ((nextPos - (tx.position||0)) / dur) * w);
+        // Divider line at segment start
+        if (i > 0) {
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, h);
+          ctx.stroke();
+        }
+        // Label — prefer alpha tag, fall back to radio ID
+        if (barW > 40) {
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold ' + (h * 0.32) + 'px monospace';
+          const label = this.unitLabels[rid] || String(rid);
+          ctx.fillText(label, x + 4, h * 0.62);
+        }
+      }
+    }
+    // Playhead
+    const pct = this.audio.currentTime / dur;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(pct * w - 1, 0, 2, h);
+  },
+};
+
+// ===== Systems Cache =====
+let systemsCache = [];
+async function loadSystems() {
+  try {
+    const data = await API.systems();
+    systemsCache = data.systems || [];
+    const sel = UI.$('system-select');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All Systems</option>';
+    systemsCache.forEach(s => {
+      sel.innerHTML += '<option value="' + s.id + '">' + UI.esc(s.short_name) + '</option>';
+    });
+    sel.value = cur || Prefs.get('selectedSystem', '');
+  } catch {}
+}
+function getSelectedSystem() {
+  return UI.$('system-select').value || undefined;
+}
+UI.$('system-select').onchange = () => {
+  Prefs.set('selectedSystem', UI.$('system-select').value);
+  TabManager.refresh();
+};
+
+// ===== Tab Manager =====
+const TabManager = {
+  current: null,
+  timers: [],
+  init() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.onclick = () => this.switchTo(btn.dataset.tab);
+    });
+    window.onhashchange = () => this.fromHash();
+    this.fromHash();
+  },
+  fromHash() {
+    const tab = location.hash.replace('#','') || 'overview';
+    this.switchTo(tab);
+  },
+  switchTo(tab) {
+    if (this.current === tab) return;
+    this.current = tab;
+    location.hash = '#' + tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    this.clearTimers();
+    UI.$('content').innerHTML = '<div class="loading">Loading...</div>';
+    if (Tabs[tab]) Tabs[tab].render();
+    this.updateWS();
+  },
+  refresh() {
+    this.clearTimers();
+    if (this.current && Tabs[this.current]) Tabs[this.current].render();
+  },
+  clearTimers() {
+    this.timers.forEach(t => clearInterval(t));
+    this.timers = [];
+  },
+  addTimer(fn, ms) {
+    const id = setInterval(fn, ms);
+    this.timers.push(id);
+    return id;
+  },
+  updateWS() {
+    const channels = ['calls', 'rates'];
+    if (this.current === 'units' || this.current === 'overview') channels.push('units');
+    WS.subscribe(channels);
+  },
+};
+
+// ===== Render helpers =====
+function callListItem(call, opts) {
+  opts = opts || {};
+  const tg = call.tg_alpha_tag || call.alpha_tag || ('TG ' + (call.tgid || call.talkgroup_id || '?'));
+  const hasAudio = call.audio_path || call.has_audio;
+  const cid = UI.callId(call);
+  let html = '<div class="list-item" data-call-id="' + UI.esc(cid) + '">';
+  html += '<div class="primary">' + UI.esc(tg) + ' ' + UI.badges(call) + '</div>';
+  html += '<div class="secondary">' + UI.formatFreq(call.freq);
+  if (call.duration) html += ' | ' + UI.formatDuration(call.duration);
+  html += '</div>';
+  html += '<div class="meta">' + UI.formatTime(call.start_time) + ' ' + UI.ago(call.start_time);
+  if (call.units && call.units.length) html += ' | ' + call.units.map(u => UI.esc(typeof u === 'object' ? (u.alpha_tag || u.unit_tag || String(u.unit_rid || u.unit_id || u.id)) : String(u))).join(', ');
+  if (hasAudio && cid) html += ' <button class="btn-play" data-play="' + UI.esc(JSON.stringify(call).replace(/"/g, '&quot;')) + '">&#9654; Play</button>';
+  html += '</div></div>';
+  return html;
+}
+
+function bindPlayButtons(container) {
+  container.querySelectorAll('.btn-play').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      try { AudioPlayer.play(JSON.parse(btn.dataset.play.replace(/&quot;/g, '"'))); } catch {}
+    };
+  });
+}
+
+function paginationHtml(offset, limit, count, id) {
+  const hasPrev = offset > 0;
+  const hasNext = count >= limit;
+  return '<div class="pagination">' +
+    '<button ' + (hasPrev ? '' : 'disabled') + ' onclick="pageNav(\'' + id + '\',' + Math.max(0, offset - limit) + ')">Prev</button>' +
+    '<span>' + (offset + 1) + '-' + (offset + count) + '</span>' +
+    '<button ' + (hasNext ? '' : 'disabled') + ' onclick="pageNav(\'' + id + '\',' + (offset + limit) + ')">Next</button>' +
+    '</div>';
+}
+// Expose for onclick
+window.pageNav = function(id, offset) {
+  if (window._pageNavCallbacks && window._pageNavCallbacks[id]) window._pageNavCallbacks[id](offset);
+};
+window._pageNavCallbacks = {};
+
+// ===== Tabs =====
+const Tabs = {};
+
+// --- Overview ---
+Tabs.overview = {
+  async render() {
+    const el = UI.$('content');
+    el.innerHTML =
+      '<div id="ov-stats" class="stat-grid"><div class="loading">Loading stats...</div></div>' +
+      '<div class="columns">' +
+        '<div><div class="col-header">Active Calls</div><div id="ov-active"><div class="loading">Loading...</div></div></div>' +
+        '<div><div class="col-header">Recent Calls</div><div id="ov-recent"><div class="loading">Loading...</div></div></div>' +
+        '<div><div class="col-header">Active Units</div><div id="ov-units"><div class="loading">Loading...</div></div></div>' +
+      '</div>' +
+      '<div class="chart-container"><div class="chart-title">Decode Rates (Last Hour)</div><canvas id="ov-chart"></canvas></div>' +
+      '<div id="ov-activity"></div>';
+    this.loadStats();
+    this.loadActive();
+    this.loadRecent();
+    this.loadUnits();
+    this.loadChart();
+    this.loadActivity();
+    TabManager.addTimer(() => this.loadStats(), 30000);
+    TabManager.addTimer(() => this.loadActive(), 5000);
+    TabManager.addTimer(() => this.loadRecent(), 10000);
+    TabManager.addTimer(() => this.loadUnits(), 15000);
+  },
+  async loadStats() {
+    try {
+      const d = await API.stats();
+      UI.$('ov-stats').innerHTML =
+        statCard(d.total_systems, 'Systems') +
+        statCard(d.total_talkgroups, 'Talkgroups') +
+        statCard(d.total_units, 'Units') +
+        statCard(d.active_calls, 'Active Calls') +
+        statCard(d.calls_last_hour, 'Calls/Hour') +
+        statCard(d.calls_last_24h, 'Calls/24h') +
+        statCard(d.audio_files, 'Audio Files') +
+        statCard(UI.formatBytes(d.audio_bytes), 'Audio Size');
+    } catch { UI.$('ov-stats').innerHTML = '<div class="empty">Failed to load stats</div>'; }
+  },
+  async loadActive() {
+    try {
+      const sys = getSelectedSystem();
+      const d = await API.activeCallsRealtime();
+      const calls = (d.calls || []).filter(c => !sys || String(c.system_id) === sys);
+      const el = UI.$('ov-active');
+      if (!calls.length) { el.innerHTML = '<div class="empty">No active calls</div>'; return; }
+      el.innerHTML = calls.map(c => callListItem(c)).join('');
+      bindPlayButtons(el);
+    } catch { UI.$('ov-active').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+  async loadRecent() {
+    try {
+      const d = await API.recentCalls({ limit: 20 });
+      const el = UI.$('ov-recent');
+      const calls = d.calls || [];
+      if (!calls.length) { el.innerHTML = '<div class="empty">No recent calls</div>'; return; }
+      el.innerHTML = calls.map(c => callListItem(c)).join('');
+      bindPlayButtons(el);
+    } catch { UI.$('ov-recent').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+  async loadUnits() {
+    try {
+      const sys = getSelectedSystem();
+      const params = { window: 5, limit: 20 };
+      if (sys) params.system = sys;
+      const d = await API.activeUnits(params);
+      const el = UI.$('ov-units');
+      const units = d.units || [];
+      if (!units.length) { el.innerHTML = '<div class="empty">No active units</div>'; return; }
+      el.innerHTML = units.map(u => {
+        const evtType = u.last_event_type || '';
+        const evtTg = u.last_event_tg_tag || (u.last_event_tgid ? 'TG ' + u.last_event_tgid : '');
+        const evtClass = 'evt-' + (evtType || 'unknown');
+        let evtLabel = evtType;
+        if (evtType === 'call') evtLabel = 'Transmitting';
+        else if (evtType === 'on') evtLabel = 'Radio On';
+        else if (evtType === 'off') evtLabel = 'Radio Off';
+        else if (evtType === 'join') evtLabel = 'Joined';
+        else if (evtType === 'end') evtLabel = 'Ended';
+        else if (evtType === 'ackresp') evtLabel = 'Ack';
+        else if (evtType === 'ans_req') evtLabel = 'Answer Req';
+        else if (evtType === 'data') evtLabel = 'Data';
+        else if (evtType === 'location') evtLabel = 'Location';
+        const evtLine = evtType
+          ? '<span class="' + evtClass + '">' + UI.esc(evtLabel) + '</span>' +
+            (evtTg ? ' <span class="evt-tg">' + UI.esc(evtTg) + '</span>' : '')
+          : '';
+        return '<div class="list-item" onclick="Tabs.units.showDetail(' + (u.id || u.unit_id) + ')">' +
+          '<div class="primary">' + UI.esc(UI.unitTitle(u)) + '</div>' +
+          (UI.unitSubtitle(u) ? '<div class="secondary">' + UI.esc(UI.unitSubtitle(u)) + '</div>' : '') +
+          (evtLine ? '<div class="meta">' + evtLine + ' &mdash; ' + UI.ago(u.last_event_time || u.last_seen) + '</div>' : '<div class="meta">' + UI.ago(u.last_seen) + '</div>') +
+          '</div>';
+      }).join('');
+    } catch { UI.$('ov-units').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+  async loadChart() {
+    try {
+      const now = new Date();
+      const start = new Date(now.getTime() - 3600000);
+      const d = await API.rates({ start_time: start.toISOString(), end_time: now.toISOString() });
+      Charts.decodeRate('ov-chart', d.rates || []);
+    } catch {}
+  },
+  async loadActivity() {
+    try {
+      const d = await API.activity();
+      const act = d.system_activity || [];
+      if (!act.length) { UI.$('ov-activity').innerHTML = ''; return; }
+      const max = Math.max(...act.map(a => a.call_count));
+      UI.$('ov-activity').innerHTML =
+        '<div class="chart-container"><div class="chart-title">System Activity (24h)</div>' +
+        act.map(a =>
+          '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px;">' +
+          '<span style="width:100px;color:var(--text-dim);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + UI.esc(a.system) + '</span>' +
+          '<div style="flex:1;background:#181818;border-radius:2px;height:16px;position:relative;">' +
+          '<div style="width:' + (max ? (a.call_count/max*100) : 0) + '%;background:var(--accent-dim);height:100%;border-radius:2px;"></div>' +
+          '</div>' +
+          '<span style="width:50px;color:var(--text-dim);">' + a.call_count + '</span></div>'
+        ).join('') + '</div>';
+    } catch {}
+  },
+};
+
+function statCard(val, label) {
+  return '<div class="stat-card"><div class="val">' + val + '</div><div class="label">' + label + '</div></div>';
+}
+
+// --- Calls ---
+Tabs.calls = {
+  offset: 0,
+  limit: Prefs.get('callsPerPage', 50),
+  async render() {
+    const el = UI.$('content');
+    el.innerHTML =
+      '<div class="filters" id="calls-filters">' +
+        '<div class="filter-group"><label>System</label><select id="cf-system"><option value="">All</option></select></div>' +
+        '<div class="filter-group"><label>Talkgroup</label><input id="cf-tg" type="number" placeholder="TGID" style="width:80px;"></div>' +
+        '<div class="filter-group"><label>Start</label><input id="cf-start" type="datetime-local"></div>' +
+        '<div class="filter-group"><label>End</label><input id="cf-end" type="datetime-local"></div>' +
+        '<div class="filter-group" style="flex-direction:row;align-items:center;gap:4px;"><input id="cf-emerg" type="checkbox"><label>Emergency</label></div>' +
+        '<div class="filter-group" style="flex-direction:row;align-items:center;gap:4px;"><input id="cf-encr" type="checkbox"><label>Encrypted</label></div>' +
+        '<div class="filter-group"><label>Per Page</label><select id="cf-limit"><option>25</option><option selected>50</option><option>100</option></select></div>' +
+        '<button class="btn-filter" onclick="Tabs.calls.search()">Search</button>' +
+      '</div>' +
+      '<div id="calls-results"><div class="loading">Loading...</div></div>' +
+      '<div id="calls-pagination"></div>';
+    // Fill system dropdown
+    const sel = UI.$('cf-system');
+    systemsCache.forEach(s => { sel.innerHTML += '<option value="' + s.id + '">' + UI.esc(s.short_name) + '</option>'; });
+    if (getSelectedSystem()) sel.value = getSelectedSystem();
+    UI.$('cf-limit').value = this.limit;
+    this.offset = 0;
+    this.load();
+    window._pageNavCallbacks['calls'] = (off) => { this.offset = off; this.load(); };
+  },
+  search() {
+    this.offset = 0;
+    this.limit = parseInt(UI.$('cf-limit').value) || 50;
+    Prefs.set('callsPerPage', this.limit);
+    this.load();
+  },
+  async load() {
+    const params = { limit: this.limit, offset: this.offset };
+    const sys = UI.$('cf-system').value; if (sys) params.system = sys;
+    const tg = UI.$('cf-tg').value; if (tg) params.talkgroup = tg;
+    const start = UI.$('cf-start').value; if (start) params.start_time = new Date(start).toISOString();
+    const end = UI.$('cf-end').value; if (end) params.end_time = new Date(end).toISOString();
+    try {
+      const d = await API.calls(params);
+      const calls = d.calls || [];
+      const el = UI.$('calls-results');
+      if (!calls.length) { el.innerHTML = '<div class="empty">No calls found</div>'; UI.$('calls-pagination').innerHTML = ''; return; }
+      el.innerHTML = '<table class="data-table"><thead><tr>' +
+        '<th>Time</th><th>Talkgroup</th><th>Freq</th><th>Duration</th><th>Flags</th><th></th>' +
+        '</tr></thead><tbody>' +
+        calls.map(c =>
+          '<tr style="cursor:pointer;" onclick="Tabs.calls.showDetail(\'' + UI.esc(UI.callId(c)) + '\')">' +
+          '<td>' + UI.formatDateTime(c.start_time) + '</td>' +
+          '<td>' + UI.esc(c.tg_alpha_tag || c.alpha_tag || ('TG ' + (c.tgid || c.talkgroup_id || ''))) + '</td>' +
+          '<td>' + UI.formatFreq(c.freq) + '</td>' +
+          '<td>' + UI.formatDuration(c.duration) + '</td>' +
+          '<td>' + UI.badges(c) + '</td>' +
+          '<td>' + ((c.audio_path || c.has_audio) && UI.callId(c) ? '<button class="btn-play" data-play="' + UI.esc(JSON.stringify(c).replace(/"/g, '&quot;')) + '">&#9654;</button>' : '') + '</td>' +
+          '</tr>'
+        ).join('') + '</tbody></table>';
+      bindPlayButtons(el);
+      UI.$('calls-pagination').innerHTML = paginationHtml(this.offset, this.limit, calls.length, 'calls');
+    } catch { UI.$('calls-results').innerHTML = '<div class="empty">Failed to load calls</div>'; }
+  },
+  async showDetail(trCallId) {
+    Panel.open('<div class="loading">Loading call...</div>');
+    try {
+      const call = await API.call(trCallId);
+      let html = '<div class="panel-title">Call ' + UI.esc(trCallId) + '</div>';
+      html += '<div class="panel-section">';
+      const fields = [
+        ['System ID', call.system_id], ['Talkgroup ID', call.talkgroup_id],
+        ['Start', UI.formatDateTime(call.start_time)], ['Stop', UI.formatDateTime(call.stop_time)],
+        ['Duration', UI.formatDuration(call.duration)], ['Frequency', UI.formatFreq(call.freq)],
+        ['Emergency', call.emergency ? 'Yes' : 'No'], ['Encrypted', call.encrypted ? 'Yes' : 'No'],
+        ['Call Group', call.call_group_id], ['Instance', call.instance_id],
+      ];
+      html += '<table class="data-table">' + fields.map(([k,v]) => '<tr><td style="color:var(--text-dim);width:120px;">' + k + '</td><td>' + (v ?? '--') + '</td></tr>').join('') + '</table>';
+      if (call.audio_path && call.tr_call_id) {
+        html += '<div style="margin-top:8px;"><button class="btn-play" data-play="' + UI.esc(JSON.stringify(call).replace(/"/g, '&quot;')) + '">&#9654; Play Audio</button></div>';
+      }
+      // Monitor button for call's talkgroup
+      const callTgid = call.tgid || call.talkgroup_id;
+      if (callTgid) {
+        const isMonitored = Monitor.isMonitored(callTgid);
+        html += '<div style="margin-top:8px;"><button class="btn-filter' + (isMonitored ? ' active' : '') + '" id="panel-call-mon-btn" data-tgid="' + callTgid + '" onclick="Tabs.calls.toggleMonitor(' + callTgid + ')">' +
+          (isMonitored ? '&#10003; Monitoring TG ' + callTgid : '&#128226; Monitor TG ' + callTgid) + '</button></div>';
+      }
+      html += '</div>';
+      // Transmissions
+      html += '<div class="panel-section"><div class="panel-section-title">Transmissions</div><div id="panel-txs"><div class="loading">Loading...</div></div></div>';
+      // Frequencies
+      html += '<div class="panel-section"><div class="panel-section-title">Frequencies</div><div id="panel-freqs"><div class="loading">Loading...</div></div></div>';
+      Panel.open(html);
+      bindPlayButtons(UI.$('panel-content'));
+      // Load tx + freq
+      const [txs, freqs] = await Promise.all([
+        API.callTransmissions(trCallId).catch(() => []),
+        API.callFrequencies(trCallId).catch(() => []),
+      ]);
+      const txList = Array.isArray(txs) ? txs : [];
+      const freqList = Array.isArray(freqs) ? freqs : [];
+      UI.$('panel-txs').innerHTML = txList.length ?
+        '<table class="data-table"><thead><tr><th>Unit</th><th>Position</th><th>Time</th></tr></thead><tbody>' +
+        txList.map(t => '<tr><td>' + (t.unit_id||'--') + '</td><td>' + (t.position||0) + 's</td><td>' + UI.formatTime(t.start_time) + '</td></tr>').join('') +
+        '</tbody></table>' : '<div class="empty">No transmissions</div>';
+      UI.$('panel-freqs').innerHTML = freqList.length ?
+        '<table class="data-table"><thead><tr><th>Frequency</th><th>Position</th></tr></thead><tbody>' +
+        freqList.map(f => '<tr><td>' + UI.formatFreq(f.frequency) + '</td><td>' + (f.position||0) + 's</td></tr>').join('') +
+        '</tbody></table>' : '<div class="empty">No frequency data</div>';
+    } catch { Panel.open('<div class="empty">Failed to load call details</div>'); }
+  },
+  toggleMonitor(tgid) {
+    Monitor.toggle(tgid);
+    const btn = UI.$('panel-call-mon-btn');
+    if (btn) {
+      const isMonitored = Monitor.isMonitored(tgid);
+      btn.classList.toggle('active', isMonitored);
+      btn.innerHTML = isMonitored ? '&#10003; Monitoring TG ' + tgid : '&#128226; Monitor TG ' + tgid;
+    }
+  },
+};
+
+// --- Talkgroups ---
+Tabs.talkgroups = {
+  offset: 0,
+  limit: 50,
+  async render() {
+    const el = UI.$('content');
+    el.innerHTML =
+      '<div class="filters">' +
+        '<div class="filter-group"><label>System</label><select id="tg-system"><option value="">All</option></select></div>' +
+        '<div class="filter-group"><label>Search</label><input id="tg-search" placeholder="alpha_tag or TGID" style="width:160px;"></div>' +
+        '<button class="btn-filter" onclick="Tabs.talkgroups.search()">Search</button>' +
+      '</div>' +
+      '<div id="tg-results"><div class="loading">Loading...</div></div>' +
+      '<div id="tg-pagination"></div>';
+    const sel = UI.$('tg-system');
+    systemsCache.forEach(s => { sel.innerHTML += '<option value="' + s.id + '">' + UI.esc(s.short_name) + '</option>'; });
+    if (getSelectedSystem()) sel.value = getSelectedSystem();
+    this.offset = 0;
+    this.load();
+    window._pageNavCallbacks['tg'] = (off) => { this.offset = off; this.load(); };
+  },
+  search() { this.offset = 0; this.load(); },
+  async load() {
+    const params = { limit: this.limit, offset: this.offset };
+    const sys = UI.$('tg-system').value; if (sys) params.system = sys;
+    try {
+      const d = await API.talkgroups(params);
+      const tgs = d.talkgroups || [];
+      const search = (UI.$('tg-search').value || '').toLowerCase();
+      const filtered = search ? tgs.filter(t =>
+        String(t.tgid).includes(search) || (t.alpha_tag || '').toLowerCase().includes(search)
+      ) : tgs;
+      const el = UI.$('tg-results');
+      if (!filtered.length) { el.innerHTML = '<div class="empty">No talkgroups found</div>'; UI.$('tg-pagination').innerHTML = ''; return; }
+      el.innerHTML = '<div class="entity-grid">' + filtered.map(t =>
+        '<div class="entity-card" onclick="Tabs.talkgroups.showDetail(' + t.id + ')">' +
+        '<div class="title">' + UI.esc(t.alpha_tag || 'TG ' + t.tgid) + '</div>' +
+        '<div class="detail">TGID: ' + t.tgid + ' | ' + UI.esc(t.group || '') + ' | ' + UI.esc(t.tag || '') + '</div>' +
+        '<div class="detail" style="color:var(--text-muted);">Last: ' + UI.ago(t.last_seen) + '</div>' +
+        '</div>'
+      ).join('') + '</div>';
+      UI.$('tg-pagination').innerHTML = paginationHtml(this.offset, this.limit, tgs.length, 'tg');
+    } catch { UI.$('tg-results').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+  async showDetail(id) {
+    Panel.open('<div class="loading">Loading talkgroup...</div>');
+    try {
+      const tg = await API.talkgroup(id);
+      const isMonitored = Monitor.isMonitored(tg.tgid);
+      let html = '<div class="panel-title">' + UI.esc(tg.alpha_tag || 'TG ' + tg.tgid) + '</div>';
+      html += '<div style="margin-bottom:12px;"><button class="btn-filter' + (isMonitored ? ' active' : '') + '" id="panel-mon-btn" onclick="Tabs.talkgroups.toggleMonitor(' + tg.tgid + ')">' +
+        (isMonitored ? '&#10003; Monitoring' : '&#128226; Monitor') + '</button></div>';
+      html += '<div class="panel-section"><table class="data-table">';
+      const fields = [
+        ['TGID', tg.tgid], ['System ID', tg.system_id], ['Group', tg.group], ['Tag', tg.tag],
+        ['Description', tg.description], ['Mode', tg.mode], ['Priority', tg.priority],
+        ['First Seen', UI.formatDateTime(tg.first_seen)], ['Last Seen', UI.formatDateTime(tg.last_seen)],
+      ];
+      html += fields.map(([k,v]) => '<tr><td style="color:var(--text-dim);width:100px;">' + k + '</td><td>' + UI.esc(String(v ?? '--')) + '</td></tr>').join('');
+      html += '</table></div>';
+      html += '<div class="panel-section"><div class="panel-section-title">Recent Calls</div><div id="panel-tg-calls"><div class="loading">Loading...</div></div><div id="panel-tg-calls-pg"></div></div>';
+      Panel.open(html);
+      this.loadCalls(id, 0);
+    } catch { Panel.open('<div class="empty">Failed to load</div>'); }
+  },
+  toggleMonitor(tgid) {
+    Monitor.toggle(tgid);
+    const btn = UI.$('panel-mon-btn');
+    if (btn) {
+      const isMonitored = Monitor.isMonitored(tgid);
+      btn.classList.toggle('active', isMonitored);
+      btn.innerHTML = isMonitored ? '&#10003; Monitoring' : '&#128226; Monitor';
+    }
+  },
+  async loadCalls(id, offset) {
+    try {
+      const d = await API.talkgroupCalls(id, { limit: 20, offset });
+      const calls = d.calls || [];
+      const el = UI.$('panel-tg-calls');
+      if (!calls.length) { el.innerHTML = '<div class="empty">No calls</div>'; return; }
+      el.innerHTML = calls.map(c => callListItem(c)).join('');
+      bindPlayButtons(el);
+      window._pageNavCallbacks['tgcalls'] = (off) => this.loadCalls(id, off);
+      UI.$('panel-tg-calls-pg').innerHTML = paginationHtml(offset, 20, calls.length, 'tgcalls');
+    } catch { UI.$('panel-tg-calls').innerHTML = '<div class="empty">Failed to load calls</div>'; }
+  },
+};
+
+// --- Units ---
+Tabs.units = {
+  subTab: 'active',
+  offset: 0,
+  limit: 50,
+  window: Prefs.get('unitsWindow', 5),
+  async render() {
+    const el = UI.$('content');
+    el.innerHTML =
+      '<div class="sub-tabs">' +
+        '<div class="sub-tab active" data-sub="active" onclick="Tabs.units.switchSub(\'active\')">Active Units</div>' +
+        '<div class="sub-tab" data-sub="all" onclick="Tabs.units.switchSub(\'all\')">All Units</div>' +
+        '<div class="sub-tab" data-sub="search" onclick="Tabs.units.switchSub(\'search\')">Search</div>' +
+      '</div>' +
+      '<div id="units-filters"></div>' +
+      '<div id="units-results"><div class="loading">Loading...</div></div>' +
+      '<div id="units-pagination"></div>';
+    this.subTab = 'active';
+    this.offset = 0;
+    this.renderSub();
+  },
+  switchSub(sub) {
+    this.subTab = sub;
+    this.offset = 0;
+    document.querySelectorAll('.sub-tab').forEach(s => s.classList.toggle('active', s.dataset.sub === sub));
+    this.renderSub();
+  },
+  renderSub() {
+    const ff = UI.$('units-filters');
+    if (this.subTab === 'active') {
+      ff.innerHTML =
+        '<div class="filters">' +
+          '<div class="filter-group"><label>Window (min)</label><input id="uf-window" type="number" value="' + this.window + '" min="1" max="60" style="width:60px;"></div>' +
+          '<div class="filter-group"><label>System</label><select id="uf-system"><option value="">All</option></select></div>' +
+          '<div class="filter-group"><label>Talkgroup</label><input id="uf-tg" type="number" placeholder="TGID" style="width:80px;"></div>' +
+          '<button class="btn-filter" onclick="Tabs.units.search()">Filter</button>' +
+        '</div>';
+      const sel = UI.$('uf-system');
+      systemsCache.forEach(s => { sel.innerHTML += '<option value="' + s.id + '">' + UI.esc(s.short_name) + '</option>'; });
+      if (getSelectedSystem()) sel.value = getSelectedSystem();
+    } else if (this.subTab === 'all') {
+      ff.innerHTML =
+        '<div class="filters">' +
+          '<div class="filter-group"><label>System</label><select id="uf-system-all"><option value="">All</option></select></div>' +
+          '<button class="btn-filter" onclick="Tabs.units.loadAll()">Filter</button>' +
+        '</div>';
+      const sel = UI.$('uf-system-all');
+      systemsCache.forEach(s => { sel.innerHTML += '<option value="' + s.id + '">' + UI.esc(s.short_name) + '</option>'; });
+    } else {
+      ff.innerHTML =
+        '<div class="filters">' +
+          '<div class="filter-group"><label>Unit ID</label><input id="uf-search" type="number" placeholder="Unit number" style="width:120px;"></div>' +
+          '<button class="btn-filter" onclick="Tabs.units.searchUnit()">Lookup</button>' +
+        '</div>';
+    }
+    this.load();
+  },
+  search() {
+    this.offset = 0;
+    const wEl = UI.$('uf-window');
+    if (wEl) { this.window = parseInt(wEl.value) || 5; Prefs.set('unitsWindow', this.window); }
+    this.load();
+  },
+  async load() {
+    if (this.subTab === 'active') this.loadActive();
+    else if (this.subTab === 'all') this.loadAll();
+  },
+  async loadActive() {
+    const params = { window: this.window, limit: this.limit, offset: this.offset };
+    const sys = UI.$('uf-system') && UI.$('uf-system').value; if (sys) params.system = sys;
+    const tg = UI.$('uf-tg') && UI.$('uf-tg').value; if (tg) params.talkgroup = tg;
+    try {
+      const d = await API.activeUnits(params);
+      const units = d.units || [];
+      const el = UI.$('units-results');
+      if (!units.length) { el.innerHTML = '<div class="empty">No active units</div>'; UI.$('units-pagination').innerHTML = ''; return; }
+      el.innerHTML = '<div class="entity-grid">' + units.map(u =>
+        '<div class="entity-card" onclick="Tabs.units.showDetail(' + (u.id || u.unit_id) + ')">' +
+        '<div class="title">' + UI.esc(UI.unitTitle(u)) + '</div>' +
+        (UI.unitSubtitle(u) ? '<div class="detail">' + UI.esc(UI.unitSubtitle(u)) + '</div>' : '') +
+        '<div class="detail" style="color:var(--text-muted);">Last: ' + UI.ago(u.last_seen) + '</div>' +
+        '</div>'
+      ).join('') + '</div>';
+      window._pageNavCallbacks['units'] = (off) => { this.offset = off; this.loadActive(); };
+      UI.$('units-pagination').innerHTML = paginationHtml(this.offset, this.limit, units.length, 'units');
+    } catch { UI.$('units-results').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+  async loadAll() {
+    const params = { limit: this.limit, offset: this.offset };
+    const sys = UI.$('uf-system-all') && UI.$('uf-system-all').value; if (sys) params.system = sys;
+    try {
+      const d = await API.units(params);
+      const units = d.units || [];
+      const el = UI.$('units-results');
+      if (!units.length) { el.innerHTML = '<div class="empty">No units</div>'; UI.$('units-pagination').innerHTML = ''; return; }
+      el.innerHTML = '<div class="entity-grid">' + units.map(u =>
+        '<div class="entity-card" onclick="Tabs.units.showDetail(' + u.id + ')">' +
+        '<div class="title">' + UI.esc(UI.unitTitle(u)) + '</div>' +
+        (UI.unitSubtitle(u) ? '<div class="detail">' + UI.esc(UI.unitSubtitle(u)) + '</div>' : '') +
+        '<div class="detail" style="color:var(--text-muted);">First: ' + UI.ago(u.first_seen) + ' | Last: ' + UI.ago(u.last_seen) + '</div>' +
+        '</div>'
+      ).join('') + '</div>';
+      window._pageNavCallbacks['units'] = (off) => { this.offset = off; this.loadAll(); };
+      UI.$('units-pagination').innerHTML = paginationHtml(this.offset, this.limit, units.length, 'units');
+    } catch { UI.$('units-results').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+  async searchUnit() {
+    const id = UI.$('uf-search').value;
+    if (!id) return;
+    this.showDetail(parseInt(id));
+  },
+  async showDetail(id) {
+    Panel.open('<div class="loading">Loading unit...</div>');
+    try {
+      const unit = await API.unit(id);
+      let html = '<div class="panel-title">' + UI.esc(UI.unitTitle(unit)) + '</div>';
+      html += '<div class="panel-section"><table class="data-table">';
+      const fields = [
+        ['Unit ID', unit.unit_id], ['System ID', unit.system_id],
+        ['Alpha Tag', unit.alpha_tag || unit.unit_alpha_tag],
+        ['First Seen', UI.formatDateTime(unit.first_seen)],
+        ['Last Seen', UI.formatDateTime(unit.last_seen)],
+      ];
+      html += fields.map(([k,v]) => '<tr><td style="color:var(--text-dim);width:100px;">' + k + '</td><td>' + UI.esc(String(v ?? '--')) + '</td></tr>').join('');
+      html += '</table></div>';
+      // Events
+      html += '<div class="panel-section"><div class="panel-section-title">Recent Events</div><div id="panel-unit-events"><div class="loading">Loading...</div></div><div id="panel-unit-events-pg"></div></div>';
+      // Calls
+      html += '<div class="panel-section"><div class="panel-section-title">Recent Calls</div><div id="panel-unit-calls"><div class="loading">Loading...</div></div><div id="panel-unit-calls-pg"></div></div>';
+      Panel.open(html);
+      this.loadEvents(id, 0);
+      this.loadUnitCalls(id, 0);
+    } catch { Panel.open('<div class="empty">Failed to load unit</div>'); }
+  },
+  async loadEvents(id, offset) {
+    try {
+      const d = await API.unitEvents(id, { limit: 20, offset });
+      const events = d.events || [];
+      const el = UI.$('panel-unit-events');
+      if (!events.length) { el.innerHTML = '<div class="empty">No events</div>'; return; }
+      el.innerHTML = '<table class="data-table"><thead><tr><th>Time</th><th>Type</th><th>Talkgroup</th></tr></thead><tbody>' +
+        events.map(e => {
+          // Extract alpha tag from metadata if available
+          const meta = e.metadata_json;
+          const evtData = meta && (meta[e.event_type] || meta.call || meta.end || {});
+          const tgAlpha = evtData && evtData.talkgroup_alpha_tag;
+          const tgLabel = tgAlpha ? UI.esc(tgAlpha) + ' (' + (e.tgid || e.talkgroup_id || '') + ')' : (e.tgid || e.talkgroup_id || '--');
+          return '<tr><td>' + UI.formatTime(e.time || e.timestamp) + '</td>' +
+          '<td>' + UI.esc(e.event_type) + '</td>' +
+          '<td>' + tgLabel + '</td></tr>';
+        }).join('') + '</tbody></table>';
+      window._pageNavCallbacks['uevents'] = (off) => this.loadEvents(id, off);
+      UI.$('panel-unit-events-pg').innerHTML = paginationHtml(offset, 20, events.length, 'uevents');
+    } catch { UI.$('panel-unit-events').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+  async loadUnitCalls(id, offset) {
+    try {
+      const d = await API.unitCalls(id, { limit: 20, offset });
+      const calls = d.calls || [];
+      const el = UI.$('panel-unit-calls');
+      if (!calls.length) { el.innerHTML = '<div class="empty">No calls</div>'; return; }
+      el.innerHTML = calls.map(c => callListItem(c)).join('');
+      bindPlayButtons(el);
+      window._pageNavCallbacks['ucalls'] = (off) => this.loadUnitCalls(id, off);
+      UI.$('panel-unit-calls-pg').innerHTML = paginationHtml(offset, 20, calls.length, 'ucalls');
+    } catch { UI.$('panel-unit-calls').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+};
+
+// --- Systems ---
+Tabs.systems = {
+  async render() {
+    const el = UI.$('content');
+    el.innerHTML = '<div id="sys-grid"><div class="loading">Loading systems...</div></div>';
+    try {
+      const d = await API.systems();
+      const systems = d.systems || [];
+      if (!systems.length) { el.innerHTML = '<div class="empty">No systems</div>'; return; }
+      UI.$('sys-grid').innerHTML = '<div class="entity-grid">' + systems.map(s =>
+        '<div class="entity-card" onclick="Tabs.systems.showDetail(' + s.id + ')">' +
+        '<div class="title">' + UI.esc(s.short_name || 'System ' + s.id) + '</div>' +
+        '<div class="detail">Type: ' + UI.esc(s.system_type || '--') + ' | SysID: ' + (s.sysid || '--') + '</div>' +
+        '<div class="detail">WACN: ' + (s.wacn || '--') + ' | NAC: ' + (s.nac || '--') + '</div>' +
+        '</div>'
+      ).join('') + '</div>';
+    } catch { el.innerHTML = '<div class="empty">Failed to load systems</div>'; }
+  },
+  async showDetail(id) {
+    Panel.open('<div class="loading">Loading system...</div>');
+    try {
+      const sys = await API.system(id);
+      let html = '<div class="panel-title">' + UI.esc(sys.short_name || 'System ' + sys.id) + '</div>';
+      html += '<div class="panel-section"><table class="data-table">';
+      const fields = Object.entries(sys).filter(([k]) => k !== 'id');
+      html += fields.map(([k,v]) => '<tr><td style="color:var(--text-dim);width:120px;">' + UI.esc(k) + '</td><td>' + UI.esc(String(v ?? '--')) + '</td></tr>').join('');
+      html += '</table></div>';
+      // Talkgroups
+      html += '<div class="panel-section"><div class="panel-section-title">Talkgroups</div><div id="panel-sys-tgs"><div class="loading">Loading...</div></div><div id="panel-sys-tgs-pg"></div></div>';
+      Panel.open(html);
+      this.loadTalkgroups(id, 0);
+    } catch { Panel.open('<div class="empty">Failed to load system</div>'); }
+  },
+  async loadTalkgroups(sysId, offset) {
+    try {
+      const d = await API.systemTalkgroups(sysId, { limit: 20, offset });
+      const tgs = d.talkgroups || [];
+      const el = UI.$('panel-sys-tgs');
+      if (!tgs.length) { el.innerHTML = '<div class="empty">No talkgroups</div>'; return; }
+      el.innerHTML = '<table class="data-table"><thead><tr><th>TGID</th><th>Alpha Tag</th><th>Group</th><th>Last Seen</th></tr></thead><tbody>' +
+        tgs.map(t =>
+          '<tr style="cursor:pointer;" onclick="Panel.close();location.hash=\'#talkgroups\';setTimeout(()=>Tabs.talkgroups.showDetail(' + t.id + '),300);">' +
+          '<td>' + t.tgid + '</td>' +
+          '<td>' + UI.esc(t.alpha_tag || '--') + '</td>' +
+          '<td>' + UI.esc(t.group || '--') + '</td>' +
+          '<td>' + UI.ago(t.last_seen) + '</td></tr>'
+        ).join('') + '</tbody></table>';
+      window._pageNavCallbacks['systgs'] = (off) => this.loadTalkgroups(sysId, off);
+      UI.$('panel-sys-tgs-pg').innerHTML = paginationHtml(offset, 20, tgs.length, 'systgs');
+    } catch { UI.$('panel-sys-tgs').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+};
+
+// ===== Charts =====
+const Charts = {
+  decodeRate(canvasId, rates) {
+    const c = UI.$(canvasId);
+    if (!c) return;
+    const parent = c.parentElement;
+    const dpr = window.devicePixelRatio || 1;
+    c.width = parent.clientWidth * dpr;
+    c.height = 160 * dpr;
+    c.style.width = parent.clientWidth + 'px';
+    c.style.height = '160px';
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+
+    if (!rates || !rates.length) {
+      ctx.fillStyle = '#555';
+      ctx.font = (12 * dpr) + 'px monospace';
+      ctx.fillText('No rate data', w/2 - 40*dpr, h/2);
+      return;
+    }
+
+    // Group by system
+    const bySystem = {};
+    rates.forEach(r => {
+      const name = r.short_name || ('sys' + r.system_id);
+      if (!bySystem[name]) bySystem[name] = [];
+      bySystem[name].push({ t: new Date(r.time).getTime(), v: r.decode_rate });
+    });
+
+    // Find time range and value range
+    let minT = Infinity, maxT = -Infinity, maxV = 0;
+    Object.values(bySystem).forEach(pts => pts.forEach(p => {
+      if (p.t < minT) minT = p.t;
+      if (p.t > maxT) maxT = p.t;
+      if (p.v > maxV) maxV = p.v;
+    }));
+    if (maxV === 0) maxV = 100;
+    const pad = { l: 50*dpr, r: 10*dpr, t: 10*dpr, b: 20*dpr };
+    const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+
+    // Grid
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = pad.t + (ph * i / 4);
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+      ctx.fillStyle = '#555';
+      ctx.font = (9*dpr) + 'px monospace';
+      ctx.fillText(Math.round(maxV * (1 - i/4)) + '%', 2*dpr, y + 4*dpr);
+    }
+
+    // Lines
+    const colors = ['#48f','#f84','#4f8','#f48','#84f','#8f4'];
+    let ci = 0;
+    const legend = [];
+    Object.entries(bySystem).forEach(([name, pts]) => {
+      const color = colors[ci++ % colors.length];
+      legend.push({ name, color });
+      pts.sort((a,b) => a.t - b.t);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.beginPath();
+      pts.forEach((p, i) => {
+        const x = pad.l + ((p.t - minT) / (maxT - minT || 1)) * pw;
+        const y = pad.t + ph - (p.v / maxV) * ph;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    });
+
+    // Legend
+    ctx.font = (9*dpr) + 'px monospace';
+    let lx = pad.l;
+    legend.forEach(l => {
+      ctx.fillStyle = l.color;
+      ctx.fillRect(lx, h - 14*dpr, 10*dpr, 8*dpr);
+      ctx.fillStyle = '#888';
+      ctx.fillText(l.name, lx + 14*dpr, h - 6*dpr);
+      lx += (l.name.length * 7 + 24) * dpr;
+    });
+  },
+};
+
+// --- Monitor Tab ---
+Tabs.monitor = {
+  async render() {
+    const el = UI.$('content');
+    el.innerHTML =
+      '<div class="monitor-controls">' +
+        '<button class="btn-filter" onclick="Tabs.monitor.selectAll()">Select All</button>' +
+        '<button class="btn-filter" onclick="Tabs.monitor.clearAll()">Clear All</button>' +
+        '<button class="btn-filter" onclick="Monitor.clearQueue()">Clear Queue</button>' +
+        '<span class="monitor-stats">' +
+          '<span id="mon-stat-count">0</span> talkgroups monitored, ' +
+          '<span id="mon-stat-queue">0</span> calls queued' +
+        '</span>' +
+      '</div>' +
+      '<div id="mon-grid" class="monitor-grid"><div class="loading">Loading talkgroups...</div></div>';
+    this.load();
+  },
+  async load() {
+    try {
+      // Fetch talkgroups and encryption stats in parallel
+      const [tgData, encStatsData] = await Promise.all([
+        API.talkgroups({ limit: 1000 }),
+        API.talkgroupEncryptionStats({ hours: 24 }).catch(() => ({ stats: {} }))
+      ]);
+      const talkgroups = tgData.talkgroups || [];
+      const encStats = encStatsData.stats || {};
+      const grid = UI.$('mon-grid');
+      if (!talkgroups.length) {
+        grid.innerHTML = '<div class="empty">No talkgroups found</div>';
+        return;
+      }
+      // Build encryption state map from API response: tgid -> { encrypted: count, clear: count }
+      const encryptionMap = new Map();
+      Object.entries(encStats).forEach(([tgid, counts]) => {
+        encryptionMap.set(Number(tgid), counts);
+      });
+      // Dedupe by TGID (keep first occurrence)
+      const seen = new Set();
+      const unique = talkgroups.filter(tg => {
+        if (seen.has(tg.tgid)) return false;
+        seen.add(tg.tgid);
+        return true;
+      });
+      // Sort by alpha_tag or TGID
+      unique.sort((a, b) => {
+        const aName = a.alpha_tag || ('TG ' + a.tgid);
+        const bName = b.alpha_tag || ('TG ' + b.tgid);
+        return aName.localeCompare(bName);
+      });
+      grid.innerHTML = unique.map(tg => {
+        const checked = Monitor.isMonitored(tg.tgid) ? 'checked' : '';
+        const checkedClass = checked ? ' checked' : '';
+        const label = tg.alpha_tag || ('TG ' + tg.tgid);
+        // Encryption state indicator
+        const state = encryptionMap.get(tg.tgid);
+        let encIcon = '<span class="enc-icon none" title="No recent calls">&#8212;</span>';
+        if (state) {
+          if (state.encrypted > 0 && state.clear === 0) {
+            encIcon = '<span class="enc-icon encrypted" title="All calls encrypted (' + state.encrypted + ')">&#128274;</span>';
+          } else if (state.clear > 0 && state.encrypted === 0) {
+            encIcon = '<span class="enc-icon clear" title="All calls clear (' + state.clear + ')">&#10003;</span>';
+          } else {
+            encIcon = '<span class="enc-icon mixed" title="Mixed: ' + state.clear + ' clear, ' + state.encrypted + ' encrypted">&#9889;</span>';
+          }
+        }
+        return '<div class="monitor-card' + checkedClass + '" data-tgid="' + tg.tgid + '" onclick="Tabs.monitor.toggleCard(this, ' + tg.tgid + ')">' +
+          '<input type="checkbox" id="mon-cb-' + tg.tgid + '" ' + checked + ' onclick="event.stopPropagation(); Tabs.monitor.toggleTG(' + tg.tgid + ', this)">' +
+          encIcon +
+          '<span class="mon-label" onclick="event.stopPropagation(); Tabs.talkgroups.showDetail(' + tg.id + ')">' + UI.esc(label) + '</span>' +
+        '</div>';
+      }).join('');
+      this.updateStats();
+    } catch (e) {
+      UI.$('mon-grid').innerHTML = '<div class="empty">Failed to load talkgroups</div>';
+    }
+  },
+  toggleCard(card, tgid) {
+    const cb = card.querySelector('input[type="checkbox"]');
+    cb.checked = !cb.checked;
+    this.toggleTG(tgid, cb);
+  },
+  toggleTG(tgid, checkbox) {
+    if (checkbox.checked) {
+      Monitor.add(tgid);
+      checkbox.closest('.monitor-card').classList.add('checked');
+    } else {
+      Monitor.remove(tgid);
+      checkbox.closest('.monitor-card').classList.remove('checked');
+    }
+    this.updateStats();
+  },
+  selectAll() {
+    document.querySelectorAll('#mon-grid .monitor-card').forEach(card => {
+      const cb = card.querySelector('input[type="checkbox"]');
+      const tgid = parseInt(cb.id.replace('mon-cb-', ''));
+      cb.checked = true;
+      card.classList.add('checked');
+      Monitor.add(tgid);
+    });
+    this.updateStats();
+  },
+  clearAll() {
+    document.querySelectorAll('#mon-grid .monitor-card').forEach(card => {
+      const cb = card.querySelector('input[type="checkbox"]');
+      cb.checked = false;
+      card.classList.remove('checked');
+    });
+    Monitor.clear();
+    this.updateStats();
+  },
+  updateStats() {
+    const countEl = UI.$('mon-stat-count');
+    const queueEl = UI.$('mon-stat-queue');
+    if (countEl) countEl.textContent = Monitor.count();
+    if (queueEl) queueEl.textContent = Monitor.queueCount();
+  },
+};
+
+// ===== Animation Helpers =====
+function prependAnimated(container, html) {
+  container.insertAdjacentHTML('afterbegin', html);
+  const added = container.firstElementChild;
+  if (added) added.classList.add('slide-in');
+}
+
+// ===== WebSocket Handlers =====
+WS.on('call_start', (data) => {
+  if (TabManager.current === 'overview') {
+    const el = UI.$('ov-active');
+    if (el && !el.querySelector('.empty')) {
+      prependAnimated(el, callListItem(data));
+      bindPlayButtons(el);
+    } else if (el) {
+      el.innerHTML = callListItem(data);
+      bindPlayButtons(el);
+    }
+  }
+});
+
+WS.on('call_end', (data) => {
+  if (TabManager.current === 'overview') {
+    // Remove from active calls list if present
+    const el = UI.$('ov-active');
+    if (el) {
+      const cid = data.tr_call_id || data.call_id || '';
+      if (cid) {
+        const item = el.querySelector('[data-call-id="' + CSS.escape(cid) + '"]');
+        if (item) item.remove();
+      }
+    }
+    // Trigger a recent calls refresh to pick up the completed call
+    if (Tabs.overview.loadRecent) Tabs.overview.loadRecent();
+  }
+});
+
+// Track recent audio events to dedupe cross-site duplicates (same TGID + similar start time)
+const recentAudioEvents = new Map(); // key: "tgid-startTime" -> timestamp received
+function isDuplicateAudio(tgid, startTime) {
+  // Create a key based on TGID and start time (rounded to nearest 5 seconds)
+  const startTs = startTime ? Math.floor(new Date(startTime).getTime() / 5000) : 0;
+  const key = tgid + '-' + startTs;
+  const now = Date.now();
+  // Clean old entries (older than 30 seconds)
+  for (const [k, ts] of recentAudioEvents) {
+    if (now - ts > 30000) recentAudioEvents.delete(k);
+  }
+  // Check if we've seen this recently
+  if (recentAudioEvents.has(key)) {
+    return true; // Duplicate
+  }
+  recentAudioEvents.set(key, now);
+  return false;
+}
+
+WS.on('audio_available', (data) => {
+  const tgid = data.talkgroup || data.tgid;
+  const tgLabel = data.talkgroup_alpha_tag || data.tg_alpha_tag || ('TG ' + (tgid || '?'));
+  const callId = data.tr_call_id || data.call_id;
+
+  // Dedupe cross-site duplicates (same P25 system, different NAC)
+  if (isDuplicateAudio(tgid, data.start_time)) {
+    console.log('Skipping duplicate audio_available for TG', tgid);
+    return;
+  }
+
+  // Build a call-like object for the audio player
+  const callObj = {
+    tr_call_id: data.tr_call_id,
+    id: data.call_id,
+    tg_alpha_tag: tgLabel,
+    tgid: tgid,
+    system_id: data.system_id,
+    duration: data.duration,
+    freq: data.freq,
+    start_time: data.start_time,
+    talkgroup_alpha_tag: data.talkgroup_alpha_tag
+  };
+  // If monitoring this talkgroup, queue or auto-play
+  if (Monitor.isMonitored(tgid)) {
+    if (!UI.$('audio-player').classList.contains('visible') || AudioPlayer.audio.paused || AudioPlayer.audio.ended) {
+      // Nothing playing - start immediately
+      UI.$('audio-player').classList.add('visible');
+      document.body.classList.add('player-open');
+      AudioPlayer.play(callObj);
+    } else {
+      // Queue it
+      Monitor.queueCall(callObj);
+      UI.toast('Queued: ' + tgLabel, 2000);
+    }
+    // Still show toast but shorter
+  }
+  const toastId = 'toast-' + Date.now();
+  UI.toast(
+    '<span class="toast-play" id="' + toastId + '-play">&#9654;</span>' +
+    '<span class="toast-label">Audio: ' + UI.esc(tgLabel) + '</span>',
+    8000,
+    { html: true }
+  );
+  // Bind play button after toast is added
+  setTimeout(() => {
+    const playBtn = document.getElementById(toastId + '-play');
+    if (playBtn) {
+      playBtn.onclick = (e) => { e.stopPropagation(); AudioPlayer.play(callObj); playBtn.closest('.toast').remove(); };
+    }
+    const toast = playBtn && playBtn.closest('.toast');
+    if (toast && callId) {
+      toast.classList.add('clickable');
+      toast.onclick = () => { TabManager.switchTo('calls'); setTimeout(() => Tabs.calls.showDetail(callId), 100); toast.remove(); };
+    }
+  }, 10);
+  // Refresh recent calls to show the new audio entry
+  if (TabManager.current === 'overview' && Tabs.overview.loadRecent) {
+    Tabs.overview.loadRecent();
+  }
+});
+
+WS.on('rate_update', (data) => {
+  // Could append to chart data in realtime; for now let the periodic reload handle it
+});
+
+WS.on('unit_event', (data) => {
+  // Unit events handled by tab refresh
+});
+
+// ===== Init =====
+(async function init() {
+  await loadSystems();
+  UI.$('system-select').value = Prefs.get('selectedSystem', '');
+  Monitor.init();
+  AudioPlayer.init();
+  WS.connect();
+  TabManager.init();
+})();
+</script>
+</body>
+</html>

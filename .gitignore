@@ -1,0 +1,76 @@
+# Binaries (root level only)
+/tr-engine
+/tr-engine.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Config files with secrets
+config.yaml
+!config/config.example.yaml
+
+# Data directories
+/data/
+/audio/
+
+# Docker volumes
+postgres_data/
+mqtt_data/
+mqtt_log/
+audio_data/
+
+# Logs
+*.log
+
+# Build artifacts
+dist/
+build/
+
+# Claude Code
+.claude/
+
+# Windows artifacts
+nul
+
+# Old design docs (superseded by implementation)
+olddocs/
+
+# Sample/test data
+mqtt_samples.json
+
+# Development artifacts
+CLAUDE.md
+IMPLEMENTATION_STATUS.md
+
+# Development folders (not part of distribution)
+cmd/
+web/
+
+# External repos (cloned for reference)
+trunk-recorder-mqtt-status/

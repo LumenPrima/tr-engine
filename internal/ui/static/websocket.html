@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TR-Engine WebSocket API</title>
+<style>
+:root {
+  --bg-base: #0a0a0a;
+  --bg-card: #111;
+  --bg-code: #0d0d0d;
+  --bg-hover: #1a1a1a;
+  --border: #333;
+  --text: #e0e0e0;
+  --text-dim: #888;
+  --text-muted: #555;
+  --accent: #7af;
+  --accent-dim: #469;
+  --green: #4a4;
+  --amber: #fa0;
+  --red: #f55;
+  --purple: #a7f;
+  --radius: 4px;
+  --mono: 'Courier New', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--mono); background: var(--bg-base); color: var(--text); line-height: 1.6; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+  background: #0d0d0d;
+}
+header h1 { font-size: 14px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; }
+header p { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.back-link { font-size: 11px; margin-bottom: 8px; display: block; }
+
+main { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+
+h2 {
+  font-size: 13px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 32px 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+h2:first-child { margin-top: 0; }
+
+h3 {
+  font-size: 12px;
+  color: var(--text);
+  margin: 20px 0 8px 0;
+}
+
+p { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
+
+.endpoint {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.method {
+  background: var(--green);
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: bold;
+}
+.path { color: var(--text); font-size: 14px; }
+
+.event-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.event-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.event-name {
+  font-size: 14px;
+  color: var(--accent);
+}
+.event-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+.tag-call { background: var(--red); color: #fff; }
+.tag-unit { background: var(--purple); color: #fff; }
+.tag-system { background: var(--green); color: #000; }
+.tag-recorder { background: var(--amber); color: #000; }
+
+.event-body { padding: 16px; }
+.event-desc { font-size: 12px; color: var(--text-dim); margin-bottom: 12px; }
+
+.fields { margin-top: 12px; }
+.field {
+  display: flex;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.field:last-child { border-bottom: none; }
+.field-name { color: var(--accent); min-width: 160px; }
+.field-type { color: var(--text-muted); min-width: 80px; }
+.field-desc { color: var(--text-dim); }
+
+pre {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 11px;
+  line-height: 1.5;
+}
+code { color: var(--text); }
+.json-key { color: var(--accent); }
+.json-str { color: var(--green); }
+.json-num { color: var(--amber); }
+.json-bool { color: var(--purple); }
+
+.note {
+  background: var(--bg-card);
+  border-left: 3px solid var(--accent);
+  padding: 12px 16px;
+  margin: 16px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tester {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: 16px 0;
+}
+.tester-header { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+.tester button {
+  background: var(--accent-dim);
+  color: var(--text);
+  border: none;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.tester button:hover { background: var(--accent); color: #000; }
+.tester button:disabled { opacity: 0.5; cursor: not-allowed; }
+#ws-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
+#ws-status-dot.connected { background: var(--green); }
+#ws-status-text { font-size: 11px; color: var(--text-dim); }
+#ws-log {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+  font-size: 11px;
+}
+.log-entry { margin-bottom: 4px; padding: 4px; border-radius: 2px; }
+.log-entry.event { background: rgba(119, 170, 255, 0.1); }
+.log-entry.error { background: rgba(255, 85, 85, 0.1); color: var(--red); }
+.log-entry.info { color: var(--text-muted); }
+.log-time { color: var(--text-muted); margin-right: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/" class="back-link">&larr; Back to home</a>
+  <h1>WebSocket API</h1>
+  <p>Real-time event stream for tr-engine</p>
+</header>
+
+<main>
+
+<h2>Connection</h2>
+
+<div class="endpoint">
+  <span class="method">WS</span>
+  <span class="path">/api/ws</span>
+</div>
+
+<p>Connect to receive real-time events. All messages are JSON with this envelope:</p>
+
+<pre><code>{
+  <span class="json-key">"event"</span>: <span class="json-str">"call_start"</span>,
+  <span class="json-key">"timestamp"</span>: <span class="json-num">1706450400</span>,
+  <span class="json-key">"data"</span>: { ... }
+}</code></pre>
+
+<div class="note">
+  <strong>Subscription filtering:</strong> Send a JSON message to subscribe to specific events or systems.
+  By default, all events are received.
+</div>
+
+<h2>Live Tester</h2>
+
+<div class="tester">
+  <div class="tester-header">
+    <button id="btn-connect" onclick="toggleConnection()">Connect</button>
+    <div id="ws-status-dot"></div>
+    <span id="ws-status-text">Disconnected</span>
+    <button onclick="clearLog()" style="margin-left: auto;">Clear</button>
+  </div>
+  <div id="ws-log"></div>
+</div>
+
+<h2>Events</h2>
+
+<!-- call_start -->
+<div class="event-card">
+  <div class="event-header">
+    <span class="event-name">call_start</span>
+    <span class="event-tag tag-call">call</span>
+  </div>
+  <div class="event-body">
+    <div class="event-desc">Emitted when a new call begins on a talkgroup.</div>
+    <div class="fields">
+      <div class="field"><span class="field-name">call_id</span><span class="field-type">int64</span><span class="field-desc">Database call ID</span></div>
+      <div class="field"><span class="field-name">tr_call_id</span><span class="field-type">string</span><span class="field-desc">Trunk-recorder call ID</span></div>
+      <div class="field"><span class="field-name">talkgroup</span><span class="field-type">int</span><span class="field-desc">Talkgroup ID (TGID)</span></div>
+      <div class="field"><span class="field-name">talkgroup_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Talkgroup name</span></div>
+      <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+      <div class="field"><span class="field-name">freq</span><span class="field-type">int64</span><span class="field-desc">Frequency in Hz</span></div>
+      <div class="field"><span class="field-name">unit</span><span class="field-type">int64</span><span class="field-desc">Initiating unit radio ID</span></div>
+      <div class="field"><span class="field-name">unit_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Unit name</span></div>
+      <div class="field"><span class="field-name">encrypted</span><span class="field-type">bool</span><span class="field-desc">Call is encrypted</span></div>
+      <div class="field"><span class="field-name">emergency</span><span class="field-type">bool</span><span class="field-desc">Emergency flag set</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- call_end -->
+<div class="event-card">
+  <div class="event-header">
+    <span class="event-name">call_end</span>
+    <span class="event-tag tag-call">call</span>
+  </div>
+  <div class="event-body">
+    <div class="event-desc">Emitted when a call ends. Contains final call statistics.</div>
+    <div class="fields">
+      <div class="field"><span class="field-name">call_id</span><span class="field-type">int64</span><span class="field-desc">Database call ID</span></div>
+      <div class="field"><span class="field-name">tr_call_id</span><span class="field-type">string</span><span class="field-desc">Trunk-recorder call ID</span></div>
+      <div class="field"><span class="field-name">talkgroup</span><span class="field-type">int</span><span class="field-desc">Talkgroup ID</span></div>
+      <div class="field"><span class="field-name">talkgroup_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Talkgroup name</span></div>
+      <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+      <div class="field"><span class="field-name">duration</span><span class="field-type">float32</span><span class="field-desc">Call duration in seconds</span></div>
+      <div class="field"><span class="field-name">encrypted</span><span class="field-type">bool</span><span class="field-desc">Call was encrypted</span></div>
+      <div class="field"><span class="field-name">emergency</span><span class="field-type">bool</span><span class="field-desc">Emergency flag</span></div>
+      <div class="field"><span class="field-name">error_count</span><span class="field-type">int</span><span class="field-desc">Decode errors</span></div>
+      <div class="field"><span class="field-name">spike_count</span><span class="field-type">int</span><span class="field-desc">Signal spikes</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- audio_available -->
+<div class="event-card">
+  <div class="event-header">
+    <span class="event-name">audio_available</span>
+    <span class="event-tag tag-call">call</span>
+  </div>
+  <div class="event-body">
+    <div class="event-desc">Emitted when audio recording is ready for playback.</div>
+    <div class="fields">
+      <div class="field"><span class="field-name">call_id</span><span class="field-type">int64</span><span class="field-desc">Database call ID</span></div>
+      <div class="field"><span class="field-name">tr_call_id</span><span class="field-type">string</span><span class="field-desc">Trunk-recorder call ID</span></div>
+      <div class="field"><span class="field-name">talkgroup</span><span class="field-type">int</span><span class="field-desc">Talkgroup ID</span></div>
+      <div class="field"><span class="field-name">talkgroup_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Talkgroup name</span></div>
+      <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+      <div class="field"><span class="field-name">audio_size</span><span class="field-type">int</span><span class="field-desc">Audio file size in bytes</span></div>
+      <div class="field"><span class="field-name">duration</span><span class="field-type">float32</span><span class="field-desc">Audio duration in seconds</span></div>
+      <div class="field"><span class="field-name">transmissions</span><span class="field-type">int</span><span class="field-desc">Number of unit transmissions</span></div>
+      <div class="field"><span class="field-name">frequencies</span><span class="field-type">int</span><span class="field-desc">Number of frequency entries</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- unit_event -->
+<div class="event-card">
+  <div class="event-header">
+    <span class="event-name">unit_event</span>
+    <span class="event-tag tag-unit">unit</span>
+  </div>
+  <div class="event-body">
+    <div class="event-desc">Emitted for unit radio activity (registration, calls, affiliations).</div>
+    <div class="fields">
+      <div class="field"><span class="field-name">unit</span><span class="field-type">int64</span><span class="field-desc">Unit radio ID</span></div>
+      <div class="field"><span class="field-name">unit_tag</span><span class="field-type">string</span><span class="field-desc">Unit alpha tag</span></div>
+      <div class="field"><span class="field-name">event_type</span><span class="field-type">string</span><span class="field-desc">on, off, call, end, join, ackresp, location, data, ans_req</span></div>
+      <div class="field"><span class="field-name">talkgroup</span><span class="field-type">int</span><span class="field-desc">Associated talkgroup ID</span></div>
+      <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- rate_update -->
+<div class="event-card">
+  <div class="event-header">
+    <span class="event-name">rate_update</span>
+    <span class="event-tag tag-system">system</span>
+  </div>
+  <div class="event-body">
+    <div class="event-desc">Emitted periodically with system decode rate statistics.</div>
+    <div class="fields">
+      <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+      <div class="field"><span class="field-name">decode_rate</span><span class="field-type">float32</span><span class="field-desc">Current decode rate (0-100%)</span></div>
+      <div class="field"><span class="field-name">control_channel</span><span class="field-type">int64</span><span class="field-desc">Current control channel frequency</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- system_update -->
+<div class="event-card">
+  <div class="event-header">
+    <span class="event-name">system_update</span>
+    <span class="event-tag tag-system">system</span>
+  </div>
+  <div class="event-body">
+    <div class="event-desc">Emitted when system configuration or status changes.</div>
+    <div class="fields">
+      <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+      <div class="field"><span class="field-name">system_type</span><span class="field-type">string</span><span class="field-desc">System type (P25, SmartNet, etc.)</span></div>
+      <div class="field"><span class="field-name">sysid</span><span class="field-type">string</span><span class="field-desc">System ID</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- recorder_update -->
+<div class="event-card">
+  <div class="event-header">
+    <span class="event-name">recorder_update</span>
+    <span class="event-tag tag-recorder">recorder</span>
+  </div>
+  <div class="event-body">
+    <div class="event-desc">Emitted when recorder state changes (idle, recording, etc.).</div>
+    <div class="fields">
+      <div class="field"><span class="field-name">recorder_id</span><span class="field-type">int</span><span class="field-desc">Database recorder ID</span></div>
+      <div class="field"><span class="field-name">rec_num</span><span class="field-type">int</span><span class="field-desc">Recorder number</span></div>
+      <div class="field"><span class="field-name">src_num</span><span class="field-type">int</span><span class="field-desc">Source number</span></div>
+      <div class="field"><span class="field-name">rec_type</span><span class="field-type">string</span><span class="field-desc">Recorder type</span></div>
+      <div class="field"><span class="field-name">state</span><span class="field-type">int</span><span class="field-desc">State code (0=available, 1=recording, etc.)</span></div>
+      <div class="field"><span class="field-name">rec_state_type</span><span class="field-type">string</span><span class="field-desc">State name</span></div>
+      <div class="field"><span class="field-name">freq</span><span class="field-type">int64</span><span class="field-desc">Current frequency</span></div>
+      <div class="field"><span class="field-name">squelched</span><span class="field-type">bool</span><span class="field-desc">Squelch state</span></div>
+      <div class="field"><span class="field-name">tgid</span><span class="field-type">int</span><span class="field-desc">Active talkgroup (if recording)</span></div>
+      <div class="field"><span class="field-name">tg_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Talkgroup name</span></div>
+      <div class="field"><span class="field-name">unit_id</span><span class="field-type">int64</span><span class="field-desc">Active unit (if recording)</span></div>
+      <div class="field"><span class="field-name">unit_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Unit name</span></div>
+    </div>
+  </div>
+</div>
+
+<h2>Subscription Messages</h2>
+
+<div class="note">
+  <strong>Important:</strong> Clients must subscribe to receive events. By default, new connections receive nothing until a subscription is sent.
+</div>
+
+<p>Subscribe to all events on all systems:</p>
+
+<pre><code>{
+  <span class="json-key">"action"</span>: <span class="json-str">"subscribe"</span>,
+  <span class="json-key">"channels"</span>: [<span class="json-str">"*"</span>]
+}</code></pre>
+
+<p>Subscribe to specific channels (calls, units, rates, recorders):</p>
+
+<pre><code>{
+  <span class="json-key">"action"</span>: <span class="json-str">"subscribe"</span>,
+  <span class="json-key">"channels"</span>: [<span class="json-str">"calls"</span>, <span class="json-str">"units"</span>],
+  <span class="json-key">"systems"</span>: [<span class="json-str">"county"</span>]
+}</code></pre>
+
+<p>Filter by talkgroup or unit:</p>
+
+<pre><code>{
+  <span class="json-key">"action"</span>: <span class="json-str">"subscribe"</span>,
+  <span class="json-key">"channels"</span>: [<span class="json-str">"calls"</span>],
+  <span class="json-key">"talkgroups"</span>: [<span class="json-num">12345</span>, <span class="json-num">12346</span>],
+  <span class="json-key">"units"</span>: [<span class="json-num">1001</span>]
+}</code></pre>
+
+<h3>Channel Mapping</h3>
+<div class="fields" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 16px;">
+  <div class="field"><span class="field-name">calls</span><span class="field-desc">call_start, call_end, audio_available</span></div>
+  <div class="field"><span class="field-name">units</span><span class="field-desc">unit_event</span></div>
+  <div class="field"><span class="field-name">rates</span><span class="field-desc">rate_update</span></div>
+  <div class="field"><span class="field-name">recorders</span><span class="field-desc">recorder_update</span></div>
+  <div class="field"><span class="field-name">*</span><span class="field-desc">all events</span></div>
+</div>
+
+</main>
+
+<script>
+let ws = null;
+
+function toggleConnection() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.close();
+  } else {
+    connect();
+  }
+}
+
+function connect() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${protocol}//${location.host}/api/ws`);
+
+  ws.onopen = () => {
+    updateStatus(true);
+    log('info', 'Connected to WebSocket');
+    // Subscribe to all events
+    const sub = { action: 'subscribe', channels: ['*'] };
+    ws.send(JSON.stringify(sub));
+    log('info', 'Sent subscription: ' + JSON.stringify(sub));
+  };
+
+  ws.onclose = () => {
+    updateStatus(false);
+    log('info', 'Disconnected');
+  };
+
+  ws.onerror = (e) => {
+    log('error', 'Connection error');
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      log('event', `${msg.event}: ${JSON.stringify(msg.data).substring(0, 120)}...`);
+    } catch {
+      log('event', e.data);
+    }
+  };
+}
+
+function updateStatus(connected) {
+  document.getElementById('ws-status-dot').className = connected ? 'connected' : '';
+  document.getElementById('ws-status-text').textContent = connected ? 'Connected' : 'Disconnected';
+  document.getElementById('btn-connect').textContent = connected ? 'Disconnect' : 'Connect';
+}
+
+function log(type, message) {
+  const logEl = document.getElementById('ws-log');
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  const time = new Date().toLocaleTimeString();
+  entry.innerHTML = `<span class="log-time">${time}</span>${escapeHtml(message)}`;
+  logEl.appendChild(entry);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('ws-log').innerHTML = '';
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+</script>
+
+</body>
+</html>

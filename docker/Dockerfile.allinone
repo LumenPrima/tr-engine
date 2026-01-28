@@ -1,0 +1,60 @@
+# All-in-one Dockerfile with PostgreSQL and tr-engine
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o tr-engine ./cmd/tr-engine
+
+# Runtime stage
+FROM alpine:3.19
+
+# Install PostgreSQL and supervisor
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    postgresql15 \
+    postgresql15-contrib \
+    supervisor \
+    bash
+
+# Install TimescaleDB from community repo
+RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+    timescaledb || true
+
+# Copy application
+WORKDIR /app
+COPY --from=builder /app/tr-engine .
+
+# Create directories
+RUN mkdir -p /data/audio /data/postgres /run/postgresql /app/config /var/log/supervisor && \
+    chown -R postgres:postgres /data/postgres /run/postgresql
+
+# Supervisor configuration
+COPY docker/supervisord.conf /etc/supervisord.conf
+
+# PostgreSQL init script
+COPY docker/init-db.sh /docker-entrypoint-initdb.d/
+
+# Default environment
+ENV POSTGRES_USER=tr_engine \
+    POSTGRES_PASSWORD=tr_engine \
+    POSTGRES_DB=tr_engine \
+    PGDATA=/data/postgres \
+    TR_ENGINE_CONFIG=/app/config/config.yaml
+
+EXPOSE 8080 5432
+
+VOLUME ["/data/audio", "/data/postgres"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget -qO- http://localhost:8080/health || exit 1
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

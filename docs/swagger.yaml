@@ -1,0 +1,1352 @@
+basePath: /api/v1
+definitions:
+  ingest.RecorderInfo:
+    properties:
+      count:
+        type: integer
+      duration:
+        type: number
+      freq:
+        type: integer
+      rec_num:
+        type: integer
+      rec_state_type:
+        type: string
+      rec_type:
+        type: string
+      recorder_id:
+        type: integer
+      squelched:
+        type: boolean
+      src_num:
+        type: integer
+      state:
+        type: integer
+      tg_alpha_tag:
+        type: string
+      tgid:
+        type: integer
+      unit_alpha_tag:
+        type: string
+      unit_id:
+        type: integer
+    type: object
+  models.Call:
+    description: A recorded radio call/transmission
+    properties:
+      analog:
+        example: false
+        type: boolean
+      audio_path:
+        description: Audio
+        example: butco/2024/01/15/1001-1705319400.m4a
+        type: string
+      audio_size:
+        example: 45000
+        type: integer
+      audio_type:
+        example: digital
+        type: string
+      call_group_id:
+        example: 1
+        type: integer
+      call_num:
+        example: 12345
+        type: integer
+      call_state:
+        description: Status
+        example: 3
+        type: integer
+      conventional:
+        example: false
+        type: boolean
+      duration:
+        example: 45.5
+        type: number
+      emergency:
+        example: false
+        type: boolean
+      encrypted:
+        example: false
+        type: boolean
+      error_count:
+        example: 2
+        type: integer
+      freq:
+        description: Quality
+        example: 851012500
+        type: integer
+      freq_error:
+        example: 0
+        type: integer
+      id:
+        example: 1
+        type: integer
+      instance_id:
+        example: 1
+        type: integer
+      metadata_json:
+        description: Metadata
+        type: object
+      mon_state:
+        example: 0
+        type: integer
+      noise_db:
+        example: -80
+        type: number
+      patched_tgids:
+        description: Patches
+        items:
+          type: integer
+        type: array
+      phase2_tdma:
+        example: false
+        type: boolean
+      recorder_id:
+        example: 1
+        type: integer
+      signal_db:
+        example: -45.5
+        type: number
+      spike_count:
+        example: 0
+        type: integer
+      start_time:
+        description: Timing
+        example: "2024-01-15T10:30:00Z"
+        type: string
+      stop_time:
+        example: "2024-01-15T10:30:45Z"
+        type: string
+      system_id:
+        example: 1
+        type: integer
+      talkgroup_id:
+        example: 1
+        type: integer
+      tdma_slot:
+        example: 0
+        type: integer
+      tg_alpha_tag:
+        example: 09-8L Main
+        type: string
+      tgid:
+        description: Joined fields (not stored in calls table)
+        example: 9178
+        type: integer
+      tr_call_id:
+        description: Identifiers
+        example: butco-1001-1705319400
+        type: string
+      units:
+        items:
+          $ref: '#/definitions/models.CallUnit'
+        type: array
+    type: object
+  models.CallFrequency:
+    description: Frequency usage information within a call
+    properties:
+      call_id:
+        example: 1
+        type: integer
+      duration:
+        example: 15
+        type: number
+      error_count:
+        example: 0
+        type: integer
+      freq:
+        example: 851012500
+        type: integer
+      id:
+        example: 1
+        type: integer
+      position:
+        example: 0
+        type: number
+      spike_count:
+        example: 0
+        type: integer
+      time:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+    type: object
+  models.CallUnit:
+    properties:
+      alpha_tag:
+        example: 09 7COM3
+        type: string
+      unit_rid:
+        example: 924003
+        type: integer
+    type: object
+  models.System:
+    description: A radio system (P25, SmartNet, conventional, etc.)
+    properties:
+      config_json:
+        type: object
+      id:
+        example: 1
+        type: integer
+      instance_id:
+        example: 1
+        type: integer
+      nac:
+        example: "293"
+        type: string
+      rfss:
+        example: 1
+        type: integer
+      short_name:
+        example: butco
+        type: string
+      site_id:
+        example: 1
+        type: integer
+      sys_num:
+        example: 0
+        type: integer
+      sysid:
+        example: "1234"
+        type: string
+      system_type:
+        example: p25
+        type: string
+      wacn:
+        example: BEE00
+        type: string
+    type: object
+  models.Talkgroup:
+    description: A talkgroup on a radio system
+    properties:
+      alpha_tag:
+        example: Fire Dispatch
+        type: string
+      description:
+        example: County Fire Dispatch Channel
+        type: string
+      first_seen:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+      group:
+        example: Fire
+        type: string
+      id:
+        example: 1
+        type: integer
+      last_seen:
+        example: "2024-01-15T12:30:00Z"
+        type: string
+      mode:
+        example: D
+        type: string
+      priority:
+        example: 1
+        type: integer
+      system_id:
+        example: 1
+        type: integer
+      tag:
+        example: Fire Dispatch
+        type: string
+      tgid:
+        example: 1001
+        type: integer
+    type: object
+  models.Transmission:
+    description: A single unit's transmission within a call
+    properties:
+      call_id:
+        example: 1
+        type: integer
+      duration:
+        example: 15
+        type: number
+      emergency:
+        example: false
+        type: boolean
+      error_count:
+        example: 0
+        type: integer
+      id:
+        example: 1
+        type: integer
+      position:
+        example: 0
+        type: number
+      spike_count:
+        example: 0
+        type: integer
+      start_time:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+      stop_time:
+        example: "2024-01-15T10:30:15Z"
+        type: string
+      unit_id:
+        example: 1
+        type: integer
+      unit_rid:
+        example: 1234567
+        type: integer
+    type: object
+  models.Unit:
+    description: A radio unit (mobile or portable radio)
+    properties:
+      alpha_tag:
+        example: Engine 1
+        type: string
+      alpha_tag_source:
+        example: radioreference
+        type: string
+      first_seen:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+      id:
+        example: 1
+        type: integer
+      last_event_tg_tag:
+        example: 09-8L Main
+        type: string
+      last_event_tgid:
+        example: 9178
+        type: integer
+      last_event_time:
+        type: string
+      last_event_type:
+        description: Joined fields (not stored in units table)
+        example: call
+        type: string
+      last_seen:
+        example: "2024-01-15T12:30:00Z"
+        type: string
+      system_id:
+        example: 1
+        type: integer
+      unit_id:
+        example: 1234567
+        type: integer
+    type: object
+  models.UnitEvent:
+    description: A unit event such as registration, affiliation, or call activity
+    properties:
+      event_type:
+        example: join
+        type: string
+      id:
+        example: 1
+        type: integer
+      instance_id:
+        example: 1
+        type: integer
+      metadata_json:
+        type: object
+      system_id:
+        example: 1
+        type: integer
+      talkgroup_id:
+        example: 1
+        type: integer
+      tgid:
+        example: 1001
+        type: integer
+      time:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+      unit_id:
+        example: 1
+        type: integer
+      unit_rid:
+        example: 1234567
+        type: integer
+    type: object
+  rest.ActiveUnitListResponse:
+    properties:
+      count:
+        example: 10
+        type: integer
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      units: {}
+      window:
+        example: 5
+        type: integer
+    type: object
+  rest.ActivityResponse:
+    properties:
+      calls_24h:
+        example: 5000
+        type: integer
+      system_activity: {}
+      systems:
+        example: 3
+        type: integer
+      talkgroups:
+        example: 500
+        type: integer
+      units:
+        example: 1000
+        type: integer
+    type: object
+  rest.CallGroupDetailResponse:
+    properties:
+      call_group: {}
+      calls: {}
+    type: object
+  rest.CallGroupListResponse:
+    properties:
+      call_groups: {}
+      count:
+        example: 50
+        type: integer
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+    type: object
+  rest.CallListResponse:
+    properties:
+      calls: {}
+      count:
+        example: 25
+        type: integer
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+    type: object
+  rest.ErrorResponse:
+    properties:
+      error:
+        example: Resource not found
+        type: string
+    type: object
+  rest.RatesResponse:
+    properties:
+      count:
+        example: 100
+        type: integer
+      rates: {}
+    type: object
+  rest.RecorderListResponse:
+    properties:
+      count:
+        example: 12
+        type: integer
+      recorders:
+        items:
+          $ref: '#/definitions/ingest.RecorderInfo'
+        type: array
+    type: object
+  rest.SystemListResponse:
+    properties:
+      count:
+        example: 5
+        type: integer
+      systems:
+        items:
+          $ref: '#/definitions/models.System'
+        type: array
+    type: object
+  rest.TalkgroupListResponse:
+    properties:
+      count:
+        example: 100
+        type: integer
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      talkgroups: {}
+    type: object
+  rest.UnitEventListResponse:
+    properties:
+      count:
+        example: 100
+        type: integer
+      events:
+        items:
+          $ref: '#/definitions/models.UnitEvent'
+        type: array
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+    type: object
+  rest.UnitListResponse:
+    properties:
+      count:
+        example: 50
+        type: integer
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      units:
+        items:
+          $ref: '#/definitions/models.Unit'
+        type: array
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Backend service for trunk-recorder data ingestion and querying. Provides
+    REST APIs for accessing radio system data, calls, talkgroups, and units.
+  title: tr-engine API
+  version: 0.1.1-beta1
+paths:
+  /call-groups:
+    get:
+      description: Returns deduplicated call groups (calls from multiple recorders
+        grouped together)
+      parameters:
+      - description: Start time filter (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End time filter (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.CallGroupListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List call groups
+      tags:
+      - call-groups
+  /call-groups/{id}:
+    get:
+      description: Returns a call group with all its individual call recordings
+      parameters:
+      - description: Call group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.CallGroupDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get a call group
+      tags:
+      - call-groups
+  /calls:
+    get:
+      description: Returns call recordings with optional filters
+      parameters:
+      - description: Filter by system ID
+        in: query
+        name: system
+        type: integer
+      - description: Filter by talkgroup ID
+        in: query
+        name: talkgroup
+        type: integer
+      - description: Start time filter (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End time filter (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.CallListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List all calls
+      tags:
+      - calls
+  /calls/{id}:
+    get:
+      description: Returns a single call by its trunk-recorder call ID
+      parameters:
+      - description: Trunk-recorder call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Call'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get a call
+      tags:
+      - calls
+  /calls/{id}/audio:
+    get:
+      description: Streams the audio file for a call
+      parameters:
+      - description: Trunk-recorder call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - audio/mpeg
+      - audio/mp4
+      - audio/wav
+      - audio/ogg
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get call audio
+      tags:
+      - calls
+  /calls/{id}/frequencies:
+    get:
+      description: Returns the list of frequency entries (freqList) within a call,
+        ordered by position in the audio
+      parameters:
+      - description: Trunk-recorder call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.CallFrequency'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get call frequencies
+      tags:
+      - calls
+  /calls/{id}/transmissions:
+    get:
+      description: Returns the list of unit transmissions (srcList) within a call,
+        ordered by position in the audio
+      parameters:
+      - description: Trunk-recorder call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Transmission'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get call transmissions
+      tags:
+      - calls
+  /calls/active:
+    get:
+      description: Returns currently active calls (calls without a stop_time)
+      parameters:
+      - description: System ID or short_name
+        in: query
+        name: system
+        type: string
+      - description: System short name
+        in: query
+        name: sys_name
+        type: string
+      - description: Filter by talkgroup ID
+        in: query
+        name: talkgroup
+        type: integer
+      - description: Filter by emergency status
+        in: query
+        name: emergency
+        type: boolean
+      - description: Filter by encryption status
+        in: query
+        name: encrypted
+        type: boolean
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.CallListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List active calls
+      tags:
+      - calls
+  /calls/active/realtime:
+    get:
+      description: Returns currently active calls from in-memory tracker (real-time
+        from MQTT)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get real-time active calls
+      tags:
+      - calls
+  /calls/recent:
+    get:
+      description: Returns recently completed calls from database with full unit list
+        and audio status
+      parameters:
+      - default: 50
+        description: Number of calls to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get recently ended calls
+      tags:
+      - calls
+  /recorders:
+    get:
+      description: Returns all known recorder states from in-memory cache (populated
+        by MQTT recorder messages)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.RecorderListResponse'
+      summary: List recorder states
+      tags:
+      - recorders
+  /stats:
+    get:
+      description: Returns overall system statistics including counts and call metrics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get system statistics
+      tags:
+      - stats
+  /stats/activity:
+    get:
+      description: Returns summary statistics and recent activity across all systems
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.ActivityResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get activity summary
+      tags:
+      - stats
+  /stats/rates:
+    get:
+      description: Returns system decode rate measurements over time
+      parameters:
+      - description: Start time filter (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End time filter (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.RatesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get decode rates
+      tags:
+      - stats
+  /systems:
+    get:
+      description: Returns all registered radio systems
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.SystemListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List all systems
+      tags:
+      - systems
+  /systems/{id}:
+    get:
+      description: Returns a single system by ID
+      parameters:
+      - description: System ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.System'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get a system
+      tags:
+      - systems
+  /systems/{id}/talkgroups:
+    get:
+      description: Returns all talkgroups for a specific system
+      parameters:
+      - description: System ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.TalkgroupListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List system talkgroups
+      tags:
+      - systems
+  /talkgroups:
+    get:
+      description: Returns all talkgroups, optionally filtered by system
+      parameters:
+      - description: Filter by system ID
+        in: query
+        name: system
+        type: integer
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.TalkgroupListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List all talkgroups
+      tags:
+      - talkgroups
+  /talkgroups/{id}:
+    get:
+      description: Returns a single talkgroup by ID
+      parameters:
+      - description: Talkgroup ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Talkgroup'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get a talkgroup
+      tags:
+      - talkgroups
+  /talkgroups/{id}/calls:
+    get:
+      description: Returns calls for a specific talkgroup
+      parameters:
+      - description: Talkgroup ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Start time filter (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End time filter (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.CallListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List talkgroup calls
+      tags:
+      - talkgroups
+  /talkgroups/encryption-stats:
+    get:
+      description: Returns counts of encrypted and clear calls per talkgroup from
+        recent activity
+      parameters:
+      - description: Hours of history to include (default 24)
+        in: query
+        name: hours
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get encryption stats per talkgroup
+      tags:
+      - talkgroups
+  /units:
+    get:
+      description: Returns all radio units, optionally filtered by system
+      parameters:
+      - description: Filter by system ID
+        in: query
+        name: system
+        type: integer
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.UnitListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List all units
+      tags:
+      - units
+  /units/{id}:
+    get:
+      description: Returns a single unit by ID
+      parameters:
+      - description: Unit ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Unit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get a unit
+      tags:
+      - units
+  /units/{id}/calls:
+    get:
+      description: Returns calls that include transmissions from a specific unit
+      parameters:
+      - description: Unit ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Start time filter (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End time filter (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.CallListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List unit calls
+      tags:
+      - units
+  /units/{id}/events:
+    get:
+      description: Returns events (affiliations, registrations, etc.) for a specific
+        unit
+      parameters:
+      - description: Unit ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Filter by event type (on, off, join, call, etc.)
+        in: query
+        name: type
+        type: string
+      - description: Filter by talkgroup ID (TGID)
+        in: query
+        name: talkgroup
+        type: integer
+      - description: Start time filter (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End time filter (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.UnitEventListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List unit events
+      tags:
+      - units
+  /units/active:
+    get:
+      description: Returns units that have had recent activity within the specified
+        time window
+      parameters:
+      - default: 5
+        description: Activity window in minutes (1-60)
+        in: query
+        name: window
+        type: integer
+      - description: System ID or short_name
+        in: query
+        name: system
+        type: string
+      - description: System short name
+        in: query
+        name: sys_name
+        type: string
+      - description: Filter by talkgroup ID
+        in: query
+        name: talkgroup
+        type: integer
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/rest.ActiveUnitListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List active units
+      tags:
+      - units
+schemes:
+- http
+swagger: "2.0"
+tags:
+- description: Radio system operations
+  name: systems
+- description: Talkgroup operations
+  name: talkgroups
+- description: Radio unit operations
+  name: units
+- description: Call recording operations
+  name: calls
+- description: Deduplicated call group operations
+  name: call-groups
+- description: Statistics and activity operations
+  name: stats

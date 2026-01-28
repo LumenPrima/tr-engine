@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recorder Monitor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    padding: 16px;
+  }
+  .mono {
+    font-family: Consolas, 'SF Mono', 'Fira Code', 'Source Code Pro', 'Courier New', monospace;
+  }
+  h1 {
+    font-size: 24px;
+    color: #888;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  #status {
+    font-size: 16px;
+    color: #555;
+    margin-bottom: 16px;
+  }
+  #status.connected { color: #4a4; }
+  #status.disconnected { color: #a44; }
+
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 8px;
+  }
+
+  .recorder {
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 12px;
+    background: #111;
+    transition: background 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease;
+    min-height: 100px;
+  }
+
+  .rec-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .rec-id {
+    font-size: 15px;
+    color: #666;
+  }
+  .rec-type {
+    font-size: 14px;
+    color: #555;
+    text-transform: uppercase;
+  }
+
+  .rec-state {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+
+  .rec-freq {
+    font-family: Consolas, 'SF Mono', 'Fira Code', 'Source Code Pro', 'Courier New', monospace;
+    font-size: 16px;
+    color: #999;
+    margin-bottom: 4px;
+  }
+
+  .rec-context {
+    font-family: Consolas, 'SF Mono', 'Fira Code', 'Source Code Pro', 'Courier New', monospace;
+    font-size: 13px;
+    color: #aaa;
+    border-top: 1px solid #222;
+    padding-top: 4px;
+    margin-top: 4px;
+  }
+  .rec-context .tg { color: #7af; }
+  .rec-context .unit { color: #fa7; }
+
+  .rec-meta {
+    font-family: Consolas, 'SF Mono', 'Fira Code', 'Source Code Pro', 'Courier New', monospace;
+    font-size: 14px;
+    color: #555;
+    margin-top: 4px;
+  }
+
+  /* State colors */
+  .state-recording {
+    background: #1a0800;
+    border-color: #f44;
+    box-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
+  }
+  .state-recording .rec-state { color: #f44; }
+
+  .state-active {
+    background: #1a1200;
+    border-color: #fa0;
+    box-shadow: 0 0 6px rgba(255, 170, 0, 0.2);
+  }
+  .state-active .rec-state { color: #fa0; }
+
+  .state-monitoring {
+    background: #001a00;
+    border-color: #4a4;
+    box-shadow: 0 0 4px rgba(68, 170, 68, 0.15);
+  }
+  .state-monitoring .rec-state { color: #4a4; }
+
+  .state-idle {
+    background: #1a1000;
+    border-color: #a80;
+    box-shadow: 0 0 4px rgba(170, 136, 0, 0.15);
+  }
+  .state-idle .rec-state { color: #c90; }
+
+  .state-available {
+    background: #0a0a1a;
+    border-color: #448;
+  }
+  .state-available .rec-state { color: #66a; }
+
+  .state-inactive {
+    background: #0a0a0a;
+    border-color: #222;
+  }
+  .state-inactive .rec-state { color: #333; }
+
+  .state-stopped {
+    background: #1a0a0a;
+    border-color: #633;
+  }
+  .state-stopped .rec-state { color: #844; }
+
+  .state-ignore {
+    background: #0a0a0a;
+    border-color: #222;
+  }
+  .state-ignore .rec-state { color: #444; }
+</style>
+</head>
+<body>
+
+<h1>Recorder Monitor</h1>
+<div id="status" class="disconnected">Disconnected</div>
+<div id="grid"></div>
+
+<script>
+const STATE_NAMES = {
+  0: 'monitoring',
+  1: 'recording',
+  2: 'inactive',
+  3: 'active',
+  4: 'idle',
+  6: 'stopped',
+  7: 'available',
+  8: 'ignore',
+};
+
+const STATE_CSS = {
+  0: 'state-monitoring',
+  1: 'state-recording',
+  2: 'state-inactive',
+  3: 'state-active',
+  4: 'state-idle',
+  6: 'state-stopped',
+  7: 'state-available',
+  8: 'state-ignore',
+};
+
+// Map of "srcNum:recNum" -> recorder data
+const recorders = new Map();
+// Map of "srcNum:recNum" -> last known tg/unit context
+const lastContext = new Map();
+const grid = document.getElementById('grid');
+const statusEl = document.getElementById('status');
+
+function recorderKey(r) {
+  return r.src_num + ':' + r.rec_num;
+}
+
+function formatFreq(freqHz) {
+  if (!freqHz) return '';
+  // Frequency comes as Hz integer (e.g., 851250000)
+  const mhz = freqHz / 1e6;
+  return mhz.toFixed(4) + ' MHz';
+}
+
+function renderRecorder(key) {
+  const r = recorders.get(key);
+  if (!r) return;
+
+  // Hide recorders with no calls
+  if (!r.count || r.count <= 0) {
+    const existing = document.getElementById('rec-' + key);
+    if (existing) existing.remove();
+    return;
+  }
+
+  let el = document.getElementById('rec-' + key);
+  const isNew = !el;
+  if (isNew) {
+    el = document.createElement('div');
+    el.id = 'rec-' + key;
+    el.className = 'recorder';
+    grid.appendChild(el);
+  }
+
+  const stateName = r.rec_state_type || STATE_NAMES[r.state] || 'unknown';
+  const stateCss = STATE_CSS[r.state] || 'state-idle';
+
+  // Save context when recorder has tg/unit data, reuse last known otherwise
+  const hasTg = r.tg_alpha_tag || r.tgid;
+  const hasUnit = r.unit_alpha_tag || r.unit_id;
+  if (hasTg || hasUnit) {
+    lastContext.set(key, { tg_alpha_tag: r.tg_alpha_tag, tgid: r.tgid, unit_alpha_tag: r.unit_alpha_tag, unit_id: r.unit_id });
+  }
+  const ctx = lastContext.get(key) || {};
+
+  let contextHtml = '';
+  if (ctx.tg_alpha_tag || ctx.tgid) {
+    contextHtml += '<span class="tg">' + escHtml(ctx.tg_alpha_tag || ('TG ' + ctx.tgid)) + '</span>';
+  }
+  if (ctx.unit_alpha_tag || ctx.unit_id) {
+    if (contextHtml) contextHtml += ' &mdash; ';
+    contextHtml += '<span class="unit">' + escHtml(ctx.unit_alpha_tag || ('Unit ' + ctx.unit_id)) + '</span>';
+  }
+
+  el.className = 'recorder ' + stateCss;
+  el.innerHTML =
+    '<div class="rec-header">' +
+      '<span class="rec-id">SRC ' + r.src_num + ' / REC ' + r.rec_num + '</span>' +
+      '<span class="rec-type">' + escHtml(r.rec_type || '') + '</span>' +
+    '</div>' +
+    '<div class="rec-state">' + escHtml(stateName) + '</div>' +
+    '<div class="rec-freq">' + escHtml(formatFreq(r.freq)) + '</div>' +
+    (contextHtml ? '<div class="rec-context">' + contextHtml + '</div>' : '') +
+    '<div class="rec-meta">' +
+      'calls: ' + (r.count || 0) +
+      (r.duration > 0 ? ' &bull; ' + r.duration.toFixed(1) + 's' : '') +
+
+
+    '</div>';
+}
+
+function sortAndReorder() {
+  const keys = Array.from(recorders.keys()).sort((a, b) => {
+    const ra = recorders.get(a);
+    const rb = recorders.get(b);
+    if (ra.src_num !== rb.src_num) return ra.src_num - rb.src_num;
+    return ra.rec_num - rb.rec_num;
+  });
+  for (const key of keys) {
+    const el = document.getElementById('rec-' + key);
+    if (el) grid.appendChild(el);
+  }
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Initial load from REST
+async function loadRecorders() {
+  try {
+    const resp = await fetch('/api/v1/recorders');
+    const data = await resp.json();
+    if (data.recorders) {
+      for (const r of data.recorders) {
+        const key = recorderKey(r);
+        recorders.set(key, r);
+        renderRecorder(key);
+      }
+      sortAndReorder();
+    }
+  } catch (e) {
+    console.error('Failed to load recorders:', e);
+  }
+}
+
+// WebSocket connection
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(proto + '//' + location.host + '/api/ws');
+
+  ws.onopen = function() {
+    statusEl.textContent = 'Connected';
+    statusEl.className = 'connected';
+    // Subscribe to recorders channel
+    ws.send(JSON.stringify({
+      action: 'subscribe',
+      channels: ['recorders'],
+    }));
+  };
+
+  ws.onclose = function() {
+    statusEl.textContent = 'Disconnected - reconnecting...';
+    statusEl.className = 'disconnected';
+    setTimeout(connectWS, 3000);
+  };
+
+  ws.onerror = function() {
+    ws.close();
+  };
+
+  ws.onmessage = function(evt) {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.event === 'recorder_update' && msg.data) {
+        const r = msg.data;
+        const key = recorderKey(r);
+        const isNew = !recorders.has(key);
+        recorders.set(key, r);
+        renderRecorder(key);
+        if (isNew) sortAndReorder();
+      }
+    } catch (e) {
+      console.error('Failed to parse WS message:', e);
+    }
+  };
+}
+
+loadRecorders();
+connectWS();
+</script>
+</body>
+</html>

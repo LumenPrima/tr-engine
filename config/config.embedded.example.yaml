@@ -1,0 +1,49 @@
+# tr-engine configuration for self-contained deployment
+# Uses embedded PostgreSQL - no external database required
+# Copy this to config.yaml to use embedded mode
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+database:
+  # Enable embedded PostgreSQL
+  embedded: true
+  # Directory for PostgreSQL data (will be created if it doesn't exist)
+  # PostgreSQL binaries are downloaded here on first run (~10MB)
+  embedded_data_path: "./data/postgres"
+  # Connection settings (used for embedded instance)
+  port: 5432
+  name: "tr_engine"
+  user: "tr_engine"
+  password: "tr_engine"
+  max_connections: 50
+
+mqtt:
+  broker: "tcp://localhost:1883"
+  client_id: "tr-engine"
+  username: ""
+  password: ""
+  topics:
+    status: "trunk-recorder/status/#"
+    units: "trunk-recorder/units/#"
+    # messages: "trunk-recorder/messages/#"  # Optional, high volume
+  qos: 1
+
+storage:
+  # Path where audio files will be stored
+  audio_path: "./data/audio"
+
+deduplication:
+  enabled: true
+  time_window_seconds: 3
+  threshold: 0.7
+
+logging:
+  level: "info"
+  format: "json"
+
+# Note: In embedded mode, TimescaleDB hypertables are not available.
+# The schema uses plain PostgreSQL tables with appropriate indexes.
+# This is suitable for small to medium deployments (1-2 systems).
+# For high-volume production deployments, use external PostgreSQL + TimescaleDB.

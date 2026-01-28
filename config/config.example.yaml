@@ -1,0 +1,68 @@
+# tr-engine configuration example
+# Copy this to config.yaml and modify as needed
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+database:
+  # For external PostgreSQL (default, recommended for production):
+  host: "localhost"
+  port: 5432
+  name: "tr_engine"
+  user: "tr_engine"
+  password: "${DB_PASSWORD}"  # Use environment variable
+  max_connections: 50
+  ssl_mode: "disable"  # Use "require" in production
+
+  # For embedded PostgreSQL (self-contained deployment):
+  # embedded: true
+  # embedded_data_path: "./data/postgres"  # Persistent data directory
+  # Note: Embedded mode downloads PostgreSQL binaries (~10MB) on first run.
+  # TimescaleDB hypertables are not available in embedded mode.
+
+mqtt:
+  broker: "tcp://localhost:1883"
+  client_id: "tr-engine"
+  username: ""
+  password: ""
+  topics:
+    status: "trunk-recorder/status/#"
+    units: "trunk-recorder/units/#"
+    messages: "trunk-recorder/messages/#"  # Optional, high volume
+  qos: 1
+
+storage:
+  # Path where audio files will be stored
+  # Structure: {audio_path}/{system}/{year}/{month}/{day}/{filename}
+  audio_path: "/data/tr-engine/audio"
+
+deduplication:
+  enabled: true
+  time_window_seconds: 3  # Calls within this window may be duplicates
+  threshold: 0.7  # Minimum score (0-1) to consider a match
+
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json or text
+
+# Prometheus metrics configuration
+# Metrics are exposed at /metrics endpoint
+metrics:
+  enabled: true  # Enable/disable metrics endpoint
+  # Gauges are updated every 30 seconds automatically
+  # Available metrics:
+  # - trengine_mqtt_messages_total (counter) - MQTT messages by type and system
+  # - trengine_mqtt_parse_errors_total (counter) - Parse errors by type
+  # - trengine_calls_total (counter) - Calls by state (start/active/end) and system
+  # - trengine_audio_files_total (counter) - Audio files by system
+  # - trengine_unit_events_total (counter) - Unit events by type and system
+  # - trengine_transmissions_total (counter) - Transmissions by system
+  # - trengine_message_duration_seconds (histogram) - Message processing latency
+  # - trengine_call_duration_seconds (histogram) - Call durations
+  # - trengine_audio_bytes (histogram) - Audio file sizes
+  # - trengine_http_request_duration_seconds (histogram) - HTTP request latency
+  # - trengine_websocket_clients (gauge) - Active WebSocket connections
+  # - trengine_systems (gauge) - Registered systems
+  # - trengine_talkgroups (gauge) - Known talkgroups
+  # - trengine_units (gauge) - Tracked units
