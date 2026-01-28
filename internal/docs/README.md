@@ -44,17 +44,33 @@ Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker.
 docker-compose up -d
 ```
 
-**4. Configure trunk-recorder:**
+### Configure trunk-recorder
 
-Install the [MQTT status plugin](https://github.com/taclane/trunk-recorder-mqtt-status) and point it to tr-engine:
+Install the [MQTT status plugin](https://github.com/taclane/trunk-recorder-mqtt-status) and add to your trunk-recorder config:
 
 ```json
-{
-  "mqttBrokerAddress": "tcp://<tr-engine-host>:1883"
-}
+"plugins": [
+    {
+        "name": "mqtt_status",
+        "library": "libmqtt_status_plugin.so",
+        "broker": "tcp://<tr-engine-host>:1883",
+        "topic": "feeds/main",
+        "unit_topic": "units/main",
+        "clientid": "tr-publish",
+        "username": "",
+        "password": "",
+        "mqtt_audio": true,
+        "console_logs": false,
+        "mqtt_audio_type": "m4a"
+    }
+]
 ```
 
-**5. Open the dashboard:**
+- `topic` and `unit_topic` are arbitrary - just ensure they match tr-engine's config (`mqtt.topics.status` and `mqtt.topics.units` patterns)
+- `mqtt_audio_type` can be `m4a`, `wav`, or `both`
+- **Note:** MQTT authentication is not currently implemented. Run on a trusted network or use a firewall.
+
+### Open the dashboard
 
 Navigate to `http://<tr-engine-host>:8080/`
 
