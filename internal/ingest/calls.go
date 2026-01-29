@@ -378,8 +378,8 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 	call.Emergency = data.Emergency
 	call.ErrorCount = data.ErrorCount
 	call.SpikeCount = data.SpikeCount
-	call.SignalDB = data.SignalDB
-	call.NoiseDB = data.NoiseDB
+	call.SignalDB = filterSentinelDB(data.SignalDB)
+	call.NoiseDB = filterSentinelDB(data.NoiseDB)
 	call.MetadataJSON = data.RawJSON
 
 	if err := p.db.UpdateCall(ctx, call); err != nil {
@@ -698,8 +698,8 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 			AudioType:    data.AudioType,
 			Freq:         int64(data.Freq),
 			FreqError:    data.FreqError,
-			SignalDB:     data.SignalDB,
-			NoiseDB:      data.NoiseDB,
+			SignalDB:     filterSentinelDB(data.SignalDB),
+			NoiseDB:      filterSentinelDB(data.NoiseDB),
 			AudioPath:    audioPath,
 			AudioSize:    audioSize,
 		}
@@ -881,4 +881,13 @@ func (p *Processor) ProcessTrunkMessage(ctx context.Context, data *TrunkMessageD
 func toJSON(v interface{}) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+// filterSentinelDB converts sentinel values (999, -999) to 0 so omitempty excludes them.
+// Trunk-recorder uses 999 to indicate unknown signal/noise levels.
+func filterSentinelDB(v float32) float32 {
+	if v >= 900 || v <= -900 {
+		return 0
+	}
+	return v
 }

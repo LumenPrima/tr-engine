@@ -1346,6 +1346,7 @@ type RecentCallInfo struct {
 	Encrypted  bool             `json:"encrypted"`
 	Emergency  bool             `json:"emergency"`
 	AudioPath  string           `json:"audio_path,omitempty"`
+	AudioURL   string           `json:"audio_url,omitempty"`
 	HasAudio   bool             `json:"has_audio"`
 	Units      []RecentCallUnit `json:"units"`
 }

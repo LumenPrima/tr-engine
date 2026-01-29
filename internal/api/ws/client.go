@@ -202,10 +202,14 @@ func (c *Client) subscribe(msg SubscribeMessage) {
 		zap.Int64s("units", msg.Units),
 	)
 
-	// Send confirmation
+	// Send confirmation with current subscription state
 	response := map[string]interface{}{
-		"event":   "subscribed",
-		"data":    msg,
+		"event": "subscribed",
+		"data": map[string]interface{}{
+			"added":    msg,
+			"channels": c.getSubscribedChannels(),
+			"systems":  c.getSubscribedSystems(),
+		},
 	}
 	if data, err := json.Marshal(response); err == nil {
 		select {
@@ -239,6 +243,22 @@ func (c *Client) unsubscribe(msg SubscribeMessage) {
 		zap.Ints("talkgroups", msg.Talkgroups),
 		zap.Int64s("units", msg.Units),
 	)
+
+	// Send confirmation with current subscription state
+	response := map[string]interface{}{
+		"event": "unsubscribed",
+		"data": map[string]interface{}{
+			"removed":  msg,
+			"channels": c.getSubscribedChannels(),
+			"systems":  c.getSubscribedSystems(),
+		},
+	}
+	if data, err := json.Marshal(response); err == nil {
+		select {
+		case c.send <- data:
+		default:
+		}
+	}
 }
 
 // IsSubscribed checks if a client should receive an event
@@ -324,4 +344,24 @@ func eventToChannel(eventType string) string {
 	default:
 		return eventType
 	}
+}
+
+// getSubscribedChannels returns a list of channels the client is subscribed to
+// Must be called while holding subscriptions lock
+func (c *Client) getSubscribedChannels() []string {
+	channels := make([]string, 0, len(c.subscriptions.Channels))
+	for ch := range c.subscriptions.Channels {
+		channels = append(channels, ch)
+	}
+	return channels
+}
+
+// getSubscribedSystems returns a list of systems the client is subscribed to
+// Must be called while holding subscriptions lock
+func (c *Client) getSubscribedSystems() []string {
+	systems := make([]string, 0, len(c.subscriptions.Systems))
+	for sys := range c.subscriptions.Systems {
+		systems = append(systems, sys)
+	}
+	return systems
 }

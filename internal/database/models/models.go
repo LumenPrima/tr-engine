@@ -164,6 +164,7 @@ type Call struct {
 
 	// Audio
 	AudioPath string `json:"audio_path,omitempty" example:"butco/2024/01/15/1001-1705319400.m4a"`
+	AudioURL  string `json:"audio_url,omitempty" example:"/api/v1/calls/123/audio"`
 	AudioSize int    `json:"audio_size,omitempty" example:"45000"`
 
 	// Patches

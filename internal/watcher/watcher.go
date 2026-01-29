@@ -360,8 +360,8 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 		Phase2TDMA:  sidecar.Phase2TDMA != 0,
 		TDMASlot:    int16(sidecar.TDMASlot),
 		AudioType:   sidecar.AudioType,
-		SignalDB:    sidecar.SignalDB,
-		NoiseDB:     sidecar.NoiseDB,
+		SignalDB:    filterSentinelDB(sidecar.SignalDB),
+		NoiseDB:     filterSentinelDB(sidecar.NoiseDB),
 		AudioPath:   audioPath,
 		AudioSize:   audioSize,
 	}
@@ -1076,8 +1076,8 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 		Phase2TDMA:  sidecar.Phase2TDMA != 0,
 		TDMASlot:    int16(sidecar.TDMASlot),
 		AudioType:   sidecar.AudioType,
-		SignalDB:    sidecar.SignalDB,
-		NoiseDB:     sidecar.NoiseDB,
+		SignalDB:    filterSentinelDB(sidecar.SignalDB),
+		NoiseDB:     filterSentinelDB(sidecar.NoiseDB),
 		AudioPath:   audioPath,
 		AudioSize:   audioSize,
 	}
@@ -1147,4 +1147,13 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 	w.mu.Lock()
 	w.backfillImported++
 	w.mu.Unlock()
+}
+
+// filterSentinelDB converts sentinel values (999, -999) to 0 so omitempty excludes them.
+// Trunk-recorder uses 999 to indicate unknown signal/noise levels.
+func filterSentinelDB(v float32) float32 {
+	if v >= 900 || v <= -900 {
+		return 0
+	}
+	return v
 }

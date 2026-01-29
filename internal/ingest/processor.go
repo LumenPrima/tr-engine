@@ -847,9 +847,11 @@ func (p *Processor) ProcessRate(ctx context.Context, data *RateData) error {
 	}
 
 	// Broadcast update
+	// max_rate is 40 for P25 Phase 1 systems (voice slots per second)
 	p.broadcast("rate_update", map[string]interface{}{
 		"system":          data.ShortName,
 		"decode_rate":     data.DecodeRate,
+		"max_rate":        40,
 		"control_channel": data.ControlChannel,
 	})
 

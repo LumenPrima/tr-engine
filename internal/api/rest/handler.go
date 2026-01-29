@@ -134,6 +134,29 @@ func (h *Handler) SetRecorderProvider(provider RecorderProvider) {
 	h.recorderProvider = provider
 }
 
+// populateAudioURL sets the AudioURL field on a call if it has audio
+func populateAudioURL(call *models.Call) {
+	if call != nil && call.AudioPath != "" {
+		call.AudioURL = "/api/v1/calls/" + strconv.FormatInt(call.ID, 10) + "/audio"
+	}
+}
+
+// populateAudioURLs sets the AudioURL field on a slice of calls
+func populateAudioURLs(calls []*models.Call) {
+	for _, call := range calls {
+		populateAudioURL(call)
+	}
+}
+
+// populateRecentCallAudioURLs sets the AudioURL field on a slice of recent calls
+func populateRecentCallAudioURLs(calls []*database.RecentCallInfo) {
+	for _, call := range calls {
+		if call != nil && call.AudioPath != "" {
+			call.AudioURL = "/api/v1/calls/" + strconv.FormatInt(call.ID, 10) + "/audio"
+		}
+	}
+}
+
 // resolveCall looks up a call by tr_call_id string, falling back to numeric DB id
 func (h *Handler) resolveCall(c *gin.Context) (*models.Call, error) {
 	idParam := c.Param("id")
@@ -550,6 +573,7 @@ func (h *Handler) ListTalkgroupCalls(c *gin.Context) {
 		return
 	}
 
+	populateAudioURLs(calls)
 	c.JSON(http.StatusOK, gin.H{
 		"calls":  calls,
 		"count":  len(calls),
@@ -891,6 +915,10 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 			"freq":          freq,
 			"audio_path":    audioPath,
 		}
+		// Add audio_url if audio exists
+		if audioPath != nil && *audioPath != "" {
+			call["audio_url"] = "/api/v1/calls/" + strconv.FormatInt(callID, 10) + "/audio"
+		}
 		if tgid != nil {
 			call["tgid"] = *tgid
 		}
@@ -977,6 +1005,7 @@ func (h *Handler) ListCalls(c *gin.Context) {
 		return
 	}
 
+	populateAudioURLs(calls)
 	c.JSON(http.StatusOK, gin.H{
 		"calls":  calls,
 		"count":  len(calls),
@@ -1008,6 +1037,7 @@ func (h *Handler) GetCall(c *gin.Context) {
 		return
 	}
 
+	populateAudioURL(call)
 	c.JSON(http.StatusOK, call)
 }
 
@@ -1079,7 +1109,7 @@ func (h *Handler) GetCallAudio(c *gin.Context) {
 // @Tags         calls
 // @Produce      json
 // @Param        id   path      string  true  "Trunk-recorder call ID"
-// @Success      200  {array}   models.Transmission
+// @Success      200  {object}  map[string]interface{}  "Response with transmissions array and count"
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
 // @Failure      500  {object}  rest.ErrorResponse
@@ -1103,7 +1133,10 @@ func (h *Handler) GetCallTransmissions(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, txs)
+	c.JSON(http.StatusOK, gin.H{
+		"transmissions": txs,
+		"count":         len(txs),
+	})
 }
 
 // GetCallFrequencies godoc
@@ -1112,7 +1145,7 @@ func (h *Handler) GetCallTransmissions(c *gin.Context) {
 // @Tags         calls
 // @Produce      json
 // @Param        id   path      string  true  "Trunk-recorder call ID"
-// @Success      200  {array}   models.CallFrequency
+// @Success      200  {object}  map[string]interface{}  "Response with frequencies array and count"
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
 // @Failure      500  {object}  rest.ErrorResponse
@@ -1136,7 +1169,10 @@ func (h *Handler) GetCallFrequencies(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, freqs)
+	c.JSON(http.StatusOK, gin.H{
+		"frequencies": freqs,
+		"count":       len(freqs),
+	})
 }
 
 // ListCallGroups godoc
@@ -1537,6 +1573,7 @@ func (h *Handler) GetRecentCalls(c *gin.Context) {
 		return
 	}
 
+	populateRecentCallAudioURLs(calls)
 	c.JSON(http.StatusOK, gin.H{
 		"calls": calls,
 		"count": len(calls),
@@ -1599,6 +1636,7 @@ func (h *Handler) ListActiveCalls(c *gin.Context) {
 		return
 	}
 
+	populateAudioURLs(calls)
 	c.JSON(http.StatusOK, gin.H{
 		"calls":  calls,
 		"count":  len(calls),

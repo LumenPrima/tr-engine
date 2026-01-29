@@ -746,12 +746,12 @@ const AudioPlayer = {
     document.body.classList.add('player-open');
     // Load transmissions and frequencies
     try {
-      const [txs, freqs] = await Promise.all([
-        API.callTransmissions(cid).catch(() => []),
-        API.callFrequencies(cid).catch(() => []),
+      const [txsRes, freqsRes] = await Promise.all([
+        API.callTransmissions(cid).catch(() => ({})),
+        API.callFrequencies(cid).catch(() => ({})),
       ]);
-      this.transmissions = Array.isArray(txs) ? txs : [];
-      this.frequencies = Array.isArray(freqs) ? freqs : [];
+      this.transmissions = txsRes.transmissions || [];
+      this.frequencies = freqsRes.frequencies || [];
       // Build unit label lookup from unit_id (DB ID) -> fetch alpha tags
       this.unitLabels = {};
       const uniqueUnitIds = [...new Set(this.transmissions.map(tx => tx.unit_id).filter(Boolean))];
@@ -1234,12 +1234,12 @@ Tabs.calls = {
       Panel.open(html);
       bindPlayButtons(UI.$('panel-content'));
       // Load tx + freq
-      const [txs, freqs] = await Promise.all([
-        API.callTransmissions(trCallId).catch(() => []),
-        API.callFrequencies(trCallId).catch(() => []),
+      const [txsRes, freqsRes] = await Promise.all([
+        API.callTransmissions(trCallId).catch(() => ({})),
+        API.callFrequencies(trCallId).catch(() => ({})),
       ]);
-      const txList = Array.isArray(txs) ? txs : [];
-      const freqList = Array.isArray(freqs) ? freqs : [];
+      const txList = txsRes.transmissions || [];
+      const freqList = freqsRes.frequencies || [];
       UI.$('panel-txs').innerHTML = txList.length ?
         '<table class="data-table"><thead><tr><th>Unit</th><th>Position</th><th>Time</th></tr></thead><tbody>' +
         txList.map(t => '<tr><td>' + (t.unit_id ? UI.unitLink({id: t.unit_db_id, unit_id: t.unit_rid || t.unit_id, alpha_tag: t.unit_alpha_tag}) : '--') + '</td><td>' + (t.position||0) + 's</td><td>' + UI.formatTime(t.start_time) + '</td></tr>').join('') +

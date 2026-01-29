@@ -476,8 +476,8 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 		Phase2TDMA:  sidecar.Phase2TDMA != 0,
 		TDMASlot:    int16(sidecar.TDMASlot),
 		AudioType:   sidecar.AudioType,
-		SignalDB:    sidecar.SignalDB,
-		NoiseDB:     sidecar.NoiseDB,
+		SignalDB:    filterSentinelDB(sidecar.SignalDB),
+		NoiseDB:     filterSentinelDB(sidecar.NoiseDB),
 		AudioPath:   audioPath,
 		AudioSize:   audioSize,
 	}
@@ -672,4 +672,13 @@ func copyFile(src, dst string) (int64, error) {
 	}
 
 	return n, nil
+}
+
+// filterSentinelDB converts sentinel values (999, -999) to 0 so omitempty excludes them.
+// Trunk-recorder uses 999 to indicate unknown signal/noise levels.
+func filterSentinelDB(v float32) float32 {
+	if v >= 900 || v <= -900 {
+		return 0
+	}
+	return v
 }
