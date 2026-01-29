@@ -12,7 +12,7 @@ A **system** is a radio network infrastructure. Examples include:
 - A city's municipal radio network
 - A regional interoperability system
 
-Systems have a **short_name** (e.g., "warco" for Warren County) used throughout the API.
+Systems have a **short_name** which is an arbitrary identifier configured by the trunk-recorder operator. It can be anything as long as it's unique within that trunk-recorder instance (e.g., "metro", "county1", "system_a").
 
 **System Types:**
 | Type | Description |
@@ -26,16 +26,17 @@ Systems have a **short_name** (e.g., "warco" for Warren County) used throughout 
 A **talkgroup** is a virtual channel that groups related users. Think of it like a chat room - everyone affiliated with a talkgroup hears each other.
 
 **Examples:**
-- "09-8L Main" (Middletown Police Dispatch)
+- "PD Main" (Police Dispatch)
 - "Fire Dispatch"
 - "EMS Operations"
+- "Public Works"
 
 **Key Fields:**
 | Field | Description |
 |-------|-------------|
 | `tgid` | Numeric identifier (e.g., 9178) |
 | `alpha_tag` | Human-readable name |
-| `group` | Category (e.g., "Butler County Law") |
+| `group` | Category (e.g., "Law Enforcement") |
 | `tag` | Type (e.g., "Law Dispatch", "Fire-Tac") |
 
 ### Unit
@@ -43,8 +44,8 @@ A **talkgroup** is a virtual channel that groups related users. Think of it like
 A **unit** is a radio device - typically a mobile (vehicle-mounted) or portable (handheld) radio. Units are identified by a numeric **Radio ID** (RID).
 
 **Examples:**
-- Unit 9001234 = "Engine 1"
-- Unit 9002001 = "09-8L Unit 1" (Police car)
+- Unit 1001234 = "Engine 1"
+- Unit 1002001 = "Car 201" (Police vehicle)
 
 **Key Fields:**
 | Field | Description |
@@ -127,7 +128,7 @@ P25 Phase 2 uses Time Division Multiple Access (TDMA) to double channel capacity
 
 ### Decode Rate
 
-Percentage of control channel messages successfully decoded (0-100%). Higher is better.
+Percentage of control channel messages successfully decoded (0-100%). Higher is better. This is a trunk-recorder metric reported periodically.
 
 ```
 98.5% = Excellent reception
@@ -135,18 +136,16 @@ Percentage of control channel messages successfully decoded (0-100%). Higher is 
 <90% = Poor reception, may miss calls
 ```
 
-### Error Count
+### Error Count & Spike Count
 
-Number of decode errors during a transmission. High error counts indicate poor signal quality.
+These are quality metrics passed through from trunk-recorder. Lower values indicate better quality recordings. tr-engine uses these values (along with signal strength) to select the best recording when multiple recorders capture the same call.
 
-### Spike Count
-
-Number of audio spikes (pops/clicks) in the recording.
+For precise definitions of what these metrics measure, refer to the [trunk-recorder documentation](https://github.com/robotastic/trunk-recorder).
 
 ### Signal/Noise (dB)
 
-- `signal_db`: Signal strength in decibels
-- `noise_db`: Noise floor in decibels
+- `signal_db`: Signal strength in decibels (from trunk-recorder)
+- `noise_db`: Noise floor in decibels (from trunk-recorder)
 
 ## Event Types
 

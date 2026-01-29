@@ -13,7 +13,7 @@ interface System {
   id: number;              // Database ID
   instance_id: number;     // Trunk-recorder instance
   sys_num: number;         // System number in TR config
-  short_name: string;      // Short identifier (e.g., "warco")
+  short_name: string;      // Short identifier (e.g., "metro")
   system_type?: string;    // "p25", "smartnet", "conventional"
   sysid?: string;          // P25 system ID (hex)
   wacn?: string;           // P25 WACN (hex)
@@ -33,9 +33,9 @@ interface Talkgroup {
   id: number;              // Database ID
   system_id: number;       // Parent system
   tgid: number;            // Talkgroup ID (e.g., 9178)
-  alpha_tag?: string;      // Human name (e.g., "09-8L Main")
+  alpha_tag?: string;      // Human name (e.g., "PD Dispatch")
   description?: string;    // Description
-  group?: string;          // Category (e.g., "Butler County Law")
+  group?: string;          // Category (e.g., "Law Enforcement")
   tag?: string;            // Type tag (e.g., "Law Dispatch")
   priority: number;        // Priority level
   mode?: string;           // "D" = digital, "A" = analog

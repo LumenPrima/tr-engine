@@ -20,7 +20,7 @@ Returns all registered radio systems.
       "id": 1,
       "instance_id": 1,
       "sys_num": 0,
-      "short_name": "warco",
+      "short_name": "metro",
       "system_type": "p25",
       "sysid": "1A3",
       "wacn": "BEE00",
@@ -90,9 +90,9 @@ GET /talkgroups
       "id": 8,
       "system_id": 1,
       "tgid": 9178,
-      "alpha_tag": "09-8L Main",
-      "description": "Middletown Police Dispatch",
-      "group": "Butler County (09) Law",
+      "alpha_tag": "PD Dispatch",
+      "description": "City Police Dispatch",
+      "group": "Law Enforcement",
       "tag": "Law Dispatch",
       "priority": 0,
       "mode": "D",
@@ -141,13 +141,13 @@ GET /talkgroups/{id}/calls
       "system_id": 1,
       "talkgroup_id": 8,
       "tgid": 9178,
-      "tg_alpha_tag": "09-8L Main",
+      "tg_alpha_tag": "PD Dispatch",
       "start_time": "2024-01-15T10:30:00Z",
       "stop_time": "2024-01-15T10:30:45Z",
       "duration": 45.2,
       "encrypted": false,
       "emergency": false,
-      "audio_path": "warco/2024/1/15/9178-1705312200.m4a",
+      "audio_path": "metro/2024/1/15/9178-1705312200.m4a",
       "units": [
         {"unit_rid": 9001234, "alpha_tag": "Unit 123"},
         {"unit_rid": 9001235, "alpha_tag": "Unit 124"}
@@ -347,7 +347,7 @@ Get units with recent activity within a time window.
       "last_seen": "2024-01-15T12:45:00Z",
       "last_event_type": "call",
       "last_event_tgid": 9178,
-      "last_event_tg_tag": "09-8L Main",
+      "last_event_tg_tag": "PD Dispatch",
       "last_event_time": "2024-01-15T12:45:00Z"
     }
   ],
@@ -390,13 +390,13 @@ Returns calls with audio recordings only.
       "system_id": 1,
       "talkgroup_id": 8,
       "tgid": 9178,
-      "tg_alpha_tag": "09-8L Main",
+      "tg_alpha_tag": "PD Dispatch",
       "start_time": "2024-01-15T10:30:00Z",
       "stop_time": "2024-01-15T10:30:45Z",
       "duration": 45.2,
       "encrypted": false,
       "emergency": false,
-      "audio_path": "warco/2024/1/15/9178-1705312200.m4a",
+      "audio_path": "metro/2024/1/15/9178-1705312200.m4a",
       "units": [
         {"unit_rid": 9001234, "alpha_tag": "Unit 123"}
       ]
@@ -589,13 +589,13 @@ Get recently completed calls with full metadata.
       "start_time": "2024-01-15T10:30:00Z",
       "stop_time": "2024-01-15T10:30:45Z",
       "duration": 45.2,
-      "system": "warco",
+      "system": "metro",
       "tgid": 9178,
-      "tg_alpha_tag": "09-8L Main",
+      "tg_alpha_tag": "PD Dispatch",
       "freq": 850387500,
       "encrypted": false,
       "emergency": false,
-      "audio_path": "warco/2024/1/15/9178-1705312200.m4a",
+      "audio_path": "metro/2024/1/15/9178-1705312200.m4a",
       "has_audio": true,
       "units": [
         {"unit_id": 9001234, "unit_tag": "Unit 123"}
@@ -765,7 +765,7 @@ Get system decode rate measurements over time.
   "rates": [
     {
       "system_id": 1,
-      "short_name": "warco",
+      "short_name": "metro",
       "time": "2024-01-15T10:30:00Z",
       "decode_rate": 98.5,
       "control_channel": 851012500
@@ -789,7 +789,7 @@ GET /stats/activity
   "units": 2575,
   "calls_24h": 12576,
   "system_activity": [
-    {"system": "warco", "call_count": 12576}
+    {"system": "metro", "call_count": 12576}
   ]
 }
 ```

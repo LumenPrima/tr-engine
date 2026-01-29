@@ -53,7 +53,7 @@ Send a subscription message after connecting:
 {
   "action": "subscribe",
   "channels": ["calls", "units"],
-  "systems": ["warco"],
+  "systems": ["metro"],
   "talkgroups": [9178, 9180],
   "units": [9001234, 9001235]
 }
@@ -89,7 +89,7 @@ Server responds with:
   "data": {
     "action": "subscribe",
     "channels": ["calls", "units"],
-    "systems": ["warco"],
+    "systems": ["metro"],
     "talkgroups": [9178],
     "units": []
   }
@@ -116,10 +116,10 @@ Fired when a new call begins.
   "event": "call_start",
   "timestamp": 1705312200,
   "data": {
-    "system": "warco",
+    "system": "metro",
     "system_id": 1,
     "talkgroup": 9178,
-    "tg_alpha_tag": "09-8L Main",
+    "tg_alpha_tag": "PD Dispatch",
     "unit": 9001234,
     "freq": 850387500,
     "encrypted": false,
@@ -137,10 +137,10 @@ Fired when a call ends.
   "event": "call_end",
   "timestamp": 1705312245,
   "data": {
-    "system": "warco",
+    "system": "metro",
     "system_id": 1,
     "talkgroup": 9178,
-    "tg_alpha_tag": "09-8L Main",
+    "tg_alpha_tag": "PD Dispatch",
     "start_time": "2024-01-15T10:30:00Z",
     "stop_time": "2024-01-15T10:30:45Z",
     "duration": 45.2,
@@ -160,10 +160,10 @@ Periodic update for active calls.
   "event": "call_active",
   "timestamp": 1705312220,
   "data": {
-    "system": "warco",
+    "system": "metro",
     "system_id": 1,
     "talkgroup": 9178,
-    "tg_alpha_tag": "09-8L Main",
+    "tg_alpha_tag": "PD Dispatch",
     "unit": 9001234,
     "freq": 850387500,
     "elapsed": 20.5,
@@ -182,13 +182,13 @@ Fired when audio file is ready for a completed call.
   "event": "audio_available",
   "timestamp": 1705312250,
   "data": {
-    "system": "warco",
+    "system": "metro",
     "system_id": 1,
     "call_id": 12345,
     "tr_call_id": "1705312200_850387500_9178",
     "talkgroup": 9178,
-    "tg_alpha_tag": "09-8L Main",
-    "audio_path": "warco/2024/1/15/9178-1705312200.m4a",
+    "tg_alpha_tag": "PD Dispatch",
+    "audio_path": "metro/2024/1/15/9178-1705312200.m4a",
     "duration": 45.2
   }
 }
@@ -203,13 +203,13 @@ Fired for unit activity (affiliations, registrations, etc.)
   "event": "unit_event",
   "timestamp": 1705312200,
   "data": {
-    "system": "warco",
+    "system": "metro",
     "system_id": 1,
     "unit": 9001234,
     "unit_alpha_tag": "Unit 123",
     "event_type": "call",
     "talkgroup": 9178,
-    "tg_alpha_tag": "09-8L Main"
+    "tg_alpha_tag": "PD Dispatch"
   }
 }
 ```
@@ -236,7 +236,7 @@ Fired periodically with system decode rates.
   "event": "rate_update",
   "timestamp": 1705312200,
   "data": {
-    "system": "warco",
+    "system": "metro",
     "system_id": 1,
     "decode_rate": 98.5,
     "control_channel": 851012500
@@ -253,13 +253,13 @@ Fired when recorder state changes.
   "event": "recorder_update",
   "timestamp": 1705312200,
   "data": {
-    "system": "warco",
+    "system": "metro",
     "rec_num": 0,
     "state": 1,
     "state_name": "recording",
     "freq": 850387500,
     "talkgroup": 9178,
-    "tg_alpha_tag": "09-8L Main",
+    "tg_alpha_tag": "PD Dispatch",
     "unit": 9001234
   }
 }
@@ -296,7 +296,7 @@ Filters are applied as follows:
 {
   "action": "subscribe",
   "channels": ["calls"],
-  "systems": ["warco"]
+  "systems": ["metro"]
 }
 ```
 
@@ -323,7 +323,7 @@ Filters are applied as follows:
 {
   "action": "subscribe",
   "channels": ["calls"],
-  "systems": ["warco"],
+  "systems": ["metro"],
   "talkgroups": [9178]
 }
 ```
