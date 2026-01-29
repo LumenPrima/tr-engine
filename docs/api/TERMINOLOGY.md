@@ -108,9 +108,20 @@ An **instance** is a running trunk-recorder process. Multiple instances can feed
 
 The numeric identifier for a talkgroup. In P25 systems, TGIDs are typically 5-6 digits.
 
+### SYSID (System ID)
+
+A P25 identifier that uniquely identifies a radio system within a WACN. This is the **scoping key** for talkgroups and units in tr-engine.
+
+**Why SYSID matters:**
+- Multiple sites (configured as separate "systems" in trunk-recorder) may share the same SYSID
+- Talkgroups and units are unique within a SYSID, not within a site
+- When you have multiple P25 networks, use `sysid:tgid` format in API lookups
+
+**Example:** Ohio MARCS has SYSID `348`. Both Butler County and Warren County sites share this SYSID, so talkgroup 9178 refers to the same talkgroup at both sites.
+
 ### WACN (Wide Area Communications Network)
 
-A P25 identifier for a regional network. Multiple systems can share a WACN.
+A P25 identifier for a regional network. Multiple systems can share a WACN. Unlike SYSID, WACN alone doesn't uniquely identify a system.
 
 ### NAC (Network Access Code)
 
@@ -209,14 +220,29 @@ tr-engine uses two types of identifiers:
 |------|------------|-------------|
 | Database ID | `id` | Auto-incrementing integer, stable |
 | Radio ID | `tgid`, `unit_id`, `unit_rid` | From the radio system |
+| Scoping ID | `sysid` | P25 System ID, groups related sites |
 
 **Example:**
 ```json
 {
-  "id": 1729,         // Database ID (use in URLs)
+  "id": 1729,         // Database ID
+  "sysid": "348",     // P25 System ID (scoping)
   "unit_id": 9001234  // Radio ID (what dispatchers see)
 }
 ```
+
+### API Lookup Formats
+
+Talkgroup and unit endpoints accept multiple formats:
+
+| Format | Example | Use Case |
+|--------|---------|----------|
+| `sysid:id` | `348:9178` | Multi-system deployments |
+| Plain numeric | `9178` | Single-system (returns 409 if ambiguous) |
+| `id:number` | `id:123` | Explicit database ID |
+
+**Single-system deployments** can use plain numeric IDs directly.
+**Multi-system deployments** should use `sysid:id` format to avoid 409 Conflict responses.
 
 ### tr_call_id Format
 

@@ -81,17 +81,21 @@ Send a subscription message after connecting:
 
 ### Subscription Confirmation
 
-Server responds with:
+Server responds with current subscription state:
 
 ```json
 {
   "event": "subscribed",
   "data": {
-    "action": "subscribe",
+    "added": {
+      "action": "subscribe",
+      "channels": ["calls", "units"],
+      "systems": ["metro"],
+      "talkgroups": [9178],
+      "units": []
+    },
     "channels": ["calls", "units"],
-    "systems": ["metro"],
-    "talkgroups": [9178],
-    "units": []
+    "systems": ["metro"]
   }
 }
 ```
@@ -102,6 +106,22 @@ Server responds with:
 {
   "action": "unsubscribe",
   "channels": ["rates"]
+}
+```
+
+Server confirms unsubscription with remaining state:
+
+```json
+{
+  "event": "unsubscribed",
+  "data": {
+    "removed": {
+      "action": "unsubscribe",
+      "channels": ["rates"]
+    },
+    "channels": ["calls", "units"],
+    "systems": ["metro"]
+  }
 }
 ```
 
@@ -117,10 +137,13 @@ Fired when a new call begins.
   "timestamp": 1705312200,
   "data": {
     "system": "metro",
-    "system_id": 1,
+    "sysid": "348",
+    "call_id": 12345,
+    "tr_call_id": "1705312200_850387500_9178",
     "talkgroup": 9178,
-    "tg_alpha_tag": "PD Dispatch",
+    "talkgroup_alpha_tag": "PD Dispatch",
     "unit": 9001234,
+    "unit_alpha_tag": "Unit 123",
     "freq": 850387500,
     "encrypted": false,
     "emergency": false
@@ -138,15 +161,18 @@ Fired when a call ends.
   "timestamp": 1705312245,
   "data": {
     "system": "metro",
-    "system_id": 1,
+    "sysid": "348",
+    "call_id": 12345,
+    "tr_call_id": "1705312200_850387500_9178",
     "talkgroup": 9178,
-    "tg_alpha_tag": "PD Dispatch",
-    "start_time": "2024-01-15T10:30:00Z",
-    "stop_time": "2024-01-15T10:30:45Z",
+    "talkgroup_alpha_tag": "PD Dispatch",
+    "unit": 9001234,
+    "unit_alpha_tag": "Unit 123",
     "duration": 45.2,
-    "freq": 850387500,
     "encrypted": false,
-    "emergency": false
+    "emergency": false,
+    "error_count": 0,
+    "spike_count": 0
   }
 }
 ```
@@ -183,16 +209,20 @@ Fired when audio file is ready for a completed call.
   "timestamp": 1705312250,
   "data": {
     "system": "metro",
-    "system_id": 1,
+    "sysid": "348",
     "call_id": 12345,
     "tr_call_id": "1705312200_850387500_9178",
     "talkgroup": 9178,
-    "tg_alpha_tag": "PD Dispatch",
-    "audio_path": "metro/2024/1/15/9178-1705312200.m4a",
-    "duration": 45.2
+    "talkgroup_alpha_tag": "PD Dispatch",
+    "audio_size": 45000,
+    "duration": 45.2,
+    "transmissions": 3,
+    "frequencies": 1
   }
 }
 ```
+
+Use `audio_url` from the call response or construct: `/api/v1/calls/{call_id}/audio`
 
 ### unit_event
 
@@ -204,12 +234,11 @@ Fired for unit activity (affiliations, registrations, etc.)
   "timestamp": 1705312200,
   "data": {
     "system": "metro",
-    "system_id": 1,
+    "sysid": "348",
     "unit": 9001234,
-    "unit_alpha_tag": "Unit 123",
+    "unit_tag": "Unit 123",
     "event_type": "call",
-    "talkgroup": 9178,
-    "tg_alpha_tag": "PD Dispatch"
+    "talkgroup": 9178
   }
 }
 ```
@@ -237,12 +266,15 @@ Fired periodically with system decode rates.
   "timestamp": 1705312200,
   "data": {
     "system": "metro",
-    "system_id": 1,
-    "decode_rate": 98.5,
+    "sysid": "348",
+    "decode_rate": 38.5,
+    "max_rate": 40,
     "control_channel": 851012500
   }
 }
 ```
+
+**Note:** `max_rate` is 40 for P25 Phase 1 systems (voice slots per second). Use `decode_rate / max_rate` to calculate percentage.
 
 ### recorder_update
 

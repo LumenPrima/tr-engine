@@ -47,6 +47,9 @@ definitions:
       audio_type:
         example: digital
         type: string
+      audio_url:
+        example: /api/v1/calls/123/audio
+        type: string
       call_group_id:
         example: 1
         type: integer
@@ -143,34 +146,6 @@ definitions:
           $ref: '#/definitions/models.CallUnit'
         type: array
     type: object
-  models.CallFrequency:
-    description: Frequency usage information within a call
-    properties:
-      call_id:
-        example: 1
-        type: integer
-      duration:
-        example: 15
-        type: number
-      error_count:
-        example: 0
-        type: integer
-      freq:
-        example: 851012500
-        type: integer
-      id:
-        example: 1
-        type: integer
-      position:
-        example: 0
-        type: number
-      spike_count:
-        example: 0
-        type: integer
-      time:
-        example: "2024-01-15T10:30:00Z"
-        type: string
-    type: object
   models.CallUnit:
     properties:
       alpha_tag:
@@ -251,43 +226,6 @@ definitions:
         type: string
       tgid:
         example: 1001
-        type: integer
-    type: object
-  models.Transmission:
-    description: A single unit's transmission within a call
-    properties:
-      call_id:
-        example: 1
-        type: integer
-      duration:
-        example: 15
-        type: number
-      emergency:
-        example: false
-        type: boolean
-      error_count:
-        example: 0
-        type: integer
-      id:
-        example: 1
-        type: integer
-      position:
-        example: 0
-        type: number
-      spike_count:
-        example: 0
-        type: integer
-      start_time:
-        example: "2024-01-15T10:30:00Z"
-        type: string
-      stop_time:
-        example: "2024-01-15T10:30:15Z"
-        type: string
-      unit_id:
-        example: 1
-        type: integer
-      unit_rid:
-        example: 1234567
         type: integer
     type: object
   models.Unit:
@@ -700,11 +638,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Response with frequencies array and count
           schema:
-            items:
-              $ref: '#/definitions/models.CallFrequency'
-            type: array
+            additionalProperties: true
+            type: object
         "400":
           description: Bad Request
           schema:
@@ -734,11 +671,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Response with transmissions array and count
           schema:
-            items:
-              $ref: '#/definitions/models.Transmission'
-            type: array
+            additionalProperties: true
+            type: object
         "400":
           description: Bad Request
           schema:
@@ -1032,10 +968,10 @@ paths:
       - talkgroups
   /talkgroups/{id}:
     get:
-      description: Returns a single talkgroup by ID. Accepts either a numeric database
-        ID or a sysid:tgid format (e.g., "348:9178")
+      description: Returns a single talkgroup. Accepts sysid:tgid format (e.g., "348:9178"),
+        plain tgid (returns 409 if ambiguous), or id:123 for database ID
       parameters:
-      - description: Talkgroup ID (numeric DB ID or sysid:tgid format)
+      - description: Talkgroup ID (sysid:tgid, plain tgid, or id:123)
         in: path
         name: id
         required: true
@@ -1053,6 +989,10 @@ paths:
             $ref: '#/definitions/rest.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "409":
+          description: Ambiguous tgid exists in multiple systems
           schema:
             $ref: '#/definitions/rest.ErrorResponse'
       summary: Get a talkgroup
@@ -1161,10 +1101,10 @@ paths:
       - units
   /units/{id}:
     get:
-      description: Returns a single unit by ID. Accepts either a numeric database
-        ID or a sysid:unit_id format (e.g., "348:1234567")
+      description: Returns a single unit. Accepts sysid:unit_id format (e.g., "348:1234567"),
+        plain unit_id (returns 409 if ambiguous), or id:123 for database ID
       parameters:
-      - description: Unit ID (numeric DB ID or sysid:unit_id format)
+      - description: Unit ID (sysid:unit_id, plain unit_id, or id:123)
         in: path
         name: id
         required: true
@@ -1182,6 +1122,10 @@ paths:
             $ref: '#/definitions/rest.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "409":
+          description: Ambiguous unit_id exists in multiple systems
           schema:
             $ref: '#/definitions/rest.ErrorResponse'
         "500":

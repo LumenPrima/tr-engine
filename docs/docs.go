@@ -423,12 +423,10 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Response with frequencies array and count",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/models.CallFrequency"
-                            }
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -473,12 +471,10 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Response with transmissions array and count",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/models.Transmission"
-                            }
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -828,7 +824,7 @@ const docTemplate = `{
         },
         "/talkgroups/{id}": {
             "get": {
-                "description": "Returns a single talkgroup by ID. Accepts either a numeric database ID or a sysid:tgid format (e.g., \"348:9178\")",
+                "description": "Returns a single talkgroup. Accepts sysid:tgid format (e.g., \"348:9178\"), plain tgid (returns 409 if ambiguous), or id:123 for database ID",
                 "produces": [
                     "application/json"
                 ],
@@ -839,7 +835,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Talkgroup ID (numeric DB ID or sysid:tgid format)",
+                        "description": "Talkgroup ID (sysid:tgid, plain tgid, or id:123)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -860,6 +856,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Ambiguous tgid exists in multiple systems",
                         "schema": {
                             "$ref": "#/definitions/rest.ErrorResponse"
                         }
@@ -1057,7 +1059,7 @@ const docTemplate = `{
         },
         "/units/{id}": {
             "get": {
-                "description": "Returns a single unit by ID. Accepts either a numeric database ID or a sysid:unit_id format (e.g., \"348:1234567\")",
+                "description": "Returns a single unit. Accepts sysid:unit_id format (e.g., \"348:1234567\"), plain unit_id (returns 409 if ambiguous), or id:123 for database ID",
                 "produces": [
                     "application/json"
                 ],
@@ -1068,7 +1070,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Unit ID (numeric DB ID or sysid:unit_id format)",
+                        "description": "Unit ID (sysid:unit_id, plain unit_id, or id:123)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1089,6 +1091,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Ambiguous unit_id exists in multiple systems",
                         "schema": {
                             "$ref": "#/definitions/rest.ErrorResponse"
                         }
@@ -1318,6 +1326,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "digital"
                 },
+                "audio_url": {
+                    "type": "string",
+                    "example": "/api/v1/calls/123/audio"
+                },
                 "call_group_id": {
                     "type": "integer",
                     "example": 1
@@ -1446,44 +1458,6 @@ const docTemplate = `{
                 }
             }
         },
-        "models.CallFrequency": {
-            "description": "Frequency usage information within a call",
-            "type": "object",
-            "properties": {
-                "call_id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "duration": {
-                    "type": "number",
-                    "example": 15
-                },
-                "error_count": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "freq": {
-                    "type": "integer",
-                    "example": 851012500
-                },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "position": {
-                    "type": "number",
-                    "example": 0
-                },
-                "spike_count": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "time": {
-                    "type": "string",
-                    "example": "2024-01-15T10:30:00Z"
-                }
-            }
-        },
         "models.CallUnit": {
             "type": "object",
             "properties": {
@@ -1593,56 +1567,6 @@ const docTemplate = `{
                 "tgid": {
                     "type": "integer",
                     "example": 1001
-                }
-            }
-        },
-        "models.Transmission": {
-            "description": "A single unit's transmission within a call",
-            "type": "object",
-            "properties": {
-                "call_id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "duration": {
-                    "type": "number",
-                    "example": 15
-                },
-                "emergency": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "error_count": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "position": {
-                    "type": "number",
-                    "example": 0
-                },
-                "spike_count": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "start_time": {
-                    "type": "string",
-                    "example": "2024-01-15T10:30:00Z"
-                },
-                "stop_time": {
-                    "type": "string",
-                    "example": "2024-01-15T10:30:15Z"
-                },
-                "unit_id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "unit_rid": {
-                    "type": "integer",
-                    "example": 1234567
                 }
             }
         },

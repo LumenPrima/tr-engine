@@ -31,7 +31,7 @@ Represents a radio talkgroup (channel/group).
 ```typescript
 interface Talkgroup {
   id: number;              // Database ID
-  system_id: number;       // Parent system
+  sysid: string;           // P25 System ID (scoping key)
   tgid: number;            // Talkgroup ID (e.g., 9178)
   alpha_tag?: string;      // Human name (e.g., "PD Dispatch")
   description?: string;    // Description
@@ -44,6 +44,8 @@ interface Talkgroup {
 }
 ```
 
+**Note:** Talkgroups are scoped by `sysid`. The same `tgid` may exist in multiple systems.
+
 ### Unit
 
 Represents a radio unit (mobile/portable radio).
@@ -51,7 +53,7 @@ Represents a radio unit (mobile/portable radio).
 ```typescript
 interface Unit {
   id: number;              // Database ID
-  system_id: number;       // Parent system
+  sysid: string;           // P25 System ID (scoping key)
   unit_id: number;         // Radio ID (e.g., 9001234)
   alpha_tag?: string;      // Human name (e.g., "Unit 123")
   alpha_tag_source?: string; // Source of tag (e.g., "radioreference")
@@ -65,6 +67,8 @@ interface Unit {
   last_event_time?: string;    // ISO 8601 timestamp
 }
 ```
+
+**Note:** Units are scoped by `sysid`. The same `unit_id` may exist in multiple systems.
 
 ### Call
 
@@ -105,6 +109,7 @@ interface Call {
   noise_db: number;        // Noise level
 
   audio_path?: string;     // Relative path to audio file
+  audio_url?: string;      // API URL for audio (e.g., "/api/v1/calls/123/audio")
   audio_size: number;      // File size in bytes
 
   patched_tgids?: number[]; // Patched talkgroups
@@ -390,6 +395,7 @@ interface RecentCallInfo {
   encrypted: boolean;
   emergency: boolean;
   audio_path?: string;
+  audio_url?: string;      // API URL for audio
   has_audio: boolean;
   units: Array<{
     unit_id: number;       // Radio ID

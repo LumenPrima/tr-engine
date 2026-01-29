@@ -85,6 +85,7 @@ Error responses:
 | 200 | Success |
 | 400 | Bad request (invalid parameters) |
 | 404 | Resource not found |
+| 409 | Conflict (ambiguous identifier in multi-system deployment) |
 | 500 | Server error |
 
 ## Key Concepts
@@ -101,15 +102,26 @@ System (1) ─────┬───── (*) Talkgroup
                                      └───── (*) CallFrequency
 ```
 
-### ID Types
+### ID Types and Lookup Formats
 
 tr-engine uses two types of identifiers:
 
-1. **Database IDs** (`id`) - Auto-incrementing integers, used in URLs
+1. **Database IDs** (`id`) - Auto-incrementing integers
 2. **Radio IDs** - Original identifiers from the radio system:
    - `tgid` - Talkgroup ID (e.g., 9178)
    - `unit_id` / `unit_rid` - Radio unit ID (e.g., 9001234)
+   - `sysid` - P25 System ID for scoping (e.g., "348")
    - `tr_call_id` - Trunk-recorder's call identifier
+
+**Lookup Formats for Talkgroups and Units:**
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| `sysid:id` | `348:9178` | Scoped lookup by SYSID and radio ID |
+| Plain numeric | `9178` | Lookup by radio ID (returns 409 if ambiguous) |
+| `id:number` | `id:123` | Explicit database ID lookup |
+
+For single-system deployments, plain numeric lookups work directly. Multi-system deployments should use `sysid:id` format to avoid ambiguity.
 
 ### Audio Access
 

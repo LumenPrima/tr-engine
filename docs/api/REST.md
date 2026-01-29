@@ -111,10 +111,28 @@ GET /talkgroups
 GET /talkgroups/{id}
 ```
 
+Accepts multiple identifier formats:
+- `sysid:tgid` - Scoped lookup (e.g., `348:9178`)
+- Plain `tgid` - Radio ID lookup (returns 409 if ambiguous)
+- `id:number` - Explicit database ID (e.g., `id:123`)
+
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | int | yes | Talkgroup database ID |
+| id | path | string | yes | Talkgroup identifier (see formats above) |
+
+**409 Conflict Response** (when tgid exists in multiple systems):
+```json
+{
+  "error": "ambiguous_identifier",
+  "message": "tgid 9178 exists in multiple systems",
+  "systems": [
+    {"sysid": "348", "alpha_tag": "Metro PD Dispatch"},
+    {"sysid": "5A1", "alpha_tag": "County PD Dispatch"}
+  ],
+  "resolution": "Use explicit format: {sysid}:9178"
+}
+```
 
 ### List Talkgroup Calls
 
@@ -148,6 +166,7 @@ GET /talkgroups/{id}/calls
       "encrypted": false,
       "emergency": false,
       "audio_path": "metro/2024/1/15/9178-1705312200.m4a",
+      "audio_url": "/api/v1/calls/12345/audio",
       "units": [
         {"unit_rid": 9001234, "alpha_tag": "Unit 123"},
         {"unit_rid": 9001235, "alpha_tag": "Unit 124"}
@@ -232,21 +251,39 @@ GET /units
 GET /units/{id}
 ```
 
+Accepts multiple identifier formats:
+- `sysid:unit_id` - Scoped lookup (e.g., `348:9001234`)
+- Plain `unit_id` - Radio ID lookup (returns 409 if ambiguous)
+- `id:number` - Explicit database ID (e.g., `id:1729`)
+
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | int | yes | Unit database ID |
+| id | path | string | yes | Unit identifier (see formats above) |
 
 **Response:**
 ```json
 {
   "id": 1729,
-  "system_id": 1,
+  "sysid": "348",
   "unit_id": 9001234,
   "alpha_tag": "Unit 123",
   "alpha_tag_source": "radioreference",
   "first_seen": "2024-01-15T08:00:00Z",
   "last_seen": "2024-01-15T12:45:00Z"
+}
+```
+
+**409 Conflict Response** (when unit_id exists in multiple systems):
+```json
+{
+  "error": "ambiguous_identifier",
+  "message": "unit_id 9001234 exists in multiple systems",
+  "systems": [
+    {"sysid": "348", "alpha_tag": "Unit 123"},
+    {"sysid": "5A1", "alpha_tag": "Car 234"}
+  ],
+  "resolution": "Use explicit format: {sysid}:9001234"
 }
 ```
 
@@ -397,6 +434,7 @@ Returns calls with audio recordings only.
       "encrypted": false,
       "emergency": false,
       "audio_path": "metro/2024/1/15/9178-1705312200.m4a",
+      "audio_url": "/api/v1/calls/12345/audio",
       "units": [
         {"unit_rid": 9001234, "alpha_tag": "Unit 123"}
       ]
@@ -596,6 +634,7 @@ Get recently completed calls with full metadata.
       "encrypted": false,
       "emergency": false,
       "audio_path": "metro/2024/1/15/9178-1705312200.m4a",
+      "audio_url": "/api/v1/calls/12345/audio",
       "has_audio": true,
       "units": [
         {"unit_id": 9001234, "unit_tag": "Unit 123"}
