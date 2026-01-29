@@ -41,7 +41,7 @@ type Watcher struct {
 
 	// Caches (protected by mutex)
 	mu             sync.RWMutex
-	systemCache    map[string]int
+	systemCache    map[string]*models.System
 	talkgroupCache map[string]int
 
 	// Active calls tracking (for log events)
@@ -101,7 +101,7 @@ func New(db *database.DB, cfg Config, logger *zap.Logger) (*Watcher, error) {
 		backfill:       cfg.Backfill,
 		logger:         logger,
 		watcher:        fsw,
-		systemCache:    make(map[string]int),
+		systemCache:    make(map[string]*models.System),
 		talkgroupCache: make(map[string]int),
 		activeCalls:    make(map[string]*activeCall),
 		recorders:      make(map[int]*RecorderState),
@@ -297,15 +297,16 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 	}
 
 	// Get or create system
-	sysID, err := w.getOrCreateSystem(ctx, system)
+	sys, err := w.getOrCreateSystem(ctx, system)
 	if err != nil {
 		w.logger.Debug("Failed to get system", zap.String("system", system), zap.Error(err))
 		w.errors++
 		return
 	}
+	sysid := database.EffectiveSYSID(sys)
 
 	// Get or create talkgroup
-	tgID, err := w.getOrCreateTalkgroup(ctx, sysID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
+	tgID, err := w.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
 	if err != nil {
 		w.logger.Debug("Failed to get talkgroup", zap.Error(err))
 		w.errors++
@@ -336,7 +337,7 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 
 	// Check if call already exists
 	startTime := time.Unix(sidecar.StartTime, 0)
-	existing, _ := w.db.GetCallBySystemTGIDAndTime(ctx, sysID, sidecar.Talkgroup, startTime)
+	existing, _ := w.db.GetCallBySystemTGIDAndTime(ctx, sys.ID, sidecar.Talkgroup, startTime)
 	if existing != nil {
 		w.callsSkipped++
 		return
@@ -346,7 +347,7 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 	stopTime := time.Unix(sidecar.StopTime, 0)
 	call := &models.Call{
 		InstanceID:  1,
-		SystemID:    sysID,
+		SystemID:    sys.ID,
 		TalkgroupID: &tgID,
 		StartTime:   startTime,
 		StopTime:    &stopTime,
@@ -373,9 +374,14 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 
 	// Process transmissions
 	for idx, src := range sidecar.SrcList {
-		unit, err := w.db.UpsertUnit(ctx, sysID, src.Src, src.Tag, "watcher")
+		unit, err := w.db.UpsertUnit(ctx, sysid, src.Src, src.Tag, "watcher")
 		if err != nil {
 			continue
+		}
+
+		// Record site association
+		if unit != nil {
+			w.db.UpsertUnitSite(ctx, unit.ID, sys.ID)
 		}
 
 		var unitID *int
@@ -477,28 +483,28 @@ func (w *Watcher) ensureDefaultInstance(ctx context.Context) error {
 }
 
 // getOrCreateSystem gets or creates a system record (cached)
-func (w *Watcher) getOrCreateSystem(ctx context.Context, shortName string) (int, error) {
+func (w *Watcher) getOrCreateSystem(ctx context.Context, shortName string) (*models.System, error) {
 	w.mu.RLock()
-	if id, ok := w.systemCache[shortName]; ok {
+	if sys, ok := w.systemCache[shortName]; ok {
 		w.mu.RUnlock()
-		return id, nil
+		return sys, nil
 	}
 	w.mu.RUnlock()
 
 	sys, err := w.db.UpsertSystem(ctx, 1, 0, shortName, "", "", "", "", 0, 0, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	w.mu.Lock()
-	w.systemCache[shortName] = sys.ID
+	w.systemCache[shortName] = sys
 	w.mu.Unlock()
-	return sys.ID, nil
+	return sys, nil
 }
 
 // getOrCreateTalkgroup gets or creates a talkgroup record (cached)
-func (w *Watcher) getOrCreateTalkgroup(ctx context.Context, sysID, tgid int, tag, desc, group, groupTag string) (int, error) {
-	key := fmt.Sprintf("%d:%d", sysID, tgid)
+func (w *Watcher) getOrCreateTalkgroup(ctx context.Context, sysid string, systemID, tgid int, tag, desc, group, groupTag string) (int, error) {
+	key := fmt.Sprintf("%s:%d", sysid, tgid)
 
 	w.mu.RLock()
 	if id, ok := w.talkgroupCache[key]; ok {
@@ -507,9 +513,14 @@ func (w *Watcher) getOrCreateTalkgroup(ctx context.Context, sysID, tgid int, tag
 	}
 	w.mu.RUnlock()
 
-	tg, err := w.db.UpsertTalkgroup(ctx, sysID, tgid, tag, desc, group, groupTag, 0, "")
+	tg, err := w.db.UpsertTalkgroup(ctx, sysid, tgid, tag, desc, group, groupTag, 0, "")
 	if err != nil {
 		return 0, err
+	}
+
+	// Record site association
+	if err := w.db.UpsertTalkgroupSite(ctx, tg.ID, systemID); err != nil {
+		w.logger.Debug("Failed to upsert talkgroup site", zap.Error(err))
 	}
 
 	w.mu.Lock()
@@ -636,15 +647,22 @@ func (w *Watcher) handleUnitOnCall(ctx context.Context, event LogEvent) {
 	data := event.Data.(UnitOnCallEvent)
 
 	// Get or create system
-	sysID, err := w.getOrCreateSystem(ctx, event.System)
+	sys, err := w.getOrCreateSystem(ctx, event.System)
 	if err != nil {
 		return
 	}
+	sysid := database.EffectiveSYSID(sys)
 
 	// Upsert unit (updates last_seen)
-	_, err = w.db.UpsertUnit(ctx, sysID, data.UnitID, "", "log")
+	unit, err := w.db.UpsertUnit(ctx, sysid, data.UnitID, "", "log")
 	if err != nil {
 		w.logger.Debug("Failed to upsert unit from log", zap.Error(err))
+		return
+	}
+
+	// Record site association
+	if unit != nil {
+		w.db.UpsertUnitSite(ctx, unit.ID, sys.ID)
 	}
 }
 
@@ -654,15 +672,19 @@ func (w *Watcher) handleUnitAlias(ctx context.Context, event LogEvent) {
 
 	// We need a system context - use all systems in cache
 	w.mu.RLock()
-	systems := make([]int, 0, len(w.systemCache))
-	for _, sysID := range w.systemCache {
-		systems = append(systems, sysID)
+	systems := make([]*models.System, 0, len(w.systemCache))
+	for _, sys := range w.systemCache {
+		systems = append(systems, sys)
 	}
 	w.mu.RUnlock()
 
 	// Update unit in all known systems (the alias applies to the radio itself)
-	for _, sysID := range systems {
-		w.db.UpsertUnit(ctx, sysID, data.UnitID, data.AlphaTag, "log")
+	for _, sys := range systems {
+		sysid := database.EffectiveSYSID(sys)
+		unit, err := w.db.UpsertUnit(ctx, sysid, data.UnitID, data.AlphaTag, "log")
+		if err == nil && unit != nil {
+			w.db.UpsertUnitSite(ctx, unit.ID, sys.ID)
+		}
 	}
 
 	w.logger.Debug("Unit alias discovered",
@@ -676,7 +698,7 @@ func (w *Watcher) handleDecodeRate(ctx context.Context, event LogEvent) {
 	data := event.Data.(DecodeRateEvent)
 
 	// Get or create system
-	sysID, err := w.getOrCreateSystem(ctx, data.System)
+	sys, err := w.getOrCreateSystem(ctx, data.System)
 	if err != nil {
 		return
 	}
@@ -684,14 +706,14 @@ func (w *Watcher) handleDecodeRate(ctx context.Context, event LogEvent) {
 	// Broadcast rate update
 	w.broadcast("rate_update", map[string]interface{}{
 		"system":    data.System,
-		"system_id": sysID,
+		"system_id": sys.ID,
 		"rate":      data.MsgPerSec,
 		"freq":      int64(data.Freq * 1e6),
 	})
 
 	w.logger.Debug("Decode rate",
 		zap.String("system", data.System),
-		zap.Int("system_id", sysID),
+		zap.Int("system_id", sys.ID),
 		zap.Int("msg_per_sec", data.MsgPerSec),
 	)
 }
@@ -997,21 +1019,22 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 	}
 
 	// Get or create system
-	sysID, err := w.getOrCreateSystem(ctx, system)
+	sys, err := w.getOrCreateSystem(ctx, system)
 	if err != nil {
 		return
 	}
+	sysid := database.EffectiveSYSID(sys)
 
 	// Check if already imported (by system, tgid, start_time)
 	startTime := time.Unix(sidecar.StartTime, 0)
-	existing, _ := w.db.GetCallBySystemTGIDAndTime(ctx, sysID, sidecar.Talkgroup, startTime)
+	existing, _ := w.db.GetCallBySystemTGIDAndTime(ctx, sys.ID, sidecar.Talkgroup, startTime)
 	if existing != nil {
 		// Already imported, skip
 		return
 	}
 
 	// Get or create talkgroup
-	tgID, err := w.getOrCreateTalkgroup(ctx, sysID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
+	tgID, err := w.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
 	if err != nil {
 		return
 	}
@@ -1040,7 +1063,7 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 	stopTime := time.Unix(sidecar.StopTime, 0)
 	call := &models.Call{
 		InstanceID:  1,
-		SystemID:    sysID,
+		SystemID:    sys.ID,
 		TalkgroupID: &tgID,
 		StartTime:   startTime,
 		StopTime:    &stopTime,
@@ -1065,9 +1088,14 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 
 	// Process transmissions
 	for idx, src := range sidecar.SrcList {
-		unit, err := w.db.UpsertUnit(ctx, sysID, src.Src, src.Tag, "backfill")
+		unit, err := w.db.UpsertUnit(ctx, sysid, src.Src, src.Tag, "backfill")
 		if err != nil {
 			continue
+		}
+
+		// Record site association
+		if unit != nil {
+			w.db.UpsertUnitSite(ctx, unit.ID, sys.ID)
 		}
 
 		var unitID *int

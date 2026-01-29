@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -282,25 +283,20 @@ func (h *Handler) ListSystemTalkgroups(c *gin.Context) {
 
 // ListTalkgroups godoc
 // @Summary      List all talkgroups
-// @Description  Returns all talkgroups, optionally filtered by system
+// @Description  Returns all talkgroups, optionally filtered by SYSID
 // @Tags         talkgroups
 // @Produce      json
-// @Param        system  query  int  false  "Filter by system ID"
-// @Param        limit   query  int  false  "Results per page"  default(50)
-// @Param        offset  query  int  false  "Page offset"       default(0)
+// @Param        sysid   query  string  false  "Filter by SYSID (P25 system identifier)"
+// @Param        limit   query  int     false  "Results per page"  default(50)
+// @Param        offset  query  int     false  "Page offset"       default(0)
 // @Success      200  {object}  rest.TalkgroupListResponse
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /talkgroups [get]
 func (h *Handler) ListTalkgroups(c *gin.Context) {
 	limit, offset := h.parsePagination(c)
 
-	// Get system filter if provided
-	var systemID *int
-	if s := c.Query("system"); s != "" {
-		if id, err := strconv.Atoi(s); err == nil {
-			systemID = &id
-		}
-	}
+	// Get SYSID filter (new: filter by P25 SYSID string)
+	sysidFilter := c.Query("sysid")
 
 	// Get search filter if provided
 	search := c.Query("search")
@@ -343,9 +339,9 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 	var args []interface{}
 	argIdx := 1
 
-	if systemID != nil {
-		conditions = append(conditions, "system_id = $"+strconv.Itoa(argIdx))
-		args = append(args, *systemID)
+	if sysidFilter != "" {
+		conditions = append(conditions, "sysid = $"+strconv.Itoa(argIdx))
+		args = append(args, sysidFilter)
 		argIdx++
 	}
 
@@ -357,7 +353,7 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		argIdx += 4
 	}
 
-	query := `SELECT id, system_id, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen FROM talkgroups`
+	query := `SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen FROM talkgroups`
 	if len(conditions) > 0 {
 		query += " WHERE " + conditions[0]
 		for i := 1; i < len(conditions); i++ {
@@ -372,15 +368,16 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		defer rows.Close()
 		var results []map[string]interface{}
 		for rows.Next() {
-			var id, sysID, tgid, priority int
+			var id, tgid, priority int
+			var sysid string
 			var alphaTag, description, group, tag, mode *string
 			var firstSeen, lastSeen time.Time
-			if scanErr := rows.Scan(&id, &sysID, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen); scanErr != nil {
+			if scanErr := rows.Scan(&id, &sysid, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen); scanErr != nil {
 				continue
 			}
 			results = append(results, map[string]interface{}{
 				"id":          id,
-				"system_id":   sysID,
+				"sysid":       sysid,
 				"tgid":        tgid,
 				"alpha_tag":   alphaTag,
 				"description": description,
@@ -461,39 +458,58 @@ func (h *Handler) GetTalkgroupEncryptionStats(c *gin.Context) {
 
 // GetTalkgroup godoc
 // @Summary      Get a talkgroup
-// @Description  Returns a single talkgroup by ID
+// @Description  Returns a single talkgroup by ID. Accepts either a numeric database ID or a sysid:tgid format (e.g., "348:9178")
 // @Tags         talkgroups
 // @Produce      json
-// @Param        id   path      int  true  "Talkgroup ID"
+// @Param        id   path      string  true  "Talkgroup ID (numeric DB ID or sysid:tgid format)"
 // @Success      200  {object}  models.Talkgroup
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
 // @Router       /talkgroups/{id} [get]
 func (h *Handler) GetTalkgroup(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID"})
-		return
-	}
+	idParam := c.Param("id")
 
 	var tg struct {
-		ID          int        `json:"id"`
-		SystemID    int        `json:"system_id"`
-		TGID        int        `json:"tgid"`
-		AlphaTag    *string    `json:"alpha_tag"`
-		Description *string    `json:"description"`
-		Group       *string    `json:"group"`
-		Tag         *string    `json:"tag"`
-		Priority    int        `json:"priority"`
-		Mode        *string    `json:"mode"`
-		FirstSeen   time.Time  `json:"first_seen"`
-		LastSeen    time.Time  `json:"last_seen"`
+		ID          int       `json:"id"`
+		SYSID       string    `json:"sysid"`
+		TGID        int       `json:"tgid"`
+		AlphaTag    *string   `json:"alpha_tag"`
+		Description *string   `json:"description"`
+		Group       *string   `json:"group"`
+		Tag         *string   `json:"tag"`
+		Priority    int       `json:"priority"`
+		Mode        *string   `json:"mode"`
+		FirstSeen   time.Time `json:"first_seen"`
+		LastSeen    time.Time `json:"last_seen"`
 	}
 
-	err = h.db.Pool().QueryRow(c.Request.Context(), `
-		SELECT id, system_id, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-		FROM talkgroups WHERE id = $1
-	`, id).Scan(&tg.ID, &tg.SystemID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+	ctx := c.Request.Context()
+	var err error
+
+	// Check if it's a sysid:tgid format
+	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
+		sysid := parts[0]
+		tgid, parseErr := strconv.Atoi(parts[1])
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID format"})
+			return
+		}
+		err = h.db.Pool().QueryRow(ctx, `
+			SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+			FROM talkgroups WHERE sysid = $1 AND tgid = $2
+		`, sysid, tgid).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+	} else {
+		// Numeric ID - database row ID
+		id, parseErr := strconv.Atoi(idParam)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID"})
+			return
+		}
+		err = h.db.Pool().QueryRow(ctx, `
+			SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+			FROM talkgroups WHERE id = $1
+		`, id).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+	}
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
@@ -544,24 +560,20 @@ func (h *Handler) ListTalkgroupCalls(c *gin.Context) {
 
 // ListUnits godoc
 // @Summary      List all units
-// @Description  Returns all radio units, optionally filtered by system
+// @Description  Returns all radio units, optionally filtered by SYSID
 // @Tags         units
 // @Produce      json
-// @Param        system  query  int  false  "Filter by system ID"
-// @Param        limit   query  int  false  "Results per page"  default(50)
-// @Param        offset  query  int  false  "Page offset"       default(0)
+// @Param        sysid   query  string  false  "Filter by SYSID (P25 system identifier)"
+// @Param        limit   query  int     false  "Results per page"  default(50)
+// @Param        offset  query  int     false  "Page offset"       default(0)
 // @Success      200  {object}  rest.UnitListResponse
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /units [get]
 func (h *Handler) ListUnits(c *gin.Context) {
 	limit, offset := h.parsePagination(c)
 
-	var systemID *int
-	if s := c.Query("system"); s != "" {
-		if id, err := strconv.Atoi(s); err == nil {
-			systemID = &id
-		}
-	}
+	// Get SYSID filter (new: filter by P25 SYSID string)
+	sysidFilter := c.Query("sysid")
 
 	// Get search filter if provided
 	search := c.Query("search")
@@ -602,9 +614,9 @@ func (h *Handler) ListUnits(c *gin.Context) {
 	var args []interface{}
 	argIdx := 1
 
-	if systemID != nil {
-		conditions = append(conditions, "system_id = $"+strconv.Itoa(argIdx))
-		args = append(args, *systemID)
+	if sysidFilter != "" {
+		conditions = append(conditions, "sysid = $"+strconv.Itoa(argIdx))
+		args = append(args, sysidFilter)
 		argIdx++
 	}
 
@@ -616,7 +628,7 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		argIdx += 2
 	}
 
-	query := `SELECT id, system_id, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen FROM units`
+	query := `SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen FROM units`
 	if len(conditions) > 0 {
 		query += " WHERE " + conditions[0]
 		for i := 1; i < len(conditions); i++ {
@@ -631,16 +643,17 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		defer rows.Close()
 		var results []map[string]interface{}
 		for rows.Next() {
-			var id, sysID int
+			var id int
+			var sysid string
 			var unitID int64
 			var alphaTag, alphaTagSource *string
 			var firstSeen, lastSeen time.Time
-			if scanErr := rows.Scan(&id, &sysID, &unitID, &alphaTag, &alphaTagSource, &firstSeen, &lastSeen); scanErr != nil {
+			if scanErr := rows.Scan(&id, &sysid, &unitID, &alphaTag, &alphaTagSource, &firstSeen, &lastSeen); scanErr != nil {
 				continue
 			}
 			results = append(results, map[string]interface{}{
 				"id":               id,
-				"system_id":        sysID,
+				"sysid":            sysid,
 				"unit_id":          unitID,
 				"alpha_tag":        alphaTag,
 				"alpha_tag_source": alphaTagSource,
@@ -675,23 +688,41 @@ func (h *Handler) ListUnits(c *gin.Context) {
 
 // GetUnit godoc
 // @Summary      Get a unit
-// @Description  Returns a single unit by ID
+// @Description  Returns a single unit by ID. Accepts either a numeric database ID or a sysid:unit_id format (e.g., "348:1234567")
 // @Tags         units
 // @Produce      json
-// @Param        id   path      int  true  "Unit ID"
+// @Param        id   path      string  true  "Unit ID (numeric DB ID or sysid:unit_id format)"
 // @Success      200  {object}  models.Unit
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /units/{id} [get]
 func (h *Handler) GetUnit(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
-		return
+	idParam := c.Param("id")
+	ctx := c.Request.Context()
+
+	var unit *models.Unit
+	var err error
+
+	// Check if it's a sysid:unit_id format
+	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
+		sysid := parts[0]
+		unitID, parseErr := strconv.ParseInt(parts[1], 10, 64)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID format"})
+			return
+		}
+		unit, err = h.db.GetUnit(ctx, sysid, unitID)
+	} else {
+		// Numeric ID - database row ID
+		id, parseErr := strconv.Atoi(idParam)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
+			return
+		}
+		unit, err = h.db.GetUnitByID(ctx, id)
 	}
 
-	unit, err := h.db.GetUnitByID(c.Request.Context(), id)
 	if err != nil {
 		h.logger.Error("Failed to get unit", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get unit"})
@@ -1582,7 +1613,8 @@ func (h *Handler) ListActiveCalls(c *gin.Context) {
 // @Tags         units
 // @Produce      json
 // @Param        window     query  int     false  "Activity window in minutes (1-60)"  default(5)
-// @Param        system     query  string  false  "System ID or short_name"
+// @Param        sysid      query  string  false  "Filter by SYSID (P25 system identifier)"
+// @Param        system     query  string  false  "System ID or short_name (deprecated, use sysid)"
 // @Param        sys_name   query  string  false  "System short name"
 // @Param        talkgroup  query  int     false  "Filter by talkgroup ID"
 // @Param        limit      query  int     false  "Results per page"  default(50)
@@ -1604,7 +1636,12 @@ func (h *Handler) ListActiveUnits(c *gin.Context) {
 		}
 	}
 
-	// Parse system filter (by ID or short_name)
+	// Parse SYSID filter (preferred for units)
+	if s := c.Query("sysid"); s != "" {
+		filters.SYSID = &s
+	}
+
+	// Parse system filter (by ID or short_name) - legacy support
 	if s := c.Query("system"); s != "" {
 		if id, err := strconv.Atoi(s); err == nil {
 			filters.SystemID = &id

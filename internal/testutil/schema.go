@@ -47,9 +47,10 @@ CREATE TABLE IF NOT EXISTS systems (
 CREATE INDEX IF NOT EXISTS idx_systems_short_name ON systems(short_name);
 
 -- Talkgroups (loaded from talkgroup files or discovered)
+-- Unique within SYSID, not per-site
 CREATE TABLE IF NOT EXISTS talkgroups (
     id              SERIAL PRIMARY KEY,
-    system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
+    sysid           VARCHAR(16) NOT NULL,
     tgid            INTEGER NOT NULL,
     alpha_tag       VARCHAR(255),
     description     TEXT,
@@ -59,24 +60,49 @@ CREATE TABLE IF NOT EXISTS talkgroups (
     mode            VARCHAR(16),
     first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(system_id, tgid)
+    UNIQUE(sysid, tgid)
 );
 
 CREATE INDEX IF NOT EXISTS idx_talkgroups_last_seen ON talkgroups(last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_talkgroups_sysid ON talkgroups(sysid);
+
+-- Junction table: which sites have seen each talkgroup
+CREATE TABLE IF NOT EXISTS talkgroup_sites (
+    talkgroup_id    INTEGER NOT NULL REFERENCES talkgroups(id) ON DELETE CASCADE,
+    system_id       INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+    first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (talkgroup_id, system_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_talkgroup_sites_system ON talkgroup_sites(system_id);
 
 -- Radio units
+-- Unique within SYSID, not per-site
 CREATE TABLE IF NOT EXISTS units (
     id              SERIAL PRIMARY KEY,
-    system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
+    sysid           VARCHAR(16) NOT NULL,
     unit_id         BIGINT NOT NULL,
     alpha_tag       VARCHAR(255),
     alpha_tag_source VARCHAR(32),
     first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(system_id, unit_id)
+    UNIQUE(sysid, unit_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_units_last_seen ON units(last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_units_sysid ON units(sysid);
+
+-- Junction table: which sites have seen each unit
+CREATE TABLE IF NOT EXISTS unit_sites (
+    unit_id         INTEGER NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+    system_id       INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+    first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (unit_id, system_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_unit_sites_system ON unit_sites(system_id);
 
 -- Recorders from each instance
 CREATE TABLE IF NOT EXISTS recorders (
@@ -254,6 +280,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     dirty BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- Mark as migrated to version 1
-INSERT INTO schema_migrations (version, dirty) VALUES (1, FALSE) ON CONFLICT DO NOTHING;
+-- Mark as migrated to version 2 (SYSID scoping)
+INSERT INTO schema_migrations (version, dirty) VALUES (2, FALSE) ON CONFLICT DO NOTHING;
 `

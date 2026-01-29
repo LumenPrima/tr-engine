@@ -86,7 +86,7 @@ type Processor struct {
 	instanceLock sync.RWMutex
 	instances    map[string]int // instanceID -> db ID cache
 	systemLock   sync.RWMutex
-	systems      map[string]int // shortName -> db ID cache
+	systems      map[string]*models.System // shortName -> system cache
 	sourceLock   sync.RWMutex
 	sources      map[string]int // "instID:sourceNum" -> db ID cache
 	activeCallsLock sync.RWMutex
@@ -106,7 +106,7 @@ func NewProcessor(db *database.DB, storage *storage.AudioStorage, dedup *dedup.E
 		dedup:          dedup,
 		logger:         logger,
 		instances:      make(map[string]int),
-		systems:        make(map[string]int),
+		systems:        make(map[string]*models.System),
 		sources:        make(map[string]int),
 		activeCalls:    make(map[string]*ActiveCallInfo),
 		recorderStates: make(map[recorderStateKey]recorderState),
@@ -468,30 +468,42 @@ func (p *Processor) getOrCreateInstance(ctx context.Context, instanceID string) 
 	return inst.ID, nil
 }
 
-// getSystemID gets the database ID for a system
-func (p *Processor) getSystemID(ctx context.Context, shortName string) (int, error) {
+// getSystem gets the cached system record by short name
+func (p *Processor) getSystem(ctx context.Context, shortName string) (*models.System, error) {
 	// Check cache first
 	p.systemLock.RLock()
-	if id, ok := p.systems[shortName]; ok {
+	if sys, ok := p.systems[shortName]; ok {
 		p.systemLock.RUnlock()
-		return id, nil
+		return sys, nil
 	}
 	p.systemLock.RUnlock()
 
 	// Query database
 	sys, err := p.db.GetSystemByShortName(ctx, shortName)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if sys == nil {
-		return 0, nil // System not found
+		return nil, nil // System not found
 	}
 
 	// Update cache
 	p.systemLock.Lock()
-	p.systems[shortName] = sys.ID
+	p.systems[shortName] = sys
 	p.systemLock.Unlock()
 
+	return sys, nil
+}
+
+// getSystemID gets the database ID for a system (convenience wrapper)
+func (p *Processor) getSystemID(ctx context.Context, shortName string) (int, error) {
+	sys, err := p.getSystem(ctx, shortName)
+	if err != nil {
+		return 0, err
+	}
+	if sys == nil {
+		return 0, nil
+	}
 	return sys.ID, nil
 }
 
@@ -771,7 +783,7 @@ func (p *Processor) ProcessConfig(ctx context.Context, data *ConfigData) error {
 		} else {
 			// Update cache
 			p.systemLock.Lock()
-			p.systems[sys.ShortName] = s.ID
+			p.systems[sys.ShortName] = s
 			p.systemLock.Unlock()
 		}
 	}
@@ -800,7 +812,7 @@ func (p *Processor) ProcessSystemStatus(ctx context.Context, data *SystemStatusD
 
 	// Update cache
 	p.systemLock.Lock()
-	p.systems[data.ShortName] = sys.ID
+	p.systems[data.ShortName] = sys
 	p.systemLock.Unlock()
 
 	// Broadcast system update

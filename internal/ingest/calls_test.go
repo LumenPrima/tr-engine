@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/trunk-recorder/tr-engine/internal/database"
 )
 
 func setupTestSystem(t *testing.T, p *Processor) {
@@ -434,9 +435,10 @@ func TestProcessor_processTransmissions(t *testing.T) {
 	err = testDB.Pool.QueryRow(ctx, "SELECT id FROM calls WHERE tr_call_id = $1", "call-123").Scan(&callID)
 	require.NoError(t, err)
 
-	// Get system ID
-	sysID, err := p.getSystemID(ctx, "county")
+	// Get system and derive sysid
+	sys, err := p.getSystem(ctx, "county")
 	require.NoError(t, err)
+	sysid := database.EffectiveSYSID(sys)
 
 	srcList := []SourceUnitData{
 		{
@@ -458,13 +460,13 @@ func TestProcessor_processTransmissions(t *testing.T) {
 	// We can't call processTransmissions directly since it expects *models.Call
 	// Instead, verify that unit upsert works
 	for _, src := range srcList {
-		_, err := p.db.UpsertUnit(ctx, sysID, src.Src, src.Tag, "ota")
+		_, err := p.db.UpsertUnit(ctx, sysid, src.Src, src.Tag, "ota")
 		require.NoError(t, err)
 	}
 
 	// Verify units were created
 	var unitCount int
-	err = testDB.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM units WHERE system_id = $1", sysID).Scan(&unitCount)
+	err = testDB.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM units WHERE sysid = $1", sysid).Scan(&unitCount)
 	require.NoError(t, err)
 	assert.Equal(t, 2, unitCount)
 }

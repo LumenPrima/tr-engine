@@ -217,7 +217,7 @@ definitions:
         type: string
     type: object
   models.Talkgroup:
-    description: A talkgroup on a radio system
+    description: A talkgroup on a radio system, unique within a SYSID
     properties:
       alpha_tag:
         example: Fire Dispatch
@@ -243,9 +243,9 @@ definitions:
       priority:
         example: 1
         type: integer
-      system_id:
-        example: 1
-        type: integer
+      sysid:
+        example: "348"
+        type: string
       tag:
         example: Fire Dispatch
         type: string
@@ -291,7 +291,7 @@ definitions:
         type: integer
     type: object
   models.Unit:
-    description: A radio unit (mobile or portable radio)
+    description: A radio unit (mobile or portable radio), unique within a SYSID
     properties:
       alpha_tag:
         example: Engine 1
@@ -320,9 +320,9 @@ definitions:
       last_seen:
         example: "2024-01-15T12:30:00Z"
         type: string
-      system_id:
-        example: 1
-        type: integer
+      sysid:
+        example: "348"
+        type: string
       unit_id:
         example: 1234567
         type: integer
@@ -507,7 +507,7 @@ info:
   description: Backend service for trunk-recorder data ingestion and querying. Provides
     REST APIs for accessing radio system data, calls, talkgroups, and units.
   title: tr-engine API
-  version: 0.1.1-beta1
+  version: 0.2.1-beta2
 paths:
   /call-groups:
     get:
@@ -1000,12 +1000,12 @@ paths:
       - systems
   /talkgroups:
     get:
-      description: Returns all talkgroups, optionally filtered by system
+      description: Returns all talkgroups, optionally filtered by SYSID
       parameters:
-      - description: Filter by system ID
+      - description: Filter by SYSID (P25 system identifier)
         in: query
-        name: system
-        type: integer
+        name: sysid
+        type: string
       - default: 50
         description: Results per page
         in: query
@@ -1032,13 +1032,14 @@ paths:
       - talkgroups
   /talkgroups/{id}:
     get:
-      description: Returns a single talkgroup by ID
+      description: Returns a single talkgroup by ID. Accepts either a numeric database
+        ID or a sysid:tgid format (e.g., "348:9178")
       parameters:
-      - description: Talkgroup ID
+      - description: Talkgroup ID (numeric DB ID or sysid:tgid format)
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -1128,12 +1129,12 @@ paths:
       - talkgroups
   /units:
     get:
-      description: Returns all radio units, optionally filtered by system
+      description: Returns all radio units, optionally filtered by SYSID
       parameters:
-      - description: Filter by system ID
+      - description: Filter by SYSID (P25 system identifier)
         in: query
-        name: system
-        type: integer
+        name: sysid
+        type: string
       - default: 50
         description: Results per page
         in: query
@@ -1160,13 +1161,14 @@ paths:
       - units
   /units/{id}:
     get:
-      description: Returns a single unit by ID
+      description: Returns a single unit by ID. Accepts either a numeric database
+        ID or a sysid:unit_id format (e.g., "348:1234567")
       parameters:
-      - description: Unit ID
+      - description: Unit ID (numeric DB ID or sysid:unit_id format)
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -1298,7 +1300,11 @@ paths:
         in: query
         name: window
         type: integer
-      - description: System ID or short_name
+      - description: Filter by SYSID (P25 system identifier)
+        in: query
+        name: sysid
+        type: string
+      - description: System ID or short_name (deprecated, use sysid)
         in: query
         name: system
         type: string

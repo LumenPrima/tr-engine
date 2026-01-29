@@ -7,7 +7,7 @@
         "description": "Backend service for trunk-recorder data ingestion and querying. Provides REST APIs for accessing radio system data, calls, talkgroups, and units.",
         "title": "tr-engine API",
         "contact": {},
-        "version": "0.1.1-beta1"
+        "version": "0.2.1-beta2"
     },
     "host": "localhost:8080",
     "basePath": "/api/v1",
@@ -742,7 +742,7 @@
         },
         "/talkgroups": {
             "get": {
-                "description": "Returns all talkgroups, optionally filtered by system",
+                "description": "Returns all talkgroups, optionally filtered by SYSID",
                 "produces": [
                     "application/json"
                 ],
@@ -752,9 +752,9 @@
                 "summary": "List all talkgroups",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Filter by system ID",
-                        "name": "system",
+                        "type": "string",
+                        "description": "Filter by SYSID (P25 system identifier)",
+                        "name": "sysid",
                         "in": "query"
                     },
                     {
@@ -825,7 +825,7 @@
         },
         "/talkgroups/{id}": {
             "get": {
-                "description": "Returns a single talkgroup by ID",
+                "description": "Returns a single talkgroup by ID. Accepts either a numeric database ID or a sysid:tgid format (e.g., \"348:9178\")",
                 "produces": [
                     "application/json"
                 ],
@@ -835,8 +835,8 @@
                 "summary": "Get a talkgroup",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Talkgroup ID",
+                        "type": "string",
+                        "description": "Talkgroup ID (numeric DB ID or sysid:tgid format)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -933,7 +933,7 @@
         },
         "/units": {
             "get": {
-                "description": "Returns all radio units, optionally filtered by system",
+                "description": "Returns all radio units, optionally filtered by SYSID",
                 "produces": [
                     "application/json"
                 ],
@@ -943,9 +943,9 @@
                 "summary": "List all units",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Filter by system ID",
-                        "name": "system",
+                        "type": "string",
+                        "description": "Filter by SYSID (P25 system identifier)",
+                        "name": "sysid",
                         "in": "query"
                     },
                     {
@@ -999,7 +999,13 @@
                     },
                     {
                         "type": "string",
-                        "description": "System ID or short_name",
+                        "description": "Filter by SYSID (P25 system identifier)",
+                        "name": "sysid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "System ID or short_name (deprecated, use sysid)",
                         "name": "system",
                         "in": "query"
                     },
@@ -1048,7 +1054,7 @@
         },
         "/units/{id}": {
             "get": {
-                "description": "Returns a single unit by ID",
+                "description": "Returns a single unit by ID. Accepts either a numeric database ID or a sysid:unit_id format (e.g., \"348:1234567\")",
                 "produces": [
                     "application/json"
                 ],
@@ -1058,8 +1064,8 @@
                 "summary": "Get a unit",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Unit ID",
+                        "type": "string",
+                        "description": "Unit ID (numeric DB ID or sysid:unit_id format)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1538,7 +1544,7 @@
             }
         },
         "models.Talkgroup": {
-            "description": "A talkgroup on a radio system",
+            "description": "A talkgroup on a radio system, unique within a SYSID",
             "type": "object",
             "properties": {
                 "alpha_tag": {
@@ -1573,9 +1579,9 @@
                     "type": "integer",
                     "example": 1
                 },
-                "system_id": {
-                    "type": "integer",
-                    "example": 1
+                "sysid": {
+                    "type": "string",
+                    "example": "348"
                 },
                 "tag": {
                     "type": "string",
@@ -1638,7 +1644,7 @@
             }
         },
         "models.Unit": {
-            "description": "A radio unit (mobile or portable radio)",
+            "description": "A radio unit (mobile or portable radio), unique within a SYSID",
             "type": "object",
             "properties": {
                 "alpha_tag": {
@@ -1677,9 +1683,9 @@
                     "type": "string",
                     "example": "2024-01-15T12:30:00Z"
                 },
-                "system_id": {
-                    "type": "integer",
-                    "example": 1
+                "sysid": {
+                    "type": "string",
+                    "example": "348"
                 },
                 "unit_id": {
                     "type": "integer",

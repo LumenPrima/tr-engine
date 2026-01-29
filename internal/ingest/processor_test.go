@@ -91,10 +91,11 @@ func TestProcessor_ProcessConfig(t *testing.T) {
 
 	// Verify system was cached
 	p.systemLock.RLock()
-	systemID, ok := p.systems["county"]
+	cachedSystem, ok := p.systems["county"]
 	p.systemLock.RUnlock()
 	assert.True(t, ok)
-	assert.Greater(t, systemID, 0)
+	assert.NotNil(t, cachedSystem)
+	assert.Greater(t, cachedSystem.ID, 0)
 
 	// Verify data in database
 	var instanceCount int

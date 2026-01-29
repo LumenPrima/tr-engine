@@ -48,10 +48,10 @@ type System struct {
 }
 
 // Talkgroup represents a talkgroup
-// @Description A talkgroup on a radio system
+// @Description A talkgroup on a radio system, unique within a SYSID
 type Talkgroup struct {
 	ID          int       `json:"id" example:"1"`
-	SystemID    int       `json:"system_id" example:"1"`
+	SYSID       string    `json:"sysid" example:"348"`
 	TGID        int       `json:"tgid" example:"1001"`
 	AlphaTag    string    `json:"alpha_tag,omitempty" example:"Fire Dispatch"`
 	Description string    `json:"description,omitempty" example:"County Fire Dispatch Channel"`
@@ -63,11 +63,20 @@ type Talkgroup struct {
 	LastSeen    time.Time `json:"last_seen" example:"2024-01-15T12:30:00Z"`
 }
 
+// TalkgroupSite tracks which sites have seen a talkgroup
+// @Description Association between a talkgroup and the sites where it has been observed
+type TalkgroupSite struct {
+	TalkgroupID int       `json:"talkgroup_id" example:"1"`
+	SystemID    int       `json:"system_id" example:"1"`
+	FirstSeen   time.Time `json:"first_seen" example:"2024-01-01T00:00:00Z"`
+	LastSeen    time.Time `json:"last_seen" example:"2024-01-15T12:30:00Z"`
+}
+
 // Unit represents a radio unit
-// @Description A radio unit (mobile or portable radio)
+// @Description A radio unit (mobile or portable radio), unique within a SYSID
 type Unit struct {
 	ID             int       `json:"id" example:"1"`
-	SystemID       int       `json:"system_id" example:"1"`
+	SYSID          string    `json:"sysid" example:"348"`
 	UnitID         int64     `json:"unit_id" example:"1234567"`
 	AlphaTag       string    `json:"alpha_tag,omitempty" example:"Engine 1"`
 	AlphaTagSource string    `json:"alpha_tag_source,omitempty" example:"radioreference"`
@@ -75,10 +84,19 @@ type Unit struct {
 	LastSeen       time.Time `json:"last_seen" example:"2024-01-15T12:30:00Z"`
 
 	// Joined fields (not stored in units table)
-	LastEventType   *string `json:"last_event_type,omitempty" example:"call"`
-	LastEventTGID   *int64  `json:"last_event_tgid,omitempty" example:"9178"`
-	LastEventTGTag  *string `json:"last_event_tg_tag,omitempty" example:"09-8L Main"`
-	LastEventTime   *time.Time `json:"last_event_time,omitempty"`
+	LastEventType  *string    `json:"last_event_type,omitempty" example:"call"`
+	LastEventTGID  *int64     `json:"last_event_tgid,omitempty" example:"9178"`
+	LastEventTGTag *string    `json:"last_event_tg_tag,omitempty" example:"09-8L Main"`
+	LastEventTime  *time.Time `json:"last_event_time,omitempty"`
+}
+
+// UnitSite tracks which sites have seen a unit
+// @Description Association between a unit and the sites where it has been observed
+type UnitSite struct {
+	UnitID    int       `json:"unit_id" example:"1"`
+	SystemID  int       `json:"system_id" example:"1"`
+	FirstSeen time.Time `json:"first_seen" example:"2024-01-01T00:00:00Z"`
+	LastSeen  time.Time `json:"last_seen" example:"2024-01-15T12:30:00Z"`
 }
 
 // Recorder represents an SDR recorder

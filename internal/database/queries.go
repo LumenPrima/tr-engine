@@ -116,13 +116,22 @@ func (db *DB) GetSystemByInstanceAndNum(ctx context.Context, instanceID, sysNum 
 	return &sys, err
 }
 
-// UpsertTalkgroup creates or updates a talkgroup
-func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, description, group, tag string, priority int, mode string) (*models.Talkgroup, error) {
+// EffectiveSYSID returns the SYSID for scoping talkgroups and units.
+// For P25 systems, this is the sysid field. For conventional systems without sysid, falls back to short_name.
+func EffectiveSYSID(sys *models.System) string {
+	if sys.SysID != "" {
+		return sys.SysID
+	}
+	return sys.ShortName
+}
+
+// UpsertTalkgroup creates or updates a talkgroup by SYSID and TGID
+func (db *DB) UpsertTalkgroup(ctx context.Context, sysid string, tgid int, alphaTag, description, group, tag string, priority int, mode string) (*models.Talkgroup, error) {
 	var tg models.Talkgroup
 	err := db.pool.QueryRow(ctx, `
-		INSERT INTO talkgroups (system_id, tgid, alpha_tag, description, tg_group, tag, priority, mode, last_seen)
+		INSERT INTO talkgroups (sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, last_seen)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-		ON CONFLICT (system_id, tgid) DO UPDATE SET
+		ON CONFLICT (sysid, tgid) DO UPDATE SET
 			alpha_tag = COALESCE(NULLIF(EXCLUDED.alpha_tag, ''), talkgroups.alpha_tag),
 			description = COALESCE(NULLIF(EXCLUDED.description, ''), talkgroups.description),
 			tg_group = COALESCE(NULLIF(EXCLUDED.tg_group, ''), talkgroups.tg_group),
@@ -130,21 +139,32 @@ func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag,
 			priority = COALESCE(NULLIF(EXCLUDED.priority, 0), talkgroups.priority),
 			mode = COALESCE(NULLIF(EXCLUDED.mode, ''), talkgroups.mode),
 			last_seen = NOW()
-		RETURNING id, system_id, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-	`, systemID, tgid, alphaTag, description, group, tag, priority, mode).Scan(
-		&tg.ID, &tg.SystemID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+		RETURNING id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+	`, sysid, tgid, alphaTag, description, group, tag, priority, mode).Scan(
+		&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
 	)
 	return &tg, err
 }
 
-// GetTalkgroup gets a talkgroup by system and TGID
-func (db *DB) GetTalkgroup(ctx context.Context, systemID, tgid int) (*models.Talkgroup, error) {
+// UpsertTalkgroupSite records that a talkgroup was seen at a specific site
+func (db *DB) UpsertTalkgroupSite(ctx context.Context, talkgroupID, systemID int) error {
+	_, err := db.pool.Exec(ctx, `
+		INSERT INTO talkgroup_sites (talkgroup_id, system_id, first_seen, last_seen)
+		VALUES ($1, $2, NOW(), NOW())
+		ON CONFLICT (talkgroup_id, system_id) DO UPDATE SET
+			last_seen = NOW()
+	`, talkgroupID, systemID)
+	return err
+}
+
+// GetTalkgroup gets a talkgroup by SYSID and TGID
+func (db *DB) GetTalkgroup(ctx context.Context, sysid string, tgid int) (*models.Talkgroup, error) {
 	var tg models.Talkgroup
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, system_id, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-		FROM talkgroups WHERE system_id = $1 AND tgid = $2
-	`, systemID, tgid).Scan(
-		&tg.ID, &tg.SystemID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE sysid = $1 AND tgid = $2
+	`, sysid, tgid).Scan(
+		&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -152,31 +172,117 @@ func (db *DB) GetTalkgroup(ctx context.Context, systemID, tgid int) (*models.Tal
 	return &tg, err
 }
 
-// UpsertUnit creates or updates a unit
-func (db *DB) UpsertUnit(ctx context.Context, systemID int, unitID int64, alphaTag, alphaTagSource string) (*models.Unit, error) {
+// GetTalkgroupByID gets a talkgroup by its database ID
+func (db *DB) GetTalkgroupByID(ctx context.Context, id int) (*models.Talkgroup, error) {
+	var tg models.Talkgroup
+	err := db.pool.QueryRow(ctx, `
+		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE id = $1
+	`, id).Scan(
+		&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &tg, err
+}
+
+// GetTalkgroupByTGID gets a talkgroup by TGID only (for single-system deployments or collision detection)
+// Returns the talkgroup if exactly one exists, nil if none, or error if multiple exist (collision)
+func (db *DB) GetTalkgroupByTGID(ctx context.Context, tgid int) (*models.Talkgroup, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE tgid = $1
+	`, tgid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var talkgroups []*models.Talkgroup
+	for rows.Next() {
+		var tg models.Talkgroup
+		if err := rows.Scan(
+			&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		talkgroups = append(talkgroups, &tg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(talkgroups) == 0 {
+		return nil, nil
+	}
+	if len(talkgroups) == 1 {
+		return talkgroups[0], nil
+	}
+	// Multiple talkgroups with same TGID - collision
+	return nil, fmt.Errorf("ambiguous: tgid %d exists in %d systems", tgid, len(talkgroups))
+}
+
+// GetTalkgroupsBYTGID returns all talkgroups matching a TGID (for collision resolution)
+func (db *DB) GetTalkgroupsByTGID(ctx context.Context, tgid int) ([]*models.Talkgroup, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE tgid = $1
+	`, tgid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var talkgroups []*models.Talkgroup
+	for rows.Next() {
+		var tg models.Talkgroup
+		if err := rows.Scan(
+			&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		talkgroups = append(talkgroups, &tg)
+	}
+	return talkgroups, rows.Err()
+}
+
+// UpsertUnit creates or updates a unit by SYSID and unit ID (RID)
+func (db *DB) UpsertUnit(ctx context.Context, sysid string, unitID int64, alphaTag, alphaTagSource string) (*models.Unit, error) {
 	var unit models.Unit
 	err := db.pool.QueryRow(ctx, `
-		INSERT INTO units (system_id, unit_id, alpha_tag, alpha_tag_source, last_seen)
+		INSERT INTO units (sysid, unit_id, alpha_tag, alpha_tag_source, last_seen)
 		VALUES ($1, $2, $3, $4, NOW())
-		ON CONFLICT (system_id, unit_id) DO UPDATE SET
+		ON CONFLICT (sysid, unit_id) DO UPDATE SET
 			alpha_tag = COALESCE(NULLIF(EXCLUDED.alpha_tag, ''), units.alpha_tag),
 			alpha_tag_source = COALESCE(NULLIF(EXCLUDED.alpha_tag_source, ''), units.alpha_tag_source),
 			last_seen = NOW()
-		RETURNING id, system_id, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
-	`, systemID, unitID, alphaTag, alphaTagSource).Scan(
-		&unit.ID, &unit.SystemID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
+		RETURNING id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+	`, sysid, unitID, alphaTag, alphaTagSource).Scan(
+		&unit.ID, &unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
 	)
 	return &unit, err
 }
 
-// GetUnit gets a unit by system and unit ID
-func (db *DB) GetUnit(ctx context.Context, systemID int, unitID int64) (*models.Unit, error) {
+// UpsertUnitSite records that a unit was seen at a specific site
+func (db *DB) UpsertUnitSite(ctx context.Context, unitID, systemID int) error {
+	_, err := db.pool.Exec(ctx, `
+		INSERT INTO unit_sites (unit_id, system_id, first_seen, last_seen)
+		VALUES ($1, $2, NOW(), NOW())
+		ON CONFLICT (unit_id, system_id) DO UPDATE SET
+			last_seen = NOW()
+	`, unitID, systemID)
+	return err
+}
+
+// GetUnit gets a unit by SYSID and unit ID (RID)
+func (db *DB) GetUnit(ctx context.Context, sysid string, unitID int64) (*models.Unit, error) {
 	var unit models.Unit
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, system_id, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
-		FROM units WHERE system_id = $1 AND unit_id = $2
-	`, systemID, unitID).Scan(
-		&unit.ID, &unit.SystemID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
+		SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		FROM units WHERE sysid = $1 AND unit_id = $2
+	`, sysid, unitID).Scan(
+		&unit.ID, &unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -602,12 +708,14 @@ func (db *DB) GetSystemByID(ctx context.Context, id int) (*models.System, error)
 	return &sys, err
 }
 
-// ListTalkgroupsBySystem returns talkgroups for a system
+// ListTalkgroupsBySystem returns talkgroups seen at a specific system (site)
 func (db *DB) ListTalkgroupsBySystem(ctx context.Context, systemID int, limit, offset int) ([]*models.Talkgroup, error) {
 	rows, err := db.pool.Query(ctx, `
-		SELECT id, system_id, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-		FROM talkgroups WHERE system_id = $1
-		ORDER BY tgid
+		SELECT t.id, t.sysid, t.tgid, t.alpha_tag, t.description, t.tg_group, t.tag, t.priority, t.mode, t.first_seen, t.last_seen
+		FROM talkgroups t
+		JOIN talkgroup_sites ts ON ts.talkgroup_id = t.id
+		WHERE ts.system_id = $1
+		ORDER BY t.tgid
 		LIMIT $2 OFFSET $3
 	`, systemID, limit, offset)
 	if err != nil {
@@ -619,7 +727,33 @@ func (db *DB) ListTalkgroupsBySystem(ctx context.Context, systemID int, limit, o
 	for rows.Next() {
 		var t models.Talkgroup
 		if err := rows.Scan(
-			&t.ID, &t.SystemID, &t.TGID, &t.AlphaTag, &t.Description, &t.Group, &t.Tag, &t.Priority, &t.Mode, &t.FirstSeen, &t.LastSeen,
+			&t.ID, &t.SYSID, &t.TGID, &t.AlphaTag, &t.Description, &t.Group, &t.Tag, &t.Priority, &t.Mode, &t.FirstSeen, &t.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		talkgroups = append(talkgroups, &t)
+	}
+	return talkgroups, rows.Err()
+}
+
+// ListTalkgroupsBySYSID returns all talkgroups for a given SYSID
+func (db *DB) ListTalkgroupsBySYSID(ctx context.Context, sysid string, limit, offset int) ([]*models.Talkgroup, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE sysid = $1
+		ORDER BY tgid
+		LIMIT $2 OFFSET $3
+	`, sysid, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var talkgroups []*models.Talkgroup
+	for rows.Next() {
+		var t models.Talkgroup
+		if err := rows.Scan(
+			&t.ID, &t.SYSID, &t.TGID, &t.AlphaTag, &t.Description, &t.Group, &t.Tag, &t.Priority, &t.Mode, &t.FirstSeen, &t.LastSeen,
 		); err != nil {
 			return nil, err
 		}
@@ -779,16 +913,19 @@ func (db *DB) GetCallByTRCallID(ctx context.Context, trCallID string) (*models.C
 	return &call, err
 }
 
-// ListUnits returns units with optional system filter
+// ListUnits returns units with optional system (site) filter
 func (db *DB) ListUnits(ctx context.Context, systemID *int, limit, offset int) ([]*models.Unit, error) {
 	var query string
 	var args []interface{}
 	if systemID != nil {
-		query = `SELECT id, system_id, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
-			FROM units WHERE system_id = $1 ORDER BY unit_id LIMIT $2 OFFSET $3`
+		// Filter by site via junction table
+		query = `SELECT u.id, u.sysid, u.unit_id, u.alpha_tag, u.alpha_tag_source, u.first_seen, u.last_seen
+			FROM units u
+			JOIN unit_sites us ON us.unit_id = u.id
+			WHERE us.system_id = $1 ORDER BY u.unit_id LIMIT $2 OFFSET $3`
 		args = []interface{}{*systemID, limit, offset}
 	} else {
-		query = `SELECT id, system_id, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		query = `SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
 			FROM units ORDER BY unit_id LIMIT $1 OFFSET $2`
 		args = []interface{}{limit, offset}
 	}
@@ -802,7 +939,29 @@ func (db *DB) ListUnits(ctx context.Context, systemID *int, limit, offset int) (
 	var units []*models.Unit
 	for rows.Next() {
 		var u models.Unit
-		if err := rows.Scan(&u.ID, &u.SystemID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
+		if err := rows.Scan(&u.ID, &u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
+			return nil, err
+		}
+		units = append(units, &u)
+	}
+	return units, rows.Err()
+}
+
+// ListUnitsBySYSID returns all units for a given SYSID
+func (db *DB) ListUnitsBySYSID(ctx context.Context, sysid string, limit, offset int) ([]*models.Unit, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		FROM units WHERE sysid = $1 ORDER BY unit_id LIMIT $2 OFFSET $3
+	`, sysid, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var units []*models.Unit
+	for rows.Next() {
+		var u models.Unit
+		if err := rows.Scan(&u.ID, &u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
 			return nil, err
 		}
 		units = append(units, &u)
@@ -814,9 +973,9 @@ func (db *DB) ListUnits(ctx context.Context, systemID *int, limit, offset int) (
 func (db *DB) GetUnitByID(ctx context.Context, id int) (*models.Unit, error) {
 	var unit models.Unit
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, system_id, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
 		FROM units WHERE id = $1
-	`, id).Scan(&unit.ID, &unit.SystemID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen)
+	`, id).Scan(&unit.ID, &unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -1028,6 +1187,7 @@ func (db *DB) ListActiveCalls(ctx context.Context, filters ActiveCallFilters, li
 type ActiveUnitFilters struct {
 	SystemID    *int
 	ShortName   *string
+	SYSID       *string // P25 SYSID for filtering (units.sysid)
 	TalkgroupID *int
 	WindowMins  int    // How many minutes back to consider "active"
 	SortField   string // Sort field: alpha_tag, unit_id, last_seen, first_seen
@@ -1042,12 +1202,15 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 	}
 
 	query := `
-		SELECT DISTINCT u.id, u.system_id, u.unit_id, u.alpha_tag, u.alpha_tag_source, u.first_seen, u.last_seen
+		SELECT DISTINCT u.id, u.sysid, u.unit_id, u.alpha_tag, u.alpha_tag_source, u.first_seen, u.last_seen
 		FROM units u`
 
-	// Join with systems if filtering by short_name
-	if filters.ShortName != nil {
-		query += ` JOIN systems s ON s.id = u.system_id`
+	// Join with unit_sites and systems if filtering by system_id or short_name
+	if filters.SystemID != nil || filters.ShortName != nil {
+		query += ` JOIN unit_sites us ON us.unit_id = u.id`
+		if filters.ShortName != nil {
+			query += ` JOIN systems s ON s.id = us.system_id`
+		}
 	}
 
 	// Join with unit_events to filter by recent activity or talkgroup
@@ -1061,13 +1224,18 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 	argNum := 1
 
 	if filters.SystemID != nil {
-		query += fmt.Sprintf(" AND u.system_id = $%d", argNum)
+		query += fmt.Sprintf(" AND us.system_id = $%d", argNum)
 		args = append(args, *filters.SystemID)
 		argNum++
 	}
 	if filters.ShortName != nil {
 		query += fmt.Sprintf(" AND s.short_name = $%d", argNum)
 		args = append(args, *filters.ShortName)
+		argNum++
+	}
+	if filters.SYSID != nil {
+		query += fmt.Sprintf(" AND u.sysid = $%d", argNum)
+		args = append(args, *filters.SYSID)
 		argNum++
 	}
 	if filters.TalkgroupID != nil {
@@ -1112,7 +1280,7 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 	unitMap := make(map[int]*models.Unit)
 	for rows.Next() {
 		var u models.Unit
-		if err := rows.Scan(&u.ID, &u.SystemID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
+		if err := rows.Scan(&u.ID, &u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
 			return nil, err
 		}
 		units = append(units, &u)
@@ -1130,7 +1298,8 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 				ue.unit_id, ue.event_type, ue.tgid, ue.time,
 				COALESCE(tg.alpha_tag, '') as tg_alpha_tag
 			FROM unit_events ue
-			LEFT JOIN talkgroups tg ON tg.tgid = ue.tgid AND tg.system_id = ue.system_id
+			LEFT JOIN systems s ON s.id = ue.system_id
+			LEFT JOIN talkgroups tg ON tg.tgid = ue.tgid AND tg.sysid = COALESCE(s.sysid, s.short_name)
 			WHERE ue.unit_id = ANY($1)
 			ORDER BY ue.unit_id, ue.time DESC
 		`

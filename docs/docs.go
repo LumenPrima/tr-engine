@@ -745,7 +745,7 @@ const docTemplate = `{
         },
         "/talkgroups": {
             "get": {
-                "description": "Returns all talkgroups, optionally filtered by system",
+                "description": "Returns all talkgroups, optionally filtered by SYSID",
                 "produces": [
                     "application/json"
                 ],
@@ -755,9 +755,9 @@ const docTemplate = `{
                 "summary": "List all talkgroups",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Filter by system ID",
-                        "name": "system",
+                        "type": "string",
+                        "description": "Filter by SYSID (P25 system identifier)",
+                        "name": "sysid",
                         "in": "query"
                     },
                     {
@@ -828,7 +828,7 @@ const docTemplate = `{
         },
         "/talkgroups/{id}": {
             "get": {
-                "description": "Returns a single talkgroup by ID",
+                "description": "Returns a single talkgroup by ID. Accepts either a numeric database ID or a sysid:tgid format (e.g., \"348:9178\")",
                 "produces": [
                     "application/json"
                 ],
@@ -838,8 +838,8 @@ const docTemplate = `{
                 "summary": "Get a talkgroup",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Talkgroup ID",
+                        "type": "string",
+                        "description": "Talkgroup ID (numeric DB ID or sysid:tgid format)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -936,7 +936,7 @@ const docTemplate = `{
         },
         "/units": {
             "get": {
-                "description": "Returns all radio units, optionally filtered by system",
+                "description": "Returns all radio units, optionally filtered by SYSID",
                 "produces": [
                     "application/json"
                 ],
@@ -946,9 +946,9 @@ const docTemplate = `{
                 "summary": "List all units",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Filter by system ID",
-                        "name": "system",
+                        "type": "string",
+                        "description": "Filter by SYSID (P25 system identifier)",
+                        "name": "sysid",
                         "in": "query"
                     },
                     {
@@ -1002,7 +1002,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "System ID or short_name",
+                        "description": "Filter by SYSID (P25 system identifier)",
+                        "name": "sysid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "System ID or short_name (deprecated, use sysid)",
                         "name": "system",
                         "in": "query"
                     },
@@ -1051,7 +1057,7 @@ const docTemplate = `{
         },
         "/units/{id}": {
             "get": {
-                "description": "Returns a single unit by ID",
+                "description": "Returns a single unit by ID. Accepts either a numeric database ID or a sysid:unit_id format (e.g., \"348:1234567\")",
                 "produces": [
                     "application/json"
                 ],
@@ -1061,8 +1067,8 @@ const docTemplate = `{
                 "summary": "Get a unit",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Unit ID",
+                        "type": "string",
+                        "description": "Unit ID (numeric DB ID or sysid:unit_id format)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1541,7 +1547,7 @@ const docTemplate = `{
             }
         },
         "models.Talkgroup": {
-            "description": "A talkgroup on a radio system",
+            "description": "A talkgroup on a radio system, unique within a SYSID",
             "type": "object",
             "properties": {
                 "alpha_tag": {
@@ -1576,9 +1582,9 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
-                "system_id": {
-                    "type": "integer",
-                    "example": 1
+                "sysid": {
+                    "type": "string",
+                    "example": "348"
                 },
                 "tag": {
                     "type": "string",
@@ -1641,7 +1647,7 @@ const docTemplate = `{
             }
         },
         "models.Unit": {
-            "description": "A radio unit (mobile or portable radio)",
+            "description": "A radio unit (mobile or portable radio), unique within a SYSID",
             "type": "object",
             "properties": {
                 "alpha_tag": {
@@ -1680,9 +1686,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2024-01-15T12:30:00Z"
                 },
-                "system_id": {
-                    "type": "integer",
-                    "example": 1
+                "sysid": {
+                    "type": "string",
+                    "example": "348"
                 },
                 "unit_id": {
                     "type": "integer",

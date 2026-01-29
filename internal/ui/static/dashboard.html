@@ -897,6 +897,13 @@ async function loadSystems() {
 function getSelectedSystem() {
   return UI.$('system-select').value || undefined;
 }
+// Get SYSID for the selected system (for talkgroup/unit filtering)
+function getSelectedSysid() {
+  const id = getSelectedSystem();
+  if (!id) return undefined;
+  const sys = systemsCache.find(s => String(s.id) === String(id));
+  return sys ? sys.sysid : undefined;
+}
 UI.$('system-select').onchange = () => {
   Prefs.set('selectedSystem', UI.$('system-select').value);
   TabManager.refresh();
@@ -1289,7 +1296,12 @@ Tabs.talkgroups = {
   search() { this.offset = 0; this.load(); },
   async load() {
     const params = { limit: this.limit, offset: this.offset };
-    const sys = UI.$('tg-system').value; if (sys) params.system = sys;
+    // Get SYSID for filtering (talkgroups use sysid, not system_id)
+    const selectedId = UI.$('tg-system').value;
+    if (selectedId) {
+      const sys = systemsCache.find(s => String(s.id) === String(selectedId));
+      if (sys && sys.sysid) params.sysid = sys.sysid;
+    }
     const search = (UI.$('tg-search').value || '').trim();
     if (search) params.search = search;
     const sort = UI.$('tg-sort').value; if (sort) params.sort = sort;
@@ -1319,7 +1331,7 @@ Tabs.talkgroups = {
         (isMonitored ? '&#10003; Monitoring' : '&#128226; Monitor') + '</button></div>';
       html += '<div class="panel-section"><table class="data-table">';
       const fields = [
-        ['TGID', tg.tgid], ['System ID', tg.system_id], ['Group', tg.group], ['Tag', tg.tag],
+        ['TGID', tg.tgid], ['SYSID', tg.sysid], ['Group', tg.group], ['Tag', tg.tag],
         ['Description', tg.description], ['Mode', tg.mode], ['Priority', tg.priority],
         ['First Seen', UI.formatDateTime(tg.first_seen)], ['Last Seen', UI.formatDateTime(tg.last_seen)],
       ];
@@ -1444,7 +1456,12 @@ Tabs.units = {
   searchAll() { this.offset = 0; this.loadAll(); },
   async loadActive() {
     const params = { window: this.window, limit: this.limit, offset: this.offset };
-    const sys = UI.$('uf-system') && UI.$('uf-system').value; if (sys) params.system = sys;
+    // Get SYSID for filtering (units use sysid, not system_id)
+    const selectedId = UI.$('uf-system') && UI.$('uf-system').value;
+    if (selectedId) {
+      const sys = systemsCache.find(s => String(s.id) === String(selectedId));
+      if (sys && sys.sysid) params.sysid = sys.sysid;
+    }
     const tg = UI.$('uf-tg') && UI.$('uf-tg').value; if (tg) params.talkgroup = tg;
     const sort = UI.$('uf-active-sort') && UI.$('uf-active-sort').value; if (sort) params.sort = sort;
     const sortDir = UI.$('uf-active-sort-dir') && UI.$('uf-active-sort-dir').value; if (sortDir) params.sort_dir = sortDir;
@@ -1466,7 +1483,12 @@ Tabs.units = {
   },
   async loadAll() {
     const params = { limit: this.limit, offset: this.offset };
-    const sys = UI.$('uf-system-all') && UI.$('uf-system-all').value; if (sys) params.system = sys;
+    // Get SYSID for filtering (units use sysid, not system_id)
+    const selectedId = UI.$('uf-system-all') && UI.$('uf-system-all').value;
+    if (selectedId) {
+      const sys = systemsCache.find(s => String(s.id) === String(selectedId));
+      if (sys && sys.sysid) params.sysid = sys.sysid;
+    }
     const search = (UI.$('uf-all-search') && UI.$('uf-all-search').value || '').trim();
     if (search) params.search = search;
     const sort = UI.$('uf-sort') && UI.$('uf-sort').value; if (sort) params.sort = sort;
@@ -1499,7 +1521,7 @@ Tabs.units = {
       let html = '<div class="panel-title">' + UI.esc(UI.unitTitle(unit)) + '</div>';
       html += '<div class="panel-section"><table class="data-table">';
       const fields = [
-        ['Unit ID', unit.unit_id], ['System ID', unit.system_id],
+        ['Unit ID', unit.unit_id], ['SYSID', unit.sysid],
         ['Alpha Tag', unit.alpha_tag || unit.unit_alpha_tag],
         ['First Seen', UI.formatDateTime(unit.first_seen)],
         ['Last Seen', UI.formatDateTime(unit.last_seen)],

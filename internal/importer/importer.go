@@ -38,8 +38,8 @@ type Importer struct {
 	startTime     time.Time
 
 	// Caches
-	systemCache    map[string]int
-	talkgroupCache map[string]int // "sysID:tgid" -> db ID
+	systemCache    map[string]*models.System
+	talkgroupCache map[string]int // "sysid:tgid" -> db ID
 }
 
 // Config holds importer configuration
@@ -77,7 +77,7 @@ func New(db *database.DB, cfg Config, logger *zap.Logger) *Importer {
 		batchSize:      cfg.BatchSize,
 		throttle:       cfg.Throttle,
 		logger:         logger,
-		systemCache:    make(map[string]int),
+		systemCache:    make(map[string]*models.System),
 		talkgroupCache: make(map[string]int),
 	}
 }
@@ -385,13 +385,14 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 	}
 
 	// Get or create system
-	sysID, err := i.getOrCreateSystem(ctx, system)
+	sys, err := i.getOrCreateSystem(ctx, system)
 	if err != nil {
 		return fmt.Errorf("get system: %w", err)
 	}
+	sysid := database.EffectiveSYSID(sys)
 
 	// Get or create talkgroup
-	tgID, err := i.getOrCreateTalkgroup(ctx, sysID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
+	tgID, err := i.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
 	if err != nil {
 		return fmt.Errorf("get talkgroup: %w", err)
 	}
@@ -452,7 +453,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 
 	// Check if call already exists (by system, tgid, start_time)
 	startTime := time.Unix(sidecar.StartTime, 0)
-	existing, _ := i.db.GetCallBySystemTGIDAndTime(ctx, sysID, sidecar.Talkgroup, startTime)
+	existing, _ := i.db.GetCallBySystemTGIDAndTime(ctx, sys.ID, sidecar.Talkgroup, startTime)
 	if existing != nil {
 		i.skippedCalls++
 		return nil // Already imported
@@ -462,7 +463,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 	stopTime := time.Unix(sidecar.StopTime, 0)
 	call := &models.Call{
 		InstanceID:  1, // Default instance for imports
-		SystemID:    sysID,
+		SystemID:    sys.ID,
 		TalkgroupID: &tgID,
 		StartTime:   startTime,
 		StopTime:    &stopTime,
@@ -488,7 +489,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 	// Process transmissions from srcList
 	for idx, src := range sidecar.SrcList {
 		// Get or create unit
-		unit, err := i.db.UpsertUnit(ctx, sysID, src.Src, src.Tag, "import")
+		unit, err := i.db.UpsertUnit(ctx, sysid, src.Src, src.Tag, "import")
 		if err != nil {
 			i.logger.Debug("Failed to upsert unit", zap.Error(err))
 			continue
@@ -497,6 +498,10 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 		var unitID *int
 		if unit != nil {
 			unitID = &unit.ID
+			// Record site association
+			if err := i.db.UpsertUnitSite(ctx, unit.ID, sys.ID); err != nil {
+				i.logger.Debug("Failed to upsert unit site", zap.Error(err))
+			}
 		}
 
 		// Calculate duration
@@ -563,30 +568,35 @@ func (i *Importer) getRelativePath(fullPath string) string {
 }
 
 // getOrCreateSystem gets or creates a system record
-func (i *Importer) getOrCreateSystem(ctx context.Context, shortName string) (int, error) {
-	if id, ok := i.systemCache[shortName]; ok {
-		return id, nil
+func (i *Importer) getOrCreateSystem(ctx context.Context, shortName string) (*models.System, error) {
+	if sys, ok := i.systemCache[shortName]; ok {
+		return sys, nil
 	}
 
 	sys, err := i.db.UpsertSystem(ctx, 1, 0, shortName, "", "", "", "", 0, 0, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	i.systemCache[shortName] = sys.ID
-	return sys.ID, nil
+	i.systemCache[shortName] = sys
+	return sys, nil
 }
 
 // getOrCreateTalkgroup gets or creates a talkgroup record
-func (i *Importer) getOrCreateTalkgroup(ctx context.Context, sysID, tgid int, tag, desc, group, groupTag string) (int, error) {
-	key := fmt.Sprintf("%d:%d", sysID, tgid)
+func (i *Importer) getOrCreateTalkgroup(ctx context.Context, sysid string, systemID, tgid int, tag, desc, group, groupTag string) (int, error) {
+	key := fmt.Sprintf("%s:%d", sysid, tgid)
 	if id, ok := i.talkgroupCache[key]; ok {
 		return id, nil
 	}
 
-	tg, err := i.db.UpsertTalkgroup(ctx, sysID, tgid, tag, desc, group, groupTag, 0, "")
+	tg, err := i.db.UpsertTalkgroup(ctx, sysid, tgid, tag, desc, group, groupTag, 0, "")
 	if err != nil {
 		return 0, err
+	}
+
+	// Record site association
+	if err := i.db.UpsertTalkgroupSite(ctx, tg.ID, systemID); err != nil {
+		i.logger.Debug("Failed to upsert talkgroup site", zap.Error(err))
 	}
 
 	i.talkgroupCache[key] = tg.ID
