@@ -481,13 +481,14 @@ func (h *Handler) GetTalkgroupEncryptionStats(c *gin.Context) {
 
 // GetTalkgroup godoc
 // @Summary      Get a talkgroup
-// @Description  Returns a single talkgroup by ID. Accepts either a numeric database ID or a sysid:tgid format (e.g., "348:9178")
+// @Description  Returns a single talkgroup. Accepts sysid:tgid format (e.g., "348:9178"), plain tgid (returns 409 if ambiguous), or id:123 for database ID
 // @Tags         talkgroups
 // @Produce      json
-// @Param        id   path      string  true  "Talkgroup ID (numeric DB ID or sysid:tgid format)"
+// @Param        id   path      string  true  "Talkgroup ID (sysid:tgid, plain tgid, or id:123)"
 // @Success      200  {object}  models.Talkgroup
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
+// @Failure      409  {object}  rest.ErrorResponse  "Ambiguous tgid exists in multiple systems"
 // @Router       /talkgroups/{id} [get]
 func (h *Handler) GetTalkgroup(c *gin.Context) {
 	idParam := c.Param("id")
@@ -509,6 +510,26 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 	ctx := c.Request.Context()
 	var err error
 
+	// Check for explicit database ID format: id:123
+	if strings.HasPrefix(idParam, "id:") {
+		idStr := strings.TrimPrefix(idParam, "id:")
+		id, parseErr := strconv.Atoi(idStr)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database ID format"})
+			return
+		}
+		err = h.db.Pool().QueryRow(ctx, `
+			SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+			FROM talkgroups WHERE id = $1
+		`, id).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
+			return
+		}
+		c.JSON(http.StatusOK, tg)
+		return
+	}
+
 	// Check if it's a sysid:tgid format
 	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
 		sysid := parts[0]
@@ -521,18 +542,97 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 			SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
 			FROM talkgroups WHERE sysid = $1 AND tgid = $2
 		`, sysid, tgid).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
-	} else {
-		// Numeric ID - database row ID
-		id, parseErr := strconv.Atoi(idParam)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID"})
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
 			return
 		}
-		err = h.db.Pool().QueryRow(ctx, `
-			SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-			FROM talkgroups WHERE id = $1
-		`, id).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+		c.JSON(http.StatusOK, tg)
+		return
 	}
+
+	// Plain numeric - try as tgid first, check for collisions
+	tgid, parseErr := strconv.Atoi(idParam)
+	if parseErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID"})
+		return
+	}
+
+	// Query all talkgroups with this tgid to detect collisions
+	rows, err := h.db.Pool().Query(ctx, `
+		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE tgid = $1
+	`, tgid)
+	if err != nil {
+		h.logger.Error("Failed to query talkgroups", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+	defer rows.Close()
+
+	var matches []struct {
+		ID          int       `json:"id"`
+		SYSID       string    `json:"sysid"`
+		TGID        int       `json:"tgid"`
+		AlphaTag    *string   `json:"alpha_tag"`
+		Description *string   `json:"description"`
+		Group       *string   `json:"group"`
+		Tag         *string   `json:"tag"`
+		Priority    int       `json:"priority"`
+		Mode        *string   `json:"mode"`
+		FirstSeen   time.Time `json:"first_seen"`
+		LastSeen    time.Time `json:"last_seen"`
+	}
+
+	for rows.Next() {
+		var m struct {
+			ID          int       `json:"id"`
+			SYSID       string    `json:"sysid"`
+			TGID        int       `json:"tgid"`
+			AlphaTag    *string   `json:"alpha_tag"`
+			Description *string   `json:"description"`
+			Group       *string   `json:"group"`
+			Tag         *string   `json:"tag"`
+			Priority    int       `json:"priority"`
+			Mode        *string   `json:"mode"`
+			FirstSeen   time.Time `json:"first_seen"`
+			LastSeen    time.Time `json:"last_seen"`
+		}
+		if err := rows.Scan(&m.ID, &m.SYSID, &m.TGID, &m.AlphaTag, &m.Description, &m.Group, &m.Tag, &m.Priority, &m.Mode, &m.FirstSeen, &m.LastSeen); err != nil {
+			continue
+		}
+		matches = append(matches, m)
+	}
+
+	if len(matches) == 1 {
+		// Unique match by tgid
+		c.JSON(http.StatusOK, matches[0])
+		return
+	}
+
+	if len(matches) > 1 {
+		// Collision - return 409 with systems info
+		systems := make([]gin.H, len(matches))
+		for i, m := range matches {
+			sys := gin.H{"sysid": m.SYSID}
+			if m.AlphaTag != nil {
+				sys["alpha_tag"] = *m.AlphaTag
+			}
+			systems[i] = sys
+		}
+		c.JSON(http.StatusConflict, gin.H{
+			"error":      "ambiguous_identifier",
+			"message":    "tgid " + idParam + " exists in multiple systems",
+			"systems":    systems,
+			"resolution": "Use explicit format: {sysid}:" + idParam,
+		})
+		return
+	}
+
+	// No match by tgid - fall back to database ID lookup
+	err = h.db.Pool().QueryRow(ctx, `
+		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE id = $1
+	`, tgid).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
@@ -712,13 +812,14 @@ func (h *Handler) ListUnits(c *gin.Context) {
 
 // GetUnit godoc
 // @Summary      Get a unit
-// @Description  Returns a single unit by ID. Accepts either a numeric database ID or a sysid:unit_id format (e.g., "348:1234567")
+// @Description  Returns a single unit. Accepts sysid:unit_id format (e.g., "348:1234567"), plain unit_id (returns 409 if ambiguous), or id:123 for database ID
 // @Tags         units
 // @Produce      json
-// @Param        id   path      string  true  "Unit ID (numeric DB ID or sysid:unit_id format)"
+// @Param        id   path      string  true  "Unit ID (sysid:unit_id, plain unit_id, or id:123)"
 // @Success      200  {object}  models.Unit
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
+// @Failure      409  {object}  rest.ErrorResponse  "Ambiguous unit_id exists in multiple systems"
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /units/{id} [get]
 func (h *Handler) GetUnit(c *gin.Context) {
@@ -727,6 +828,28 @@ func (h *Handler) GetUnit(c *gin.Context) {
 
 	var unit *models.Unit
 	var err error
+
+	// Check for explicit database ID format: id:123
+	if strings.HasPrefix(idParam, "id:") {
+		idStr := strings.TrimPrefix(idParam, "id:")
+		id, parseErr := strconv.Atoi(idStr)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database ID format"})
+			return
+		}
+		unit, err = h.db.GetUnitByID(ctx, id)
+		if err != nil {
+			h.logger.Error("Failed to get unit", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get unit"})
+			return
+		}
+		if unit == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Unit not found"})
+			return
+		}
+		c.JSON(http.StatusOK, unit)
+		return
+	}
 
 	// Check if it's a sysid:unit_id format
 	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
@@ -737,16 +860,75 @@ func (h *Handler) GetUnit(c *gin.Context) {
 			return
 		}
 		unit, err = h.db.GetUnit(ctx, sysid, unitID)
-	} else {
-		// Numeric ID - database row ID
-		id, parseErr := strconv.Atoi(idParam)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
+		if err != nil {
+			h.logger.Error("Failed to get unit", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get unit"})
 			return
 		}
-		unit, err = h.db.GetUnitByID(ctx, id)
+		if unit == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Unit not found"})
+			return
+		}
+		c.JSON(http.StatusOK, unit)
+		return
 	}
 
+	// Plain numeric - try as unit_id (radio ID) first, check for collisions
+	unitRID, parseErr := strconv.ParseInt(idParam, 10, 64)
+	if parseErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
+		return
+	}
+
+	// Query all units with this unit_id to detect collisions
+	rows, err := h.db.Pool().Query(ctx, `
+		SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		FROM units WHERE unit_id = $1
+	`, unitRID)
+	if err != nil {
+		h.logger.Error("Failed to query units", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+	defer rows.Close()
+
+	var matches []*models.Unit
+	for rows.Next() {
+		var u models.Unit
+		if err := rows.Scan(&u.ID, &u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
+			continue
+		}
+		matches = append(matches, &u)
+	}
+
+	if len(matches) == 1 {
+		// Unique match by unit_id
+		c.JSON(http.StatusOK, matches[0])
+		return
+	}
+
+	if len(matches) > 1 {
+		// Collision - return 409 with systems info
+		systems := make([]gin.H, len(matches))
+		for i, m := range matches {
+			sys := gin.H{"sysid": m.SYSID}
+			if m.AlphaTag != "" {
+				sys["alpha_tag"] = m.AlphaTag
+			}
+			systems[i] = sys
+		}
+		c.JSON(http.StatusConflict, gin.H{
+			"error":      "ambiguous_identifier",
+			"message":    "unit_id " + idParam + " exists in multiple systems",
+			"systems":    systems,
+			"resolution": "Use explicit format: {sysid}:" + idParam,
+		})
+		return
+	}
+
+	// No match by unit_id - fall back to database ID lookup
+	dbID, _ := strconv.Atoi(idParam) // Already validated as numeric above
+	unit, err = h.db.GetUnitByID(ctx, dbID)
 	if err != nil {
 		h.logger.Error("Failed to get unit", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get unit"})
