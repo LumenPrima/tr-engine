@@ -370,6 +370,12 @@ func main() {
 	httpDone := con.StartTask("Starting HTTP server")
 	server := api.NewServer(cfg.Server, db, processor, logger, cfg.Storage.AudioPath)
 
+	// Connect watcher to WebSocket hub and recorder provider
+	if fileWatcher != nil {
+		fileWatcher.SetHub(server.GetHub())
+		server.SetRecorderProvider(fileWatcher)
+	}
+
 	// Start API server
 	go func() {
 		if err := server.Start(); err != nil {

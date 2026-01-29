@@ -1029,7 +1029,9 @@ type ActiveUnitFilters struct {
 	SystemID    *int
 	ShortName   *string
 	TalkgroupID *int
-	WindowMins  int // How many minutes back to consider "active"
+	WindowMins  int    // How many minutes back to consider "active"
+	SortField   string // Sort field: alpha_tag, unit_id, last_seen, first_seen
+	SortDir     string // Sort direction: asc, desc
 }
 
 // ListActiveUnits returns units that have been active within the specified window
@@ -1074,7 +1076,29 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 		argNum++
 	}
 
-	query += fmt.Sprintf(" ORDER BY u.last_seen DESC LIMIT $%d OFFSET $%d", argNum, argNum+1)
+	// Build ORDER BY clause
+	validSortFields := map[string]string{
+		"alpha_tag":  "u.alpha_tag",
+		"unit_id":    "u.unit_id",
+		"last_seen":  "u.last_seen",
+		"first_seen": "u.first_seen",
+	}
+	orderBy := "u.last_seen"
+	if filters.SortField != "" {
+		if col, ok := validSortFields[filters.SortField]; ok {
+			orderBy = col
+		}
+	}
+	sortDir := "DESC"
+	if filters.SortDir == "asc" {
+		sortDir = "ASC"
+	}
+	orderClause := orderBy + " " + sortDir
+	if filters.SortField == "alpha_tag" {
+		orderClause += " NULLS LAST"
+	}
+
+	query += fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", orderClause, argNum, argNum+1)
 	args = append(args, limit, offset)
 
 	rows, err := db.pool.Query(ctx, query, args...)

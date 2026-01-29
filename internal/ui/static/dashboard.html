@@ -133,6 +133,8 @@ body.player-open #slide-panel { height: calc(100vh - 80px); }
 .evt-location { color: #af8; }
 .evt-unknown { color: var(--text-dim); }
 .evt-tg { color: var(--accent); }
+.link-tg, .link-unit { color: var(--accent); cursor: pointer; }
+.link-tg:hover, .link-unit:hover { text-decoration: underline; }
 
 /* Play button */
 .btn-play {
@@ -262,7 +264,8 @@ body.player-open #slide-panel { height: calc(100vh - 80px); }
 }
 #audio-player.visible { bottom: 0; }
 .ap-info { flex: 0 0 180px; font-size: 10px; overflow: hidden; }
-.ap-info .ap-tg { color: var(--accent); font-weight: bold; font-size: 11px; }
+.ap-info .ap-tg { color: var(--accent); font-weight: bold; font-size: 11px; cursor: pointer; }
+.ap-info .ap-tg:hover { text-decoration: underline; }
 .ap-info .ap-meta { color: var(--text-dim); margin-top: 2px; }
 .ap-timeline { flex: 1; position: relative; height: 36px; background: #181818; border-radius: 6px; overflow: hidden; cursor: pointer; border: 1px solid var(--border); box-shadow: inset 0 1px 3px rgba(0,0,0,0.4); }
 .ap-timeline canvas { width: 100%; height: 100%; display: block; }
@@ -413,6 +416,43 @@ const UI = {
     const id = u.unit_id || u.id;
     if (tag) return 'Unit ' + id;
     return '';
+  },
+  // Create clickable talkgroup link - pass db id for detail lookup, display uses tgid/alpha_tag
+  tgLink(tg, opts) {
+    // tg can be: { id, tgid, alpha_tag } or just a tgid number
+    opts = opts || {};
+    let dbId, tgid, label;
+    if (typeof tg === 'object') {
+      dbId = tg.id;
+      tgid = tg.tgid || tg.talkgroup_id;
+      label = tg.alpha_tag || tg.tg_alpha_tag || ('TG ' + tgid);
+    } else {
+      tgid = tg;
+      label = 'TG ' + tg;
+    }
+    // If we have db id, use it for detail view; otherwise use tgid
+    const clickId = dbId || tgid;
+    if (!clickId) return UI.esc(label);
+    const onclick = opts.stopProp ? 'event.stopPropagation();' : '';
+    return '<span class="link-tg" onclick="' + onclick + 'Tabs.talkgroups.showDetail(' + clickId + ')">' + UI.esc(label) + '</span>';
+  },
+  // Create clickable unit link
+  unitLink(u, opts) {
+    // u can be: { id, unit_id, alpha_tag } or just a unit_id number
+    opts = opts || {};
+    let dbId, unitId, label;
+    if (typeof u === 'object') {
+      dbId = u.id;
+      unitId = u.unit_id || u.unit_rid;
+      label = u.alpha_tag || u.unit_alpha_tag || u.unit_tag || ('Unit ' + (unitId || dbId));
+    } else {
+      unitId = u;
+      label = 'Unit ' + u;
+    }
+    const clickId = dbId || unitId;
+    if (!clickId) return UI.esc(label);
+    const onclick = opts.stopProp ? 'event.stopPropagation();' : '';
+    return '<span class="link-unit" onclick="' + onclick + 'Tabs.units.showDetail(' + clickId + ')">' + UI.esc(label) + '</span>';
   },
   callId(call) {
     // Return the best identifier for API calls — tr_call_id if available, else numeric id
@@ -695,7 +735,11 @@ const AudioPlayer = {
     this.audio.play().catch(() => {});
     const tgid = call.tgid || call.talkgroup_id;
     const tgText = call.tg_alpha_tag || call.alpha_tag || ('TG ' + (tgid || '?'));
-    UI.$('ap-tg').textContent = tgText;
+    const apTg = UI.$('ap-tg');
+    apTg.textContent = tgText;
+    // Make talkgroup clickable to view its detail
+    apTg.onclick = tgid ? () => Tabs.talkgroups.showDetail(call.talkgroup_db_id || tgid) : null;
+    apTg.title = tgid ? 'Click to view talkgroup details' : '';
     Monitor.updateUI(); // Update monitor button state
     UI.$('ap-meta').textContent = UI.formatFreq(call.freq) + ' | ' + UI.formatDuration(call.duration);
     UI.$('audio-player').classList.add('visible');
@@ -906,16 +950,26 @@ const TabManager = {
 // ===== Render helpers =====
 function callListItem(call, opts) {
   opts = opts || {};
-  const tg = call.tg_alpha_tag || call.alpha_tag || ('TG ' + (call.tgid || call.talkgroup_id || '?'));
   const hasAudio = call.audio_path || call.has_audio;
   const cid = UI.callId(call);
+  // Build talkgroup link - use talkgroup_db_id if available, otherwise build object from call data
+  const tgObj = { id: call.talkgroup_db_id, tgid: call.tgid || call.talkgroup_id, alpha_tag: call.tg_alpha_tag || call.alpha_tag };
   let html = '<div class="list-item" data-call-id="' + UI.esc(cid) + '">';
-  html += '<div class="primary">' + UI.esc(tg) + ' ' + UI.badges(call) + '</div>';
+  html += '<div class="primary">' + UI.tgLink(tgObj, {stopProp: true}) + ' ' + UI.badges(call) + '</div>';
   html += '<div class="secondary">' + UI.formatFreq(call.freq);
   if (call.duration) html += ' | ' + UI.formatDuration(call.duration);
   html += '</div>';
   html += '<div class="meta">' + UI.formatTime(call.start_time) + ' ' + UI.ago(call.start_time);
-  if (call.units && call.units.length) html += ' | ' + call.units.map(u => UI.esc(typeof u === 'object' ? (u.alpha_tag || u.unit_tag || String(u.unit_rid || u.unit_id || u.id)) : String(u))).join(', ');
+  // Build clickable unit links
+  if (call.units && call.units.length) {
+    html += ' | ' + call.units.map(u => {
+      if (typeof u === 'object') {
+        return UI.unitLink(u, {stopProp: true});
+      } else {
+        return UI.unitLink({unit_id: u}, {stopProp: true});
+      }
+    }).join(', ');
+  }
   if (hasAudio && cid) html += ' <button class="btn-play" data-play="' + UI.esc(JSON.stringify(call).replace(/"/g, '&quot;')) + '">&#9654; Play</button>';
   html += '</div></div>';
   return html;
@@ -1018,7 +1072,6 @@ Tabs.overview = {
       if (!units.length) { el.innerHTML = '<div class="empty">No active units</div>'; return; }
       el.innerHTML = units.map(u => {
         const evtType = u.last_event_type || '';
-        const evtTg = u.last_event_tg_tag || (u.last_event_tgid ? 'TG ' + u.last_event_tgid : '');
         const evtClass = 'evt-' + (evtType || 'unknown');
         let evtLabel = evtType;
         if (evtType === 'call') evtLabel = 'Transmitting';
@@ -1030,9 +1083,13 @@ Tabs.overview = {
         else if (evtType === 'ans_req') evtLabel = 'Answer Req';
         else if (evtType === 'data') evtLabel = 'Data';
         else if (evtType === 'location') evtLabel = 'Location';
+        // Build clickable talkgroup link for event
+        let evtTgLink = '';
+        if (u.last_event_tgid) {
+          evtTgLink = ' ' + UI.tgLink({tgid: u.last_event_tgid, alpha_tag: u.last_event_tg_tag}, {stopProp: true});
+        }
         const evtLine = evtType
-          ? '<span class="' + evtClass + '">' + UI.esc(evtLabel) + '</span>' +
-            (evtTg ? ' <span class="evt-tg">' + UI.esc(evtTg) + '</span>' : '')
+          ? '<span class="' + evtClass + '">' + UI.esc(evtLabel) + '</span>' + evtTgLink
           : '';
         return '<div class="list-item" onclick="Tabs.units.showDetail(' + (u.id || u.unit_id) + ')">' +
           '<div class="primary">' + UI.esc(UI.unitTitle(u)) + '</div>' +
@@ -1125,7 +1182,7 @@ Tabs.calls = {
         calls.map(c =>
           '<tr style="cursor:pointer;" onclick="Tabs.calls.showDetail(\'' + UI.esc(UI.callId(c)) + '\')">' +
           '<td>' + UI.formatDateTime(c.start_time) + '</td>' +
-          '<td>' + UI.esc(c.tg_alpha_tag || c.alpha_tag || ('TG ' + (c.tgid || c.talkgroup_id || ''))) + '</td>' +
+          '<td>' + UI.tgLink({id: c.talkgroup_db_id, tgid: c.tgid || c.talkgroup_id, alpha_tag: c.tg_alpha_tag || c.alpha_tag}, {stopProp: true}) + '</td>' +
           '<td>' + UI.formatFreq(c.freq) + '</td>' +
           '<td>' + UI.formatDuration(c.duration) + '</td>' +
           '<td>' + UI.badges(c) + '</td>' +
@@ -1142,8 +1199,10 @@ Tabs.calls = {
       const call = await API.call(trCallId);
       let html = '<div class="panel-title">Call ' + UI.esc(trCallId) + '</div>';
       html += '<div class="panel-section">';
+      // Build talkgroup link for the detail view
+      const tgLink = call.talkgroup_id ? UI.tgLink({id: call.talkgroup_db_id, tgid: call.tgid || call.talkgroup_id, alpha_tag: call.tg_alpha_tag || call.alpha_tag}) : '--';
       const fields = [
-        ['System ID', call.system_id], ['Talkgroup ID', call.talkgroup_id],
+        ['System ID', call.system_id], ['Talkgroup', tgLink],
         ['Start', UI.formatDateTime(call.start_time)], ['Stop', UI.formatDateTime(call.stop_time)],
         ['Duration', UI.formatDuration(call.duration)], ['Frequency', UI.formatFreq(call.freq)],
         ['Emergency', call.emergency ? 'Yes' : 'No'], ['Encrypted', call.encrypted ? 'Yes' : 'No'],
@@ -1176,7 +1235,7 @@ Tabs.calls = {
       const freqList = Array.isArray(freqs) ? freqs : [];
       UI.$('panel-txs').innerHTML = txList.length ?
         '<table class="data-table"><thead><tr><th>Unit</th><th>Position</th><th>Time</th></tr></thead><tbody>' +
-        txList.map(t => '<tr><td>' + (t.unit_id||'--') + '</td><td>' + (t.position||0) + 's</td><td>' + UI.formatTime(t.start_time) + '</td></tr>').join('') +
+        txList.map(t => '<tr><td>' + (t.unit_id ? UI.unitLink({id: t.unit_db_id, unit_id: t.unit_rid || t.unit_id, alpha_tag: t.unit_alpha_tag}) : '--') + '</td><td>' + (t.position||0) + 's</td><td>' + UI.formatTime(t.start_time) + '</td></tr>').join('') +
         '</tbody></table>' : '<div class="empty">No transmissions</div>';
       UI.$('panel-freqs').innerHTML = freqList.length ?
         '<table class="data-table"><thead><tr><th>Frequency</th><th>Position</th></tr></thead><tbody>' +
@@ -1205,6 +1264,17 @@ Tabs.talkgroups = {
       '<div class="filters">' +
         '<div class="filter-group"><label>System</label><select id="tg-system"><option value="">All</option></select></div>' +
         '<div class="filter-group"><label>Search</label><input id="tg-search" placeholder="alpha_tag or TGID" style="width:160px;"></div>' +
+        '<div class="filter-group"><label>Sort</label><select id="tg-sort">' +
+          '<option value="alpha_tag">Alpha Tag</option>' +
+          '<option value="tgid">TGID</option>' +
+          '<option value="last_seen">Last Seen</option>' +
+          '<option value="first_seen">First Seen</option>' +
+          '<option value="group">Group</option>' +
+        '</select></div>' +
+        '<div class="filter-group"><select id="tg-sort-dir">' +
+          '<option value="asc">Asc</option>' +
+          '<option value="desc">Desc</option>' +
+        '</select></div>' +
         '<button class="btn-filter" onclick="Tabs.talkgroups.search()">Search</button>' +
       '</div>' +
       '<div id="tg-results"><div class="loading">Loading...</div></div>' +
@@ -1220,16 +1290,16 @@ Tabs.talkgroups = {
   async load() {
     const params = { limit: this.limit, offset: this.offset };
     const sys = UI.$('tg-system').value; if (sys) params.system = sys;
+    const search = (UI.$('tg-search').value || '').trim();
+    if (search) params.search = search;
+    const sort = UI.$('tg-sort').value; if (sort) params.sort = sort;
+    const sortDir = UI.$('tg-sort-dir').value; if (sortDir) params.sort_dir = sortDir;
     try {
       const d = await API.talkgroups(params);
       const tgs = d.talkgroups || [];
-      const search = (UI.$('tg-search').value || '').toLowerCase();
-      const filtered = search ? tgs.filter(t =>
-        String(t.tgid).includes(search) || (t.alpha_tag || '').toLowerCase().includes(search)
-      ) : tgs;
       const el = UI.$('tg-results');
-      if (!filtered.length) { el.innerHTML = '<div class="empty">No talkgroups found</div>'; UI.$('tg-pagination').innerHTML = ''; return; }
-      el.innerHTML = '<div class="entity-grid">' + filtered.map(t =>
+      if (!tgs.length) { el.innerHTML = '<div class="empty">No talkgroups found</div>'; UI.$('tg-pagination').innerHTML = ''; return; }
+      el.innerHTML = '<div class="entity-grid">' + tgs.map(t =>
         '<div class="entity-card" onclick="Tabs.talkgroups.showDetail(' + t.id + ')">' +
         '<div class="title">' + UI.esc(t.alpha_tag || 'TG ' + t.tgid) + '</div>' +
         '<div class="detail">TGID: ' + t.tgid + ' | ' + UI.esc(t.group || '') + ' | ' + UI.esc(t.tag || '') + '</div>' +
@@ -1318,6 +1388,16 @@ Tabs.units = {
           '<div class="filter-group"><label>Window (min)</label><input id="uf-window" type="number" value="' + this.window + '" min="1" max="60" style="width:60px;"></div>' +
           '<div class="filter-group"><label>System</label><select id="uf-system"><option value="">All</option></select></div>' +
           '<div class="filter-group"><label>Talkgroup</label><input id="uf-tg" type="number" placeholder="TGID" style="width:80px;"></div>' +
+          '<div class="filter-group"><label>Sort</label><select id="uf-active-sort">' +
+            '<option value="last_seen">Last Seen</option>' +
+            '<option value="alpha_tag">Alpha Tag</option>' +
+            '<option value="unit_id">Unit ID</option>' +
+            '<option value="first_seen">First Seen</option>' +
+          '</select></div>' +
+          '<div class="filter-group"><select id="uf-active-sort-dir">' +
+            '<option value="desc">Desc</option>' +
+            '<option value="asc">Asc</option>' +
+          '</select></div>' +
           '<button class="btn-filter" onclick="Tabs.units.search()">Filter</button>' +
         '</div>';
       const sel = UI.$('uf-system');
@@ -1327,7 +1407,18 @@ Tabs.units = {
       ff.innerHTML =
         '<div class="filters">' +
           '<div class="filter-group"><label>System</label><select id="uf-system-all"><option value="">All</option></select></div>' +
-          '<button class="btn-filter" onclick="Tabs.units.loadAll()">Filter</button>' +
+          '<div class="filter-group"><label>Search</label><input id="uf-all-search" placeholder="alpha_tag or unit ID" style="width:160px;"></div>' +
+          '<div class="filter-group"><label>Sort</label><select id="uf-sort">' +
+            '<option value="alpha_tag">Alpha Tag</option>' +
+            '<option value="unit_id">Unit ID</option>' +
+            '<option value="last_seen">Last Seen</option>' +
+            '<option value="first_seen">First Seen</option>' +
+          '</select></div>' +
+          '<div class="filter-group"><select id="uf-sort-dir">' +
+            '<option value="asc">Asc</option>' +
+            '<option value="desc">Desc</option>' +
+          '</select></div>' +
+          '<button class="btn-filter" onclick="Tabs.units.searchAll()">Search</button>' +
         '</div>';
       const sel = UI.$('uf-system-all');
       systemsCache.forEach(s => { sel.innerHTML += '<option value="' + s.id + '">' + UI.esc(s.short_name) + '</option>'; });
@@ -1350,10 +1441,13 @@ Tabs.units = {
     if (this.subTab === 'active') this.loadActive();
     else if (this.subTab === 'all') this.loadAll();
   },
+  searchAll() { this.offset = 0; this.loadAll(); },
   async loadActive() {
     const params = { window: this.window, limit: this.limit, offset: this.offset };
     const sys = UI.$('uf-system') && UI.$('uf-system').value; if (sys) params.system = sys;
     const tg = UI.$('uf-tg') && UI.$('uf-tg').value; if (tg) params.talkgroup = tg;
+    const sort = UI.$('uf-active-sort') && UI.$('uf-active-sort').value; if (sort) params.sort = sort;
+    const sortDir = UI.$('uf-active-sort-dir') && UI.$('uf-active-sort-dir').value; if (sortDir) params.sort_dir = sortDir;
     try {
       const d = await API.activeUnits(params);
       const units = d.units || [];
@@ -1373,6 +1467,10 @@ Tabs.units = {
   async loadAll() {
     const params = { limit: this.limit, offset: this.offset };
     const sys = UI.$('uf-system-all') && UI.$('uf-system-all').value; if (sys) params.system = sys;
+    const search = (UI.$('uf-all-search') && UI.$('uf-all-search').value || '').trim();
+    if (search) params.search = search;
+    const sort = UI.$('uf-sort') && UI.$('uf-sort').value; if (sort) params.sort = sort;
+    const sortDir = UI.$('uf-sort-dir') && UI.$('uf-sort-dir').value; if (sortDir) params.sort_dir = sortDir;
     try {
       const d = await API.units(params);
       const units = d.units || [];
@@ -1429,10 +1527,12 @@ Tabs.units = {
           const meta = e.metadata_json;
           const evtData = meta && (meta[e.event_type] || meta.call || meta.end || {});
           const tgAlpha = evtData && evtData.talkgroup_alpha_tag;
-          const tgLabel = tgAlpha ? UI.esc(tgAlpha) + ' (' + (e.tgid || e.talkgroup_id || '') + ')' : (e.tgid || e.talkgroup_id || '--');
+          const tgid = e.tgid || e.talkgroup_id;
+          // Build clickable talkgroup link
+          const tgCell = tgid ? UI.tgLink({tgid: tgid, alpha_tag: tgAlpha}) : '--';
           return '<tr><td>' + UI.formatTime(e.time || e.timestamp) + '</td>' +
           '<td>' + UI.esc(e.event_type) + '</td>' +
-          '<td>' + tgLabel + '</td></tr>';
+          '<td>' + tgCell + '</td></tr>';
         }).join('') + '</tbody></table>';
       window._pageNavCallbacks['uevents'] = (off) => this.loadEvents(id, off);
       UI.$('panel-unit-events-pg').innerHTML = paginationHtml(offset, 20, events.length, 'uevents');

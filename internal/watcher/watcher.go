@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/trunk-recorder/tr-engine/internal/api/ws"
 	"github.com/trunk-recorder/tr-engine/internal/database"
 	"github.com/trunk-recorder/tr-engine/internal/database/models"
 	"github.com/trunk-recorder/tr-engine/internal/storage"
@@ -36,6 +37,7 @@ type Watcher struct {
 	logger    *zap.Logger
 	watcher   *fsnotify.Watcher
 	logTailer *LogTailer
+	hub       *ws.Hub
 
 	// Caches (protected by mutex)
 	mu             sync.RWMutex
@@ -44,6 +46,9 @@ type Watcher struct {
 
 	// Active calls tracking (for log events)
 	activeCalls map[string]*activeCall // key: "system:callID"
+
+	// Recorder state tracking (for log events)
+	recorders map[int]*RecorderState // key: recorderNum
 
 	// Backfill state - audio files
 	backfillDone     bool
@@ -72,6 +77,16 @@ type activeCall struct {
 	recorderNum int
 }
 
+// RecorderState tracks a recorder's current state
+type RecorderState struct {
+	ID         int     `json:"id"`
+	SourceNum  int     `json:"src_num"`
+	SourceFreq float64 `json:"source_freq"`
+	Type       string  `json:"type"`
+	State      string  `json:"state"`
+	StateInt   int     `json:"state_int"` // 0=available, 1=recording, 2=idle
+}
+
 // New creates a new Watcher
 func New(db *database.DB, cfg Config, logger *zap.Logger) (*Watcher, error) {
 	fsw, err := fsnotify.NewWatcher()
@@ -89,6 +104,7 @@ func New(db *database.DB, cfg Config, logger *zap.Logger) (*Watcher, error) {
 		systemCache:    make(map[string]int),
 		talkgroupCache: make(map[string]int),
 		activeCalls:    make(map[string]*activeCall),
+		recorders:      make(map[int]*RecorderState),
 	}
 
 	// Create log tailer if log path is configured
@@ -122,16 +138,19 @@ func (w *Watcher) Start(ctx context.Context) error {
 		zap.Bool("backfill", w.backfill),
 	)
 
-	// Start backfill scanner if configured
-	if w.backfill {
-		go w.runBackfill(ctx)
-	} else if w.logTailer != nil {
-		// No backfill - start log tailer immediately
+	// Start real-time log tailing immediately (don't wait for backfill)
+	if w.logTailer != nil {
 		if err := w.logTailer.Start(ctx); err != nil {
 			w.logger.Warn("Failed to start log tailer", zap.Error(err))
 		} else {
+			w.logger.Info("Real-time log tailing started")
 			go w.processLogEvents(ctx)
 		}
+	}
+
+	// Start backfill scanner if configured (runs in background)
+	if w.backfill {
+		go w.runBackfill(ctx)
 	}
 
 	go w.run(ctx)
@@ -144,6 +163,24 @@ func (w *Watcher) Stop() error {
 		w.logTailer.Stop()
 	}
 	return w.watcher.Close()
+}
+
+// SetHub sets the WebSocket hub for broadcasting events
+func (w *Watcher) SetHub(hub *ws.Hub) {
+	w.hub = hub
+}
+
+// broadcast sends an event to WebSocket clients
+func (w *Watcher) broadcast(eventType string, data map[string]interface{}) {
+	if w.hub == nil {
+		return
+	}
+	event := ws.Event{
+		Type:      eventType,
+		Timestamp: time.Now().Unix(),
+		Data:      data,
+	}
+	w.hub.Broadcast(event)
 }
 
 // Stats returns current watcher statistics
@@ -388,6 +425,20 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 	}
 
 	w.callsProcessed++
+
+	// Broadcast audio available event
+	w.broadcast("audio_available", map[string]interface{}{
+		"call_id":             call.ID,
+		"system":              system,
+		"talkgroup":           sidecar.Talkgroup,
+		"talkgroup_alpha_tag": sidecar.TGTag,
+		"freq":                sidecar.Freq,
+		"duration":            sidecar.CallLength,
+		"audio_path":          audioPath,
+		"encrypted":           sidecar.Encrypted != 0,
+		"emergency":           sidecar.Emergency != 0,
+	})
+
 	w.logger.Debug("Processed call",
 		zap.String("system", system),
 		zap.Int("talkgroup", sidecar.Talkgroup),
@@ -524,6 +575,15 @@ func (w *Watcher) handleCallStart(ctx context.Context, event LogEvent) {
 	}
 	w.mu.Unlock()
 
+	// Broadcast call start
+	w.broadcast("call_start", map[string]interface{}{
+		"tr_call_id": data.CallID,
+		"talkgroup":  data.Talkgroup,
+		"system":     event.System,
+		"freq":       int64(data.Freq * 1e6),
+		"recorder":   data.RecorderNum,
+	})
+
 	w.logger.Debug("Call started (from log)",
 		zap.String("system", event.System),
 		zap.String("call_id", data.CallID),
@@ -537,8 +597,21 @@ func (w *Watcher) handleCallStop(ctx context.Context, event LogEvent) {
 	key := fmt.Sprintf("%s:%s", event.System, data.CallID)
 
 	w.mu.Lock()
+	call, exists := w.activeCalls[key]
 	delete(w.activeCalls, key)
 	w.mu.Unlock()
+
+	// Broadcast call end
+	broadcastData := map[string]interface{}{
+		"tr_call_id": data.CallID,
+		"talkgroup":  data.Talkgroup,
+		"system":     event.System,
+		"freq":       int64(data.Freq * 1e6),
+	}
+	if exists {
+		broadcastData["duration"] = int(event.Timestamp.Sub(call.startTime).Seconds())
+	}
+	w.broadcast("call_end", broadcastData)
 
 	w.logger.Debug("Call stopped (from log)",
 		zap.String("system", event.System),
@@ -608,8 +681,14 @@ func (w *Watcher) handleDecodeRate(ctx context.Context, event LogEvent) {
 		return
 	}
 
-	// Store as a rate record (if we have such a table)
-	// For now, just log it
+	// Broadcast rate update
+	w.broadcast("rate_update", map[string]interface{}{
+		"system":    data.System,
+		"system_id": sysID,
+		"rate":      data.MsgPerSec,
+		"freq":      int64(data.Freq * 1e6),
+	})
+
 	w.logger.Debug("Decode rate",
 		zap.String("system", data.System),
 		zap.Int("system_id", sysID),
@@ -617,15 +696,52 @@ func (w *Watcher) handleDecodeRate(ctx context.Context, event LogEvent) {
 	)
 }
 
-// handleRecorder logs recorder status
+// handleRecorder updates recorder status
 func (w *Watcher) handleRecorder(ctx context.Context, event LogEvent) {
 	data := event.Data.(RecorderEvent)
 
-	w.logger.Debug("Recorder status",
-		zap.Int("source", data.SourceNum),
-		zap.Int("recorder", data.RecorderNum),
-		zap.String("state", data.State),
-	)
+	// Convert state string to int (case-insensitive)
+	stateInt := 0 // available
+	switch strings.ToLower(data.State) {
+	case "recording":
+		stateInt = 1
+	case "idle":
+		stateInt = 2
+	}
+
+	// Update recorder state
+	w.mu.Lock()
+	w.recorders[data.RecorderNum] = &RecorderState{
+		ID:         data.RecorderNum,
+		SourceNum:  data.SourceNum,
+		SourceFreq: data.SourceFreq,
+		Type:       data.Type,
+		State:      data.State,
+		StateInt:   stateInt,
+	}
+	w.mu.Unlock()
+
+	// Broadcast recorder update
+	w.broadcast("recorder_update", map[string]interface{}{
+		"id":        data.RecorderNum,
+		"src_num":   data.SourceNum,
+		"rec_num":   data.RecorderNum,
+		"type":      data.Type,
+		"state":     data.State,
+		"state_int": stateInt,
+	})
+}
+
+// GetRecorders returns current recorder states (implements rest.RecorderProvider)
+func (w *Watcher) GetRecorders() interface{} {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	recorders := make([]*RecorderState, 0, len(w.recorders))
+	for _, r := range w.recorders {
+		recorders = append(recorders, r)
+	}
+	return recorders
 }
 
 // GetActiveCalls returns currently active calls (from log tracking)
@@ -671,22 +787,7 @@ func (w *Watcher) runBackfill(ctx context.Context) {
 		w.mu.Unlock()
 	}
 
-	// Check for cancellation
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
-
-	// Phase 3: Start real-time log tailing
-	if w.logTailer != nil {
-		w.logger.Info("Starting real-time log tailing")
-		if err := w.logTailer.Start(ctx); err != nil {
-			w.logger.Warn("Failed to start log tailer", zap.Error(err))
-		} else {
-			go w.processLogEvents(ctx)
-		}
-	}
+	// Log tailing is already started in Start() - no Phase 3 needed
 }
 
 // runAudioBackfill imports historical audio JSON sidecar files

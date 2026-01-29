@@ -105,11 +105,17 @@ type RecorderListResponse struct {
 }
 
 // Handler handles REST API requests
+// RecorderProvider provides recorder state information
+type RecorderProvider interface {
+	GetRecorders() interface{}
+}
+
 type Handler struct {
-	db            *database.DB
-	processor     *ingest.Processor
-	logger        *zap.Logger
-	audioBasePath string
+	db               *database.DB
+	processor        *ingest.Processor
+	logger           *zap.Logger
+	audioBasePath    string
+	recorderProvider RecorderProvider
 }
 
 // NewHandler creates a new Handler
@@ -120,6 +126,11 @@ func NewHandler(db *database.DB, processor *ingest.Processor, logger *zap.Logger
 		logger:        logger,
 		audioBasePath: audioBasePath,
 	}
+}
+
+// SetRecorderProvider sets the provider for recorder state (used in watch mode)
+func (h *Handler) SetRecorderProvider(provider RecorderProvider) {
+	h.recorderProvider = provider
 }
 
 // resolveCall looks up a call by tr_call_id string, falling back to numeric DB id
@@ -291,45 +302,97 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		}
 	}
 
+	// Get search filter if provided
+	search := c.Query("search")
+
+	// Get sort options
+	sortField := c.DefaultQuery("sort", "alpha_tag")
+	sortDir := c.DefaultQuery("sort_dir", "asc")
+
+	// Validate sort field (whitelist to prevent SQL injection)
+	// For text columns, add NULLS LAST to put nulls at end
+	validSortFields := map[string]string{
+		"alpha_tag":  "alpha_tag",
+		"tgid":       "tgid",
+		"last_seen":  "last_seen",
+		"first_seen": "first_seen",
+		"group":      "tg_group",
+	}
+	nullsLastFields := map[string]bool{"alpha_tag": true, "group": true}
+
+	orderBy, ok := validSortFields[sortField]
+	if !ok {
+		orderBy = "alpha_tag"
+		sortField = "alpha_tag"
+	}
+
+	// Validate sort direction
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "asc"
+	}
+	orderClause := orderBy + " " + sortDir
+	if nullsLastFields[sortField] {
+		orderClause += " NULLS LAST"
+	}
+
 	var talkgroups interface{}
 	var err error
 
+	// Build query
+	var conditions []string
+	var args []interface{}
+	argIdx := 1
+
 	if systemID != nil {
-		talkgroups, err = h.db.ListTalkgroupsBySystem(c.Request.Context(), *systemID, limit, offset)
-	} else {
-		// Query all talkgroups
-		rows, queryErr := h.db.Pool().Query(c.Request.Context(), `
-			SELECT id, system_id, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-			FROM talkgroups ORDER BY system_id, tgid LIMIT $1 OFFSET $2
-		`, limit, offset)
-		if queryErr != nil {
-			err = queryErr
-		} else {
-			defer rows.Close()
-			var results []map[string]interface{}
-			for rows.Next() {
-				var id, systemID, tgid, priority int
-				var alphaTag, description, group, tag, mode *string
-				var firstSeen, lastSeen time.Time
-				if err := rows.Scan(&id, &systemID, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen); err != nil {
-					continue
-				}
-				results = append(results, map[string]interface{}{
-					"id":          id,
-					"system_id":   systemID,
-					"tgid":        tgid,
-					"alpha_tag":   alphaTag,
-					"description": description,
-					"group":       group,
-					"tag":         tag,
-					"priority":    priority,
-					"mode":        mode,
-					"first_seen":  firstSeen,
-					"last_seen":   lastSeen,
-				})
-			}
-			talkgroups = results
+		conditions = append(conditions, "system_id = $"+strconv.Itoa(argIdx))
+		args = append(args, *systemID)
+		argIdx++
+	}
+
+	if search != "" {
+		searchPattern := "%" + search + "%"
+		searchCond := "(LOWER(alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(tgid AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + " OR LOWER(tg_group) LIKE LOWER($" + strconv.Itoa(argIdx+2) + ") OR LOWER(tag) LIKE LOWER($" + strconv.Itoa(argIdx+3) + "))"
+		conditions = append(conditions, searchCond)
+		args = append(args, searchPattern, searchPattern, searchPattern, searchPattern)
+		argIdx += 4
+	}
+
+	query := `SELECT id, system_id, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen FROM talkgroups`
+	if len(conditions) > 0 {
+		query += " WHERE " + conditions[0]
+		for i := 1; i < len(conditions); i++ {
+			query += " AND " + conditions[i]
 		}
+	}
+	query += " ORDER BY " + orderClause + " LIMIT $" + strconv.Itoa(argIdx) + " OFFSET $" + strconv.Itoa(argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := h.db.Pool().Query(c.Request.Context(), query, args...)
+	if err == nil {
+		defer rows.Close()
+		var results []map[string]interface{}
+		for rows.Next() {
+			var id, sysID, tgid, priority int
+			var alphaTag, description, group, tag, mode *string
+			var firstSeen, lastSeen time.Time
+			if scanErr := rows.Scan(&id, &sysID, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen); scanErr != nil {
+				continue
+			}
+			results = append(results, map[string]interface{}{
+				"id":          id,
+				"system_id":   sysID,
+				"tgid":        tgid,
+				"alpha_tag":   alphaTag,
+				"description": description,
+				"group":       group,
+				"tag":         tag,
+				"priority":    priority,
+				"mode":        mode,
+				"first_seen":  firstSeen,
+				"last_seen":   lastSeen,
+			})
+		}
+		talkgroups = results
 	}
 
 	if err != nil {
@@ -500,16 +563,111 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		}
 	}
 
-	units, err := h.db.ListUnits(c.Request.Context(), systemID, limit, offset)
+	// Get search filter if provided
+	search := c.Query("search")
+
+	// Get sort options
+	sortField := c.DefaultQuery("sort", "alpha_tag")
+	sortDir := c.DefaultQuery("sort_dir", "asc")
+
+	// Validate sort field (whitelist to prevent SQL injection)
+	validSortFields := map[string]string{
+		"alpha_tag":  "alpha_tag",
+		"unit_id":    "unit_id",
+		"last_seen":  "last_seen",
+		"first_seen": "first_seen",
+	}
+	nullsLastFields := map[string]bool{"alpha_tag": true}
+
+	orderBy, ok := validSortFields[sortField]
+	if !ok {
+		orderBy = "alpha_tag"
+		sortField = "alpha_tag"
+	}
+
+	// Validate sort direction
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "asc"
+	}
+	orderClause := orderBy + " " + sortDir
+	if nullsLastFields[sortField] {
+		orderClause += " NULLS LAST"
+	}
+
+	var units interface{}
+	var err error
+
+	// Build query
+	var conditions []string
+	var args []interface{}
+	argIdx := 1
+
+	if systemID != nil {
+		conditions = append(conditions, "system_id = $"+strconv.Itoa(argIdx))
+		args = append(args, *systemID)
+		argIdx++
+	}
+
+	if search != "" {
+		searchPattern := "%" + search + "%"
+		searchCond := "(LOWER(alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(unit_id AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + ")"
+		conditions = append(conditions, searchCond)
+		args = append(args, searchPattern, searchPattern)
+		argIdx += 2
+	}
+
+	query := `SELECT id, system_id, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen FROM units`
+	if len(conditions) > 0 {
+		query += " WHERE " + conditions[0]
+		for i := 1; i < len(conditions); i++ {
+			query += " AND " + conditions[i]
+		}
+	}
+	query += " ORDER BY " + orderClause + " LIMIT $" + strconv.Itoa(argIdx) + " OFFSET $" + strconv.Itoa(argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := h.db.Pool().Query(c.Request.Context(), query, args...)
+	if err == nil {
+		defer rows.Close()
+		var results []map[string]interface{}
+		for rows.Next() {
+			var id, sysID int
+			var unitID int64
+			var alphaTag, alphaTagSource *string
+			var firstSeen, lastSeen time.Time
+			if scanErr := rows.Scan(&id, &sysID, &unitID, &alphaTag, &alphaTagSource, &firstSeen, &lastSeen); scanErr != nil {
+				continue
+			}
+			results = append(results, map[string]interface{}{
+				"id":               id,
+				"system_id":        sysID,
+				"unit_id":          unitID,
+				"alpha_tag":        alphaTag,
+				"alpha_tag_source": alphaTagSource,
+				"first_seen":       firstSeen,
+				"last_seen":        lastSeen,
+			})
+		}
+		units = results
+	}
+
 	if err != nil {
 		h.logger.Error("Failed to list units", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list units"})
 		return
 	}
 
+	// Get count for response
+	count := 0
+	if unitSlice, ok := units.([]map[string]interface{}); ok {
+		count = len(unitSlice)
+	} else if unitSlice, ok := units.([]*models.Unit); ok {
+		count = len(unitSlice)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"units":  units,
-		"count":  len(units),
+		"count":  count,
 		"limit":  limit,
 		"offset": offset,
 	})
@@ -1465,6 +1623,14 @@ func (h *Handler) ListActiveUnits(c *gin.Context) {
 		}
 	}
 
+	// Parse sort options
+	if s := c.Query("sort"); s != "" {
+		filters.SortField = s
+	}
+	if d := c.Query("sort_dir"); d != "" {
+		filters.SortDir = d
+	}
+
 	units, err := h.db.ListActiveUnits(c.Request.Context(), filters, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list active units", zap.Error(err))
@@ -1489,16 +1655,28 @@ func (h *Handler) ListActiveUnits(c *gin.Context) {
 // @Success      200  {object}  rest.RecorderListResponse
 // @Router       /recorders [get]
 func (h *Handler) ListRecorders(c *gin.Context) {
-	if h.processor == nil {
+	// Try processor first (MQTT mode)
+	if h.processor != nil {
+		recorders := h.processor.GetRecorders()
 		c.JSON(http.StatusOK, gin.H{
-			"recorders": []interface{}{},
-			"count":     0,
+			"recorders": recorders,
+			"count":     len(recorders),
 		})
 		return
 	}
-	recorders := h.processor.GetRecorders()
+
+	// Fall back to recorder provider (watch mode)
+	if h.recorderProvider != nil {
+		recorders := h.recorderProvider.GetRecorders()
+		c.JSON(http.StatusOK, gin.H{
+			"recorders": recorders,
+		})
+		return
+	}
+
+	// No recorder source available
 	c.JSON(http.StatusOK, gin.H{
-		"recorders": recorders,
-		"count":     len(recorders),
+		"recorders": []interface{}{},
+		"count":     0,
 	})
 }

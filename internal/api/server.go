@@ -36,6 +36,7 @@ type Server struct {
 	router        *gin.Engine
 	stopMetrics   chan struct{}
 	audioBasePath string
+	handler       *rest.Handler
 }
 
 // NewServer creates a new API server
@@ -90,6 +91,18 @@ func (s *Server) Start() error {
 	s.logger.Info("Starting API server", zap.String("address", addr))
 
 	return s.server.ListenAndServe()
+}
+
+// GetHub returns the WebSocket hub for external use
+func (s *Server) GetHub() *ws.Hub {
+	return s.hub
+}
+
+// SetRecorderProvider sets the recorder provider for watch mode
+func (s *Server) SetRecorderProvider(provider rest.RecorderProvider) {
+	if s.handler != nil {
+		s.handler.SetRecorderProvider(provider)
+	}
 }
 
 // Shutdown gracefully shuts down the server
@@ -180,7 +193,8 @@ func (s *Server) setupRoutes() {
 	api := s.router.Group("/api/v1")
 	{
 		// Create REST handler
-		handler := rest.NewHandler(s.db, s.processor, s.logger, s.audioBasePath)
+		s.handler = rest.NewHandler(s.db, s.processor, s.logger, s.audioBasePath)
+		handler := s.handler
 
 		// Systems
 		api.GET("/systems", handler.ListSystems)
