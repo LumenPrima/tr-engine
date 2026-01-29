@@ -104,6 +104,7 @@ func (p *Processor) ProcessCallStart(ctx context.Context, data *CallEventData) e
 		"talkgroup":           data.TGID,
 		"talkgroup_alpha_tag": data.TGAlphaTag,
 		"system":              data.ShortName,
+		"sysid":               sysid,
 		"freq":                data.Freq,
 		"unit":                data.Unit,
 		"unit_alpha_tag":      data.UnitAlphaTag,
@@ -217,10 +218,13 @@ func (p *Processor) ProcessMissedCallEnd(ctx context.Context, ended *ActiveCallI
 		}
 	}
 
-	if call == nil {
-		sysID, _ := p.getSystemID(ctx, ended.System)
-		if sysID > 0 {
-			call, err = p.db.GetCallBySystemTGIDAndTime(ctx, sysID, ended.TGID, ended.StartTime)
+	// Get system for sysid lookup
+	sys, _ := p.getSystem(ctx, ended.System)
+	var sysid string
+	if sys != nil {
+		sysid = database.EffectiveSYSID(sys)
+		if call == nil {
+			call, err = p.db.GetCallBySystemTGIDAndTime(ctx, sys.ID, ended.TGID, ended.StartTime)
 			if err != nil {
 				p.logger.Debug("Error finding ended call by tgid/time", zap.Error(err))
 			}
@@ -263,6 +267,7 @@ func (p *Processor) ProcessMissedCallEnd(ctx context.Context, ended *ActiveCallI
 		"call_id":    call.ID,
 		"talkgroup":  ended.TGID,
 		"system":     ended.System,
+		"sysid":      sysid,
 		"duration":   call.Duration,
 		"encrypted":  ended.Encrypted,
 		"emergency":  ended.Emergency,
@@ -459,6 +464,7 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 					"talkgroup":           data.TGID,
 					"talkgroup_alpha_tag": data.TGAlphaTag,
 					"system":              data.ShortName,
+					"sysid":               sysid,
 					"audio_size":          call.AudioSize,
 					"duration":            call.Duration,
 				})
@@ -501,6 +507,7 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 		"talkgroup":           data.TGID,
 		"talkgroup_alpha_tag": data.TGAlphaTag,
 		"system":              data.ShortName,
+		"sysid":               sysid,
 		"unit":                data.Unit,
 		"unit_alpha_tag":      data.UnitAlphaTag,
 		"duration":            data.Duration,
@@ -750,6 +757,7 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 			"talkgroup":           data.TGID,
 			"talkgroup_alpha_tag": data.TGAlphaTag,
 			"system":              data.ShortName,
+			"sysid":               sysid,
 			"audio_size":          audioSize,
 			"duration":            call.Duration,
 			"transmissions":       len(data.SrcList),
@@ -847,6 +855,7 @@ func (p *Processor) ProcessUnitEvent(ctx context.Context, data *UnitEventData) e
 		"event_type": data.EventType,
 		"talkgroup":  data.TGID,
 		"system":     data.ShortName,
+		"sysid":      sysid,
 	})
 
 	return nil

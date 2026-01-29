@@ -827,17 +827,18 @@ func (p *Processor) ProcessSystemStatus(ctx context.Context, data *SystemStatusD
 
 // ProcessRate handles a decode rate message
 func (p *Processor) ProcessRate(ctx context.Context, data *RateData) error {
-	sysID, err := p.getSystemID(ctx, data.ShortName)
+	sys, err := p.getSystem(ctx, data.ShortName)
 	if err != nil {
 		return err
 	}
-	if sysID == 0 {
+	if sys == nil {
 		// System not yet registered, skip
 		return nil
 	}
+	sysid := database.EffectiveSYSID(sys)
 
 	rate := &models.SystemRate{
-		SystemID:       sysID,
+		SystemID:       sys.ID,
 		Time:           data.Timestamp,
 		DecodeRate:     data.DecodeRate,
 		ControlChannel: data.ControlChannel,
@@ -850,6 +851,7 @@ func (p *Processor) ProcessRate(ctx context.Context, data *RateData) error {
 	// max_rate is 40 for P25 Phase 1 systems (voice slots per second)
 	p.broadcast("rate_update", map[string]interface{}{
 		"system":          data.ShortName,
+		"sysid":           sysid,
 		"decode_rate":     data.DecodeRate,
 		"max_rate":        40,
 		"control_channel": data.ControlChannel,
