@@ -43,10 +43,10 @@ var (
 	easyHTTPPort   = flag.Int("port", 8080, "HTTP server port")
 )
 
-const version = "0.2.0-beta1"
+const version = "0.2.1-beta2"
 
 // @title           tr-engine API
-// @version         0.2.0-beta1
+// @version         0.2.1-beta2
 // @description     Backend service for trunk-recorder data ingestion and querying. Provides REST APIs for accessing radio system data, calls, talkgroups, and units.
 
 // @host            localhost:8080
