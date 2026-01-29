@@ -51,8 +51,10 @@ func NewServer(cfg config.ServerConfig, db *database.DB, processor *ingest.Proce
 	hub := ws.NewHub(logger)
 	go hub.Run()
 
-	// Connect processor to hub for broadcasting
-	processor.SetHub(hub)
+	// Connect processor to hub for broadcasting (if processor exists)
+	if processor != nil {
+		processor.SetHub(hub)
+	}
 
 	s := &Server{
 		config:        cfg,

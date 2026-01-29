@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,7 +21,9 @@ import (
 // Importer handles bulk import of historical audio files
 type Importer struct {
 	db          *database.DB
-	audioPath   string
+	audioPath   string // source path (where to scan for files)
+	destPath    string // destination path (where to copy files in copy mode)
+	storageMode string // "copy" or "external"
 	batchSize   int
 	throttle    int // max calls per second, 0 = unlimited
 	logger      *zap.Logger
@@ -31,6 +34,7 @@ type Importer struct {
 	totalFreqs    int64
 	skippedCalls  int64
 	errorCalls    int64
+	bytesCopied   int64
 	startTime     time.Time
 
 	// Caches
@@ -40,10 +44,12 @@ type Importer struct {
 
 // Config holds importer configuration
 type Config struct {
-	AudioPath  string
-	BatchSize  int
-	Throttle   int  // calls per second, 0 = unlimited
-	InstanceID string
+	AudioPath   string // source path to scan for audio files
+	DestPath    string // destination path for copy mode (empty = same as AudioPath)
+	StorageMode string // "copy" or "external"
+	BatchSize   int
+	Throttle    int // calls per second, 0 = unlimited
+	InstanceID  string
 }
 
 // New creates a new Importer
@@ -54,10 +60,20 @@ func New(db *database.DB, cfg Config, logger *zap.Logger) *Importer {
 	if cfg.InstanceID == "" {
 		cfg.InstanceID = "importer"
 	}
+	if cfg.StorageMode == "" {
+		cfg.StorageMode = "external"
+	}
+	// In external mode, dest = source; in copy mode, dest must be specified
+	destPath := cfg.DestPath
+	if cfg.StorageMode == "external" || destPath == "" {
+		destPath = cfg.AudioPath
+	}
 
 	return &Importer{
 		db:             db,
 		audioPath:      cfg.AudioPath,
+		destPath:       destPath,
+		storageMode:    cfg.StorageMode,
 		batchSize:      cfg.BatchSize,
 		throttle:       cfg.Throttle,
 		logger:         logger,
@@ -144,10 +160,27 @@ func (i *Importer) Run(ctx context.Context) error {
 	fmt.Printf("Frequencies:    %d\n", i.totalFreqs)
 	fmt.Printf("Skipped:        %d\n", i.skippedCalls)
 	fmt.Printf("Errors:         %d\n", i.errorCalls)
+	if i.storageMode == "copy" {
+		fmt.Printf("Bytes copied:   %s\n", formatBytes(i.bytesCopied))
+	}
 	fmt.Printf("Time elapsed:   %s\n", elapsed.Round(time.Second))
 	fmt.Printf("Average rate:   %.1f calls/sec\n", rate)
 
 	return nil
+}
+
+// formatBytes formats bytes into human-readable string
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 // discoverSystems finds all system directories
@@ -363,27 +396,59 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 		return fmt.Errorf("get talkgroup: %w", err)
 	}
 
-	// Build relative audio path
+	// Find the audio file (try common extensions)
 	audioFile := strings.TrimSuffix(jsonPath, ".json")
-	// Try common extensions
-	var audioPath string
+	var srcAudioPath string
+	var audioExt string
 	for _, ext := range []string{".m4a", ".wav", ".mp3"} {
 		if _, err := os.Stat(audioFile + ext); err == nil {
-			audioPath = i.getRelativePath(audioFile + ext)
+			srcAudioPath = audioFile + ext
+			audioExt = ext
 			break
 		}
 	}
 
-	if audioPath == "" {
+	if srcAudioPath == "" {
 		i.skippedCalls++
 		return nil // No audio file found, skip
 	}
 
-	// Get audio file size
+	// Get relative path (relative to source audioPath)
+	relPath := i.getRelativePath(srcAudioPath)
+
+	// Get audio file size from source
 	var audioSize int
-	if fi, err := os.Stat(filepath.Join(i.audioPath, audioPath)); err == nil {
-		audioSize = int(fi.Size())
+	fi, err := os.Stat(srcAudioPath)
+	if err != nil {
+		return fmt.Errorf("stat audio file: %w", err)
 	}
+	audioSize = int(fi.Size())
+
+	// In copy mode, copy the file to destination
+	if i.storageMode == "copy" {
+		dstPath := filepath.Join(i.destPath, relPath)
+
+		// Skip if destination already exists
+		if _, err := os.Stat(dstPath); err == nil {
+			// File already copied, just use the relative path
+		} else {
+			// Copy the file
+			n, err := copyFile(srcAudioPath, dstPath)
+			if err != nil {
+				return fmt.Errorf("copy audio file: %w", err)
+			}
+			i.bytesCopied += n
+
+			// Also copy the JSON sidecar
+			dstJSON := strings.TrimSuffix(dstPath, audioExt) + ".json"
+			if _, err := copyFile(jsonPath, dstJSON); err != nil {
+				i.logger.Debug("Failed to copy JSON sidecar", zap.Error(err))
+			}
+		}
+	}
+
+	// audioPath stored in DB is always the relative path
+	audioPath := relPath
 
 	// Check if call already exists (by system, tgid, start_time)
 	startTime := time.Unix(sidecar.StartTime, 0)
@@ -569,4 +634,32 @@ func (i *Importer) saveCheckpoint(_ context.Context, system string, year, month,
 	// Save in current directory (audio path may be read-only)
 	checkpointFile := ".tr-engine-import-checkpoint"
 	return os.WriteFile(checkpointFile, data, 0644)
+}
+
+// copyFile copies a file from src to dst, creating directories as needed
+// Returns the number of bytes copied
+func copyFile(src, dst string) (int64, error) {
+	// Create destination directory
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return 0, fmt.Errorf("create directory: %w", err)
+	}
+
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return 0, fmt.Errorf("open source: %w", err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return 0, fmt.Errorf("create destination: %w", err)
+	}
+	defer dstFile.Close()
+
+	n, err := io.Copy(dstFile, srcFile)
+	if err != nil {
+		return 0, fmt.Errorf("copy: %w", err)
+	}
+
+	return n, nil
 }

@@ -65,8 +65,14 @@ type MQTTTopics struct {
 // StorageConfig holds file storage configuration
 type StorageConfig struct {
 	AudioPath string `mapstructure:"audio_path"`
-	// Mode is "copy" (default) to save audio from MQTT, or "external" to reference TR's files
+	// Mode determines how audio is ingested:
+	// - "copy" (default): receive audio via MQTT and save to audio_path
+	// - "external": reference TR's files via MQTT notifications
+	// - "watch": watch audio_path for new files (no MQTT needed)
 	Mode string `mapstructure:"mode"`
+	// LogPath is the path to TR's log directory (optional, for watch mode)
+	// When set, enables real-time call tracking from log events
+	LogPath string `mapstructure:"log_path"`
 }
 
 // DeduplicationConfig holds deduplication settings

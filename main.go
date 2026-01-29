@@ -22,6 +22,7 @@ import (
 	"github.com/trunk-recorder/tr-engine/internal/ingest"
 	"github.com/trunk-recorder/tr-engine/internal/mqtt"
 	"github.com/trunk-recorder/tr-engine/internal/storage"
+	"github.com/trunk-recorder/tr-engine/internal/watcher"
 	"go.uber.org/zap"
 )
 
@@ -34,12 +35,18 @@ var (
 	importPath     = flag.String("import", "", "Import historical audio from trunk-recorder directory")
 	importBatch    = flag.Int("batch-size", 1000, "Batch size for import operations")
 	importThrottle = flag.Int("throttle", 0, "Max calls per second during import (0 = unlimited)")
+	easyMode       = flag.Bool("easy", false, "Easy mode: watch audio/logs with embedded database and backfill")
+	easyAudio      = flag.String("audio", "", "Easy mode: path to trunk-recorder audio directory")
+	easyLogs       = flag.String("logs", "", "Easy mode: path to trunk-recorder logs directory")
+	easyData       = flag.String("data", "", "Easy mode: path to store database (default: ./data)")
+	easyDBPort     = flag.Int("db-port", 5433, "Easy mode: embedded PostgreSQL port (default: 5433)")
+	easyHTTPPort   = flag.Int("port", 8080, "HTTP server port")
 )
 
-const version = "0.1.1-beta1"
+const version = "0.2.0-beta1"
 
 // @title           tr-engine API
-// @version         0.1.1-beta1
+// @version         0.2.0-beta1
 // @description     Backend service for trunk-recorder data ingestion and querying. Provides REST APIs for accessing radio system data, calls, talkgroups, and units.
 
 // @host            localhost:8080
@@ -108,6 +115,55 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Apply easy mode overrides
+	if *easyMode {
+		cfg.Storage.Mode = "watch"
+		cfg.Database.Embedded = true
+
+		// Resolve audio path: --audio flag > AUDIO_PATH env > /audio default
+		audioPath := *easyAudio
+		if audioPath == "" {
+			audioPath = os.Getenv("AUDIO_PATH")
+		}
+		if audioPath == "" {
+			audioPath = "/audio"
+		}
+		cfg.Storage.AudioPath = audioPath
+
+		// Resolve logs path: --logs flag > LOG_PATH env > /logs default
+		logsPath := *easyLogs
+		if logsPath == "" {
+			logsPath = os.Getenv("LOG_PATH")
+		}
+		if logsPath == "" {
+			logsPath = "/logs"
+		}
+		cfg.Storage.LogPath = logsPath
+
+		// Resolve data path: --data flag > DATA_PATH env > ./data default
+		dataPath := *easyData
+		if dataPath == "" {
+			dataPath = os.Getenv("DATA_PATH")
+		}
+		if dataPath == "" {
+			dataPath = "./data"
+		}
+		cfg.Database.EmbeddedDataPath = filepath.Join(dataPath, "postgres")
+		cfg.Database.Port = *easyDBPort
+		cfg.Server.Port = *easyHTTPPort
+
+		if !*quietMode {
+			fmt.Println()
+			fmt.Println("=== Easy Mode ===")
+			fmt.Printf("Audio path:    %s\n", audioPath)
+			fmt.Printf("Logs path:     %s\n", logsPath)
+			fmt.Printf("Database:      %s (port %d)\n", cfg.Database.EmbeddedDataPath, cfg.Database.Port)
+			fmt.Printf("HTTP server:   port %d\n", cfg.Server.Port)
+			fmt.Println("Backfill:      enabled (historical recordings will be imported)")
+			fmt.Println()
+		}
 	}
 
 	// Initialize logger
@@ -196,7 +252,7 @@ func main() {
 
 	// Handle import mode
 	if *importPath != "" {
-		runImport(db, *importPath, *importBatch, *importThrottle, logger)
+		runImport(db, *importPath, cfg.Storage.AudioPath, cfg.Storage.Mode, *importBatch, *importThrottle, logger)
 		return
 	}
 
@@ -204,78 +260,115 @@ func main() {
 	storageDone := con.StartTask("Initializing audio storage")
 	audioStorage := storage.NewAudioStorage(cfg.Storage.AudioPath, cfg.Storage.Mode, logger)
 	// Verify the directory is writable (only for copy mode)
-	if cfg.Storage.Mode != "external" {
+	if cfg.Storage.Mode == "copy" {
 		if err := verifyWritable(cfg.Storage.AudioPath); err != nil {
 			storageDone(false, fmt.Sprintf("cannot write to %s: %v", cfg.Storage.AudioPath, err))
 			os.Exit(1)
 		}
 	}
-	storageDone(true, fmt.Sprintf("%s (mode: %s)", cfg.Storage.AudioPath, cfg.Storage.Mode))
-
-	// Initialize deduplication engine
-	dedupEngine := dedup.NewEngine(db, cfg.Deduplication, logger)
-
-	// Initialize ingest processor
-	processor := ingest.NewProcessor(db, audioStorage, dedupEngine, logger)
-
-	// Initialize embedded MQTT broker if configured
-	var mqttBroker *embeddedmqtt.Broker
-	if cfg.MQTT.Embedded {
-		brokerDone := con.StartTask("Starting embedded MQTT broker")
-		var err error
-		mqttBroker, err = embeddedmqtt.New(embeddedmqtt.Config{
-			Port:     cfg.MQTT.EmbeddedPort,
-			Username: cfg.MQTT.Username,
-			Password: cfg.MQTT.Password,
-		}, logger)
-		if err != nil {
-			brokerDone(false, err.Error())
+	// Verify the directory exists and is readable (for watch and external modes)
+	if cfg.Storage.Mode == "watch" || cfg.Storage.Mode == "external" {
+		if _, err := os.Stat(cfg.Storage.AudioPath); os.IsNotExist(err) {
+			storageDone(false, fmt.Sprintf("audio path does not exist: %s", cfg.Storage.AudioPath))
 			os.Exit(1)
 		}
-		defer mqttBroker.Stop()
-		// Update broker address to point to embedded broker
-		cfg.MQTT.Broker = fmt.Sprintf("tcp://localhost:%d", mqttBroker.Port())
-		brokerDone(true, fmt.Sprintf("listening on :%d", mqttBroker.Port()))
 	}
-
-	// Initialize MQTT client
-	var mqttTaskName string
-	if cfg.MQTT.Embedded {
-		mqttTaskName = "Connecting to embedded MQTT broker"
-	} else {
-		mqttTaskName = "Connecting to MQTT broker"
-	}
-	mqttDone := con.StartTask(mqttTaskName)
-	mqttClient, err := mqtt.NewClient(cfg.MQTT, processor, logger)
-	if err != nil {
-		mqttDone(false, err.Error())
-		os.Exit(1)
-	}
-
-	// Initialize API server
-	httpDone := con.StartTask("Starting HTTP server")
-	server := api.NewServer(cfg.Server, db, processor, logger, cfg.Storage.AudioPath)
+	storageDone(true, fmt.Sprintf("%s (mode: %s)", cfg.Storage.AudioPath, cfg.Storage.Mode))
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start MQTT client
-	if err := mqttClient.Connect(ctx); err != nil {
-		mqttDone(false, err.Error())
-		os.Exit(1)
-	}
-	mqttDone(true, fmt.Sprintf("connected (%s)", cfg.MQTT.Broker))
+	// Initialize file watcher for watch mode, or MQTT for other modes
+	var fileWatcher *watcher.Watcher
+	var mqttBroker *embeddedmqtt.Broker
+	var mqttClient *mqtt.Client
+	var processor *ingest.Processor
 
-	// Print MQTT topics
-	topics := []string{
-		cfg.MQTT.Topics.Status,
-		cfg.MQTT.Topics.Units,
+	if cfg.Storage.Mode == "watch" {
+		// Watch mode: use file watcher instead of MQTT
+		watcherDone := con.StartTask("Starting file watcher")
+		var err error
+		fileWatcher, err = watcher.New(db, watcher.Config{
+			AudioPath: cfg.Storage.AudioPath,
+			LogPath:   cfg.Storage.LogPath,
+			Backfill:  *easyMode, // Auto-import historical files in easy mode
+		}, logger)
+		if err != nil {
+			watcherDone(false, err.Error())
+			os.Exit(1)
+		}
+		if err := fileWatcher.Start(ctx); err != nil {
+			watcherDone(false, err.Error())
+			os.Exit(1)
+		}
+		msg := fmt.Sprintf("watching %s", cfg.Storage.AudioPath)
+		if cfg.Storage.LogPath != "" {
+			msg += fmt.Sprintf(" + logs at %s", cfg.Storage.LogPath)
+		}
+		if *easyMode {
+			msg += " (backfill enabled)"
+		}
+		watcherDone(true, msg)
+	} else {
+		// MQTT mode: initialize deduplication, processor, and MQTT client
+		dedupEngine := dedup.NewEngine(db, cfg.Deduplication, logger)
+		processor = ingest.NewProcessor(db, audioStorage, dedupEngine, logger)
+
+		// Initialize embedded MQTT broker if configured
+		if cfg.MQTT.Embedded {
+			brokerDone := con.StartTask("Starting embedded MQTT broker")
+			var err error
+			mqttBroker, err = embeddedmqtt.New(embeddedmqtt.Config{
+				Port:     cfg.MQTT.EmbeddedPort,
+				Username: cfg.MQTT.Username,
+				Password: cfg.MQTT.Password,
+			}, logger)
+			if err != nil {
+				brokerDone(false, err.Error())
+				os.Exit(1)
+			}
+			defer mqttBroker.Stop()
+			cfg.MQTT.Broker = fmt.Sprintf("tcp://localhost:%d", mqttBroker.Port())
+			brokerDone(true, fmt.Sprintf("listening on :%d", mqttBroker.Port()))
+		}
+
+		// Initialize MQTT client
+		var mqttTaskName string
+		if cfg.MQTT.Embedded {
+			mqttTaskName = "Connecting to embedded MQTT broker"
+		} else {
+			mqttTaskName = "Connecting to MQTT broker"
+		}
+		mqttDone := con.StartTask(mqttTaskName)
+		var err error
+		mqttClient, err = mqtt.NewClient(cfg.MQTT, processor, logger)
+		if err != nil {
+			mqttDone(false, err.Error())
+			os.Exit(1)
+		}
+
+		// Start MQTT client
+		if err := mqttClient.Connect(ctx); err != nil {
+			mqttDone(false, err.Error())
+			os.Exit(1)
+		}
+		mqttDone(true, fmt.Sprintf("connected (%s)", cfg.MQTT.Broker))
+
+		// Print MQTT topics
+		topics := []string{
+			cfg.MQTT.Topics.Status,
+			cfg.MQTT.Topics.Units,
+		}
+		if cfg.MQTT.Topics.Messages != "" {
+			topics = append(topics, cfg.MQTT.Topics.Messages)
+		}
+		con.PrintTopics(topics)
 	}
-	if cfg.MQTT.Topics.Messages != "" {
-		topics = append(topics, cfg.MQTT.Topics.Messages)
-	}
-	con.PrintTopics(topics)
+
+	// Initialize API server
+	httpDone := con.StartTask("Starting HTTP server")
+	server := api.NewServer(cfg.Server, db, processor, logger, cfg.Storage.AudioPath)
 
 	// Start API server
 	go func() {
@@ -303,8 +396,15 @@ func main() {
 	cancel()
 
 	// Graceful shutdown
-	mqttClient.Disconnect()
-	processor.Stop()
+	if fileWatcher != nil {
+		fileWatcher.Stop()
+	}
+	if mqttClient != nil {
+		mqttClient.Disconnect()
+	}
+	if processor != nil {
+		processor.Stop()
+	}
 	server.Shutdown(context.Background())
 
 	con.PrintShutdownComplete()
@@ -435,10 +535,14 @@ func verifyWritable(path string) error {
 }
 
 // runImport handles the --import mode for bulk importing historical audio
-func runImport(db *database.DB, audioPath string, batchSize, throttle int, logger *zap.Logger) {
+func runImport(db *database.DB, srcPath, destPath, storageMode string, batchSize, throttle int, logger *zap.Logger) {
 	fmt.Println()
 	fmt.Println("=== tr-engine Historical Import ===")
-	fmt.Printf("Audio path:   %s\n", audioPath)
+	fmt.Printf("Source path:  %s\n", srcPath)
+	fmt.Printf("Storage mode: %s\n", storageMode)
+	if storageMode == "copy" {
+		fmt.Printf("Dest path:    %s\n", destPath)
+	}
 	fmt.Printf("Batch size:   %d\n", batchSize)
 	if throttle > 0 {
 		fmt.Printf("Throttle:     %d calls/sec\n", throttle)
@@ -448,17 +552,27 @@ func runImport(db *database.DB, audioPath string, batchSize, throttle int, logge
 	fmt.Printf("Checkpoint:   .tr-engine-import-checkpoint (in current directory)\n")
 	fmt.Println()
 
-	// Verify the path exists
-	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "Error: audio path does not exist: %s\n", audioPath)
+	// Verify the source path exists
+	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Error: source path does not exist: %s\n", srcPath)
 		os.Exit(1)
+	}
+
+	// For copy mode, verify destination is writable
+	if storageMode == "copy" {
+		if err := os.MkdirAll(destPath, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot create destination directory: %s\n", destPath)
+			os.Exit(1)
+		}
 	}
 
 	// Create importer
 	imp := importer.New(db, importer.Config{
-		AudioPath: audioPath,
-		BatchSize: batchSize,
-		Throttle:  throttle,
+		AudioPath:   srcPath,
+		DestPath:    destPath,
+		StorageMode: storageMode,
+		BatchSize:   batchSize,
+		Throttle:    throttle,
 	}, logger)
 
 	// Set up signal handling for graceful shutdown

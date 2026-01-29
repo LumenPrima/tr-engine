@@ -1277,7 +1277,10 @@ func (h *Handler) GetStats(c *gin.Context) {
 	h.db.Pool().QueryRow(ctx, "SELECT COUNT(*) FROM calls").Scan(&totalCalls)
 
 	// Get active calls from in-memory tracker (real-time from MQTT)
-	activeCalls := h.processor.GetActiveCallCount()
+	var activeCalls int
+	if h.processor != nil {
+		activeCalls = h.processor.GetActiveCallCount()
+	}
 
 	// Get calls in last hour
 	h.db.Pool().QueryRow(ctx, "SELECT COUNT(*) FROM calls WHERE start_time > NOW() - INTERVAL '1 hour'").Scan(&callsLastHour)
@@ -1309,6 +1312,14 @@ func (h *Handler) GetStats(c *gin.Context) {
 // @Success      200  {object}  map[string]interface{}
 // @Router       /calls/active/realtime [get]
 func (h *Handler) GetActiveCallsRealtime(c *gin.Context) {
+	if h.processor == nil {
+		// No processor in watch mode - return empty
+		c.JSON(http.StatusOK, gin.H{
+			"calls": []interface{}{},
+			"count": 0,
+		})
+		return
+	}
 	calls := h.processor.GetActiveCalls()
 	c.JSON(http.StatusOK, gin.H{
 		"calls": calls,
@@ -1478,6 +1489,13 @@ func (h *Handler) ListActiveUnits(c *gin.Context) {
 // @Success      200  {object}  rest.RecorderListResponse
 // @Router       /recorders [get]
 func (h *Handler) ListRecorders(c *gin.Context) {
+	if h.processor == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"recorders": []interface{}{},
+			"count":     0,
+		})
+		return
+	}
 	recorders := h.processor.GetRecorders()
 	c.JSON(http.StatusOK, gin.H{
 		"recorders": recorders,
