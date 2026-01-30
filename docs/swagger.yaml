@@ -445,7 +445,7 @@ info:
   description: Backend service for trunk-recorder data ingestion and querying. Provides
     REST APIs for accessing radio system data, calls, talkgroups, and units.
   title: tr-engine API
-  version: 0.2.1-beta2
+  version: 0.2.2-beta1
 paths:
   /call-groups:
     get:
