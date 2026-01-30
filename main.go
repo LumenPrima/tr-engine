@@ -120,7 +120,12 @@ func main() {
 	// Apply easy mode overrides
 	if *easyMode {
 		cfg.Storage.Mode = "watch"
-		cfg.Database.Embedded = true
+		// Only enable embedded database if not explicitly disabled via env var
+		// This allows the "all-in-one" Docker image to use easy mode features (watch/backfill)
+		// while using the system PostgreSQL instance provided by the container.
+		if os.Getenv("TR_ENGINE_DATABASE_EMBEDDED") != "false" {
+			cfg.Database.Embedded = true
+		}
 
 		// Resolve audio path: --audio flag > AUDIO_PATH env > /audio default
 		audioPath := *easyAudio

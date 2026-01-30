@@ -1,6 +1,8 @@
 # All-in-one Dockerfile with PostgreSQL and tr-engine
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
+
+ARG TARGETARCH
 
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -10,7 +12,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o tr-engine ./cmd/tr-engine
+# Build using TARGETARCH and point to root directory
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -ldflags="-w -s" -o tr-engine .
 
 # Runtime stage
 FROM alpine:3.19
@@ -24,7 +27,7 @@ RUN apk add --no-cache \
     supervisor \
     bash
 
-# Install TimescaleDB from community repo
+# Install TimescaleDB from community repo (allow failure on architectures where not available)
 RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
     timescaledb || true
 
@@ -47,7 +50,8 @@ ENV POSTGRES_USER=tr_engine \
     POSTGRES_PASSWORD=tr_engine \
     POSTGRES_DB=tr_engine \
     PGDATA=/data/postgres \
-    TR_ENGINE_CONFIG=/app/config/config.yaml
+    TR_ENGINE_CONFIG=/app/config/config.yaml \
+    TR_ENGINE_DATABASE_EMBEDDED=false
 
 EXPOSE 8080 5432
 
