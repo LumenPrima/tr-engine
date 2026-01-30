@@ -78,3 +78,6 @@ trunk-recorder-mqtt-status/
 
 # Import checkpoint
 .tr-engine-import-checkpoint
+test-data/
+test-data/
+test-config.yaml
