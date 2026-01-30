@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -27,7 +28,7 @@ type TestDBOptions struct {
 	PersistentPath string
 
 	// Port for the embedded PostgreSQL server
-	// Defaults to 15432 to avoid conflicts
+	// Defaults to 0, which means find an available port dynamically
 	Port uint32
 
 	// RunMigrations runs database migrations after starting
@@ -45,9 +46,19 @@ func DefaultTestDBOptions() TestDBOptions {
 	return TestDBOptions{
 		Ephemeral:      true,
 		PersistentPath: ".testdb",
-		Port:           25432,
+		Port:           0, // 0 means find an available port dynamically
 		RunMigrations:  true,
 	}
+}
+
+// findFreePort finds an available TCP port by binding to port 0
+func findFreePort() (uint32, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, fmt.Errorf("failed to find free port: %w", err)
+	}
+	defer listener.Close()
+	return uint32(listener.Addr().(*net.TCPAddr).Port), nil
 }
 
 // TestDB wraps an embedded PostgreSQL instance for testing
@@ -72,6 +83,18 @@ var (
 func NewTestDBForMain(opts TestDBOptions) *TestDB {
 	logger, _ := zap.NewDevelopment()
 
+	// Find a free port if not specified
+	port := opts.Port
+	if port == 0 {
+		var err error
+		port, err = findFreePort()
+		if err != nil {
+			logger.Error("failed to find free port", zap.Error(err))
+			return nil
+		}
+		logger.Info("using dynamic port for test database", zap.Uint32("port", port))
+	}
+
 	// Determine data directory
 	var dataDir string
 	if opts.Ephemeral {
@@ -92,7 +115,7 @@ func NewTestDBForMain(opts TestDBOptions) *TestDB {
 	// Configure embedded postgres
 	pg := embeddedpostgres.NewDatabase(
 		embeddedpostgres.DefaultConfig().
-			Port(opts.Port).
+			Port(port).
 			DataPath(filepath.Join(dataDir, "data")).
 			RuntimePath(filepath.Join(dataDir, "runtime")).
 			BinariesPath(filepath.Join(dataDir, "bin")).
@@ -114,7 +137,7 @@ func NewTestDBForMain(opts TestDBOptions) *TestDB {
 	// Create database config
 	dbConfig := config.DatabaseConfig{
 		Host:           "localhost",
-		Port:           int(opts.Port),
+		Port:           int(port),
 		Name:           "tr_engine_test",
 		User:           "test",
 		Password:       "test",
@@ -171,6 +194,17 @@ func NewTestDB(t testing.TB, opts TestDBOptions) *TestDB {
 
 	logger, _ := zap.NewDevelopment()
 
+	// Find a free port if not specified
+	port := opts.Port
+	if port == 0 {
+		var err error
+		port, err = findFreePort()
+		if err != nil {
+			t.Fatalf("failed to find free port: %v", err)
+		}
+		t.Logf("using dynamic port %d for test database", port)
+	}
+
 	// Determine data directory
 	var dataDir string
 	if opts.Ephemeral {
@@ -189,7 +223,7 @@ func NewTestDB(t testing.TB, opts TestDBOptions) *TestDB {
 	// Configure embedded postgres
 	pg := embeddedpostgres.NewDatabase(
 		embeddedpostgres.DefaultConfig().
-			Port(opts.Port).
+			Port(port).
 			DataPath(filepath.Join(dataDir, "data")).
 			RuntimePath(filepath.Join(dataDir, "runtime")).
 			BinariesPath(filepath.Join(dataDir, "bin")).
@@ -210,7 +244,7 @@ func NewTestDB(t testing.TB, opts TestDBOptions) *TestDB {
 	// Create database config
 	dbConfig := config.DatabaseConfig{
 		Host:           "localhost",
-		Port:           int(opts.Port),
+		Port:           int(port),
 		Name:           "tr_engine_test",
 		User:           "test",
 		Password:       "test",
