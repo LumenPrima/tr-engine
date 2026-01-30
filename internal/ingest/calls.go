@@ -526,6 +526,7 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 
 // processTransmissions processes unit transmissions from srcList
 func (p *Processor) processTransmissions(ctx context.Context, call *models.Call, sysid string, systemID int, srcList []SourceUnitData) error {
+	var txs []*models.Transmission
 	for i, src := range srcList {
 		// Upsert unit
 		unit, err := p.db.UpsertUnit(ctx, sysid, src.Src, src.Tag, "ota")
@@ -572,12 +573,12 @@ func (p *Processor) processTransmissions(ctx context.Context, call *models.Call,
 			ErrorCount: src.ErrorCount,
 			SpikeCount: src.SpikeCount,
 		}
+		txs = append(txs, tx)
+	}
 
-		if err := p.db.InsertTransmission(ctx, tx); err != nil {
-			p.logger.Error("Failed to insert transmission",
-				zap.Error(err),
-				zap.Int64("unit", src.Src),
-			)
+	if len(txs) > 0 {
+		if err := p.db.BatchInsertTransmissions(ctx, txs); err != nil {
+			p.logger.Error("Failed to batch insert transmissions", zap.Error(err))
 		}
 	}
 
@@ -586,8 +587,13 @@ func (p *Processor) processTransmissions(ctx context.Context, call *models.Call,
 
 // processFrequencies processes frequency entries from freqList
 func (p *Processor) processFrequencies(ctx context.Context, callID int64, freqList []FreqEntryData) error {
-	for _, f := range freqList {
-		cf := &models.CallFrequency{
+	if len(freqList) == 0 {
+		return nil
+	}
+
+	freqs := make([]*models.CallFrequency, len(freqList))
+	for i, f := range freqList {
+		freqs[i] = &models.CallFrequency{
 			CallID:     callID,
 			Freq:       f.Freq,
 			Time:       f.Time,
@@ -596,12 +602,10 @@ func (p *Processor) processFrequencies(ctx context.Context, callID int64, freqLi
 			ErrorCount: f.ErrorCount,
 			SpikeCount: f.SpikeCount,
 		}
-		if err := p.db.InsertCallFrequency(ctx, cf); err != nil {
-			p.logger.Error("Failed to insert frequency entry",
-				zap.Error(err),
-				zap.Int64("freq", f.Freq),
-			)
-		}
+	}
+
+	if err := p.db.BatchInsertCallFrequencies(ctx, freqs); err != nil {
+		p.logger.Error("Failed to batch insert frequency entries", zap.Error(err))
 	}
 
 	return nil
