@@ -487,7 +487,6 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 	}
 
 	// Process transmissions from srcList
-	var txs []*models.Transmission
 	for idx, src := range sidecar.SrcList {
 		// Get or create unit
 		unit, err := i.db.UpsertUnit(ctx, sysid, src.Src, src.Tag, "import")
