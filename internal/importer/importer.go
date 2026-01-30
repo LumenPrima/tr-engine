@@ -10,12 +10,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trunk-recorder/tr-engine/internal/database"
 	"github.com/trunk-recorder/tr-engine/internal/database/models"
 	"github.com/trunk-recorder/tr-engine/internal/storage"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 // Importer handles bulk import of historical audio files
@@ -29,15 +32,16 @@ type Importer struct {
 	logger      *zap.Logger
 
 	// Stats
-	totalCalls    int64
-	totalTx       int64
-	totalFreqs    int64
-	skippedCalls  int64
-	errorCalls    int64
-	bytesCopied   int64
-	startTime     time.Time
+	totalCalls   atomic.Int64
+	totalTx      atomic.Int64
+	totalFreqs   atomic.Int64
+	skippedCalls atomic.Int64
+	errorCalls   atomic.Int64
+	bytesCopied  atomic.Int64
+	startTime    time.Time
 
 	// Caches
+	cacheMu        sync.Mutex
 	systemCache    map[string]*models.System
 	talkgroupCache map[string]int // "sysid:tgid" -> db ID
 }
@@ -103,7 +107,7 @@ func (i *Importer) Run(ctx context.Context) error {
 	}
 
 	if checkpoint != nil {
-		i.totalCalls = checkpoint.TotalCalls
+		i.totalCalls.Store(checkpoint.TotalCalls)
 		i.logger.Info("Resuming import from checkpoint",
 			zap.String("last_system", checkpoint.LastSystem),
 			zap.Int("last_year", checkpoint.LastYear),
@@ -152,16 +156,16 @@ func (i *Importer) Run(ctx context.Context) error {
 
 	// Final stats
 	elapsed := time.Since(i.startTime)
-	rate := float64(i.totalCalls) / elapsed.Seconds()
+	rate := float64(i.totalCalls.Load()) / elapsed.Seconds()
 
 	fmt.Printf("\n=== Import Complete ===\n")
-	fmt.Printf("Total calls:    %d\n", i.totalCalls)
-	fmt.Printf("Transmissions:  %d\n", i.totalTx)
-	fmt.Printf("Frequencies:    %d\n", i.totalFreqs)
-	fmt.Printf("Skipped:        %d\n", i.skippedCalls)
-	fmt.Printf("Errors:         %d\n", i.errorCalls)
+	fmt.Printf("Total calls:    %d\n", i.totalCalls.Load())
+	fmt.Printf("Transmissions:  %d\n", i.totalTx.Load())
+	fmt.Printf("Frequencies:    %d\n", i.totalFreqs.Load())
+	fmt.Printf("Skipped:        %d\n", i.skippedCalls.Load())
+	fmt.Printf("Errors:         %d\n", i.errorCalls.Load())
 	if i.storageMode == "copy" {
-		fmt.Printf("Bytes copied:   %s\n", formatBytes(i.bytesCopied))
+		fmt.Printf("Bytes copied:   %s\n", formatBytes(i.bytesCopied.Load()))
 	}
 	fmt.Printf("Time elapsed:   %s\n", elapsed.Round(time.Second))
 	fmt.Printf("Average rate:   %.1f calls/sec\n", rate)
@@ -244,7 +248,7 @@ func (i *Importer) processYear(ctx context.Context, system string, year int, che
 
 		// Skip months before checkpoint
 		if checkpoint != nil && checkpoint.LastSystem == system &&
-		   checkpoint.LastYear == year && month < checkpoint.LastMonth {
+			checkpoint.LastYear == year && month < checkpoint.LastMonth {
 			continue
 		}
 
@@ -272,7 +276,7 @@ func (i *Importer) processMonth(ctx context.Context, system string, year, month 
 
 		// Skip days before checkpoint
 		if checkpoint != nil && checkpoint.LastSystem == system &&
-		   checkpoint.LastYear == year && checkpoint.LastMonth == month && day <= checkpoint.LastDay {
+			checkpoint.LastYear == year && checkpoint.LastMonth == month && day <= checkpoint.LastDay {
 			continue
 		}
 
@@ -312,38 +316,52 @@ func (i *Importer) processDay(ctx context.Context, system string, year, month, d
 	}
 
 	dayStart := time.Now()
-	dayCallCount := 0
 
-	fmt.Printf("\rProcessing %s/%d/%02d/%02d (%d files)...    ", system, year, month, day, len(jsonFiles))
+	// Use throttle as concurrency limit
+	limit := i.throttle
+	if limit <= 0 {
+		limit = 10 // Default for unlimited
+	}
 
-	// Process files with throttling
+	fmt.Printf("\rProcessing %s/%d/%02d/%02d (%d files) [concurrency=%d]...    ", system, year, month, day, len(jsonFiles), limit)
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.SetLimit(limit)
+
+	var dayCallCount atomic.Int64
+
 	for _, jsonFile := range jsonFiles {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+		jsonFile := jsonFile // capture
+		g.Go(func() error {
+			// Check context
+			if groupCtx.Err() != nil {
+				return groupCtx.Err()
+			}
 
-		if err := i.processJSONFile(ctx, system, jsonFile); err != nil {
-			i.errorCalls++
-			i.logger.Debug("Failed to process file",
-				zap.String("file", jsonFile),
-				zap.Error(err),
-			)
-			continue
-		}
+			if err := i.processJSONFile(groupCtx, system, jsonFile); err != nil {
+				i.errorCalls.Add(1)
+				i.logger.Debug("Failed to process file",
+					zap.String("file", jsonFile),
+					zap.Error(err),
+				)
+				return nil // Don't abort group on file error
+			}
 
-		dayCallCount++
-		i.totalCalls++
+			dayCallCount.Add(1)
+			i.totalCalls.Add(1)
+			return nil
+		})
+	}
 
-		// Throttle if configured
-		if i.throttle > 0 && dayCallCount%i.throttle == 0 {
-			time.Sleep(time.Second)
-		}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	elapsed := time.Since(dayStart)
-	rate := float64(dayCallCount) / elapsed.Seconds()
+	count := dayCallCount.Load()
+	rate := float64(count) / elapsed.Seconds()
 	fmt.Printf("\rProcessed %s/%d/%02d/%02d: %d calls (%.1f/sec), total: %d    \n",
-		system, year, month, day, dayCallCount, rate, i.totalCalls)
+		system, year, month, day, count, rate, i.totalCalls.Load())
 
 	return nil
 }
@@ -410,7 +428,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 	}
 
 	if srcAudioPath == "" {
-		i.skippedCalls++
+		i.skippedCalls.Add(1)
 		return nil // No audio file found, skip
 	}
 
@@ -438,7 +456,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 			if err != nil {
 				return fmt.Errorf("copy audio file: %w", err)
 			}
-			i.bytesCopied += n
+			i.bytesCopied.Add(n)
 
 			// Also copy the JSON sidecar
 			dstJSON := strings.TrimSuffix(dstPath, audioExt) + ".json"
@@ -455,7 +473,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 	startTime := time.Unix(sidecar.StartTime, 0)
 	existing, _ := i.db.GetCallBySystemTGIDAndTime(ctx, sys.ID, sidecar.Talkgroup, startTime)
 	if existing != nil {
-		i.skippedCalls++
+		i.skippedCalls.Add(1)
 		return nil // Already imported
 	}
 
@@ -534,7 +552,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 			i.logger.Debug("Failed to insert transmission", zap.Error(err))
 			continue
 		}
-		i.totalTx++
+		i.totalTx.Add(1)
 	}
 
 	// Process frequencies from freqList
@@ -552,7 +570,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 			i.logger.Debug("Failed to insert frequency", zap.Error(err))
 			continue
 		}
-		i.totalFreqs++
+		i.totalFreqs.Add(1)
 	}
 
 	return nil
@@ -569,25 +587,34 @@ func (i *Importer) getRelativePath(fullPath string) string {
 
 // getOrCreateSystem gets or creates a system record
 func (i *Importer) getOrCreateSystem(ctx context.Context, shortName string) (*models.System, error) {
+	i.cacheMu.Lock()
 	if sys, ok := i.systemCache[shortName]; ok {
+		i.cacheMu.Unlock()
 		return sys, nil
 	}
+	i.cacheMu.Unlock()
 
 	sys, err := i.db.UpsertSystem(ctx, 1, 0, shortName, "", "", "", "", 0, 0, nil)
 	if err != nil {
 		return nil, err
 	}
 
+	i.cacheMu.Lock()
 	i.systemCache[shortName] = sys
+	i.cacheMu.Unlock()
 	return sys, nil
 }
 
 // getOrCreateTalkgroup gets or creates a talkgroup record
 func (i *Importer) getOrCreateTalkgroup(ctx context.Context, sysid string, systemID, tgid int, tag, desc, group, groupTag string) (int, error) {
 	key := fmt.Sprintf("%s:%d", sysid, tgid)
+
+	i.cacheMu.Lock()
 	if id, ok := i.talkgroupCache[key]; ok {
+		i.cacheMu.Unlock()
 		return id, nil
 	}
+	i.cacheMu.Unlock()
 
 	tg, err := i.db.UpsertTalkgroup(ctx, sysid, tgid, tag, desc, group, groupTag, 0, "")
 	if err != nil {
@@ -599,7 +626,9 @@ func (i *Importer) getOrCreateTalkgroup(ctx context.Context, sysid string, syste
 		i.logger.Debug("Failed to upsert talkgroup site", zap.Error(err))
 	}
 
+	i.cacheMu.Lock()
 	i.talkgroupCache[key] = tg.ID
+	i.cacheMu.Unlock()
 	return tg.ID, nil
 }
 
@@ -632,7 +661,7 @@ func (i *Importer) saveCheckpoint(_ context.Context, system string, year, month,
 		LastYear:   year,
 		LastMonth:  month,
 		LastDay:    day,
-		TotalCalls: i.totalCalls,
+		TotalCalls: i.totalCalls.Load(),
 		UpdatedAt:  time.Now().Format(time.RFC3339),
 	}
 
