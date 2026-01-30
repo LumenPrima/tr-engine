@@ -272,6 +272,13 @@ GOOS=windows GOARCH=amd64 go build -o tr-engine.exe
 - [ ] MQTT publish capability (publish state back to MQTT)
 - [ ] Historical unit data import from external sources
 
+### Future Ideas
+- [ ] Visual talkgroup/unit activity heatmaps
+- [ ] Location recognition and mapping from transmission content
+- [ ] Context-aware "interest meter" - auto-alert on interesting topics/events
+- [ ] Alerts on new units/talkgroups appearing
+- [ ] Talkgroup context inference from associated unit patterns
+
 ---
 
 ## Disclaimer
