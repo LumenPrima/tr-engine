@@ -566,29 +566,6 @@ func (db *DB) InsertTransmission(ctx context.Context, tx *models.Transmission) e
 	).Scan(&tx.ID)
 }
 
-// BatchInsertTransmissions inserts multiple transmission records efficiently
-func (db *DB) BatchInsertTransmissions(ctx context.Context, txs []*models.Transmission) error {
-	if len(txs) == 0 {
-		return nil
-	}
-
-	rows := make([][]interface{}, len(txs))
-	for i, tx := range txs {
-		rows[i] = []interface{}{
-			tx.CallID, tx.UnitID, tx.UnitRID, tx.StartTime, tx.StopTime,
-			tx.Duration, tx.Position, tx.Emergency, tx.ErrorCount, tx.SpikeCount,
-		}
-	}
-
-	_, err := db.pool.CopyFrom(
-		ctx,
-		pgx.Identifier{"transmissions"},
-		[]string{"call_id", "unit_id", "unit_rid", "start_time", "stop_time", "duration", "position", "emergency", "error_count", "spike_count"},
-		pgx.CopyFromRows(rows),
-	)
-	return err
-}
-
 // InsertCallFrequency inserts a call frequency record
 func (db *DB) InsertCallFrequency(ctx context.Context, cf *models.CallFrequency) error {
 	return db.pool.QueryRow(ctx, `
@@ -598,28 +575,6 @@ func (db *DB) InsertCallFrequency(ctx context.Context, cf *models.CallFrequency)
 	`,
 		cf.CallID, cf.Freq, cf.Time, cf.Position, cf.Duration, cf.ErrorCount, cf.SpikeCount,
 	).Scan(&cf.ID)
-}
-
-// BatchInsertCallFrequencies inserts multiple call frequency records efficiently
-func (db *DB) BatchInsertCallFrequencies(ctx context.Context, freqs []*models.CallFrequency) error {
-	if len(freqs) == 0 {
-		return nil
-	}
-
-	rows := make([][]interface{}, len(freqs))
-	for i, cf := range freqs {
-		rows[i] = []interface{}{
-			cf.CallID, cf.Freq, cf.Time, cf.Position, cf.Duration, cf.ErrorCount, cf.SpikeCount,
-		}
-	}
-
-	_, err := db.pool.CopyFrom(
-		ctx,
-		pgx.Identifier{"call_frequencies"},
-		[]string{"call_id", "freq", "time", "position", "duration", "error_count", "spike_count"},
-		pgx.CopyFromRows(rows),
-	)
-	return err
 }
 
 // GetTransmissionsByCallID returns all transmissions for a call, ordered by position
