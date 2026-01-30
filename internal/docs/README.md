@@ -250,6 +250,30 @@ GOOS=windows GOARCH=amd64 go build -o tr-engine.exe
 
 ---
 
+## Roadmap
+
+### Testing
+- [ ] Integration tests for storage package (0% coverage)
+- [ ] Integration tests for watcher package (0% coverage)
+- [ ] Integration tests for importer package (0% coverage)
+- [ ] Improve database test coverage (currently 21.8%)
+- [ ] Clean up test port allocation
+
+### Performance
+- [ ] Batch insert optimization for transmissions/frequencies
+- [ ] Database query optimization (indexes, query plans)
+- [ ] Connection pool tuning
+- [ ] API response caching
+
+### Features
+- [ ] Authentication/authorization (API keys, JWT, RBAC)
+- [ ] Speech-to-text transcription (Whisper/cloud API integration)
+- [ ] Talkgroup replay/timeline view
+- [ ] MQTT publish capability (publish state back to MQTT)
+- [ ] Historical unit data import from external sources
+
+---
+
 ## Disclaimer
 
 This project was vibe-coded with AI assistance (Claude). While functional and tested against real trunk-recorder deployments, the code has not been formally audited. Use at your own risk. The binaries may or may not:
