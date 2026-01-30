@@ -45,7 +45,7 @@ func DefaultTestDBOptions() TestDBOptions {
 	return TestDBOptions{
 		Ephemeral:      true,
 		PersistentPath: ".testdb",
-		Port:           15432,
+		Port:           25432,
 		RunMigrations:  true,
 	}
 }
