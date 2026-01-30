@@ -334,9 +334,9 @@ func (tdb *TestDB) Reset(t testing.TB) {
 		tables = append(tables, table)
 	}
 
-	// Truncate all tables
+	// Truncate all tables and reset identity columns
 	for _, table := range tables {
-		_, err := tdb.Pool.Exec(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
+		_, err := tdb.Pool.Exec(ctx, fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE", table))
 		if err != nil {
 			t.Fatalf("failed to truncate table %s: %v", table, err)
 		}
