@@ -267,8 +267,12 @@ body.player-open #slide-panel { height: calc(100vh - 80px); }
 .ap-info .ap-tg { color: var(--accent); font-weight: bold; font-size: 11px; cursor: pointer; }
 .ap-info .ap-tg:hover { text-decoration: underline; }
 .ap-info .ap-meta { color: var(--text-dim); margin-top: 2px; }
-.ap-timeline { flex: 1; position: relative; height: 36px; background: #181818; border-radius: 6px; overflow: hidden; cursor: pointer; border: 1px solid var(--border); box-shadow: inset 0 1px 3px rgba(0,0,0,0.4); }
+.ap-timeline-wrapper { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.ap-timeline { position: relative; height: 36px; background: #181818; border-radius: 6px 6px 0 0; overflow: hidden; cursor: pointer; border: 1px solid var(--border); border-bottom: none; box-shadow: inset 0 1px 3px rgba(0,0,0,0.4); }
 .ap-timeline canvas { width: 100%; height: 100%; display: block; }
+.ap-words { height: 16px; position: relative; overflow: hidden; font-size: 9px; color: var(--text-dim); background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; }
+.ap-words .word { position: absolute; white-space: nowrap; top: 2px; transition: color 0.1s; }
+.ap-words .word.active { color: #fff; font-weight: bold; }
 .ap-controls { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .ap-btn {
   background: none; border: 1px solid var(--border); color: var(--text);
@@ -334,6 +338,7 @@ body.player-open #slide-panel { height: calc(100vh - 80px); }
 <div id="tab-nav">
   <button class="tab-btn active" data-tab="overview">Overview</button>
   <button class="tab-btn" data-tab="calls">Calls</button>
+  <button class="tab-btn" data-tab="transcriptions">Transcriptions</button>
   <button class="tab-btn" data-tab="talkgroups">Talkgroups</button>
   <button class="tab-btn" data-tab="units">Units</button>
   <button class="tab-btn" data-tab="systems">Systems</button>
@@ -356,8 +361,11 @@ body.player-open #slide-panel { height: calc(100vh - 80px); }
     <div class="ap-tg" id="ap-tg">--</div>
     <div class="ap-meta" id="ap-meta">--</div>
   </div>
-  <div class="ap-timeline" id="ap-timeline">
-    <canvas id="ap-canvas"></canvas>
+  <div class="ap-timeline-wrapper">
+    <div class="ap-timeline" id="ap-timeline">
+      <canvas id="ap-canvas"></canvas>
+    </div>
+    <div class="ap-words" id="ap-words"></div>
   </div>
   <div class="ap-controls">
     <button class="ap-btn" id="ap-restart" title="Restart">&#8634;</button>
@@ -417,42 +425,36 @@ const UI = {
     if (tag) return 'Unit ' + id;
     return '';
   },
-  // Create clickable talkgroup link - pass db id for detail lookup, display uses tgid/alpha_tag
+  // Create clickable talkgroup link
   tgLink(tg, opts) {
-    // tg can be: { id, tgid, alpha_tag } or just a tgid number
     opts = opts || {};
-    let dbId, tgid, label;
+    let tgid, label;
     if (typeof tg === 'object') {
-      dbId = tg.id;
       tgid = tg.tgid || tg.talkgroup_id;
       label = tg.alpha_tag || tg.tg_alpha_tag || ('TG ' + tgid);
     } else {
       tgid = tg;
       label = 'TG ' + tg;
     }
-    // If we have db id, use it for detail view; otherwise use tgid
-    const clickId = dbId || tgid;
-    if (!clickId) return UI.esc(label);
+    if (!tgid) return UI.esc(label);
     const onclick = opts.stopProp ? 'event.stopPropagation();' : '';
-    return '<span class="link-tg" onclick="' + onclick + 'Tabs.talkgroups.showDetail(' + clickId + ')">' + UI.esc(label) + '</span>';
+    return '<span class="link-tg" onclick="' + onclick + 'Tabs.talkgroups.showDetail(' + tgid + ')">' + UI.esc(label) + '</span>';
   },
   // Create clickable unit link
   unitLink(u, opts) {
-    // u can be: { id, unit_id, alpha_tag } or just a unit_id number
+    // u can be: { unit_id, alpha_tag } or just a unit_id number
     opts = opts || {};
-    let dbId, unitId, label;
+    let unitId, label;
     if (typeof u === 'object') {
-      dbId = u.id;
       unitId = u.unit_id || u.unit_rid;
-      label = u.alpha_tag || u.unit_alpha_tag || u.unit_tag || ('Unit ' + (unitId || dbId));
+      label = u.alpha_tag || u.unit_alpha_tag || u.unit_tag || ('Unit ' + unitId);
     } else {
       unitId = u;
       label = 'Unit ' + u;
     }
-    const clickId = dbId || unitId;
-    if (!clickId) return UI.esc(label);
+    if (!unitId) return UI.esc(label);
     const onclick = opts.stopProp ? 'event.stopPropagation();' : '';
-    return '<span class="link-unit" onclick="' + onclick + 'Tabs.units.showDetail(' + clickId + ')">' + UI.esc(label) + '</span>';
+    return '<span class="link-unit" onclick="' + onclick + 'Tabs.units.showDetail(' + unitId + ')">' + UI.esc(label) + '</span>';
   },
   callId(call) {
     // Return the best identifier for API calls — tr_call_id if available, else numeric id
@@ -631,6 +633,9 @@ const API = {
   call(id) { return this.get('/calls/' + id); },
   callTransmissions(id) { return this.get('/calls/' + id + '/transmissions'); },
   callFrequencies(id) { return this.get('/calls/' + id + '/frequencies'); },
+  callTranscription(id) { return this.get('/calls/' + id + '/transcription'); },
+  recentTranscriptions(p) { return this.get('/transcriptions/recent', p); },
+  searchTranscriptions(p) { return this.get('/transcriptions/search', p); },
   activeCalls(p) { return this.get('/calls/active', p); },
   activeCallsRealtime() { return this.get('/calls/active/realtime'); },
   recentCalls(p) { return this.get('/calls/recent', p); },
@@ -702,6 +707,7 @@ const AudioPlayer = {
   canvas: UI.$('ap-canvas'),
   transmissions: [],
   frequencies: [],
+  words: [], // Word-level timestamps from transcription
   callData: null,
   init() {
     this.audio.volume = Prefs.get('volume', 80) / 100;
@@ -714,7 +720,7 @@ const AudioPlayer = {
     UI.$('ap-monitor').onclick = () => this.toggleMonitor();
     UI.$('ap-mon-count').onclick = (e) => { e.preventDefault(); TabManager.switchTo('monitor'); };
     UI.$('ap-volume').oninput = (e) => { this.audio.volume = e.target.value / 100; Prefs.set('volume', +e.target.value); };
-    this.audio.ontimeupdate = () => this.updateTimeDisplay();
+    this.audio.ontimeupdate = () => { this.updateTimeDisplay(); this.updateActiveWord(); };
     this.audio.onplay = () => { UI.$('ap-play').innerHTML = '&#9646;&#9646;'; this.startAnimation(); };
     this.audio.onpause = () => { UI.$('ap-play').innerHTML = '&#9654;'; this.stopAnimation(); };
     this.audio.onended = () => { UI.$('ap-play').innerHTML = '&#9654;'; this.stopAnimation(); this.onAudioEnded(); };
@@ -738,20 +744,23 @@ const AudioPlayer = {
     const apTg = UI.$('ap-tg');
     apTg.textContent = tgText;
     // Make talkgroup clickable to view its detail
-    apTg.onclick = tgid ? () => Tabs.talkgroups.showDetail(call.talkgroup_db_id || tgid) : null;
+    apTg.onclick = tgid ? () => Tabs.talkgroups.showDetail(tgid) : null;
     apTg.title = tgid ? 'Click to view talkgroup details' : '';
     Monitor.updateUI(); // Update monitor button state
     UI.$('ap-meta').textContent = UI.formatFreq(call.freq) + ' | ' + UI.formatDuration(call.duration);
     UI.$('audio-player').classList.add('visible');
     document.body.classList.add('player-open');
-    // Load transmissions and frequencies
+    // Load transmissions, frequencies, and transcription
     try {
-      const [txsRes, freqsRes] = await Promise.all([
+      const [txsRes, freqsRes, transcRes] = await Promise.all([
         API.callTransmissions(cid).catch(() => ({})),
         API.callFrequencies(cid).catch(() => ({})),
+        API.callTranscription(cid).catch(() => ({})),
       ]);
       this.transmissions = txsRes.transmissions || [];
       this.frequencies = freqsRes.frequencies || [];
+      this.words = (transcRes && transcRes.words) || [];
+      this.transcriptionDuration = (transcRes && transcRes.call_duration) || 0;
       // Build unit label lookup from unit_id (DB ID) -> fetch alpha tags
       this.unitLabels = {};
       const uniqueUnitIds = [...new Set(this.transmissions.map(tx => tx.unit_id).filter(Boolean))];
@@ -765,6 +774,7 @@ const AudioPlayer = {
         } catch {}
       }));
       this.drawTimeline();
+      this.renderWords();
     } catch {}
   },
   toggle() {
@@ -774,6 +784,10 @@ const AudioPlayer = {
   hide() {
     this.audio.pause();
     this.audio.src = '';
+    this.words = [];
+    this.transcriptionDuration = 0;
+    UI.$('ap-words').innerHTML = '';
+    UI.$('ap-words').style.display = 'none';
     // Don't clear monitoring - keep it running in background
     UI.$('audio-player').classList.remove('visible');
     document.body.classList.remove('player-open');
@@ -827,7 +841,8 @@ const AudioPlayer = {
     const ctx = c.getContext('2d');
     const w = c.width, h = c.height;
     ctx.clearRect(0, 0, w, h);
-    const dur = this.audio.duration || 1;
+    // Use call duration from API (reliable) or audio duration if loaded
+    const dur = this.audio.duration || (this.callData && this.callData.duration) || 1;
     const colors = ['#48f','#f84','#4f8','#f48','#84f','#8f4','#ff4','#4ff'];
     // Draw transmissions
     const unitColors = {};
@@ -876,6 +891,47 @@ const AudioPlayer = {
     const pct = this.audio.currentTime / dur;
     ctx.fillStyle = '#fff';
     ctx.fillRect(pct * w - 1, 0, 2, h);
+  },
+  // Render word-level timestamps below the timeline
+  renderWords() {
+    const container = UI.$('ap-words');
+    container.innerHTML = '';
+    if (!this.words || this.words.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'block';
+    // Use transcription's call_duration (most reliable), then audio duration, then call data
+    const dur = this.transcriptionDuration || this.audio.duration || (this.callData && this.callData.duration) || 1;
+    const containerWidth = container.getBoundingClientRect().width;
+    this.words.forEach((w, i) => {
+      const span = document.createElement('span');
+      span.className = 'word';
+      span.textContent = w.word;
+      span.dataset.start = w.start;
+      span.dataset.end = w.end;
+      span.dataset.idx = i;
+      // Position based on start time
+      const leftPct = (w.start / dur) * 100;
+      span.style.left = leftPct + '%';
+      container.appendChild(span);
+    });
+  },
+  // Update which word is highlighted based on current playback time
+  updateActiveWord() {
+    if (!this.words || this.words.length === 0) return;
+    const ct = this.audio.currentTime;
+    const container = UI.$('ap-words');
+    const wordEls = container.querySelectorAll('.word');
+    wordEls.forEach(el => {
+      const start = parseFloat(el.dataset.start);
+      const end = parseFloat(el.dataset.end);
+      if (ct >= start && ct < end) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    });
   },
 };
 
@@ -959,8 +1015,8 @@ function callListItem(call, opts) {
   opts = opts || {};
   const hasAudio = call.audio_path || call.has_audio;
   const cid = UI.callId(call);
-  // Build talkgroup link - use talkgroup_db_id if available, otherwise build object from call data
-  const tgObj = { id: call.talkgroup_db_id, tgid: call.tgid || call.talkgroup_id, alpha_tag: call.tg_alpha_tag || call.alpha_tag };
+  // Build talkgroup link - use talkgroup_id if available, otherwise build object from call data
+  const tgObj = { id: call.talkgroup_id, tgid: call.tgid || call.talkgroup_id, alpha_tag: call.tg_alpha_tag || call.alpha_tag };
   let html = '<div class="list-item" data-call-id="' + UI.esc(cid) + '">';
   html += '<div class="primary">' + UI.tgLink(tgObj, {stopProp: true}) + ' ' + UI.badges(call) + '</div>';
   html += '<div class="secondary">' + UI.formatFreq(call.freq);
@@ -978,6 +1034,22 @@ function callListItem(call, opts) {
     }).join(', ');
   }
   if (hasAudio && cid) html += ' <button class="btn-play" data-play="' + UI.esc(JSON.stringify(call).replace(/"/g, '&quot;')) + '">&#9654; Play</button>';
+  html += '</div></div>';
+  return html;
+}
+
+function transcriptionListItem(t) {
+  // Build a call-like object for play button
+  const callObj = { id: t.call_id, tgid: t.tgid, tg_alpha_tag: t.tg_alpha_tag, audio_path: t.audio_url, duration: t.call_duration };
+  const tgObj = { id: t.talkgroup_id, tgid: t.tgid, alpha_tag: t.tg_alpha_tag };
+  const truncText = t.text.length > 80 ? t.text.substring(0, 80) + '...' : t.text;
+  let html = '<div class="list-item" onclick="Tabs.calls.showDetail(' + t.call_id + ')">';
+  html += '<div class="primary" style="font-weight:normal;font-style:italic;">"' + UI.esc(truncText) + '"</div>';
+  html += '<div class="secondary">' + UI.tgLink(tgObj, {stopProp: true});
+  if (t.system) html += ' | ' + UI.esc(t.system);
+  html += '</div>';
+  html += '<div class="meta">' + UI.ago(t.created_at) + ' | ' + t.word_count + ' words';
+  html += ' <button class="btn-play" data-play="' + UI.esc(JSON.stringify(callObj).replace(/"/g, '&quot;')) + '">&#9654;</button>';
   html += '</div></div>';
   return html;
 }
@@ -1016,20 +1088,20 @@ Tabs.overview = {
     el.innerHTML =
       '<div id="ov-stats" class="stat-grid"><div class="loading">Loading stats...</div></div>' +
       '<div class="columns">' +
-        '<div><div class="col-header">Active Calls</div><div id="ov-active"><div class="loading">Loading...</div></div></div>' +
+        '<div><div class="col-header">Recent Transcriptions</div><div id="ov-transcriptions"><div class="loading">Loading...</div></div></div>' +
         '<div><div class="col-header">Recent Calls</div><div id="ov-recent"><div class="loading">Loading...</div></div></div>' +
         '<div><div class="col-header">Active Units</div><div id="ov-units"><div class="loading">Loading...</div></div></div>' +
       '</div>' +
       '<div class="chart-container"><div class="chart-title">Decode Rates (Last Hour)</div><canvas id="ov-chart"></canvas></div>' +
       '<div id="ov-activity"></div>';
     this.loadStats();
-    this.loadActive();
+    this.loadTranscriptions();
     this.loadRecent();
     this.loadUnits();
     this.loadChart();
     this.loadActivity();
     TabManager.addTimer(() => this.loadStats(), 30000);
-    TabManager.addTimer(() => this.loadActive(), 5000);
+    TabManager.addTimer(() => this.loadTranscriptions(), 5000);
     TabManager.addTimer(() => this.loadRecent(), 10000);
     TabManager.addTimer(() => this.loadUnits(), 15000);
   },
@@ -1047,16 +1119,15 @@ Tabs.overview = {
         statCard(UI.formatBytes(d.audio_bytes), 'Audio Size');
     } catch { UI.$('ov-stats').innerHTML = '<div class="empty">Failed to load stats</div>'; }
   },
-  async loadActive() {
+  async loadTranscriptions() {
     try {
-      const sys = getSelectedSystem();
-      const d = await API.activeCallsRealtime();
-      const calls = (d.calls || []).filter(c => !sys || String(c.system_id) === sys);
-      const el = UI.$('ov-active');
-      if (!calls.length) { el.innerHTML = '<div class="empty">No active calls</div>'; return; }
-      el.innerHTML = calls.map(c => callListItem(c)).join('');
+      const d = await API.recentTranscriptions({ limit: 15 });
+      const el = UI.$('ov-transcriptions');
+      const transcriptions = d.transcriptions || [];
+      if (!transcriptions.length) { el.innerHTML = '<div class="empty">No transcriptions yet</div>'; return; }
+      el.innerHTML = transcriptions.map(t => transcriptionListItem(t)).join('');
       bindPlayButtons(el);
-    } catch { UI.$('ov-active').innerHTML = '<div class="empty">Failed to load</div>'; }
+    } catch { UI.$('ov-transcriptions').innerHTML = '<div class="empty">Failed to load</div>'; }
   },
   async loadRecent() {
     try {
@@ -1098,7 +1169,7 @@ Tabs.overview = {
         const evtLine = evtType
           ? '<span class="' + evtClass + '">' + UI.esc(evtLabel) + '</span>' + evtTgLink
           : '';
-        return '<div class="list-item" onclick="Tabs.units.showDetail(' + (u.id || u.unit_id) + ')">' +
+        return '<div class="list-item" onclick="Tabs.units.showDetail(' + u.unit_id + ')">' +
           '<div class="primary">' + UI.esc(UI.unitTitle(u)) + '</div>' +
           (UI.unitSubtitle(u) ? '<div class="secondary">' + UI.esc(UI.unitSubtitle(u)) + '</div>' : '') +
           (evtLine ? '<div class="meta">' + evtLine + ' &mdash; ' + UI.ago(u.last_event_time || u.last_seen) + '</div>' : '<div class="meta">' + UI.ago(u.last_seen) + '</div>') +
@@ -1146,6 +1217,7 @@ Tabs.calls = {
     const el = UI.$('content');
     el.innerHTML =
       '<div class="filters" id="calls-filters">' +
+        '<div class="filter-group"><label>Call ID</label><input id="cf-id" type="text" placeholder="ID" style="width:70px;"></div>' +
         '<div class="filter-group"><label>System</label><select id="cf-system"><option value="">All</option></select></div>' +
         '<div class="filter-group"><label>Talkgroup</label><input id="cf-tg" type="number" placeholder="TGID" style="width:80px;"></div>' +
         '<div class="filter-group"><label>Start</label><input id="cf-start" type="datetime-local"></div>' +
@@ -1167,6 +1239,12 @@ Tabs.calls = {
     window._pageNavCallbacks['calls'] = (off) => { this.offset = off; this.load(); };
   },
   search() {
+    // If call ID is specified, go directly to that call's detail
+    const callId = UI.$('cf-id').value.trim();
+    if (callId) {
+      this.showDetail(callId);
+      return;
+    }
     this.offset = 0;
     this.limit = parseInt(UI.$('cf-limit').value) || 50;
     Prefs.set('callsPerPage', this.limit);
@@ -1189,7 +1267,7 @@ Tabs.calls = {
         calls.map(c =>
           '<tr style="cursor:pointer;" onclick="Tabs.calls.showDetail(\'' + UI.esc(UI.callId(c)) + '\')">' +
           '<td>' + UI.formatDateTime(c.start_time) + '</td>' +
-          '<td>' + UI.tgLink({id: c.talkgroup_db_id, tgid: c.tgid || c.talkgroup_id, alpha_tag: c.tg_alpha_tag || c.alpha_tag}, {stopProp: true}) + '</td>' +
+          '<td>' + UI.tgLink({id: c.talkgroup_id, tgid: c.tgid || c.talkgroup_id, alpha_tag: c.tg_alpha_tag || c.alpha_tag}, {stopProp: true}) + '</td>' +
           '<td>' + UI.formatFreq(c.freq) + '</td>' +
           '<td>' + UI.formatDuration(c.duration) + '</td>' +
           '<td>' + UI.badges(c) + '</td>' +
@@ -1207,7 +1285,7 @@ Tabs.calls = {
       let html = '<div class="panel-title">Call ' + UI.esc(trCallId) + '</div>';
       html += '<div class="panel-section">';
       // Build talkgroup link for the detail view
-      const tgLink = call.talkgroup_id ? UI.tgLink({id: call.talkgroup_db_id, tgid: call.tgid || call.talkgroup_id, alpha_tag: call.tg_alpha_tag || call.alpha_tag}) : '--';
+      const tgLink = call.talkgroup_id ? UI.tgLink({id: call.talkgroup_id, tgid: call.tgid || call.talkgroup_id, alpha_tag: call.tg_alpha_tag || call.alpha_tag}) : '--';
       const fields = [
         ['System ID', call.system_id], ['Talkgroup', tgLink],
         ['Start', UI.formatDateTime(call.start_time)], ['Stop', UI.formatDateTime(call.stop_time)],
@@ -1216,7 +1294,8 @@ Tabs.calls = {
         ['Call Group', call.call_group_id], ['Instance', call.instance_id],
       ];
       html += '<table class="data-table">' + fields.map(([k,v]) => '<tr><td style="color:var(--text-dim);width:120px;">' + k + '</td><td>' + (v ?? '--') + '</td></tr>').join('') + '</table>';
-      if (call.audio_path && call.tr_call_id) {
+      // Show play button if we have audio and a way to identify the call
+      if ((call.audio_path || call.audio_url) && (call.id || call.tr_call_id)) {
         html += '<div style="margin-top:8px;"><button class="btn-play" data-play="' + UI.esc(JSON.stringify(call).replace(/"/g, '&quot;')) + '">&#9654; Play Audio</button></div>';
       }
       // Monitor button for call's talkgroup
@@ -1227,22 +1306,38 @@ Tabs.calls = {
           (isMonitored ? '&#10003; Monitoring TG ' + callTgid : '&#128226; Monitor TG ' + callTgid) + '</button></div>';
       }
       html += '</div>';
+      // Transcription
+      html += '<div class="panel-section"><div class="panel-section-title">Transcription</div><div id="panel-transcription"><div class="loading">Loading...</div></div></div>';
       // Transmissions
       html += '<div class="panel-section"><div class="panel-section-title">Transmissions</div><div id="panel-txs"><div class="loading">Loading...</div></div></div>';
       // Frequencies
       html += '<div class="panel-section"><div class="panel-section-title">Frequencies</div><div id="panel-freqs"><div class="loading">Loading...</div></div></div>';
       Panel.open(html);
       bindPlayButtons(UI.$('panel-content'));
-      // Load tx + freq
-      const [txsRes, freqsRes] = await Promise.all([
+      // Load tx + freq + transcription
+      const [txsRes, freqsRes, transcRes] = await Promise.all([
         API.callTransmissions(trCallId).catch(() => ({})),
         API.callFrequencies(trCallId).catch(() => ({})),
+        API.callTranscription(trCallId).catch(() => null),
       ]);
       const txList = txsRes.transmissions || [];
       const freqList = freqsRes.frequencies || [];
+      // Render transcription
+      if (transcRes && transcRes.text) {
+        let transcHtml = '<div style="background:var(--bg-input);padding:10px;border-radius:var(--radius);font-size:12px;line-height:1.5;">' + UI.esc(transcRes.text) + '</div>';
+        transcHtml += '<div style="margin-top:6px;font-size:10px;color:var(--text-muted);">' +
+          'Provider: ' + UI.esc(transcRes.provider || '--') + ' | ' +
+          'Model: ' + UI.esc(transcRes.model || '--') + ' | ' +
+          'Words: ' + (transcRes.word_count || 0) +
+          (transcRes.words && transcRes.words.length ? ' | Word timestamps: Yes' : '') +
+          '</div>';
+        UI.$('panel-transcription').innerHTML = transcHtml;
+      } else {
+        UI.$('panel-transcription').innerHTML = '<div class="empty">No transcription available</div>';
+      }
       UI.$('panel-txs').innerHTML = txList.length ?
         '<table class="data-table"><thead><tr><th>Unit</th><th>Position</th><th>Time</th></tr></thead><tbody>' +
-        txList.map(t => '<tr><td>' + (t.unit_id ? UI.unitLink({id: t.unit_db_id, unit_id: t.unit_rid || t.unit_id, alpha_tag: t.unit_alpha_tag}) : '--') + '</td><td>' + (t.position||0) + 's</td><td>' + UI.formatTime(t.start_time) + '</td></tr>').join('') +
+        txList.map(t => '<tr><td>' + (t.unit_id ? UI.unitLink({unit_id: t.unit_rid || t.unit_id, alpha_tag: t.unit_alpha_tag}) : '--') + '</td><td>' + (t.position||0) + 's</td><td>' + UI.formatTime(t.start_time) + '</td></tr>').join('') +
         '</tbody></table>' : '<div class="empty">No transmissions</div>';
       UI.$('panel-freqs').innerHTML = freqList.length ?
         '<table class="data-table"><thead><tr><th>Frequency</th><th>Position</th></tr></thead><tbody>' +
@@ -1312,7 +1407,7 @@ Tabs.talkgroups = {
       const el = UI.$('tg-results');
       if (!tgs.length) { el.innerHTML = '<div class="empty">No talkgroups found</div>'; UI.$('tg-pagination').innerHTML = ''; return; }
       el.innerHTML = '<div class="entity-grid">' + tgs.map(t =>
-        '<div class="entity-card" onclick="Tabs.talkgroups.showDetail(' + t.id + ')">' +
+        '<div class="entity-card" onclick="Tabs.talkgroups.showDetail(' + t.tgid + ')">' +
         '<div class="title">' + UI.esc(t.alpha_tag || 'TG ' + t.tgid) + '</div>' +
         '<div class="detail">TGID: ' + t.tgid + ' | ' + UI.esc(t.group || '') + ' | ' + UI.esc(t.tag || '') + '</div>' +
         '<div class="detail" style="color:var(--text-muted);">Last: ' + UI.ago(t.last_seen) + '</div>' +
@@ -1471,7 +1566,7 @@ Tabs.units = {
       const el = UI.$('units-results');
       if (!units.length) { el.innerHTML = '<div class="empty">No active units</div>'; UI.$('units-pagination').innerHTML = ''; return; }
       el.innerHTML = '<div class="entity-grid">' + units.map(u =>
-        '<div class="entity-card" onclick="Tabs.units.showDetail(' + (u.id || u.unit_id) + ')">' +
+        '<div class="entity-card" onclick="Tabs.units.showDetail(' + u.unit_id + ')">' +
         '<div class="title">' + UI.esc(UI.unitTitle(u)) + '</div>' +
         (UI.unitSubtitle(u) ? '<div class="detail">' + UI.esc(UI.unitSubtitle(u)) + '</div>' : '') +
         '<div class="detail" style="color:var(--text-muted);">Last: ' + UI.ago(u.last_seen) + '</div>' +
@@ -1499,7 +1594,7 @@ Tabs.units = {
       const el = UI.$('units-results');
       if (!units.length) { el.innerHTML = '<div class="empty">No units</div>'; UI.$('units-pagination').innerHTML = ''; return; }
       el.innerHTML = '<div class="entity-grid">' + units.map(u =>
-        '<div class="entity-card" onclick="Tabs.units.showDetail(' + u.id + ')">' +
+        '<div class="entity-card" onclick="Tabs.units.showDetail(' + u.unit_id + ')">' +
         '<div class="title">' + UI.esc(UI.unitTitle(u)) + '</div>' +
         (UI.unitSubtitle(u) ? '<div class="detail">' + UI.esc(UI.unitSubtitle(u)) + '</div>' : '') +
         '<div class="detail" style="color:var(--text-muted);">First: ' + UI.ago(u.first_seen) + ' | Last: ' + UI.ago(u.last_seen) + '</div>' +
@@ -1615,7 +1710,7 @@ Tabs.systems = {
       if (!tgs.length) { el.innerHTML = '<div class="empty">No talkgroups</div>'; return; }
       el.innerHTML = '<table class="data-table"><thead><tr><th>TGID</th><th>Alpha Tag</th><th>Group</th><th>Last Seen</th></tr></thead><tbody>' +
         tgs.map(t =>
-          '<tr style="cursor:pointer;" onclick="Panel.close();location.hash=\'#talkgroups\';setTimeout(()=>Tabs.talkgroups.showDetail(' + t.id + '),300);">' +
+          '<tr style="cursor:pointer;" onclick="Panel.close();location.hash=\'#talkgroups\';setTimeout(()=>Tabs.talkgroups.showDetail(' + t.tgid + '),300);">' +
           '<td>' + t.tgid + '</td>' +
           '<td>' + UI.esc(t.alpha_tag || '--') + '</td>' +
           '<td>' + UI.esc(t.group || '--') + '</td>' +
@@ -1624,6 +1719,80 @@ Tabs.systems = {
       window._pageNavCallbacks['systgs'] = (off) => this.loadTalkgroups(sysId, off);
       UI.$('panel-sys-tgs-pg').innerHTML = paginationHtml(offset, 20, tgs.length, 'systgs');
     } catch { UI.$('panel-sys-tgs').innerHTML = '<div class="empty">Failed to load</div>'; }
+  },
+};
+
+// --- Transcriptions ---
+Tabs.transcriptions = {
+  offset: 0,
+  limit: 25,
+  searchQuery: '',
+  async render() {
+    const el = UI.$('content');
+    el.innerHTML =
+      '<div class="filters">' +
+        '<div class="filter-group"><label>Search Text</label><input id="tr-search" placeholder="Search transcriptions..." style="width:250px;"></div>' +
+        '<div class="filter-group"><label>Per Page</label><select id="tr-limit"><option>25</option><option>50</option><option>100</option></select></div>' +
+        '<button class="btn-filter" onclick="Tabs.transcriptions.search()">Search</button>' +
+        '<button class="btn-filter" onclick="Tabs.transcriptions.clear()" style="background:var(--bg-card);border:1px solid var(--border);">Clear</button>' +
+      '</div>' +
+      '<div id="tr-results"><div class="loading">Loading...</div></div>' +
+      '<div id="tr-pagination"></div>';
+    UI.$('tr-limit').value = this.limit;
+    if (this.searchQuery) UI.$('tr-search').value = this.searchQuery;
+    this.offset = 0;
+    this.load();
+    window._pageNavCallbacks['transcriptions'] = (off) => { this.offset = off; this.load(); };
+  },
+  search() {
+    this.offset = 0;
+    this.searchQuery = UI.$('tr-search').value.trim();
+    this.limit = parseInt(UI.$('tr-limit').value) || 25;
+    this.load();
+  },
+  clear() {
+    this.searchQuery = '';
+    this.offset = 0;
+    UI.$('tr-search').value = '';
+    this.load();
+  },
+  async load() {
+    const el = UI.$('tr-results');
+    el.innerHTML = '<div class="loading">Loading...</div>';
+    try {
+      let data;
+      if (this.searchQuery) {
+        data = await API.searchTranscriptions({ q: this.searchQuery, limit: this.limit, offset: this.offset });
+      } else {
+        data = await API.recentTranscriptions({ limit: this.limit, offset: this.offset });
+      }
+      const transcriptions = data.transcriptions || [];
+      if (!transcriptions.length) {
+        el.innerHTML = '<div class="empty">' + (this.searchQuery ? 'No transcriptions match your search' : 'No transcriptions yet') + '</div>';
+        UI.$('tr-pagination').innerHTML = '';
+        return;
+      }
+      el.innerHTML = '<table class="data-table"><thead><tr>' +
+        '<th style="width:50%;">Transcription</th><th>Talkgroup</th><th>System</th><th>Duration</th><th>Time</th><th></th>' +
+        '</tr></thead><tbody>' +
+        transcriptions.map(t => {
+          const truncText = t.text.length > 100 ? t.text.substring(0, 100) + '...' : t.text;
+          const callObj = { id: t.call_id, tgid: t.tgid, tg_alpha_tag: t.tg_alpha_tag, audio_path: t.audio_url, duration: t.call_duration };
+          const tgObj = { id: t.talkgroup_id, tgid: t.tgid, alpha_tag: t.tg_alpha_tag };
+          return '<tr style="cursor:pointer;" onclick="Tabs.calls.showDetail(' + t.call_id + ')">' +
+            '<td style="font-style:italic;color:var(--text-dim);">"' + UI.esc(truncText) + '"</td>' +
+            '<td>' + UI.tgLink(tgObj, {stopProp: true}) + '</td>' +
+            '<td>' + UI.esc(t.system || '--') + '</td>' +
+            '<td>' + UI.formatDuration(t.call_duration) + '</td>' +
+            '<td>' + UI.ago(t.created_at) + '</td>' +
+            '<td><button class="btn-play" data-play="' + UI.esc(JSON.stringify(callObj).replace(/"/g, '&quot;')) + '">&#9654;</button></td>' +
+            '</tr>';
+        }).join('') + '</tbody></table>';
+      bindPlayButtons(el);
+      UI.$('tr-pagination').innerHTML = paginationHtml(this.offset, this.limit, transcriptions.length, 'transcriptions');
+    } catch (e) {
+      el.innerHTML = '<div class="empty">Failed to load transcriptions</div>';
+    }
   },
 };
 
