@@ -50,7 +50,6 @@ type System struct {
 // Talkgroup represents a talkgroup
 // @Description A talkgroup on a radio system, unique within a SYSID
 type Talkgroup struct {
-	ID          int       `json:"id" example:"1"`
 	SYSID       string    `json:"sysid" example:"348"`
 	TGID        int       `json:"tgid" example:"1001"`
 	AlphaTag    string    `json:"alpha_tag,omitempty" example:"Fire Dispatch"`
@@ -66,16 +65,16 @@ type Talkgroup struct {
 // TalkgroupSite tracks which sites have seen a talkgroup
 // @Description Association between a talkgroup and the sites where it has been observed
 type TalkgroupSite struct {
-	TalkgroupID int       `json:"talkgroup_id" example:"1"`
-	SystemID    int       `json:"system_id" example:"1"`
-	FirstSeen   time.Time `json:"first_seen" example:"2024-01-01T00:00:00Z"`
-	LastSeen    time.Time `json:"last_seen" example:"2024-01-15T12:30:00Z"`
+	SYSID     string    `json:"sysid" example:"348"`
+	TGID      int       `json:"tgid" example:"1001"`
+	SystemID  int       `json:"system_id" example:"1"`
+	FirstSeen time.Time `json:"first_seen" example:"2024-01-01T00:00:00Z"`
+	LastSeen  time.Time `json:"last_seen" example:"2024-01-15T12:30:00Z"`
 }
 
 // Unit represents a radio unit
 // @Description A radio unit (mobile or portable radio), unique within a SYSID
 type Unit struct {
-	ID             int       `json:"id" example:"1"`
 	SYSID          string    `json:"sysid" example:"348"`
 	UnitID         int64     `json:"unit_id" example:"1234567"`
 	AlphaTag       string    `json:"alpha_tag,omitempty" example:"Engine 1"`
@@ -93,7 +92,8 @@ type Unit struct {
 // UnitSite tracks which sites have seen a unit
 // @Description Association between a unit and the sites where it has been observed
 type UnitSite struct {
-	UnitID    int       `json:"unit_id" example:"1"`
+	SYSID     string    `json:"sysid" example:"348"`
+	UnitID    int64     `json:"unit_id" example:"1234567"`
 	SystemID  int       `json:"system_id" example:"1"`
 	FirstSeen time.Time `json:"first_seen" example:"2024-01-01T00:00:00Z"`
 	LastSeen  time.Time `json:"last_seen" example:"2024-01-15T12:30:00Z"`
@@ -114,7 +114,7 @@ type Recorder struct {
 type CallGroup struct {
 	ID            int64      `json:"id" example:"1"`
 	SystemID      int        `json:"system_id" example:"1"`
-	TalkgroupID   *int       `json:"talkgroup_id,omitempty" example:"1"`
+	TgSysid       *string    `json:"tg_sysid,omitempty" example:"348"`
 	TGID          int        `json:"tgid" example:"1001"`
 	StartTime     time.Time  `json:"start_time" example:"2024-01-15T10:30:00Z"`
 	EndTime       *time.Time `json:"end_time,omitempty" example:"2024-01-15T10:30:45Z"`
@@ -127,12 +127,12 @@ type CallGroup struct {
 // Call represents an individual call recording
 // @Description A recorded radio call/transmission
 type Call struct {
-	ID          int64  `json:"id" example:"1"`
-	CallGroupID *int64 `json:"call_group_id,omitempty" example:"1"`
-	InstanceID  int    `json:"instance_id" example:"1"`
-	SystemID    int    `json:"system_id" example:"1"`
-	TalkgroupID *int   `json:"talkgroup_id,omitempty" example:"1"`
-	RecorderID  *int   `json:"recorder_id,omitempty" example:"1"`
+	ID          int64   `json:"id" example:"1"`
+	CallGroupID *int64  `json:"call_group_id,omitempty" example:"1"`
+	InstanceID  int     `json:"instance_id" example:"1"`
+	SystemID    int     `json:"system_id" example:"1"`
+	TgSysid     *string `json:"tg_sysid,omitempty" example:"348"`
+	RecorderID  *int    `json:"recorder_id,omitempty" example:"1"`
 
 	// Identifiers
 	TRCallID string `json:"tr_call_id,omitempty" example:"butco-1001-1705319400"`
@@ -190,7 +190,7 @@ type CallUnit struct {
 type Transmission struct {
 	ID         int64      `json:"id" example:"1"`
 	CallID     int64      `json:"call_id" example:"1"`
-	UnitID     *int       `json:"unit_id,omitempty" example:"1"`
+	UnitSysid  *string    `json:"unit_sysid,omitempty" example:"348"`
 	UnitRID    int64      `json:"unit_rid" example:"1234567"`
 	StartTime  time.Time  `json:"start_time" example:"2024-01-15T10:30:00Z"`
 	StopTime   *time.Time `json:"stop_time,omitempty" example:"2024-01-15T10:30:15Z"`
@@ -220,10 +220,10 @@ type UnitEvent struct {
 	ID           int64           `json:"id" example:"1"`
 	InstanceID   int             `json:"instance_id" example:"1"`
 	SystemID     int             `json:"system_id" example:"1"`
-	UnitID       *int            `json:"unit_id,omitempty" example:"1"`
+	UnitSysid    *string         `json:"unit_sysid,omitempty" example:"348"`
 	UnitRID      int64           `json:"unit_rid" example:"1234567"`
 	EventType    string          `json:"event_type" example:"join"`
-	TalkgroupID  *int            `json:"talkgroup_id,omitempty" example:"1"`
+	TgSysid      *string         `json:"tg_sysid,omitempty" example:"348"`
 	TGID         int             `json:"tgid,omitempty" example:"1001"`
 	Time         time.Time       `json:"time" example:"2024-01-15T10:30:00Z"`
 	MetadataJSON json.RawMessage `json:"metadata_json,omitempty" swaggertype:"object"`
@@ -264,4 +264,42 @@ type TrunkMessage struct {
 	OpcodeType  string    `json:"opcode_type,omitempty" example:"OSP"`
 	OpcodeDesc  string    `json:"opcode_desc,omitempty" example:"Group Voice Channel Grant"`
 	Meta        string    `json:"meta,omitempty" example:"tg:1001"`
+}
+
+// TranscriptionWord represents a single word with timing information
+// @Description A word from the transcription with start and end times
+type TranscriptionWord struct {
+	Word  string  `json:"word" example:"Engine"`
+	Start float32 `json:"start" example:"0.5"`  // seconds from start of audio
+	End   float32 `json:"end" example:"0.85"`   // seconds from start of audio
+}
+
+// Transcription represents a speech-to-text transcription result
+// @Description A transcription of a radio call's audio content
+type Transcription struct {
+	ID           int64               `json:"id" example:"1"`
+	CallID       int64               `json:"call_id" example:"123"`
+	Provider     string              `json:"provider" example:"openai"`
+	Model        string              `json:"model,omitempty" example:"whisper-1"`
+	Language     string              `json:"language,omitempty" example:"en"`
+	Text         string              `json:"text" example:"Engine 5 responding to the scene"`
+	Confidence   *float32            `json:"confidence,omitempty" example:"0.95"`
+	WordCount    int                 `json:"word_count,omitempty" example:"6"`
+	DurationMs   int                 `json:"duration_ms,omitempty" example:"1500"`
+	Words        []TranscriptionWord `json:"words,omitempty"`
+	CreatedAt    time.Time           `json:"created_at" example:"2024-01-15T12:30:00Z"`
+	CallDuration float32             `json:"call_duration,omitempty" example:"15.5"` // seconds, for word timeline rendering
+}
+
+// TranscriptionQueueItem represents a pending transcription job
+// @Description A queued transcription job awaiting processing
+type TranscriptionQueueItem struct {
+	ID        int64     `json:"id" example:"1"`
+	CallID    int64     `json:"call_id" example:"123"`
+	Status    string    `json:"status" example:"pending"`
+	Priority  int       `json:"priority" example:"0"`
+	Attempts  int       `json:"attempts" example:"0"`
+	LastError string    `json:"last_error,omitempty"`
+	CreatedAt time.Time `json:"created_at" example:"2024-01-15T12:30:00Z"`
+	UpdatedAt time.Time `json:"updated_at" example:"2024-01-15T12:30:00Z"`
 }

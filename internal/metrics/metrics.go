@@ -216,4 +216,43 @@ var (
 		},
 		[]string{"method", "path", "status"},
 	)
+
+	// TranscriptionQueueDepth tracks pending transcription jobs
+	TranscriptionQueueDepth = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "transcription_queue_depth",
+			Help:      "Number of pending transcription jobs",
+		},
+	)
+
+	// TranscriptionsCompleted counts completed transcriptions by provider
+	TranscriptionsCompleted = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "transcriptions_total",
+			Help:      "Total number of completed transcriptions",
+		},
+		[]string{"provider"},
+	)
+
+	// TranscriptionErrors counts transcription errors by provider
+	TranscriptionErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "transcription_errors_total",
+			Help:      "Total number of transcription errors",
+		},
+		[]string{"provider"},
+	)
+
+	// TranscriptionDuration measures transcription processing time
+	TranscriptionDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "transcription_duration_seconds",
+			Help:      "Transcription processing duration in seconds",
+			Buckets:   []float64{1, 5, 10, 30, 60, 120, 300, 600},
+		},
+	)
 )

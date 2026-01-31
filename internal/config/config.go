@@ -15,6 +15,7 @@ type Config struct {
 	MQTT          MQTTConfig          `mapstructure:"mqtt"`
 	Storage       StorageConfig       `mapstructure:"storage"`
 	Deduplication DeduplicationConfig `mapstructure:"deduplication"`
+	Transcription TranscriptionConfig `mapstructure:"transcription"`
 	Logging       LoggingConfig       `mapstructure:"logging"`
 }
 
@@ -88,6 +89,54 @@ type LoggingConfig struct {
 	Format string `mapstructure:"format"`
 }
 
+// TranscriptionConfig holds speech-to-text transcription configuration
+type TranscriptionConfig struct {
+	Enabled     bool    `mapstructure:"enabled"`
+	Provider    string  `mapstructure:"provider"`    // "openai", "http", "embedded"
+	Concurrency int     `mapstructure:"concurrency"` // Number of parallel workers
+	RetryCount  int     `mapstructure:"retry_count"` // Max retries on failure
+	Language    string  `mapstructure:"language"`    // Language code (e.g., "en")
+	MinDuration float64 `mapstructure:"min_duration"` // Minimum call duration in seconds to transcribe
+
+	OpenAI       OpenAITranscriptionConfig       `mapstructure:"openai"`
+	HTTP         HTTPTranscriptionConfig         `mapstructure:"http"`
+	Embedded     EmbeddedTranscriptionConfig     `mapstructure:"embedded"`
+	Preprocess   AudioPreprocessConfig           `mapstructure:"preprocess"`
+}
+
+// AudioPreprocessConfig holds audio preprocessing configuration
+type AudioPreprocessConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`       // Enable preprocessing (default: true)
+	SampleRate   int    `mapstructure:"sample_rate"`   // Target sample rate (default: 16000)
+	HighpassHz   int    `mapstructure:"highpass_hz"`   // High-pass filter cutoff (default: 300)
+	LowpassHz    int    `mapstructure:"lowpass_hz"`    // Low-pass filter cutoff (default: 3000)
+	Normalize    bool   `mapstructure:"normalize"`     // Normalize audio levels (default: true)
+	CustomFilter string `mapstructure:"custom_filter"` // Custom sox filter chain (overrides above)
+}
+
+// OpenAITranscriptionConfig holds OpenAI Whisper API configuration
+type OpenAITranscriptionConfig struct {
+	APIKey  string `mapstructure:"api_key"`
+	BaseURL string `mapstructure:"base_url"` // Empty = OpenAI, or set for compatible providers (Groq, etc.)
+	Model   string `mapstructure:"model"`    // "whisper-1", "whisper-large-v3", etc.
+	Prompt  string `mapstructure:"prompt"`   // Optional prompt to guide transcription (terminology, context)
+}
+
+// HTTPTranscriptionConfig holds self-hosted HTTP Whisper server configuration
+type HTTPTranscriptionConfig struct {
+	URL     string `mapstructure:"url"`     // e.g., "http://localhost:9000/asr"
+	APIKey  string `mapstructure:"api_key"` // Optional authentication
+	Timeout int    `mapstructure:"timeout"` // Request timeout in seconds
+}
+
+// EmbeddedTranscriptionConfig holds embedded whisper.cpp configuration
+type EmbeddedTranscriptionConfig struct {
+	ModelPath string `mapstructure:"model_path"` // Directory for model files
+	ModelSize string `mapstructure:"model_size"` // "tiny", "base", "small"
+	Threads   int    `mapstructure:"threads"`    // CPU threads for inference
+	AutoLoad  bool   `mapstructure:"auto_load"`  // Download model if missing
+}
+
 // Load reads configuration from file and environment variables
 func Load(configPath string) (*Config, error) {
 	v := viper.New()
@@ -125,6 +174,8 @@ func Load(configPath string) (*Config, error) {
 	// Expand environment variables in sensitive fields
 	cfg.Database.Password = expandEnv(cfg.Database.Password)
 	cfg.MQTT.Password = expandEnv(cfg.MQTT.Password)
+	cfg.Transcription.OpenAI.APIKey = expandEnv(cfg.Transcription.OpenAI.APIKey)
+	cfg.Transcription.HTTP.APIKey = expandEnv(cfg.Transcription.HTTP.APIKey)
 
 	return &cfg, nil
 }
@@ -166,6 +217,34 @@ func setDefaults(v *viper.Viper) {
 	// Logging defaults
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
+
+	// Transcription defaults
+	v.SetDefault("transcription.enabled", false)
+	v.SetDefault("transcription.provider", "openai")
+	v.SetDefault("transcription.concurrency", 2)
+	v.SetDefault("transcription.retry_count", 3)
+	v.SetDefault("transcription.language", "en")
+	v.SetDefault("transcription.min_duration", 2.0)
+
+	// OpenAI provider defaults
+	v.SetDefault("transcription.openai.model", "whisper-1")
+
+	// HTTP provider defaults
+	v.SetDefault("transcription.http.url", "http://localhost:9000/asr")
+
+	// Audio preprocessing defaults (voice bandpass filter)
+	v.SetDefault("transcription.preprocess.enabled", true)
+	v.SetDefault("transcription.preprocess.sample_rate", 16000)
+	v.SetDefault("transcription.preprocess.highpass_hz", 300)
+	v.SetDefault("transcription.preprocess.lowpass_hz", 3000)
+	v.SetDefault("transcription.preprocess.normalize", true)
+	v.SetDefault("transcription.http.timeout", 60)
+
+	// Embedded provider defaults
+	v.SetDefault("transcription.embedded.model_path", "./data/models")
+	v.SetDefault("transcription.embedded.model_size", "base")
+	v.SetDefault("transcription.embedded.threads", 4)
+	v.SetDefault("transcription.embedded.auto_load", true)
 }
 
 func bindEnvVars(v *viper.Viper) {
@@ -183,6 +262,12 @@ func bindEnvVars(v *viper.Viper) {
 
 	// Storage
 	v.BindEnv("storage.audio_path", "AUDIO_PATH")
+
+	// Transcription
+	v.BindEnv("transcription.enabled", "TRANSCRIPTION_ENABLED")
+	v.BindEnv("transcription.provider", "TRANSCRIPTION_PROVIDER")
+	v.BindEnv("transcription.openai.api_key", "OPENAI_API_KEY")
+	v.BindEnv("transcription.openai.base_url", "OPENAI_BASE_URL")
 }
 
 // expandEnv expands ${VAR} or $VAR in string values

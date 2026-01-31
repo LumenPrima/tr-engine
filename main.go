@@ -22,6 +22,7 @@ import (
 	"github.com/trunk-recorder/tr-engine/internal/ingest"
 	"github.com/trunk-recorder/tr-engine/internal/mqtt"
 	"github.com/trunk-recorder/tr-engine/internal/storage"
+	"github.com/trunk-recorder/tr-engine/internal/transcription"
 	"github.com/trunk-recorder/tr-engine/internal/watcher"
 	"go.uber.org/zap"
 )
@@ -39,8 +40,10 @@ var (
 	easyAudio      = flag.String("audio", "", "Easy mode: path to trunk-recorder audio directory")
 	easyLogs       = flag.String("logs", "", "Easy mode: path to trunk-recorder logs directory")
 	easyData       = flag.String("data", "", "Easy mode: path to store database (default: ./data)")
-	easyDBPort     = flag.Int("db-port", 5433, "Easy mode: embedded PostgreSQL port (default: 5433)")
-	easyHTTPPort   = flag.Int("port", 8080, "HTTP server port")
+	easyDBPort           = flag.Int("db-port", 5433, "Easy mode: embedded PostgreSQL port (default: 5433)")
+	easyHTTPPort         = flag.Int("port", 8080, "HTTP server port")
+	transcribeBackfill   = flag.Bool("transcribe-backfill", false, "Queue existing calls for transcription")
+	transcribeBackfillN  = flag.Int("transcribe-backfill-count", 1000, "Number of calls to queue for backfill")
 )
 
 const version = "0.2.2-beta1"
@@ -390,6 +393,37 @@ func main() {
 	}()
 	httpDone(true, fmt.Sprintf("listening on :%d", cfg.Server.Port))
 
+	// Initialize transcription service if enabled
+	var transcriptionService *transcription.Service
+	if cfg.Transcription.Enabled {
+		transcriptDone := con.StartTask("Starting transcription service")
+		var err error
+		transcriptionService, err = transcription.NewService(db, cfg.Transcription, cfg.Storage.AudioPath, logger)
+		if err != nil {
+			transcriptDone(false, err.Error())
+			os.Exit(1)
+		}
+		transcriptionService.SetHub(server.GetHub())
+		transcriptionService.Start()
+		transcriptDone(true, fmt.Sprintf("provider: %s, workers: %d", cfg.Transcription.Provider, cfg.Transcription.Concurrency))
+
+		// Connect transcription service to processor for automatic queuing
+		if processor != nil {
+			processor.SetTranscriptionService(transcriptionService)
+		}
+
+		// Handle transcription backfill
+		if *transcribeBackfill {
+			backfillDone := con.StartTask("Queuing calls for transcription backfill")
+			queued, err := transcriptionService.BackfillQueue(ctx, *transcribeBackfillN)
+			if err != nil {
+				backfillDone(false, err.Error())
+			} else {
+				backfillDone(true, fmt.Sprintf("%d calls queued", queued))
+			}
+		}
+	}
+
 	// Print ready message
 	con.PrintReady()
 
@@ -415,6 +449,9 @@ func main() {
 	}
 	if processor != nil {
 		processor.Stop()
+	}
+	if transcriptionService != nil {
+		transcriptionService.Stop()
 	}
 	server.Shutdown(context.Background())
 

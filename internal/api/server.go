@@ -235,6 +235,13 @@ func (s *Server) setupRoutes() {
 		api.GET("/stats", handler.GetStats)
 		api.GET("/stats/rates", handler.GetRates)
 		api.GET("/stats/activity", handler.GetActivity)
+
+		// Transcription
+		api.GET("/calls/:id/transcription", handler.GetCallTranscription)
+		api.POST("/calls/:id/transcribe", handler.QueueCallTranscription)
+		api.GET("/transcriptions/recent", handler.GetRecentTranscriptions)
+		api.GET("/transcriptions/search", handler.SearchTranscriptions)
+		api.GET("/transcription/status", handler.GetTranscriptionStatus)
 	}
 }
 

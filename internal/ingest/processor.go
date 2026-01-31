@@ -76,6 +76,11 @@ type RecorderInfo struct {
 	UnitAlphaTag  string  `json:"unit_alpha_tag,omitempty"`
 }
 
+// TranscriptionQueuer is the interface for queuing calls for transcription
+type TranscriptionQueuer interface {
+	QueueCall(ctx context.Context, callID int64, duration float32, priority int) error
+}
+
 // Processor handles ingestion of MQTT messages
 type Processor struct {
 	db           *database.DB
@@ -83,6 +88,7 @@ type Processor struct {
 	dedup        *dedup.Engine
 	logger       *zap.Logger
 	hub          *ws.Hub
+	transcriber  TranscriptionQueuer
 	instanceLock sync.RWMutex
 	instances    map[string]int // instanceID -> db ID cache
 	systemLock   sync.RWMutex
@@ -442,6 +448,11 @@ func (p *Processor) cleanupStaleCalls() {
 // SetHub sets the WebSocket hub for broadcasting events
 func (p *Processor) SetHub(hub *ws.Hub) {
 	p.hub = hub
+}
+
+// SetTranscriptionService sets the transcription service for automatic queuing
+func (p *Processor) SetTranscriptionService(svc TranscriptionQueuer) {
+	p.transcriber = svc
 }
 
 // getOrCreateInstance gets the database ID for an instance, creating if needed
