@@ -376,7 +376,7 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		argIdx += 4
 	}
 
-	query := `SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen FROM talkgroups`
+	query := `SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen FROM talkgroups`
 	if len(conditions) > 0 {
 		query += " WHERE " + conditions[0]
 		for i := 1; i < len(conditions); i++ {
@@ -391,15 +391,14 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		defer rows.Close()
 		var results []map[string]interface{}
 		for rows.Next() {
-			var id, tgid, priority int
+			var tgid, priority int
 			var sysid string
 			var alphaTag, description, group, tag, mode *string
 			var firstSeen, lastSeen time.Time
-			if scanErr := rows.Scan(&id, &sysid, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen); scanErr != nil {
+			if scanErr := rows.Scan(&sysid, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen); scanErr != nil {
 				continue
 			}
 			results = append(results, map[string]interface{}{
-				"id":          id,
 				"sysid":       sysid,
 				"tgid":        tgid,
 				"alpha_tag":   alphaTag,
@@ -446,13 +445,13 @@ func (h *Handler) GetTalkgroupEncryptionStats(c *gin.Context) {
 	}
 
 	rows, err := h.db.Pool().Query(c.Request.Context(), `
-		SELECT tg.tgid,
+		SELECT c.tgid,
 			COUNT(*) FILTER (WHERE c.encrypted = true) as encrypted_count,
 			COUNT(*) FILTER (WHERE c.encrypted = false) as clear_count
 		FROM calls c
-		JOIN talkgroups tg ON tg.id = c.talkgroup_id
 		WHERE c.start_time > NOW() - INTERVAL '1 hour' * $1
-		GROUP BY tg.tgid
+			AND c.tgid IS NOT NULL
+		GROUP BY c.tgid
 	`, hours)
 	if err != nil {
 		h.logger.Error("Failed to get encryption stats", zap.Error(err))
@@ -481,10 +480,10 @@ func (h *Handler) GetTalkgroupEncryptionStats(c *gin.Context) {
 
 // GetTalkgroup godoc
 // @Summary      Get a talkgroup
-// @Description  Returns a single talkgroup. Accepts sysid:tgid format (e.g., "348:9178"), plain tgid (returns 409 if ambiguous), or id:123 for database ID
+// @Description  Returns a single talkgroup. Accepts sysid:tgid format (e.g., "348:9178") or plain tgid (returns 409 if ambiguous)
 // @Tags         talkgroups
 // @Produce      json
-// @Param        id   path      string  true  "Talkgroup ID (sysid:tgid, plain tgid, or id:123)"
+// @Param        id   path      string  true  "Talkgroup ID (sysid:tgid or plain tgid)"
 // @Success      200  {object}  models.Talkgroup
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
@@ -494,7 +493,6 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 	idParam := c.Param("id")
 
 	var tg struct {
-		ID          int       `json:"id"`
 		SYSID       string    `json:"sysid"`
 		TGID        int       `json:"tgid"`
 		AlphaTag    *string   `json:"alpha_tag"`
@@ -510,26 +508,6 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 	ctx := c.Request.Context()
 	var err error
 
-	// Check for explicit database ID format: id:123
-	if strings.HasPrefix(idParam, "id:") {
-		idStr := strings.TrimPrefix(idParam, "id:")
-		id, parseErr := strconv.Atoi(idStr)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database ID format"})
-			return
-		}
-		err = h.db.Pool().QueryRow(ctx, `
-			SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-			FROM talkgroups WHERE id = $1
-		`, id).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
-			return
-		}
-		c.JSON(http.StatusOK, tg)
-		return
-	}
-
 	// Check if it's a sysid:tgid format
 	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
 		sysid := parts[0]
@@ -539,9 +517,9 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 			return
 		}
 		err = h.db.Pool().QueryRow(ctx, `
-			SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+			SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
 			FROM talkgroups WHERE sysid = $1 AND tgid = $2
-		`, sysid, tgid).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+		`, sysid, tgid).Scan(&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
 			return
@@ -550,75 +528,44 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 		return
 	}
 
-	// Plain numeric - try as tgid first, check for collisions
+	// Plain numeric - lookup by tgid
 	tgid, parseErr := strconv.Atoi(idParam)
 	if parseErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID"})
 		return
 	}
 
-	// Query all talkgroups with this tgid to detect collisions
+	// Check if this tgid exists in multiple systems
 	rows, err := h.db.Pool().Query(ctx, `
-		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-		FROM talkgroups WHERE tgid = $1
+		SELECT sysid, alpha_tag FROM talkgroups WHERE tgid = $1
 	`, tgid)
 	if err != nil {
-		h.logger.Error("Failed to query talkgroups", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 	defer rows.Close()
 
-	var matches []struct {
-		ID          int       `json:"id"`
-		SYSID       string    `json:"sysid"`
-		TGID        int       `json:"tgid"`
-		AlphaTag    *string   `json:"alpha_tag"`
-		Description *string   `json:"description"`
-		Group       *string   `json:"group"`
-		Tag         *string   `json:"tag"`
-		Priority    int       `json:"priority"`
-		Mode        *string   `json:"mode"`
-		FirstSeen   time.Time `json:"first_seen"`
-		LastSeen    time.Time `json:"last_seen"`
-	}
-
+	var systems []map[string]string
 	for rows.Next() {
-		var m struct {
-			ID          int       `json:"id"`
-			SYSID       string    `json:"sysid"`
-			TGID        int       `json:"tgid"`
-			AlphaTag    *string   `json:"alpha_tag"`
-			Description *string   `json:"description"`
-			Group       *string   `json:"group"`
-			Tag         *string   `json:"tag"`
-			Priority    int       `json:"priority"`
-			Mode        *string   `json:"mode"`
-			FirstSeen   time.Time `json:"first_seen"`
-			LastSeen    time.Time `json:"last_seen"`
-		}
-		if err := rows.Scan(&m.ID, &m.SYSID, &m.TGID, &m.AlphaTag, &m.Description, &m.Group, &m.Tag, &m.Priority, &m.Mode, &m.FirstSeen, &m.LastSeen); err != nil {
+		var sysid string
+		var alphaTag *string
+		if err := rows.Scan(&sysid, &alphaTag); err != nil {
 			continue
 		}
-		matches = append(matches, m)
+		tag := ""
+		if alphaTag != nil {
+			tag = *alphaTag
+		}
+		systems = append(systems, map[string]string{"sysid": sysid, "alpha_tag": tag})
 	}
 
-	if len(matches) == 1 {
-		// Unique match by tgid
-		c.JSON(http.StatusOK, matches[0])
+	if len(systems) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
 		return
 	}
 
-	if len(matches) > 1 {
-		// Collision - return 409 with systems info
-		systems := make([]gin.H, len(matches))
-		for i, m := range matches {
-			sys := gin.H{"sysid": m.SYSID}
-			if m.AlphaTag != nil {
-				sys["alpha_tag"] = *m.AlphaTag
-			}
-			systems[i] = sys
-		}
+	if len(systems) > 1 {
+		// Ambiguous - exists in multiple systems
 		c.JSON(http.StatusConflict, gin.H{
 			"error":      "ambiguous_identifier",
 			"message":    "tgid " + idParam + " exists in multiple systems",
@@ -628,11 +575,11 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 		return
 	}
 
-	// No match by tgid - fall back to database ID lookup
+	// Unique - get full talkgroup details
 	err = h.db.Pool().QueryRow(ctx, `
-		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-		FROM talkgroups WHERE id = $1
-	`, tgid).Scan(&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+		SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE tgid = $1
+	`, tgid).Scan(&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
@@ -644,10 +591,10 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 
 // ListTalkgroupCalls godoc
 // @Summary      List talkgroup calls
-// @Description  Returns calls for a specific talkgroup
+// @Description  Returns calls for a specific talkgroup by TGID
 // @Tags         talkgroups
 // @Produce      json
-// @Param        id          path   int     true   "Talkgroup ID"
+// @Param        id          path   int     true   "Talkgroup ID (TGID)"
 // @Param        start_time  query  string  false  "Start time filter (RFC3339)"
 // @Param        end_time    query  string  false  "End time filter (RFC3339)"
 // @Param        limit       query  int     false  "Results per page"  default(50)
@@ -657,7 +604,8 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /talkgroups/{id}/calls [get]
 func (h *Handler) ListTalkgroupCalls(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+	idParam := c.Param("id")
+	tgid, err := strconv.Atoi(idParam)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID"})
 		return
@@ -666,7 +614,7 @@ func (h *Handler) ListTalkgroupCalls(c *gin.Context) {
 	limit, offset := h.parsePagination(c)
 	startTime, endTime := h.parseTimeRange(c)
 
-	calls, err := h.db.ListCalls(c.Request.Context(), nil, &id, startTime, endTime, limit, offset)
+	calls, err := h.db.ListCalls(c.Request.Context(), nil, &tgid, startTime, endTime, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list calls", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list calls"})
@@ -752,7 +700,7 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		argIdx += 2
 	}
 
-	query := `SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen FROM units`
+	query := `SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen FROM units`
 	if len(conditions) > 0 {
 		query += " WHERE " + conditions[0]
 		for i := 1; i < len(conditions); i++ {
@@ -767,16 +715,14 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		defer rows.Close()
 		var results []map[string]interface{}
 		for rows.Next() {
-			var id int
 			var sysid string
 			var unitID int64
 			var alphaTag, alphaTagSource *string
 			var firstSeen, lastSeen time.Time
-			if scanErr := rows.Scan(&id, &sysid, &unitID, &alphaTag, &alphaTagSource, &firstSeen, &lastSeen); scanErr != nil {
+			if scanErr := rows.Scan(&sysid, &unitID, &alphaTag, &alphaTagSource, &firstSeen, &lastSeen); scanErr != nil {
 				continue
 			}
 			results = append(results, map[string]interface{}{
-				"id":               id,
 				"sysid":            sysid,
 				"unit_id":          unitID,
 				"alpha_tag":        alphaTag,
@@ -812,10 +758,10 @@ func (h *Handler) ListUnits(c *gin.Context) {
 
 // GetUnit godoc
 // @Summary      Get a unit
-// @Description  Returns a single unit. Accepts sysid:unit_id format (e.g., "348:1234567"), plain unit_id (returns 409 if ambiguous), or id:123 for database ID
+// @Description  Returns a single unit. Accepts sysid:unit_id format (e.g., "348:1234567") or plain unit_id (returns 409 if ambiguous across systems)
 // @Tags         units
 // @Produce      json
-// @Param        id   path      string  true  "Unit ID (sysid:unit_id, plain unit_id, or id:123)"
+// @Param        id   path      string  true  "Unit ID (sysid:unit_id or plain unit_id)"
 // @Success      200  {object}  models.Unit
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
@@ -828,28 +774,6 @@ func (h *Handler) GetUnit(c *gin.Context) {
 
 	var unit *models.Unit
 	var err error
-
-	// Check for explicit database ID format: id:123
-	if strings.HasPrefix(idParam, "id:") {
-		idStr := strings.TrimPrefix(idParam, "id:")
-		id, parseErr := strconv.Atoi(idStr)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database ID format"})
-			return
-		}
-		unit, err = h.db.GetUnitByID(ctx, id)
-		if err != nil {
-			h.logger.Error("Failed to get unit", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get unit"})
-			return
-		}
-		if unit == nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Unit not found"})
-			return
-		}
-		c.JSON(http.StatusOK, unit)
-		return
-	}
 
 	// Check if it's a sysid:unit_id format
 	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
@@ -873,50 +797,44 @@ func (h *Handler) GetUnit(c *gin.Context) {
 		return
 	}
 
-	// Plain numeric - try as unit_id (radio ID) first, check for collisions
+	// Plain numeric - lookup by unit_id
 	unitRID, parseErr := strconv.ParseInt(idParam, 10, 64)
 	if parseErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
 		return
 	}
 
-	// Query all units with this unit_id to detect collisions
+	// Check if this unit_id exists in multiple systems
 	rows, err := h.db.Pool().Query(ctx, `
-		SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
-		FROM units WHERE unit_id = $1
+		SELECT sysid, alpha_tag FROM units WHERE unit_id = $1
 	`, unitRID)
 	if err != nil {
-		h.logger.Error("Failed to query units", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 	defer rows.Close()
 
-	var matches []*models.Unit
+	var systems []map[string]string
 	for rows.Next() {
-		var u models.Unit
-		if err := rows.Scan(&u.ID, &u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
+		var sysid string
+		var alphaTag *string
+		if err := rows.Scan(&sysid, &alphaTag); err != nil {
 			continue
 		}
-		matches = append(matches, &u)
+		tag := ""
+		if alphaTag != nil {
+			tag = *alphaTag
+		}
+		systems = append(systems, map[string]string{"sysid": sysid, "alpha_tag": tag})
 	}
 
-	if len(matches) == 1 {
-		// Unique match by unit_id
-		c.JSON(http.StatusOK, matches[0])
+	if len(systems) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Unit not found"})
 		return
 	}
 
-	if len(matches) > 1 {
-		// Collision - return 409 with systems info
-		systems := make([]gin.H, len(matches))
-		for i, m := range matches {
-			sys := gin.H{"sysid": m.SYSID}
-			if m.AlphaTag != "" {
-				sys["alpha_tag"] = m.AlphaTag
-			}
-			systems[i] = sys
-		}
+	if len(systems) > 1 {
+		// Ambiguous - exists in multiple systems
 		c.JSON(http.StatusConflict, gin.H{
 			"error":      "ambiguous_identifier",
 			"message":    "unit_id " + idParam + " exists in multiple systems",
@@ -926,15 +844,14 @@ func (h *Handler) GetUnit(c *gin.Context) {
 		return
 	}
 
-	// No match by unit_id - fall back to database ID lookup
-	dbID, _ := strconv.Atoi(idParam) // Already validated as numeric above
-	unit, err = h.db.GetUnitByID(ctx, dbID)
+	// Unique - get full unit details
+	unit = &models.Unit{}
+	err = h.db.Pool().QueryRow(ctx, `
+		SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		FROM units WHERE unit_id = $1
+	`, unitRID).Scan(&unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen)
+
 	if err != nil {
-		h.logger.Error("Failed to get unit", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get unit"})
-		return
-	}
-	if unit == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Unit not found"})
 		return
 	}
@@ -944,10 +861,10 @@ func (h *Handler) GetUnit(c *gin.Context) {
 
 // ListUnitEvents godoc
 // @Summary      List unit events
-// @Description  Returns events (affiliations, registrations, etc.) for a specific unit
+// @Description  Returns events (affiliations, registrations, etc.) for a specific unit by radio ID
 // @Tags         units
 // @Produce      json
-// @Param        id          path   int     true   "Unit ID"
+// @Param        id          path   int     true   "Unit radio ID (RID)"
 // @Param        type        query  string  false  "Filter by event type (on, off, join, call, etc.)"
 // @Param        talkgroup   query  int     false  "Filter by talkgroup ID (TGID)"
 // @Param        start_time  query  string  false  "Start time filter (RFC3339)"
@@ -959,7 +876,9 @@ func (h *Handler) GetUnit(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /units/{id}/events [get]
 func (h *Handler) ListUnitEvents(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+	idParam := c.Param("id")
+	// Parse unit_id (the radio ID, not a database ID)
+	unitRID, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
 		return
@@ -980,7 +899,7 @@ func (h *Handler) ListUnitEvents(c *gin.Context) {
 		}
 	}
 
-	events, err := h.db.ListUnitEvents(c.Request.Context(), &id, nil, eventType, tgid, startTime, endTime, limit, offset)
+	events, err := h.db.ListUnitEvents(c.Request.Context(), &unitRID, nil, eventType, tgid, startTime, endTime, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list unit events", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list unit events"})
@@ -997,10 +916,10 @@ func (h *Handler) ListUnitEvents(c *gin.Context) {
 
 // ListUnitCalls godoc
 // @Summary      List unit calls
-// @Description  Returns calls that include transmissions from a specific unit
+// @Description  Returns calls that include transmissions from a specific unit by radio ID
 // @Tags         units
 // @Produce      json
-// @Param        id          path   int     true   "Unit ID"
+// @Param        id          path   int     true   "Unit radio ID (RID)"
 // @Param        start_time  query  string  false  "Start time filter (RFC3339)"
 // @Param        end_time    query  string  false  "End time filter (RFC3339)"
 // @Param        limit       query  int     false  "Results per page"  default(50)
@@ -1010,7 +929,8 @@ func (h *Handler) ListUnitEvents(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /units/{id}/calls [get]
 func (h *Handler) ListUnitCalls(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
 		return
@@ -1021,14 +941,14 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 
 	// Query calls that have transmissions from this unit
 	query := `
-		SELECT DISTINCT c.id, c.call_group_id, c.instance_id, c.system_id, c.talkgroup_id,
+		SELECT DISTINCT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid,
 			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
 			c.encrypted, c.emergency, c.freq, c.audio_path,
-			tg.tgid, tg.alpha_tag
+			tg.alpha_tag
 		FROM calls c
 		JOIN transmissions t ON t.call_id = c.id
-		LEFT JOIN talkgroups tg ON tg.id = c.talkgroup_id
-		WHERE t.unit_id = $1
+		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
+		WHERE t.unit_rid = $1
 	`
 	args := []interface{}{id}
 	argNum := 2
@@ -1063,7 +983,9 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 	callIdx := make(map[int64]int)
 	for rows.Next() {
 		var callID, instanceID, systemID int64
-		var callGroupID, talkgroupID *int64
+		var callGroupID *int64
+		var tgSysid *string
+		var tgid *int
 		var trCallID, audioPath *string
 		var callNum int64
 		var startTime time.Time
@@ -1071,13 +993,12 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 		var duration float32
 		var encrypted, emergency bool
 		var freq int64
-		var tgid *int64
 		var tgAlphaTag *string
 
-		if err := rows.Scan(&callID, &callGroupID, &instanceID, &systemID, &talkgroupID,
+		if err := rows.Scan(&callID, &callGroupID, &instanceID, &systemID, &tgSysid, &tgid,
 			&trCallID, &callNum, &startTime, &stopTime, &duration,
 			&encrypted, &emergency, &freq, &audioPath,
-			&tgid, &tgAlphaTag); err != nil {
+			&tgAlphaTag); err != nil {
 			continue
 		}
 
@@ -1086,7 +1007,6 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 			"call_group_id": callGroupID,
 			"instance_id":   instanceID,
 			"system_id":     systemID,
-			"talkgroup_id":  talkgroupID,
 			"tr_call_id":    trCallID,
 			"call_num":      callNum,
 			"start_time":    startTime,
@@ -1100,6 +1020,9 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 		// Add audio_url if audio exists
 		if audioPath != nil && *audioPath != "" {
 			call["audio_url"] = "/api/v1/calls/" + strconv.FormatInt(callID, 10) + "/audio"
+		}
+		if tgSysid != nil {
+			call["tg_sysid"] = *tgSysid
 		}
 		if tgid != nil {
 			call["tgid"] = *tgid
@@ -1117,7 +1040,7 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 		unitQuery := `
 			SELECT DISTINCT t.call_id, t.unit_rid, COALESCE(u.alpha_tag, '') as alpha_tag
 			FROM transmissions t
-			LEFT JOIN units u ON u.id = t.unit_id
+			LEFT JOIN units u ON u.sysid = t.unit_sysid AND u.unit_id = t.unit_rid
 			WHERE t.call_id = ANY($1)
 			ORDER BY t.call_id, t.unit_rid
 		`
@@ -1374,7 +1297,7 @@ func (h *Handler) ListCallGroups(c *gin.Context) {
 	startTime, endTime := h.parseTimeRange(c)
 
 	query := `
-		SELECT id, system_id, talkgroup_id, tgid, start_time, end_time, primary_call_id, call_count, encrypted, emergency
+		SELECT id, system_id, tg_sysid, tgid, start_time, end_time, primary_call_id, call_count, encrypted, emergency
 		FROM call_groups WHERE 1=1
 	`
 	args := []interface{}{}
@@ -1409,7 +1332,7 @@ func (h *Handler) ListCallGroups(c *gin.Context) {
 	for rows.Next() {
 		var id int64
 		var systemID int
-		var talkgroupID *int
+		var tgSysid *string
 		var tgid int
 		var startTime time.Time
 		var endTime *time.Time
@@ -1417,14 +1340,14 @@ func (h *Handler) ListCallGroups(c *gin.Context) {
 		var callCount int
 		var encrypted, emergency bool
 
-		if err := rows.Scan(&id, &systemID, &talkgroupID, &tgid, &startTime, &endTime, &primaryCallID, &callCount, &encrypted, &emergency); err != nil {
+		if err := rows.Scan(&id, &systemID, &tgSysid, &tgid, &startTime, &endTime, &primaryCallID, &callCount, &encrypted, &emergency); err != nil {
 			continue
 		}
 
 		groups = append(groups, map[string]interface{}{
 			"id":              id,
 			"system_id":       systemID,
-			"talkgroup_id":    talkgroupID,
+			"tg_sysid":        tgSysid,
 			"tgid":            tgid,
 			"start_time":      startTime,
 			"end_time":        endTime,
@@ -1465,7 +1388,7 @@ func (h *Handler) GetCallGroup(c *gin.Context) {
 	var group struct {
 		ID            int64      `json:"id"`
 		SystemID      int        `json:"system_id"`
-		TalkgroupID   *int       `json:"talkgroup_id"`
+		TgSysid       *string    `json:"tg_sysid"`
 		TGID          int        `json:"tgid"`
 		StartTime     time.Time  `json:"start_time"`
 		EndTime       *time.Time `json:"end_time"`
@@ -1476,9 +1399,9 @@ func (h *Handler) GetCallGroup(c *gin.Context) {
 	}
 
 	err = h.db.Pool().QueryRow(c.Request.Context(), `
-		SELECT id, system_id, talkgroup_id, tgid, start_time, end_time, primary_call_id, call_count, encrypted, emergency
+		SELECT id, system_id, tg_sysid, tgid, start_time, end_time, primary_call_id, call_count, encrypted, emergency
 		FROM call_groups WHERE id = $1
-	`, id).Scan(&group.ID, &group.SystemID, &group.TalkgroupID, &group.TGID, &group.StartTime, &group.EndTime, &group.PrimaryCallID, &group.CallCount, &group.Encrypted, &group.Emergency)
+	`, id).Scan(&group.ID, &group.SystemID, &group.TgSysid, &group.TGID, &group.StartTime, &group.EndTime, &group.PrimaryCallID, &group.CallCount, &group.Encrypted, &group.Emergency)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Call group not found"})
@@ -1797,7 +1720,7 @@ func (h *Handler) ListActiveCalls(c *gin.Context) {
 
 	if t := c.Query("talkgroup"); t != "" {
 		if id, err := strconv.Atoi(t); err == nil {
-			filters.TalkgroupID = &id
+			filters.TGID = &id
 		}
 	}
 
@@ -1876,7 +1799,7 @@ func (h *Handler) ListActiveUnits(c *gin.Context) {
 
 	if t := c.Query("talkgroup"); t != "" {
 		if id, err := strconv.Atoi(t); err == nil {
-			filters.TalkgroupID = &id
+			filters.TGID = &id
 		}
 	}
 
@@ -1936,4 +1859,199 @@ func (h *Handler) ListRecorders(c *gin.Context) {
 		"recorders": []interface{}{},
 		"count":     0,
 	})
+}
+
+// ============================================================================
+// Transcription endpoints
+// ============================================================================
+
+// GetCallTranscription godoc
+// @Summary      Get call transcription
+// @Description  Returns the transcription for a specific call
+// @Tags         calls
+// @Produce      json
+// @Param        id   path      string  true  "Call ID (tr_call_id or numeric ID)"
+// @Success      200  {object}  models.Transcription
+// @Failure      404  {object}  rest.ErrorResponse
+// @Failure      500  {object}  rest.ErrorResponse
+// @Router       /calls/{id}/transcription [get]
+func (h *Handler) GetCallTranscription(c *gin.Context) {
+	call, err := h.resolveCall(c)
+	if err != nil {
+		h.logger.Error("Failed to get call", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get call"})
+		return
+	}
+	if call == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Call not found"})
+		return
+	}
+
+	transcription, err := h.db.GetTranscriptionByCallID(c.Request.Context(), call.ID)
+	if err != nil {
+		h.logger.Error("Failed to get transcription", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transcription"})
+		return
+	}
+	if transcription == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No transcription available for this call"})
+		return
+	}
+
+	// Include call duration for word timeline rendering
+	transcription.CallDuration = call.Duration
+
+	c.JSON(http.StatusOK, transcription)
+}
+
+// TranscribeCallRequest represents a request to queue a call for transcription
+type TranscribeCallRequest struct {
+	Priority int `json:"priority"`
+}
+
+// QueueCallTranscription godoc
+// @Summary      Queue call for transcription
+// @Description  Queues a call for transcription (or re-transcription)
+// @Tags         calls
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Call ID (tr_call_id or numeric ID)"
+// @Param        body body      rest.TranscribeCallRequest  false  "Request body"
+// @Success      202  {object}  map[string]interface{}
+// @Failure      400  {object}  rest.ErrorResponse
+// @Failure      404  {object}  rest.ErrorResponse
+// @Failure      500  {object}  rest.ErrorResponse
+// @Router       /calls/{id}/transcribe [post]
+func (h *Handler) QueueCallTranscription(c *gin.Context) {
+	call, err := h.resolveCall(c)
+	if err != nil {
+		h.logger.Error("Failed to get call", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get call"})
+		return
+	}
+	if call == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Call not found"})
+		return
+	}
+
+	if call.AudioPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Call has no audio"})
+		return
+	}
+
+	var req TranscribeCallRequest
+	c.ShouldBindJSON(&req) // Ignore errors, use defaults
+
+	priority := req.Priority
+	if priority < 0 {
+		priority = 0
+	}
+	if priority > 100 {
+		priority = 100
+	}
+
+	if err := h.db.QueueTranscription(c.Request.Context(), call.ID, priority); err != nil {
+		h.logger.Error("Failed to queue transcription", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue transcription"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"message":  "Call queued for transcription",
+		"call_id":  call.ID,
+		"priority": priority,
+	})
+}
+
+// GetRecentTranscriptions godoc
+// @Summary      Get recent transcriptions
+// @Description  Returns recently created transcriptions with call context
+// @Tags         transcriptions
+// @Produce      json
+// @Param        limit   query  int     false  "Max results"  default(20)
+// @Param        offset  query  int     false  "Page offset"  default(0)
+// @Success      200  {object}  map[string]interface{}
+// @Failure      500  {object}  rest.ErrorResponse
+// @Router       /transcriptions/recent [get]
+func (h *Handler) GetRecentTranscriptions(c *gin.Context) {
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+	offset := 0
+	if o := c.Query("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	transcriptions, err := h.db.ListRecentTranscriptions(c.Request.Context(), limit, offset)
+	if err != nil {
+		h.logger.Error("Failed to get recent transcriptions", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get recent transcriptions"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"transcriptions": transcriptions,
+		"count":          len(transcriptions),
+	})
+}
+
+// SearchTranscriptions godoc
+// @Summary      Search transcriptions
+// @Description  Full-text search across all transcriptions
+// @Tags         transcriptions
+// @Produce      json
+// @Param        q       query  string  true   "Search query"
+// @Param        limit   query  int     false  "Results per page"  default(50)
+// @Param        offset  query  int     false  "Page offset"       default(0)
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  rest.ErrorResponse
+// @Failure      500  {object}  rest.ErrorResponse
+// @Router       /transcriptions/search [get]
+func (h *Handler) SearchTranscriptions(c *gin.Context) {
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Search query 'q' is required"})
+		return
+	}
+
+	limit, offset := h.parsePagination(c)
+
+	transcriptions, err := h.db.SearchTranscriptions(c.Request.Context(), query, limit, offset)
+	if err != nil {
+		h.logger.Error("Failed to search transcriptions", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search transcriptions"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"transcriptions": transcriptions,
+		"count":          len(transcriptions),
+		"query":          query,
+		"limit":          limit,
+		"offset":         offset,
+	})
+}
+
+// GetTranscriptionStatus godoc
+// @Summary      Get transcription queue status
+// @Description  Returns statistics about the transcription queue
+// @Tags         transcriptions
+// @Produce      json
+// @Success      200  {object}  database.TranscriptionQueueStats
+// @Failure      500  {object}  rest.ErrorResponse
+// @Router       /transcription/status [get]
+func (h *Handler) GetTranscriptionStatus(c *gin.Context) {
+	stats, err := h.db.GetTranscriptionQueueStats(c.Request.Context())
+	if err != nil {
+		h.logger.Error("Failed to get transcription status", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transcription status"})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
 }

@@ -1,5 +1,16 @@
 basePath: /api/v1
 definitions:
+  database.TranscriptionQueueStats:
+    properties:
+      completed:
+        type: integer
+      failed:
+        type: integer
+      pending:
+        type: integer
+      processing:
+        type: integer
+    type: object
   ingest.RecorderInfo:
     properties:
       count:
@@ -124,14 +135,14 @@ definitions:
       system_id:
         example: 1
         type: integer
-      talkgroup_id:
-        example: 1
-        type: integer
       tdma_slot:
         example: 0
         type: integer
       tg_alpha_tag:
         example: 09-8L Main
+        type: string
+      tg_sysid:
+        example: "348"
         type: string
       tgid:
         description: Joined fields (not stored in calls table)
@@ -206,9 +217,6 @@ definitions:
       group:
         example: Fire
         type: string
-      id:
-        example: 1
-        type: integer
       last_seen:
         example: "2024-01-15T12:30:00Z"
         type: string
@@ -228,6 +236,63 @@ definitions:
         example: 1001
         type: integer
     type: object
+  models.Transcription:
+    description: A transcription of a radio call's audio content
+    properties:
+      call_duration:
+        description: seconds, for word timeline rendering
+        example: 15.5
+        type: number
+      call_id:
+        example: 123
+        type: integer
+      confidence:
+        example: 0.95
+        type: number
+      created_at:
+        example: "2024-01-15T12:30:00Z"
+        type: string
+      duration_ms:
+        example: 1500
+        type: integer
+      id:
+        example: 1
+        type: integer
+      language:
+        example: en
+        type: string
+      model:
+        example: whisper-1
+        type: string
+      provider:
+        example: openai
+        type: string
+      text:
+        example: Engine 5 responding to the scene
+        type: string
+      word_count:
+        example: 6
+        type: integer
+      words:
+        items:
+          $ref: '#/definitions/models.TranscriptionWord'
+        type: array
+    type: object
+  models.TranscriptionWord:
+    description: A word from the transcription with start and end times
+    properties:
+      end:
+        description: seconds from start of audio
+        example: 0.85
+        type: number
+      start:
+        description: seconds from start of audio
+        example: 0.5
+        type: number
+      word:
+        example: Engine
+        type: string
+    type: object
   models.Unit:
     description: A radio unit (mobile or portable radio), unique within a SYSID
     properties:
@@ -240,9 +305,6 @@ definitions:
       first_seen:
         example: "2024-01-01T00:00:00Z"
         type: string
-      id:
-        example: 1
-        type: integer
       last_event_tg_tag:
         example: 09-8L Main
         type: string
@@ -282,21 +344,21 @@ definitions:
       system_id:
         example: 1
         type: integer
-      talkgroup_id:
-        example: 1
-        type: integer
+      tg_sysid:
+        example: "348"
+        type: string
       tgid:
         example: 1001
         type: integer
       time:
         example: "2024-01-15T10:30:00Z"
         type: string
-      unit_id:
-        example: 1
-        type: integer
       unit_rid:
         example: 1234567
         type: integer
+      unit_sysid:
+        example: "348"
+        type: string
     type: object
   rest.ActiveUnitListResponse:
     properties:
@@ -406,6 +468,11 @@ definitions:
         example: 0
         type: integer
       talkgroups: {}
+    type: object
+  rest.TranscribeCallRequest:
+    properties:
+      priority:
+        type: integer
     type: object
   rest.UnitEventListResponse:
     properties:
@@ -655,6 +722,72 @@ paths:
           schema:
             $ref: '#/definitions/rest.ErrorResponse'
       summary: Get call frequencies
+      tags:
+      - calls
+  /calls/{id}/transcribe:
+    post:
+      consumes:
+      - application/json
+      description: Queues a call for transcription (or re-transcription)
+      parameters:
+      - description: Call ID (tr_call_id or numeric ID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Request body
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/rest.TranscribeCallRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Queue call for transcription
+      tags:
+      - calls
+  /calls/{id}/transcription:
+    get:
+      description: Returns the transcription for a specific call
+      parameters:
+      - description: Call ID (tr_call_id or numeric ID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Transcription'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get call transcription
       tags:
       - calls
   /calls/{id}/transmissions:
@@ -968,10 +1101,10 @@ paths:
       - talkgroups
   /talkgroups/{id}:
     get:
-      description: Returns a single talkgroup. Accepts sysid:tgid format (e.g., "348:9178"),
-        plain tgid (returns 409 if ambiguous), or id:123 for database ID
+      description: Returns a single talkgroup. Accepts sysid:tgid format (e.g., "348:9178")
+        or plain tgid (returns 409 if ambiguous)
       parameters:
-      - description: Talkgroup ID (sysid:tgid, plain tgid, or id:123)
+      - description: Talkgroup ID (sysid:tgid or plain tgid)
         in: path
         name: id
         required: true
@@ -1000,9 +1133,9 @@ paths:
       - talkgroups
   /talkgroups/{id}/calls:
     get:
-      description: Returns calls for a specific talkgroup
+      description: Returns calls for a specific talkgroup by TGID
       parameters:
-      - description: Talkgroup ID
+      - description: Talkgroup ID (TGID)
         in: path
         name: id
         required: true
@@ -1067,6 +1200,90 @@ paths:
       summary: Get encryption stats per talkgroup
       tags:
       - talkgroups
+  /transcription/status:
+    get:
+      description: Returns statistics about the transcription queue
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/database.TranscriptionQueueStats'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get transcription queue status
+      tags:
+      - transcriptions
+  /transcriptions/recent:
+    get:
+      description: Returns recently created transcriptions with call context
+      parameters:
+      - default: 20
+        description: Max results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Get recent transcriptions
+      tags:
+      - transcriptions
+  /transcriptions/search:
+    get:
+      description: Full-text search across all transcriptions
+      parameters:
+      - description: Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      - default: 50
+        description: Results per page
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: Search transcriptions
+      tags:
+      - transcriptions
   /units:
     get:
       description: Returns all radio units, optionally filtered by SYSID
@@ -1101,10 +1318,10 @@ paths:
       - units
   /units/{id}:
     get:
-      description: Returns a single unit. Accepts sysid:unit_id format (e.g., "348:1234567"),
-        plain unit_id (returns 409 if ambiguous), or id:123 for database ID
+      description: Returns a single unit. Accepts sysid:unit_id format (e.g., "348:1234567")
+        or plain unit_id (returns 409 if ambiguous across systems)
       parameters:
-      - description: Unit ID (sysid:unit_id, plain unit_id, or id:123)
+      - description: Unit ID (sysid:unit_id or plain unit_id)
         in: path
         name: id
         required: true
@@ -1137,9 +1354,10 @@ paths:
       - units
   /units/{id}/calls:
     get:
-      description: Returns calls that include transmissions from a specific unit
+      description: Returns calls that include transmissions from a specific unit by
+        radio ID
       parameters:
-      - description: Unit ID
+      - description: Unit radio ID (RID)
         in: path
         name: id
         required: true
@@ -1183,9 +1401,9 @@ paths:
   /units/{id}/events:
     get:
       description: Returns events (affiliations, registrations, etc.) for a specific
-        unit
+        unit by radio ID
       parameters:
-      - description: Unit ID
+      - description: Unit radio ID (RID)
         in: path
         name: id
         required: true

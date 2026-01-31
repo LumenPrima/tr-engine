@@ -41,7 +41,7 @@ func runTests(m *testing.M) int {
 	return m.Run()
 }
 
-func setupTestData(t *testing.T, db *testutil.TestDB) (systemID int, tgID int) {
+func setupTestData(t *testing.T, db *testutil.TestDB) (systemID int, sysid string, tgid int) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -55,22 +55,23 @@ func setupTestData(t *testing.T, db *testutil.TestDB) (systemID int, tgID int) {
 	require.NoError(t, err)
 
 	// Insert test system
+	sysid = "TEST"
 	err = db.Pool.QueryRow(ctx, `
-		INSERT INTO systems (instance_id, sys_num, short_name, system_type)
-		VALUES ($1, 1, 'TEST', 'P25')
+		INSERT INTO systems (instance_id, sys_num, short_name, system_type, sysid)
+		VALUES ($1, 1, 'TEST', 'P25', $2)
 		RETURNING id
-	`, instanceID).Scan(&systemID)
+	`, instanceID, sysid).Scan(&systemID)
 	require.NoError(t, err)
 
-	// Insert test talkgroup
-	err = db.Pool.QueryRow(ctx, `
-		INSERT INTO talkgroups (system_id, tgid, alpha_tag, first_seen, last_seen)
-		VALUES ($1, 12345, 'Test TG', NOW(), NOW())
-		RETURNING id
-	`, systemID).Scan(&tgID)
+	// Insert test talkgroup (natural key: sysid, tgid)
+	tgid = 12345
+	_, err = db.Pool.Exec(ctx, `
+		INSERT INTO talkgroups (sysid, tgid, alpha_tag, first_seen, last_seen)
+		VALUES ($1, $2, 'Test TG', NOW(), NOW())
+	`, sysid, tgid)
 	require.NoError(t, err)
 
-	return systemID, tgID
+	return systemID, sysid, tgid
 }
 
 func TestEngine_IsEnabled(t *testing.T) {

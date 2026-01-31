@@ -450,6 +450,106 @@ const docTemplate = `{
                 }
             }
         },
+        "/calls/{id}/transcribe": {
+            "post": {
+                "description": "Queues a call for transcription (or re-transcription)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "calls"
+                ],
+                "summary": "Queue call for transcription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Call ID (tr_call_id or numeric ID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Request body",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/rest.TranscribeCallRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/calls/{id}/transcription": {
+            "get": {
+                "description": "Returns the transcription for a specific call",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "calls"
+                ],
+                "summary": "Get call transcription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Call ID (tr_call_id or numeric ID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Transcription"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/calls/{id}/transmissions": {
             "get": {
                 "description": "Returns the list of unit transmissions (srcList) within a call, ordered by position in the audio",
@@ -824,7 +924,7 @@ const docTemplate = `{
         },
         "/talkgroups/{id}": {
             "get": {
-                "description": "Returns a single talkgroup. Accepts sysid:tgid format (e.g., \"348:9178\"), plain tgid (returns 409 if ambiguous), or id:123 for database ID",
+                "description": "Returns a single talkgroup. Accepts sysid:tgid format (e.g., \"348:9178\") or plain tgid (returns 409 if ambiguous)",
                 "produces": [
                     "application/json"
                 ],
@@ -835,7 +935,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Talkgroup ID (sysid:tgid, plain tgid, or id:123)",
+                        "description": "Talkgroup ID (sysid:tgid or plain tgid)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -871,7 +971,7 @@ const docTemplate = `{
         },
         "/talkgroups/{id}/calls": {
             "get": {
-                "description": "Returns calls for a specific talkgroup",
+                "description": "Returns calls for a specific talkgroup by TGID",
                 "produces": [
                     "application/json"
                 ],
@@ -882,7 +982,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Talkgroup ID",
+                        "description": "Talkgroup ID (TGID)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -919,6 +1019,131 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/rest.CallListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/transcription/status": {
+            "get": {
+                "description": "Returns statistics about the transcription queue",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transcriptions"
+                ],
+                "summary": "Get transcription queue status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/database.TranscriptionQueueStats"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/transcriptions/recent": {
+            "get": {
+                "description": "Returns recently created transcriptions with call context",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transcriptions"
+                ],
+                "summary": "Get recent transcriptions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Max results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/transcriptions/search": {
+            "get": {
+                "description": "Full-text search across all transcriptions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transcriptions"
+                ],
+                "summary": "Search transcriptions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Results per page",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -1059,7 +1284,7 @@ const docTemplate = `{
         },
         "/units/{id}": {
             "get": {
-                "description": "Returns a single unit. Accepts sysid:unit_id format (e.g., \"348:1234567\"), plain unit_id (returns 409 if ambiguous), or id:123 for database ID",
+                "description": "Returns a single unit. Accepts sysid:unit_id format (e.g., \"348:1234567\") or plain unit_id (returns 409 if ambiguous across systems)",
                 "produces": [
                     "application/json"
                 ],
@@ -1070,7 +1295,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Unit ID (sysid:unit_id, plain unit_id, or id:123)",
+                        "description": "Unit ID (sysid:unit_id or plain unit_id)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1112,7 +1337,7 @@ const docTemplate = `{
         },
         "/units/{id}/calls": {
             "get": {
-                "description": "Returns calls that include transmissions from a specific unit",
+                "description": "Returns calls that include transmissions from a specific unit by radio ID",
                 "produces": [
                     "application/json"
                 ],
@@ -1123,7 +1348,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Unit ID",
+                        "description": "Unit radio ID (RID)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1179,7 +1404,7 @@ const docTemplate = `{
         },
         "/units/{id}/events": {
             "get": {
-                "description": "Returns events (affiliations, registrations, etc.) for a specific unit",
+                "description": "Returns events (affiliations, registrations, etc.) for a specific unit by radio ID",
                 "produces": [
                     "application/json"
                 ],
@@ -1190,7 +1415,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Unit ID",
+                        "description": "Unit radio ID (RID)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1258,6 +1483,23 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "database.TranscriptionQueueStats": {
+            "type": "object",
+            "properties": {
+                "completed": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "processing": {
+                    "type": "integer"
+                }
+            }
+        },
         "ingest.RecorderInfo": {
             "type": "object",
             "properties": {
@@ -1428,10 +1670,6 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
-                "talkgroup_id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "tdma_slot": {
                     "type": "integer",
                     "example": 0
@@ -1439,6 +1677,10 @@ const docTemplate = `{
                 "tg_alpha_tag": {
                     "type": "string",
                     "example": "09-8L Main"
+                },
+                "tg_sysid": {
+                    "type": "string",
+                    "example": "348"
                 },
                 "tgid": {
                     "description": "Joined fields (not stored in calls table)",
@@ -1540,10 +1782,6 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Fire"
                 },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "last_seen": {
                     "type": "string",
                     "example": "2024-01-15T12:30:00Z"
@@ -1570,6 +1808,83 @@ const docTemplate = `{
                 }
             }
         },
+        "models.Transcription": {
+            "description": "A transcription of a radio call's audio content",
+            "type": "object",
+            "properties": {
+                "call_duration": {
+                    "description": "seconds, for word timeline rendering",
+                    "type": "number",
+                    "example": 15.5
+                },
+                "call_id": {
+                    "type": "integer",
+                    "example": 123
+                },
+                "confidence": {
+                    "type": "number",
+                    "example": 0.95
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2024-01-15T12:30:00Z"
+                },
+                "duration_ms": {
+                    "type": "integer",
+                    "example": 1500
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "language": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "whisper-1"
+                },
+                "provider": {
+                    "type": "string",
+                    "example": "openai"
+                },
+                "text": {
+                    "type": "string",
+                    "example": "Engine 5 responding to the scene"
+                },
+                "word_count": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "words": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.TranscriptionWord"
+                    }
+                }
+            }
+        },
+        "models.TranscriptionWord": {
+            "description": "A word from the transcription with start and end times",
+            "type": "object",
+            "properties": {
+                "end": {
+                    "description": "seconds from start of audio",
+                    "type": "number",
+                    "example": 0.85
+                },
+                "start": {
+                    "description": "seconds from start of audio",
+                    "type": "number",
+                    "example": 0.5
+                },
+                "word": {
+                    "type": "string",
+                    "example": "Engine"
+                }
+            }
+        },
         "models.Unit": {
             "description": "A radio unit (mobile or portable radio), unique within a SYSID",
             "type": "object",
@@ -1585,10 +1900,6 @@ const docTemplate = `{
                 "first_seen": {
                     "type": "string",
                     "example": "2024-01-01T00:00:00Z"
-                },
-                "id": {
-                    "type": "integer",
-                    "example": 1
                 },
                 "last_event_tg_tag": {
                     "type": "string",
@@ -1643,9 +1954,9 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
-                "talkgroup_id": {
-                    "type": "integer",
-                    "example": 1
+                "tg_sysid": {
+                    "type": "string",
+                    "example": "348"
                 },
                 "tgid": {
                     "type": "integer",
@@ -1655,13 +1966,13 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2024-01-15T10:30:00Z"
                 },
-                "unit_id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "unit_rid": {
                     "type": "integer",
                     "example": 1234567
+                },
+                "unit_sysid": {
+                    "type": "string",
+                    "example": "348"
                 }
             }
         },
@@ -1817,6 +2128,14 @@ const docTemplate = `{
                     "example": 0
                 },
                 "talkgroups": {}
+            }
+        },
+        "rest.TranscribeCallRequest": {
+            "type": "object",
+            "properties": {
+                "priority": {
+                    "type": "integer"
+                }
             }
         },
         "rest.UnitEventListResponse": {

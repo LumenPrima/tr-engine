@@ -47,9 +47,8 @@ CREATE TABLE IF NOT EXISTS systems (
 CREATE INDEX IF NOT EXISTS idx_systems_short_name ON systems(short_name);
 
 -- Talkgroups (loaded from talkgroup files or discovered)
--- Unique within SYSID, not per-site
+-- Unique within SYSID, keyed by natural composite (sysid, tgid)
 CREATE TABLE IF NOT EXISTS talkgroups (
-    id              SERIAL PRIMARY KEY,
     sysid           VARCHAR(16) NOT NULL,
     tgid            INTEGER NOT NULL,
     alpha_tag       VARCHAR(255),
@@ -60,49 +59,44 @@ CREATE TABLE IF NOT EXISTS talkgroups (
     mode            VARCHAR(16),
     first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(sysid, tgid)
+    PRIMARY KEY (sysid, tgid)
 );
 
 CREATE INDEX IF NOT EXISTS idx_talkgroups_last_seen ON talkgroups(last_seen DESC);
-CREATE INDEX IF NOT EXISTS idx_talkgroups_sysid ON talkgroups(sysid);
 
 -- Junction table: which sites have seen each talkgroup
 CREATE TABLE IF NOT EXISTS talkgroup_sites (
-    talkgroup_id    INTEGER NOT NULL REFERENCES talkgroups(id) ON DELETE CASCADE,
+    sysid           VARCHAR(16) NOT NULL,
+    tgid            INTEGER NOT NULL,
     system_id       INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
     first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (talkgroup_id, system_id)
+    PRIMARY KEY (sysid, tgid, system_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_talkgroup_sites_system ON talkgroup_sites(system_id);
-
 -- Radio units
--- Unique within SYSID, not per-site
+-- Unique within SYSID, keyed by natural composite (sysid, unit_id)
 CREATE TABLE IF NOT EXISTS units (
-    id              SERIAL PRIMARY KEY,
     sysid           VARCHAR(16) NOT NULL,
     unit_id         BIGINT NOT NULL,
     alpha_tag       VARCHAR(255),
     alpha_tag_source VARCHAR(32),
     first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(sysid, unit_id)
+    PRIMARY KEY (sysid, unit_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_units_last_seen ON units(last_seen DESC);
-CREATE INDEX IF NOT EXISTS idx_units_sysid ON units(sysid);
 
 -- Junction table: which sites have seen each unit
 CREATE TABLE IF NOT EXISTS unit_sites (
-    unit_id         INTEGER NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+    sysid           VARCHAR(16) NOT NULL,
+    rid             BIGINT NOT NULL,
     system_id       INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
     first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (unit_id, system_id)
+    PRIMARY KEY (sysid, rid, system_id)
 );
-
-CREATE INDEX IF NOT EXISTS idx_unit_sites_system ON unit_sites(system_id);
 
 -- Recorders from each instance
 CREATE TABLE IF NOT EXISTS recorders (
@@ -119,7 +113,7 @@ CREATE TABLE IF NOT EXISTS recorders (
 CREATE TABLE IF NOT EXISTS call_groups (
     id              BIGSERIAL PRIMARY KEY,
     system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
-    talkgroup_id    INTEGER REFERENCES talkgroups(id) ON DELETE SET NULL,
+    tg_sysid        VARCHAR(16),
     tgid            INTEGER NOT NULL,
     start_time      TIMESTAMPTZ NOT NULL,
     end_time        TIMESTAMPTZ,
@@ -129,7 +123,7 @@ CREATE TABLE IF NOT EXISTS call_groups (
     emergency       BOOLEAN DEFAULT FALSE
 );
 
-CREATE INDEX IF NOT EXISTS idx_call_groups_talkgroup ON call_groups(talkgroup_id, start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_call_groups_talkgroup ON call_groups(tg_sysid, tgid, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_call_groups_system ON call_groups(system_id, start_time DESC);
 
 -- Individual call recordings (one per site/instance)
@@ -139,7 +133,8 @@ CREATE TABLE IF NOT EXISTS calls (
     call_group_id   BIGINT,
     instance_id     INTEGER REFERENCES instances(id) ON DELETE CASCADE,
     system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
-    talkgroup_id    INTEGER REFERENCES talkgroups(id) ON DELETE SET NULL,
+    tg_sysid        VARCHAR(16),
+    tgid            INTEGER,
     recorder_id     INTEGER REFERENCES recorders(id) ON DELETE SET NULL,
 
     -- Call identifiers
@@ -181,7 +176,7 @@ CREATE TABLE IF NOT EXISTS calls (
     metadata_json   JSONB
 );
 
-CREATE INDEX IF NOT EXISTS idx_calls_talkgroup ON calls(talkgroup_id, start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_calls_talkgroup ON calls(tg_sysid, tgid, start_time DESC) WHERE tg_sysid IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_calls_instance ON calls(instance_id, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_calls_group ON calls(call_group_id);
 CREATE INDEX IF NOT EXISTS idx_calls_tr_call_id ON calls(tr_call_id);
@@ -191,7 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_calls_tr_call_id ON calls(tr_call_id);
 CREATE TABLE IF NOT EXISTS transmissions (
     id              BIGSERIAL PRIMARY KEY,
     call_id         BIGINT NOT NULL,
-    unit_id         INTEGER REFERENCES units(id) ON DELETE SET NULL,
+    unit_sysid      VARCHAR(16),
     unit_rid        BIGINT NOT NULL,
     start_time      TIMESTAMPTZ NOT NULL,
     stop_time       TIMESTAMPTZ,
@@ -202,7 +197,7 @@ CREATE TABLE IF NOT EXISTS transmissions (
     spike_count     INTEGER
 );
 
-CREATE INDEX IF NOT EXISTS idx_transmissions_unit ON transmissions(unit_id, start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_transmissions_unit ON transmissions(unit_sysid, unit_rid, start_time DESC) WHERE unit_sysid IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_transmissions_call ON transmissions(call_id);
 
 -- Frequency usage within calls
@@ -224,16 +219,17 @@ CREATE TABLE IF NOT EXISTS unit_events (
     id              BIGSERIAL PRIMARY KEY,
     instance_id     INTEGER REFERENCES instances(id) ON DELETE CASCADE,
     system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
-    unit_id         INTEGER REFERENCES units(id) ON DELETE SET NULL,
+    unit_sysid      VARCHAR(16),
     unit_rid        BIGINT NOT NULL,
     event_type      VARCHAR(16) NOT NULL,
-    talkgroup_id    INTEGER REFERENCES talkgroups(id) ON DELETE SET NULL,
+    tg_sysid        VARCHAR(16),
     tgid            INTEGER,
     time            TIMESTAMPTZ NOT NULL,
     metadata_json   JSONB
 );
 
-CREATE INDEX IF NOT EXISTS idx_unit_events_unit ON unit_events(unit_id, time DESC);
+CREATE INDEX IF NOT EXISTS idx_unit_events_unit ON unit_events(unit_sysid, unit_rid, time DESC) WHERE unit_sysid IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_unit_events_talkgroup ON unit_events(tg_sysid, tgid, time DESC) WHERE tg_sysid IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_unit_events_system ON unit_events(system_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_unit_events_type ON unit_events(event_type, time DESC);
 
@@ -274,12 +270,43 @@ CREATE TABLE IF NOT EXISTS trunk_messages (
     meta            TEXT
 );
 
+-- Transcriptions table (for speech-to-text)
+CREATE TABLE IF NOT EXISTS transcriptions (
+    id              BIGSERIAL PRIMARY KEY,
+    call_id         BIGINT NOT NULL UNIQUE,
+    provider        VARCHAR(32) NOT NULL,
+    model           VARCHAR(64),
+    language        VARCHAR(8),
+    text            TEXT NOT NULL,
+    confidence      REAL,
+    word_count      INTEGER,
+    duration_ms     INTEGER,
+    words_json      JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transcriptions_call ON transcriptions(call_id);
+
+-- Transcription queue table
+CREATE TABLE IF NOT EXISTS transcription_queue (
+    id              BIGSERIAL PRIMARY KEY,
+    call_id         BIGINT NOT NULL UNIQUE,
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+    priority        INTEGER NOT NULL DEFAULT 0,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transcription_queue_status ON transcription_queue(status, priority DESC, created_at);
+
 -- Migration tracking table (for compatibility)
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version BIGINT PRIMARY KEY,
     dirty BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- Mark as migrated to version 2 (SYSID scoping)
-INSERT INTO schema_migrations (version, dirty) VALUES (2, FALSE) ON CONFLICT DO NOTHING;
+-- Mark as migrated to version 5 (removed surrogate IDs)
+INSERT INTO schema_migrations (version, dirty) VALUES (5, FALSE) ON CONFLICT DO NOTHING;
 `

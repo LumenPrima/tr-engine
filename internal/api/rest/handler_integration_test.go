@@ -247,24 +247,27 @@ func TestGetTalkgroup_UniqueTgid_ReturnsOK(t *testing.T) {
 	assert.Equal(t, "Metro Fire", response.AlphaTag)
 }
 
-func TestGetTalkgroup_ByDatabaseID(t *testing.T) {
-	f := setupTest(t)
+func TestGetTalkgroup_ByPlainTGID(t *testing.T) {
+	_ = setupTest(t)
 
-	// Test id: format for database ID lookup
-	req, _ := http.NewRequest("GET", "/api/v1/talkgroups/id:3", nil)
+	// Test plain tgid format - should work when tgid is unique
+	// tgid 9200 (Metro Fire) only exists in sysid 348
+	req, _ := http.NewRequest("GET", "/api/v1/talkgroups/9200", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response struct {
-		ID       int    `json:"id"`
+		SYSID    string `json:"sysid"`
+		TGID     int    `json:"tgid"`
 		AlphaTag string `json:"alpha_tag"`
 	}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, f.MetroFireID, response.ID)
+	assert.Equal(t, "348", response.SYSID)
+	assert.Equal(t, 9200, response.TGID)
 	assert.Equal(t, "Metro Fire", response.AlphaTag)
 }
 

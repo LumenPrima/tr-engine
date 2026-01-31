@@ -37,11 +37,11 @@ func (p *Processor) ProcessCallStart(ctx context.Context, data *CallEventData) e
 		p.logger.Error("Failed to upsert talkgroup", zap.Error(err))
 	}
 
-	var tgID *int
+	var tgSysid *string
 	if tg != nil {
-		tgID = &tg.ID
+		tgSysid = &tg.SYSID
 		// Record site association
-		if err := p.db.UpsertTalkgroupSite(ctx, tg.ID, sys.ID); err != nil {
+		if err := p.db.UpsertTalkgroupSite(ctx, tg.SYSID, tg.TGID, sys.ID); err != nil {
 			p.logger.Error("Failed to upsert talkgroup site", zap.Error(err))
 		}
 	}
@@ -53,7 +53,7 @@ func (p *Processor) ProcessCallStart(ctx context.Context, data *CallEventData) e
 			p.logger.Error("Failed to upsert unit from call_start", zap.Error(err))
 		} else if unit != nil {
 			// Record site association
-			if err := p.db.UpsertUnitSite(ctx, unit.ID, sys.ID); err != nil {
+			if err := p.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, sys.ID); err != nil {
 				p.logger.Error("Failed to upsert unit site", zap.Error(err))
 			}
 		}
@@ -63,7 +63,7 @@ func (p *Processor) ProcessCallStart(ctx context.Context, data *CallEventData) e
 	call := &models.Call{
 		InstanceID:   instID,
 		SystemID:     sys.ID,
-		TalkgroupID:  tgID,
+		TgSysid:      tgSysid,
 		TRCallID:     data.CallID,
 		CallNum:      data.CallNum,
 		StartTime:    data.StartTime,
@@ -81,7 +81,7 @@ func (p *Processor) ProcessCallStart(ctx context.Context, data *CallEventData) e
 		MetadataJSON: data.RawJSON,
 	}
 
-	if err := p.db.InsertCall(ctx, call); err != nil {
+	if err := p.db.InsertCall(ctx, call, data.TGID); err != nil {
 		return err
 	}
 
@@ -306,10 +306,10 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 		p.logger.Error("Failed to upsert talkgroup", zap.Error(err))
 	}
 
-	var tgID *int
+	var tgSysid *string
 	if tg != nil {
-		tgID = &tg.ID
-		if err := p.db.UpsertTalkgroupSite(ctx, tg.ID, sys.ID); err != nil {
+		tgSysid = &tg.SYSID
+		if err := p.db.UpsertTalkgroupSite(ctx, tg.SYSID, tg.TGID, sys.ID); err != nil {
 			p.logger.Error("Failed to upsert talkgroup site", zap.Error(err))
 		}
 	}
@@ -320,7 +320,7 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 		if err != nil {
 			p.logger.Error("Failed to upsert unit from call_end", zap.Error(err))
 		} else if unit != nil {
-			if err := p.db.UpsertUnitSite(ctx, unit.ID, sys.ID); err != nil {
+			if err := p.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, sys.ID); err != nil {
 				p.logger.Error("Failed to upsert unit site", zap.Error(err))
 			}
 		}
@@ -353,7 +353,7 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 		call = &models.Call{
 			InstanceID:   instID,
 			SystemID:     sys.ID,
-			TalkgroupID:  tgID,
+			TgSysid:      tgSysid,
 			TRCallID:     data.CallID,
 			CallNum:      data.CallNum,
 			StartTime:    data.StartTime,
@@ -368,7 +368,7 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 			AudioType:    data.AudioType,
 			MetadataJSON: data.RawJSON,
 		}
-		if err := p.db.InsertCall(ctx, call); err != nil {
+		if err := p.db.InsertCall(ctx, call, data.TGID); err != nil {
 			return err
 		}
 	}
@@ -534,11 +534,11 @@ func (p *Processor) processTransmissions(ctx context.Context, call *models.Call,
 			continue
 		}
 
-		var unitID *int
+		var unitSysid *string
 		if unit != nil {
-			unitID = &unit.ID
+			unitSysid = &unit.SYSID
 			// Record site association
-			if err := p.db.UpsertUnitSite(ctx, unit.ID, systemID); err != nil {
+			if err := p.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, systemID); err != nil {
 				p.logger.Error("Failed to upsert unit site", zap.Error(err))
 			}
 		}
@@ -562,7 +562,7 @@ func (p *Processor) processTransmissions(ctx context.Context, call *models.Call,
 
 		tx := &models.Transmission{
 			CallID:     call.ID,
-			UnitID:     unitID,
+			UnitSysid:  unitSysid,
 			UnitRID:    src.Src,
 			StartTime:  src.Time,
 			StopTime:   stopTime,
@@ -674,10 +674,10 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 			p.logger.Error("Failed to upsert talkgroup for audio call", zap.Error(err))
 		}
 
-		var tgID *int
+		var tgSysid *string
 		if tg != nil {
-			tgID = &tg.ID
-			if err := p.db.UpsertTalkgroupSite(ctx, tg.ID, sys.ID); err != nil {
+			tgSysid = &tg.SYSID
+			if err := p.db.UpsertTalkgroupSite(ctx, tg.SYSID, tg.TGID, sys.ID); err != nil {
 				p.logger.Error("Failed to upsert talkgroup site", zap.Error(err))
 			}
 		}
@@ -692,7 +692,7 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 		call = &models.Call{
 			InstanceID:   instID,
 			SystemID:     sys.ID,
-			TalkgroupID:  tgID,
+			TgSysid:      tgSysid,
 			TRCallID:     data.CallID,
 			StartTime:    data.StartTime,
 			StopTime:     &data.StopTime,
@@ -711,7 +711,7 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 			AudioSize:    audioSize,
 		}
 
-		if err := p.db.InsertCall(ctx, call); err != nil {
+		if err := p.db.InsertCall(ctx, call, data.TGID); err != nil {
 			p.logger.Error("Failed to insert call from audio", zap.Error(err))
 			return err
 		}
@@ -763,6 +763,16 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 			"transmissions":       len(data.SrcList),
 			"frequencies":         len(data.FreqList),
 		})
+
+		// Queue for transcription if service is enabled
+		if p.transcriber != nil {
+			if err := p.transcriber.QueueCall(ctx, call.ID, call.Duration, 0); err != nil {
+				p.logger.Error("Failed to queue call for transcription",
+					zap.Int64("call_id", call.ID),
+					zap.Error(err),
+				)
+			}
+		}
 	}
 
 	p.logger.Debug("Audio processing complete",
@@ -806,23 +816,23 @@ func (p *Processor) ProcessUnitEvent(ctx context.Context, data *UnitEventData) e
 		return err
 	}
 
-	var unitID *int
+	var unitSysid *string
 	if unit != nil {
-		unitID = &unit.ID
-		if err := p.db.UpsertUnitSite(ctx, unit.ID, sys.ID); err != nil {
+		unitSysid = &unit.SYSID
+		if err := p.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, sys.ID); err != nil {
 			p.logger.Error("Failed to upsert unit site", zap.Error(err))
 		}
 	}
 
 	// Upsert talkgroup if present
-	var tgID *int
+	var tgSysid *string
 	if data.TGID > 0 {
 		tg, err := p.db.UpsertTalkgroup(ctx, sysid, data.TGID, data.TGAlphaTag, data.TGDesc, data.TGGroup, data.TGTag, 0, "")
 		if err != nil {
 			p.logger.Error("Failed to upsert talkgroup", zap.Error(err))
 		} else if tg != nil {
-			tgID = &tg.ID
-			if err := p.db.UpsertTalkgroupSite(ctx, tg.ID, sys.ID); err != nil {
+			tgSysid = &tg.SYSID
+			if err := p.db.UpsertTalkgroupSite(ctx, tg.SYSID, tg.TGID, sys.ID); err != nil {
 				p.logger.Error("Failed to upsert talkgroup site", zap.Error(err))
 			}
 		}
@@ -832,10 +842,10 @@ func (p *Processor) ProcessUnitEvent(ctx context.Context, data *UnitEventData) e
 	event := &models.UnitEvent{
 		InstanceID:   instID,
 		SystemID:     sys.ID,
-		UnitID:       unitID,
+		UnitSysid:    unitSysid,
 		UnitRID:      data.UnitID,
 		EventType:    data.EventType,
-		TalkgroupID:  tgID,
+		TgSysid:      tgSysid,
 		TGID:         data.TGID,
 		Time:         data.Timestamp,
 		MetadataJSON: data.RawJSON,

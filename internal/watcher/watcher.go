@@ -42,7 +42,7 @@ type Watcher struct {
 	// Caches (protected by mutex)
 	mu             sync.RWMutex
 	systemCache    map[string]*models.System
-	talkgroupCache map[string]int
+	talkgroupCache map[string]bool // tracks if we've upserted a talkgroup
 
 	// Active calls tracking (for log events)
 	activeCalls map[string]*activeCall // key: "system:callID"
@@ -102,7 +102,7 @@ func New(db *database.DB, cfg Config, logger *zap.Logger) (*Watcher, error) {
 		logger:         logger,
 		watcher:        fsw,
 		systemCache:    make(map[string]*models.System),
-		talkgroupCache: make(map[string]int),
+		talkgroupCache: make(map[string]bool),
 		activeCalls:    make(map[string]*activeCall),
 		recorders:      make(map[int]*RecorderState),
 	}
@@ -306,8 +306,7 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 	sysid := database.EffectiveSYSID(sys)
 
 	// Get or create talkgroup
-	tgID, err := w.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
-	if err != nil {
+	if err := w.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag); err != nil {
 		w.logger.Debug("Failed to get talkgroup", zap.Error(err))
 		w.errors++
 		return
@@ -346,27 +345,27 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 	// Create call record
 	stopTime := time.Unix(sidecar.StopTime, 0)
 	call := &models.Call{
-		InstanceID:  1,
-		SystemID:    sys.ID,
-		TalkgroupID: &tgID,
-		StartTime:   startTime,
-		StopTime:    &stopTime,
-		Duration:    sidecar.CallLength,
-		CallState:   3, // Completed
-		Freq:        sidecar.Freq,
-		FreqError:   sidecar.FreqError,
-		Encrypted:   sidecar.Encrypted != 0,
-		Emergency:   sidecar.Emergency != 0,
-		Phase2TDMA:  sidecar.Phase2TDMA != 0,
-		TDMASlot:    int16(sidecar.TDMASlot),
-		AudioType:   sidecar.AudioType,
-		SignalDB:    filterSentinelDB(sidecar.SignalDB),
-		NoiseDB:     filterSentinelDB(sidecar.NoiseDB),
-		AudioPath:   audioPath,
-		AudioSize:   audioSize,
+		InstanceID: 1,
+		SystemID:   sys.ID,
+		TgSysid:    &sysid,
+		StartTime:  startTime,
+		StopTime:   &stopTime,
+		Duration:   sidecar.CallLength,
+		CallState:  3, // Completed
+		Freq:       sidecar.Freq,
+		FreqError:  sidecar.FreqError,
+		Encrypted:  sidecar.Encrypted != 0,
+		Emergency:  sidecar.Emergency != 0,
+		Phase2TDMA: sidecar.Phase2TDMA != 0,
+		TDMASlot:   int16(sidecar.TDMASlot),
+		AudioType:  sidecar.AudioType,
+		SignalDB:   filterSentinelDB(sidecar.SignalDB),
+		NoiseDB:    filterSentinelDB(sidecar.NoiseDB),
+		AudioPath:  audioPath,
+		AudioSize:  audioSize,
 	}
 
-	if err := w.db.InsertCall(ctx, call); err != nil {
+	if err := w.db.InsertCall(ctx, call, sidecar.Talkgroup); err != nil {
 		w.logger.Debug("Failed to insert call", zap.Error(err))
 		w.errors++
 		return
@@ -380,13 +379,10 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 		}
 
 		// Record site association
+		var unitSysid *string
 		if unit != nil {
-			w.db.UpsertUnitSite(ctx, unit.ID, sys.ID)
-		}
-
-		var unitID *int
-		if unit != nil {
-			unitID = &unit.ID
+			unitSysid = &unit.SYSID
+			w.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, sys.ID)
 		}
 
 		var duration float32
@@ -405,7 +401,7 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 
 		tx := &models.Transmission{
 			CallID:    call.ID,
-			UnitID:    unitID,
+			UnitSysid: unitSysid,
 			UnitRID:   src.Src,
 			StartTime: srcTime,
 			StopTime:  txStopTime,
@@ -502,31 +498,31 @@ func (w *Watcher) getOrCreateSystem(ctx context.Context, shortName string) (*mod
 	return sys, nil
 }
 
-// getOrCreateTalkgroup gets or creates a talkgroup record (cached)
-func (w *Watcher) getOrCreateTalkgroup(ctx context.Context, sysid string, systemID, tgid int, tag, desc, group, groupTag string) (int, error) {
+// getOrCreateTalkgroup ensures a talkgroup record exists (cached)
+func (w *Watcher) getOrCreateTalkgroup(ctx context.Context, sysid string, systemID, tgid int, tag, desc, group, groupTag string) error {
 	key := fmt.Sprintf("%s:%d", sysid, tgid)
 
 	w.mu.RLock()
-	if id, ok := w.talkgroupCache[key]; ok {
+	if w.talkgroupCache[key] {
 		w.mu.RUnlock()
-		return id, nil
+		return nil
 	}
 	w.mu.RUnlock()
 
 	tg, err := w.db.UpsertTalkgroup(ctx, sysid, tgid, tag, desc, group, groupTag, 0, "")
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	// Record site association
-	if err := w.db.UpsertTalkgroupSite(ctx, tg.ID, systemID); err != nil {
+	if err := w.db.UpsertTalkgroupSite(ctx, tg.SYSID, tg.TGID, systemID); err != nil {
 		w.logger.Debug("Failed to upsert talkgroup site", zap.Error(err))
 	}
 
 	w.mu.Lock()
-	w.talkgroupCache[key] = tg.ID
+	w.talkgroupCache[key] = true
 	w.mu.Unlock()
-	return tg.ID, nil
+	return nil
 }
 
 // processLogEvents processes events from the log tailer
@@ -662,7 +658,7 @@ func (w *Watcher) handleUnitOnCall(ctx context.Context, event LogEvent) {
 
 	// Record site association
 	if unit != nil {
-		w.db.UpsertUnitSite(ctx, unit.ID, sys.ID)
+		w.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, sys.ID)
 	}
 }
 
@@ -683,7 +679,7 @@ func (w *Watcher) handleUnitAlias(ctx context.Context, event LogEvent) {
 		sysid := database.EffectiveSYSID(sys)
 		unit, err := w.db.UpsertUnit(ctx, sysid, data.UnitID, data.AlphaTag, "log")
 		if err == nil && unit != nil {
-			w.db.UpsertUnitSite(ctx, unit.ID, sys.ID)
+			w.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, sys.ID)
 		}
 	}
 
@@ -1034,8 +1030,7 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 	}
 
 	// Get or create talkgroup
-	tgID, err := w.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
-	if err != nil {
+	if err := w.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag); err != nil {
 		return
 	}
 
@@ -1062,27 +1057,27 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 	// Create call record
 	stopTime := time.Unix(sidecar.StopTime, 0)
 	call := &models.Call{
-		InstanceID:  1,
-		SystemID:    sys.ID,
-		TalkgroupID: &tgID,
-		StartTime:   startTime,
-		StopTime:    &stopTime,
-		Duration:    sidecar.CallLength,
-		CallState:   3, // Completed
-		Freq:        sidecar.Freq,
-		FreqError:   sidecar.FreqError,
-		Encrypted:   sidecar.Encrypted != 0,
-		Emergency:   sidecar.Emergency != 0,
-		Phase2TDMA:  sidecar.Phase2TDMA != 0,
-		TDMASlot:    int16(sidecar.TDMASlot),
-		AudioType:   sidecar.AudioType,
-		SignalDB:    filterSentinelDB(sidecar.SignalDB),
-		NoiseDB:     filterSentinelDB(sidecar.NoiseDB),
-		AudioPath:   audioPath,
-		AudioSize:   audioSize,
+		InstanceID: 1,
+		SystemID:   sys.ID,
+		TgSysid:    &sysid,
+		StartTime:  startTime,
+		StopTime:   &stopTime,
+		Duration:   sidecar.CallLength,
+		CallState:  3, // Completed
+		Freq:       sidecar.Freq,
+		FreqError:  sidecar.FreqError,
+		Encrypted:  sidecar.Encrypted != 0,
+		Emergency:  sidecar.Emergency != 0,
+		Phase2TDMA: sidecar.Phase2TDMA != 0,
+		TDMASlot:   int16(sidecar.TDMASlot),
+		AudioType:  sidecar.AudioType,
+		SignalDB:   filterSentinelDB(sidecar.SignalDB),
+		NoiseDB:    filterSentinelDB(sidecar.NoiseDB),
+		AudioPath:  audioPath,
+		AudioSize:  audioSize,
 	}
 
-	if err := w.db.InsertCall(ctx, call); err != nil {
+	if err := w.db.InsertCall(ctx, call, sidecar.Talkgroup); err != nil {
 		return
 	}
 
@@ -1094,13 +1089,10 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 		}
 
 		// Record site association
+		var unitSysid *string
 		if unit != nil {
-			w.db.UpsertUnitSite(ctx, unit.ID, sys.ID)
-		}
-
-		var unitID *int
-		if unit != nil {
-			unitID = &unit.ID
+			unitSysid = &unit.SYSID
+			w.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, sys.ID)
 		}
 
 		var duration float32
@@ -1119,7 +1111,7 @@ func (w *Watcher) processBackfillFile(ctx context.Context, jsonPath string) {
 
 		tx := &models.Transmission{
 			CallID:    call.ID,
-			UnitID:    unitID,
+			UnitSysid: unitSysid,
 			UnitRID:   src.Src,
 			StartTime: srcTime,
 			StopTime:  txStopTime,

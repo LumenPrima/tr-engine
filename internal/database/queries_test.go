@@ -127,11 +127,11 @@ func TestGetTalkgroupsByTGID_SingleMatch(t *testing.T) {
 	assert.Equal(t, "Metro Fire", tgs[0].AlphaTag)
 }
 
-func TestGetTalkgroupByID(t *testing.T) {
+func TestGetTalkgroup_BySysidAndTGID(t *testing.T) {
 	f := setupTest(t)
 	ctx := context.Background()
 
-	tg, err := testDB.DB.GetTalkgroupByID(ctx, f.MetroFireID)
+	tg, err := testDB.DB.GetTalkgroup(ctx, f.MetroFireSYSID, f.MetroFireTGID)
 	require.NoError(t, err)
 	assert.Equal(t, "Metro Fire", tg.AlphaTag)
 	assert.Equal(t, 9200, tg.TGID)
@@ -213,12 +213,15 @@ func TestListCalls_FilterByTalkgroup(t *testing.T) {
 	f := setupTest(t)
 	ctx := context.Background()
 
-	tgID := f.MetroPDMainID
+	tgID := f.MetroPDMainTGID
 	calls, err := testDB.DB.ListCalls(ctx, nil, &tgID, nil, nil, 100, 0)
 	require.NoError(t, err)
 
-	// Metro PD Main has 2 calls with audio (call 5 is encrypted, no audio)
-	assert.Len(t, calls, 2)
+	// Metro PD Main (tgid 9178) has calls in both Metro and County systems
+	// Metro has 2 calls with audio (call 5 is encrypted, no audio)
+	// County has 1 call with audio
+	// Total: 3 calls
+	assert.Len(t, calls, 3)
 }
 
 func TestListCalls_FilterByTimeRange(t *testing.T) {

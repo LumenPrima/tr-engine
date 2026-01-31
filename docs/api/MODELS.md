@@ -30,7 +30,7 @@ Represents a radio talkgroup (channel/group).
 
 ```typescript
 interface Talkgroup {
-  id: number;              // Database ID
+  // Primary key: (sysid, tgid)
   sysid: string;           // P25 System ID (scoping key)
   tgid: number;            // Talkgroup ID (e.g., 9178)
   alpha_tag?: string;      // Human name (e.g., "PD Dispatch")
@@ -44,7 +44,7 @@ interface Talkgroup {
 }
 ```
 
-**Note:** Talkgroups are scoped by `sysid`. The same `tgid` may exist in multiple systems.
+**Note:** Talkgroups use a composite primary key `(sysid, tgid)`. The same `tgid` may exist in multiple P25 systems with different meanings.
 
 ### Unit
 
@@ -52,7 +52,7 @@ Represents a radio unit (mobile/portable radio).
 
 ```typescript
 interface Unit {
-  id: number;              // Database ID
+  // Primary key: (sysid, unit_id)
   sysid: string;           // P25 System ID (scoping key)
   unit_id: number;         // Radio ID (e.g., 9001234)
   alpha_tag?: string;      // Human name (e.g., "Unit 123")
@@ -68,7 +68,7 @@ interface Unit {
 }
 ```
 
-**Note:** Units are scoped by `sysid`. The same `unit_id` may exist in multiple systems.
+**Note:** Units use a composite primary key `(sysid, unit_id)`. The same `unit_id` may exist in multiple P25 systems.
 
 ### Call
 
@@ -76,11 +76,12 @@ Represents a recorded radio call (audio recording session).
 
 ```typescript
 interface Call {
-  id: number;              // Database ID
+  id: number;              // Database row ID
   call_group_id?: number;  // Deduplication group
   instance_id: number;     // TR instance
   system_id: number;       // Parent system
-  talkgroup_id?: number;   // FK to talkgroups table
+  tg_sysid?: string;       // Talkgroup's P25 system ID
+  tgid?: number;           // Talkgroup ID
   recorder_id?: number;    // Recorder that captured
 
   tr_call_id?: string;     // TR's call ID (e.g., "1705312200_850387500_9178")
@@ -139,9 +140,9 @@ Individual unit transmission within a call (from srcList).
 
 ```typescript
 interface Transmission {
-  id: number;              // Database ID
+  id: number;              // Database row ID
   call_id: number;         // Parent call
-  unit_id?: number;        // FK to units table
+  unit_sysid?: string;     // Unit's P25 system ID
   unit_rid: number;        // Radio ID
   start_time: string;      // ISO 8601 timestamp
   stop_time?: string;      // ISO 8601 timestamp
@@ -159,7 +160,7 @@ Frequency usage during a call (from freqList).
 
 ```typescript
 interface CallFrequency {
-  id: number;              // Database ID
+  id: number;              // Database row ID
   call_id: number;         // Parent call
   freq: number;            // Frequency in Hz
   time: string;            // ISO 8601 timestamp
@@ -176,14 +177,14 @@ Unit activity event (affiliation, registration, etc.).
 
 ```typescript
 interface UnitEvent {
-  id: number;              // Database ID
+  id: number;              // Database row ID
   instance_id: number;     // TR instance
   system_id: number;       // Parent system
-  unit_id?: number;        // FK to units table
+  unit_sysid?: string;     // Unit's P25 system ID
   unit_rid: number;        // Radio ID
   event_type: string;      // Event type (see below)
-  talkgroup_id?: number;   // FK to talkgroups table
-  tgid: number;            // Actual talkgroup ID
+  tg_sysid?: string;       // Talkgroup's P25 system ID
+  tgid: number;            // Talkgroup ID
   time: string;            // ISO 8601 timestamp
   metadata_json?: object;  // Additional data
 }
@@ -206,10 +207,10 @@ Deduplicated group of calls from multiple recorders.
 
 ```typescript
 interface CallGroup {
-  id: number;              // Database ID
+  id: number;              // Database row ID
   system_id: number;       // Parent system
-  talkgroup_id?: number;   // FK to talkgroups
-  tgid: number;            // Actual talkgroup ID
+  tg_sysid?: string;       // Talkgroup's P25 system ID
+  tgid: number;            // Talkgroup ID
   start_time: string;      // ISO 8601 timestamp
   end_time?: string;       // ISO 8601 timestamp
   primary_call_id?: number; // Best quality call

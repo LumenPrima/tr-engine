@@ -39,7 +39,7 @@ type Importer struct {
 
 	// Caches
 	systemCache    map[string]*models.System
-	talkgroupCache map[string]int // "sysid:tgid" -> db ID
+	talkgroupCache map[string]bool // "sysid:tgid" -> upserted flag
 }
 
 // Config holds importer configuration
@@ -78,7 +78,7 @@ func New(db *database.DB, cfg Config, logger *zap.Logger) *Importer {
 		throttle:       cfg.Throttle,
 		logger:         logger,
 		systemCache:    make(map[string]*models.System),
-		talkgroupCache: make(map[string]int),
+		talkgroupCache: make(map[string]bool),
 	}
 }
 
@@ -392,8 +392,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 	sysid := database.EffectiveSYSID(sys)
 
 	// Get or create talkgroup
-	tgID, err := i.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag)
-	if err != nil {
+	if err := i.getOrCreateTalkgroup(ctx, sysid, sys.ID, sidecar.Talkgroup, sidecar.TGTag, sidecar.TGDesc, sidecar.TGGroup, sidecar.TGGroupTag); err != nil {
 		return fmt.Errorf("get talkgroup: %w", err)
 	}
 
@@ -462,27 +461,27 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 	// Create call record
 	stopTime := time.Unix(sidecar.StopTime, 0)
 	call := &models.Call{
-		InstanceID:  1, // Default instance for imports
-		SystemID:    sys.ID,
-		TalkgroupID: &tgID,
-		StartTime:   startTime,
-		StopTime:    &stopTime,
-		Duration:    sidecar.CallLength,
-		CallState:   3, // Completed
-		Freq:        sidecar.Freq,
-		FreqError:   sidecar.FreqError,
-		Encrypted:   sidecar.Encrypted != 0,
-		Emergency:   sidecar.Emergency != 0,
-		Phase2TDMA:  sidecar.Phase2TDMA != 0,
-		TDMASlot:    int16(sidecar.TDMASlot),
-		AudioType:   sidecar.AudioType,
-		SignalDB:    filterSentinelDB(sidecar.SignalDB),
-		NoiseDB:     filterSentinelDB(sidecar.NoiseDB),
-		AudioPath:   audioPath,
-		AudioSize:   audioSize,
+		InstanceID: 1, // Default instance for imports
+		SystemID:   sys.ID,
+		TgSysid:    &sysid,
+		StartTime:  startTime,
+		StopTime:   &stopTime,
+		Duration:   sidecar.CallLength,
+		CallState:  3, // Completed
+		Freq:       sidecar.Freq,
+		FreqError:  sidecar.FreqError,
+		Encrypted:  sidecar.Encrypted != 0,
+		Emergency:  sidecar.Emergency != 0,
+		Phase2TDMA: sidecar.Phase2TDMA != 0,
+		TDMASlot:   int16(sidecar.TDMASlot),
+		AudioType:  sidecar.AudioType,
+		SignalDB:   filterSentinelDB(sidecar.SignalDB),
+		NoiseDB:    filterSentinelDB(sidecar.NoiseDB),
+		AudioPath:  audioPath,
+		AudioSize:  audioSize,
 	}
 
-	if err := i.db.InsertCall(ctx, call); err != nil {
+	if err := i.db.InsertCall(ctx, call, sidecar.Talkgroup); err != nil {
 		return fmt.Errorf("insert call: %w", err)
 	}
 
@@ -495,11 +494,11 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 			continue
 		}
 
-		var unitID *int
+		var unitSysid *string
 		if unit != nil {
-			unitID = &unit.ID
+			unitSysid = &unit.SYSID
 			// Record site association
-			if err := i.db.UpsertUnitSite(ctx, unit.ID, sys.ID); err != nil {
+			if err := i.db.UpsertUnitSite(ctx, unit.SYSID, unit.UnitID, sys.ID); err != nil {
 				i.logger.Debug("Failed to upsert unit site", zap.Error(err))
 			}
 		}
@@ -521,7 +520,7 @@ func (i *Importer) processJSONFile(ctx context.Context, system string, jsonPath 
 
 		tx := &models.Transmission{
 			CallID:    call.ID,
-			UnitID:    unitID,
+			UnitSysid: unitSysid,
 			UnitRID:   src.Src,
 			StartTime: srcTime,
 			StopTime:  txStopTime,
@@ -582,25 +581,25 @@ func (i *Importer) getOrCreateSystem(ctx context.Context, shortName string) (*mo
 	return sys, nil
 }
 
-// getOrCreateTalkgroup gets or creates a talkgroup record
-func (i *Importer) getOrCreateTalkgroup(ctx context.Context, sysid string, systemID, tgid int, tag, desc, group, groupTag string) (int, error) {
+// getOrCreateTalkgroup ensures a talkgroup record exists
+func (i *Importer) getOrCreateTalkgroup(ctx context.Context, sysid string, systemID, tgid int, tag, desc, group, groupTag string) error {
 	key := fmt.Sprintf("%s:%d", sysid, tgid)
-	if id, ok := i.talkgroupCache[key]; ok {
-		return id, nil
+	if i.talkgroupCache[key] {
+		return nil
 	}
 
 	tg, err := i.db.UpsertTalkgroup(ctx, sysid, tgid, tag, desc, group, groupTag, 0, "")
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	// Record site association
-	if err := i.db.UpsertTalkgroupSite(ctx, tg.ID, systemID); err != nil {
+	if err := i.db.UpsertTalkgroupSite(ctx, tg.SYSID, tg.TGID, systemID); err != nil {
 		i.logger.Debug("Failed to upsert talkgroup site", zap.Error(err))
 	}
 
-	i.talkgroupCache[key] = tg.ID
-	return tg.ID, nil
+	i.talkgroupCache[key] = true
+	return nil
 }
 
 // loadCheckpoint loads the import checkpoint from the database

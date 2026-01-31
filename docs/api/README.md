@@ -104,24 +104,23 @@ System (1) ─────┬───── (*) Talkgroup
 
 ### ID Types and Lookup Formats
 
-tr-engine uses two types of identifiers:
+tr-engine uses natural composite keys based on the P25 radio system identifiers:
 
-1. **Database IDs** (`id`) - Auto-incrementing integers
-2. **Radio IDs** - Original identifiers from the radio system:
-   - `tgid` - Talkgroup ID (e.g., 9178)
-   - `unit_id` / `unit_rid` - Radio unit ID (e.g., 9001234)
-   - `sysid` - P25 System ID for scoping (e.g., "348")
-   - `tr_call_id` - Trunk-recorder's call identifier
+- **`sysid`** - P25 System ID (hex string like "348") - uniquely identifies a P25 network
+- **`tgid`** - Talkgroup ID (e.g., 9178) - unique within a system
+- **`unit_id` / `unit_rid`** - Radio unit ID (e.g., 9001234) - unique within a system
+- **`tr_call_id`** - Trunk-recorder's call identifier
+
+**Talkgroups and units are identified by composite keys:** `(sysid, tgid)` and `(sysid, unit_id)`.
 
 **Lookup Formats for Talkgroups and Units:**
 
 | Format | Example | Description |
 |--------|---------|-------------|
-| `sysid:id` | `348:9178` | Scoped lookup by SYSID and radio ID |
-| Plain numeric | `9178` | Lookup by radio ID (returns 409 if ambiguous) |
-| `id:number` | `id:123` | Explicit database ID lookup |
+| `sysid:id` | `348:9178` | Explicit lookup by SYSID and radio ID (recommended) |
+| Plain numeric | `9178` | Lookup by radio ID (returns 409 if ambiguous across systems) |
 
-For single-system deployments, plain numeric lookups work directly. Multi-system deployments should use `sysid:id` format to avoid ambiguity.
+For single-system deployments, plain numeric lookups work directly. Multi-system deployments should use `sysid:id` format to avoid ambiguity when the same tgid/unit_id exists in multiple P25 networks.
 
 ### Audio Access
 

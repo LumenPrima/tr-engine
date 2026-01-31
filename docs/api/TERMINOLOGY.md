@@ -212,34 +212,35 @@ This prevents duplicate audio in the UI while preserving all captured data.
 
 ## ID Conventions
 
-### Database IDs vs Radio IDs
+### Natural Keys vs Radio IDs
 
-tr-engine uses two types of identifiers:
+tr-engine uses natural composite keys based on P25 identifiers:
 
-| Type | Field Name | Description |
-|------|------------|-------------|
-| Database ID | `id` | Auto-incrementing integer, stable |
-| Radio ID | `tgid`, `unit_id`, `unit_rid` | From the radio system |
-| Scoping ID | `sysid` | P25 System ID, groups related sites |
+| Type | Field Names | Description |
+|------|-------------|-------------|
+| Talkgroup Key | `(sysid, tgid)` | P25 System ID + Talkgroup ID |
+| Unit Key | `(sysid, unit_id)` | P25 System ID + Radio ID |
+| Radio ID | `tgid`, `unit_id`, `unit_rid` | Original ID from the radio system |
+| Scoping ID | `sysid` | P25 System ID (hex string like "348") |
 
 **Example:**
 ```json
 {
-  "id": 1729,         // Database ID
-  "sysid": "348",     // P25 System ID (scoping)
+  "sysid": "348",     // P25 System ID (scoping key)
   "unit_id": 9001234  // Radio ID (what dispatchers see)
 }
 ```
 
+The same `tgid` or `unit_id` can exist in different P25 systems - the `sysid` distinguishes them.
+
 ### API Lookup Formats
 
-Talkgroup and unit endpoints accept multiple formats:
+Talkgroup and unit endpoints accept two formats:
 
 | Format | Example | Use Case |
 |--------|---------|----------|
-| `sysid:id` | `348:9178` | Multi-system deployments |
-| Plain numeric | `9178` | Single-system (returns 409 if ambiguous) |
-| `id:number` | `id:123` | Explicit database ID |
+| `sysid:id` | `348:9178` | Explicit scoped lookup (recommended) |
+| Plain numeric | `9178` | Simple lookup (returns 409 if ambiguous across systems) |
 
 **Single-system deployments** can use plain numeric IDs directly.
 **Multi-system deployments** should use `sysid:id` format to avoid 409 Conflict responses.

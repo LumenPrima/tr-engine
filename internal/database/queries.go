@@ -139,21 +139,21 @@ func (db *DB) UpsertTalkgroup(ctx context.Context, sysid string, tgid int, alpha
 			priority = COALESCE(NULLIF(EXCLUDED.priority, 0), talkgroups.priority),
 			mode = COALESCE(NULLIF(EXCLUDED.mode, ''), talkgroups.mode),
 			last_seen = NOW()
-		RETURNING id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		RETURNING sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
 	`, sysid, tgid, alphaTag, description, group, tag, priority, mode).Scan(
-		&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+		&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
 	)
 	return &tg, err
 }
 
 // UpsertTalkgroupSite records that a talkgroup was seen at a specific site
-func (db *DB) UpsertTalkgroupSite(ctx context.Context, talkgroupID, systemID int) error {
+func (db *DB) UpsertTalkgroupSite(ctx context.Context, sysid string, tgid, systemID int) error {
 	_, err := db.pool.Exec(ctx, `
-		INSERT INTO talkgroup_sites (talkgroup_id, system_id, first_seen, last_seen)
-		VALUES ($1, $2, NOW(), NOW())
-		ON CONFLICT (talkgroup_id, system_id) DO UPDATE SET
+		INSERT INTO talkgroup_sites (sysid, tgid, system_id, first_seen, last_seen)
+		VALUES ($1, $2, $3, NOW(), NOW())
+		ON CONFLICT (sysid, tgid, system_id) DO UPDATE SET
 			last_seen = NOW()
-	`, talkgroupID, systemID)
+	`, sysid, tgid, systemID)
 	return err
 }
 
@@ -161,10 +161,10 @@ func (db *DB) UpsertTalkgroupSite(ctx context.Context, talkgroupID, systemID int
 func (db *DB) GetTalkgroup(ctx context.Context, sysid string, tgid int) (*models.Talkgroup, error) {
 	var tg models.Talkgroup
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
 		FROM talkgroups WHERE sysid = $1 AND tgid = $2
 	`, sysid, tgid).Scan(
-		&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+		&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -172,14 +172,16 @@ func (db *DB) GetTalkgroup(ctx context.Context, sysid string, tgid int) (*models
 	return &tg, err
 }
 
-// GetTalkgroupByID gets a talkgroup by its database ID
-func (db *DB) GetTalkgroupByID(ctx context.Context, id int) (*models.Talkgroup, error) {
+// GetTalkgroupByTGID gets a talkgroup by TGID only (for single-system deployments)
+// Returns the most recently active talkgroup if multiple exist
+func (db *DB) GetTalkgroupByTGID(ctx context.Context, tgid int) (*models.Talkgroup, error) {
 	var tg models.Talkgroup
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-		FROM talkgroups WHERE id = $1
-	`, id).Scan(
-		&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+		SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		FROM talkgroups WHERE tgid = $1
+		ORDER BY last_seen DESC LIMIT 1
+	`, tgid).Scan(
+		&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -187,46 +189,10 @@ func (db *DB) GetTalkgroupByID(ctx context.Context, id int) (*models.Talkgroup, 
 	return &tg, err
 }
 
-// GetTalkgroupByTGID gets a talkgroup by TGID only (for single-system deployments or collision detection)
-// Returns the talkgroup if exactly one exists, nil if none, or error if multiple exist (collision)
-func (db *DB) GetTalkgroupByTGID(ctx context.Context, tgid int) (*models.Talkgroup, error) {
-	rows, err := db.pool.Query(ctx, `
-		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-		FROM talkgroups WHERE tgid = $1
-	`, tgid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var talkgroups []*models.Talkgroup
-	for rows.Next() {
-		var tg models.Talkgroup
-		if err := rows.Scan(
-			&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
-		); err != nil {
-			return nil, err
-		}
-		talkgroups = append(talkgroups, &tg)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	if len(talkgroups) == 0 {
-		return nil, nil
-	}
-	if len(talkgroups) == 1 {
-		return talkgroups[0], nil
-	}
-	// Multiple talkgroups with same TGID - collision
-	return nil, fmt.Errorf("ambiguous: tgid %d exists in %d systems", tgid, len(talkgroups))
-}
-
-// GetTalkgroupsBYTGID returns all talkgroups matching a TGID (for collision resolution)
+// GetTalkgroupsByTGID returns all talkgroups matching a TGID (for collision resolution)
 func (db *DB) GetTalkgroupsByTGID(ctx context.Context, tgid int) ([]*models.Talkgroup, error) {
 	rows, err := db.pool.Query(ctx, `
-		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
 		FROM talkgroups WHERE tgid = $1
 	`, tgid)
 	if err != nil {
@@ -238,7 +204,7 @@ func (db *DB) GetTalkgroupsByTGID(ctx context.Context, tgid int) ([]*models.Talk
 	for rows.Next() {
 		var tg models.Talkgroup
 		if err := rows.Scan(
-			&tg.ID, &tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+			&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
 		); err != nil {
 			return nil, err
 		}
@@ -257,21 +223,21 @@ func (db *DB) UpsertUnit(ctx context.Context, sysid string, unitID int64, alphaT
 			alpha_tag = COALESCE(NULLIF(EXCLUDED.alpha_tag, ''), units.alpha_tag),
 			alpha_tag_source = COALESCE(NULLIF(EXCLUDED.alpha_tag_source, ''), units.alpha_tag_source),
 			last_seen = NOW()
-		RETURNING id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		RETURNING sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
 	`, sysid, unitID, alphaTag, alphaTagSource).Scan(
-		&unit.ID, &unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
+		&unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
 	)
 	return &unit, err
 }
 
 // UpsertUnitSite records that a unit was seen at a specific site
-func (db *DB) UpsertUnitSite(ctx context.Context, unitID, systemID int) error {
+func (db *DB) UpsertUnitSite(ctx context.Context, sysid string, unitID int64, systemID int) error {
 	_, err := db.pool.Exec(ctx, `
-		INSERT INTO unit_sites (unit_id, system_id, first_seen, last_seen)
-		VALUES ($1, $2, NOW(), NOW())
-		ON CONFLICT (unit_id, system_id) DO UPDATE SET
+		INSERT INTO unit_sites (sysid, rid, system_id, first_seen, last_seen)
+		VALUES ($1, $2, $3, NOW(), NOW())
+		ON CONFLICT (sysid, rid, system_id) DO UPDATE SET
 			last_seen = NOW()
-	`, unitID, systemID)
+	`, sysid, unitID, systemID)
 	return err
 }
 
@@ -279,10 +245,27 @@ func (db *DB) UpsertUnitSite(ctx context.Context, unitID, systemID int) error {
 func (db *DB) GetUnit(ctx context.Context, sysid string, unitID int64) (*models.Unit, error) {
 	var unit models.Unit
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
 		FROM units WHERE sysid = $1 AND unit_id = $2
 	`, sysid, unitID).Scan(
-		&unit.ID, &unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
+		&unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &unit, err
+}
+
+// GetUnitByUnitID gets a unit by unit ID only (for single-system deployments)
+// Returns the most recently active unit if multiple exist
+func (db *DB) GetUnitByUnitID(ctx context.Context, unitID int64) (*models.Unit, error) {
+	var unit models.Unit
+	err := db.pool.QueryRow(ctx, `
+		SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		FROM units WHERE unit_id = $1
+		ORDER BY last_seen DESC LIMIT 1
+	`, unitID).Scan(
+		&unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -330,10 +313,10 @@ func (db *DB) UpsertRecorder(ctx context.Context, instanceID int, sourceID *int,
 }
 
 // InsertCall inserts a new call record
-func (db *DB) InsertCall(ctx context.Context, call *models.Call) error {
+func (db *DB) InsertCall(ctx context.Context, call *models.Call, tgid int) error {
 	return db.pool.QueryRow(ctx, `
 		INSERT INTO calls (
-			call_group_id, instance_id, system_id, talkgroup_id, recorder_id,
+			call_group_id, instance_id, system_id, tg_sysid, tgid, recorder_id,
 			tr_call_id, call_num, start_time, stop_time, duration,
 			call_state, mon_state, encrypted, emergency, phase2_tdma, tdma_slot,
 			conventional, analog, audio_type, freq, freq_error, error_count, spike_count,
@@ -341,10 +324,10 @@ func (db *DB) InsertCall(ctx context.Context, call *models.Call) error {
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
 			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-			$21, $22, $23, $24, $25, $26, $27, $28, $29
+			$21, $22, $23, $24, $25, $26, $27, $28, $29, $30
 		) RETURNING id
 	`,
-		call.CallGroupID, call.InstanceID, call.SystemID, call.TalkgroupID, call.RecorderID,
+		call.CallGroupID, call.InstanceID, call.SystemID, call.TgSysid, tgid, call.RecorderID,
 		call.TRCallID, call.CallNum, call.StartTime, call.StopTime, call.Duration,
 		call.CallState, call.MonState, call.Encrypted, call.Emergency, call.Phase2TDMA, call.TDMASlot,
 		call.Conventional, call.Analog, call.AudioType, call.Freq, call.FreqError, call.ErrorCount, call.SpikeCount,
@@ -376,7 +359,7 @@ func (db *DB) UpdateCall(ctx context.Context, call *models.Call) error {
 func (db *DB) GetCallByTRID(ctx context.Context, trCallID string, startTime time.Time) (*models.Call, error) {
 	var call models.Call
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, call_group_id, instance_id, system_id, talkgroup_id, recorder_id,
+		SELECT id, call_group_id, instance_id, system_id, tg_sysid, tgid, recorder_id,
 			tr_call_id, call_num, start_time, stop_time, duration,
 			call_state, mon_state, encrypted, emergency, phase2_tdma, tdma_slot,
 			conventional, analog, audio_type, freq, freq_error, error_count, spike_count,
@@ -384,7 +367,7 @@ func (db *DB) GetCallByTRID(ctx context.Context, trCallID string, startTime time
 		FROM calls WHERE tr_call_id = $1 AND start_time >= ($2::timestamptz - INTERVAL '1 hour')
 		ORDER BY start_time DESC LIMIT 1
 	`, trCallID, startTime).Scan(
-		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TalkgroupID, &call.RecorderID,
+		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TgSysid, &call.TGID, &call.RecorderID,
 		&call.TRCallID, &call.CallNum, &call.StartTime, &call.StopTime, &call.Duration,
 		&call.CallState, &call.MonState, &call.Encrypted, &call.Emergency, &call.Phase2TDMA, &call.TDMASlot,
 		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
@@ -400,24 +383,23 @@ func (db *DB) GetCallByTRID(ctx context.Context, trCallID string, startTime time
 func (db *DB) GetCallByTGIDAndTime(ctx context.Context, systemID, tgid int, startTime time.Time) (*models.Call, error) {
 	var call models.Call
 	// Look for calls within 60 seconds of the given start time
-	// Match by system and talkgroup (via join), prefer exact tgid match but also try without
+	// Match by system and tgid directly (no FK join needed)
 	err := db.pool.QueryRow(ctx, `
-		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.talkgroup_id, c.recorder_id,
+		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid, c.recorder_id,
 			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
 			c.call_state, c.mon_state, c.encrypted, c.emergency, c.phase2_tdma, c.tdma_slot,
 			c.conventional, c.analog, c.audio_type, c.freq, c.freq_error, c.error_count, c.spike_count,
 			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json
 		FROM calls c
-		LEFT JOIN talkgroups t ON t.id = c.talkgroup_id
 		WHERE c.system_id = $1
 		AND c.start_time BETWEEN ($3::timestamptz - INTERVAL '60 seconds') AND ($3::timestamptz + INTERVAL '60 seconds')
 		AND c.audio_path IS NULL
 		ORDER BY
-			CASE WHEN t.tgid = $2 THEN 0 ELSE 1 END,
+			CASE WHEN c.tgid = $2 THEN 0 ELSE 1 END,
 			ABS(EXTRACT(EPOCH FROM (c.start_time - $3::timestamptz))) ASC
 		LIMIT 1
 	`, systemID, tgid, startTime).Scan(
-		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TalkgroupID, &call.RecorderID,
+		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TgSysid, &call.TGID, &call.RecorderID,
 		&call.TRCallID, &call.CallNum, &call.StartTime, &call.StopTime, &call.Duration,
 		&call.CallState, &call.MonState, &call.Encrypted, &call.Emergency, &call.Phase2TDMA, &call.TDMASlot,
 		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
@@ -447,20 +429,19 @@ func (db *DB) GetCallBySystemTGIDAndTime(ctx context.Context, systemID, tgid int
 	var call models.Call
 	// Look for calls within 30 seconds of the given start time that match the tgid
 	err := db.pool.QueryRow(ctx, `
-		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.talkgroup_id, c.recorder_id,
+		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid, c.recorder_id,
 			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
 			c.call_state, c.mon_state, c.encrypted, c.emergency, c.phase2_tdma, c.tdma_slot,
 			c.conventional, c.analog, c.audio_type, c.freq, c.freq_error, c.error_count, c.spike_count,
 			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json
 		FROM calls c
-		LEFT JOIN talkgroups t ON t.id = c.talkgroup_id
 		WHERE c.system_id = $1
-		AND t.tgid = $2
+		AND c.tgid = $2
 		AND c.start_time BETWEEN ($3::timestamptz - INTERVAL '30 seconds') AND ($3::timestamptz + INTERVAL '30 seconds')
 		ORDER BY ABS(EXTRACT(EPOCH FROM (c.start_time - $3::timestamptz))) ASC
 		LIMIT 1
 	`, systemID, tgid, startTime).Scan(
-		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TalkgroupID, &call.RecorderID,
+		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TgSysid, &call.TGID, &call.RecorderID,
 		&call.TRCallID, &call.CallNum, &call.StartTime, &call.StopTime, &call.Duration,
 		&call.CallState, &call.MonState, &call.Encrypted, &call.Emergency, &call.Phase2TDMA, &call.TDMASlot,
 		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
@@ -475,11 +456,11 @@ func (db *DB) GetCallBySystemTGIDAndTime(ctx context.Context, systemID, tgid int
 // InsertCallGroup inserts a new call group
 func (db *DB) InsertCallGroup(ctx context.Context, group *models.CallGroup) error {
 	return db.pool.QueryRow(ctx, `
-		INSERT INTO call_groups (system_id, talkgroup_id, tgid, start_time, end_time, primary_call_id, call_count, encrypted, emergency)
+		INSERT INTO call_groups (system_id, tg_sysid, tgid, start_time, end_time, primary_call_id, call_count, encrypted, emergency)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id
 	`,
-		group.SystemID, group.TalkgroupID, group.TGID, group.StartTime, group.EndTime,
+		group.SystemID, group.TgSysid, group.TGID, group.StartTime, group.EndTime,
 		group.PrimaryCallID, group.CallCount, group.Encrypted, group.Emergency,
 	).Scan(&group.ID)
 }
@@ -509,7 +490,7 @@ func (db *DB) FindCallGroupCandidates(ctx context.Context, systemID, tgid int, s
 	if wacn != "" && sysid != "" {
 		// P25 system: match on WACN + SysID (same logical system, different sites)
 		rows, err = db.pool.Query(ctx, `
-			SELECT cg.id, cg.system_id, cg.talkgroup_id, cg.tgid, cg.start_time, cg.end_time,
+			SELECT cg.id, cg.system_id, cg.tg_sysid, cg.tgid, cg.start_time, cg.end_time,
 			       cg.primary_call_id, cg.call_count, cg.encrypted, cg.emergency
 			FROM call_groups cg
 			JOIN systems s ON s.id = cg.system_id
@@ -520,7 +501,7 @@ func (db *DB) FindCallGroupCandidates(ctx context.Context, systemID, tgid int, s
 	} else {
 		// Non-P25 or missing info: match on TGID only within time window
 		rows, err = db.pool.Query(ctx, `
-			SELECT id, system_id, talkgroup_id, tgid, start_time, end_time, primary_call_id, call_count, encrypted, emergency
+			SELECT id, system_id, tg_sysid, tgid, start_time, end_time, primary_call_id, call_count, encrypted, emergency
 			FROM call_groups
 			WHERE tgid = $1
 			AND start_time BETWEEN ($2::timestamptz - make_interval(secs => $3)) AND ($2::timestamptz + make_interval(secs => $3))
@@ -535,7 +516,7 @@ func (db *DB) FindCallGroupCandidates(ctx context.Context, systemID, tgid int, s
 	for rows.Next() {
 		var g models.CallGroup
 		if err := rows.Scan(
-			&g.ID, &g.SystemID, &g.TalkgroupID, &g.TGID, &g.StartTime, &g.EndTime,
+			&g.ID, &g.SystemID, &g.TgSysid, &g.TGID, &g.StartTime, &g.EndTime,
 			&g.PrimaryCallID, &g.CallCount, &g.Encrypted, &g.Emergency,
 		); err != nil {
 			return nil, err
@@ -558,11 +539,11 @@ func (db *DB) IsP25System(ctx context.Context, systemID int) (bool, error) {
 // InsertTransmission inserts a transmission record
 func (db *DB) InsertTransmission(ctx context.Context, tx *models.Transmission) error {
 	return db.pool.QueryRow(ctx, `
-		INSERT INTO transmissions (call_id, unit_id, unit_rid, start_time, stop_time, duration, position, emergency, error_count, spike_count)
+		INSERT INTO transmissions (call_id, unit_sysid, unit_rid, start_time, stop_time, duration, position, emergency, error_count, spike_count)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id
 	`,
-		tx.CallID, tx.UnitID, tx.UnitRID, tx.StartTime, tx.StopTime, tx.Duration, tx.Position, tx.Emergency, tx.ErrorCount, tx.SpikeCount,
+		tx.CallID, tx.UnitSysid, tx.UnitRID, tx.StartTime, tx.StopTime, tx.Duration, tx.Position, tx.Emergency, tx.ErrorCount, tx.SpikeCount,
 	).Scan(&tx.ID)
 }
 
@@ -580,7 +561,7 @@ func (db *DB) InsertCallFrequency(ctx context.Context, cf *models.CallFrequency)
 // GetTransmissionsByCallID returns all transmissions for a call, ordered by position
 func (db *DB) GetTransmissionsByCallID(ctx context.Context, callID int64) ([]*models.Transmission, error) {
 	rows, err := db.pool.Query(ctx, `
-		SELECT t.id, t.call_id, t.unit_id, t.unit_rid, t.start_time, t.stop_time,
+		SELECT t.id, t.call_id, t.unit_sysid, t.unit_rid, t.start_time, t.stop_time,
 			t.duration, t.position, t.emergency, t.error_count, t.spike_count
 		FROM transmissions t
 		WHERE t.call_id = $1
@@ -595,7 +576,7 @@ func (db *DB) GetTransmissionsByCallID(ctx context.Context, callID int64) ([]*mo
 	for rows.Next() {
 		var tx models.Transmission
 		if err := rows.Scan(
-			&tx.ID, &tx.CallID, &tx.UnitID, &tx.UnitRID, &tx.StartTime, &tx.StopTime,
+			&tx.ID, &tx.CallID, &tx.UnitSysid, &tx.UnitRID, &tx.StartTime, &tx.StopTime,
 			&tx.Duration, &tx.Position, &tx.Emergency, &tx.ErrorCount, &tx.SpikeCount,
 		); err != nil {
 			return nil, err
@@ -634,11 +615,11 @@ func (db *DB) GetFrequenciesByCallID(ctx context.Context, callID int64) ([]*mode
 // InsertUnitEvent inserts a unit event
 func (db *DB) InsertUnitEvent(ctx context.Context, event *models.UnitEvent) error {
 	return db.pool.QueryRow(ctx, `
-		INSERT INTO unit_events (instance_id, system_id, unit_id, unit_rid, event_type, talkgroup_id, tgid, time, metadata_json)
+		INSERT INTO unit_events (instance_id, system_id, unit_sysid, unit_rid, event_type, tg_sysid, tgid, time, metadata_json)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id
 	`,
-		event.InstanceID, event.SystemID, event.UnitID, event.UnitRID, event.EventType, event.TalkgroupID, event.TGID, event.Time, event.MetadataJSON,
+		event.InstanceID, event.SystemID, event.UnitSysid, event.UnitRID, event.EventType, event.TgSysid, event.TGID, event.Time, event.MetadataJSON,
 	).Scan(&event.ID)
 }
 
@@ -711,9 +692,9 @@ func (db *DB) GetSystemByID(ctx context.Context, id int) (*models.System, error)
 // ListTalkgroupsBySystem returns talkgroups seen at a specific system (site)
 func (db *DB) ListTalkgroupsBySystem(ctx context.Context, systemID int, limit, offset int) ([]*models.Talkgroup, error) {
 	rows, err := db.pool.Query(ctx, `
-		SELECT t.id, t.sysid, t.tgid, t.alpha_tag, t.description, t.tg_group, t.tag, t.priority, t.mode, t.first_seen, t.last_seen
+		SELECT t.sysid, t.tgid, t.alpha_tag, t.description, t.tg_group, t.tag, t.priority, t.mode, t.first_seen, t.last_seen
 		FROM talkgroups t
-		JOIN talkgroup_sites ts ON ts.talkgroup_id = t.id
+		JOIN talkgroup_sites ts ON ts.sysid = t.sysid AND ts.tgid = t.tgid
 		WHERE ts.system_id = $1
 		ORDER BY t.tgid
 		LIMIT $2 OFFSET $3
@@ -727,7 +708,7 @@ func (db *DB) ListTalkgroupsBySystem(ctx context.Context, systemID int, limit, o
 	for rows.Next() {
 		var t models.Talkgroup
 		if err := rows.Scan(
-			&t.ID, &t.SYSID, &t.TGID, &t.AlphaTag, &t.Description, &t.Group, &t.Tag, &t.Priority, &t.Mode, &t.FirstSeen, &t.LastSeen,
+			&t.SYSID, &t.TGID, &t.AlphaTag, &t.Description, &t.Group, &t.Tag, &t.Priority, &t.Mode, &t.FirstSeen, &t.LastSeen,
 		); err != nil {
 			return nil, err
 		}
@@ -739,7 +720,7 @@ func (db *DB) ListTalkgroupsBySystem(ctx context.Context, systemID int, limit, o
 // ListTalkgroupsBySYSID returns all talkgroups for a given SYSID
 func (db *DB) ListTalkgroupsBySYSID(ctx context.Context, sysid string, limit, offset int) ([]*models.Talkgroup, error) {
 	rows, err := db.pool.Query(ctx, `
-		SELECT id, sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
+		SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
 		FROM talkgroups WHERE sysid = $1
 		ORDER BY tgid
 		LIMIT $2 OFFSET $3
@@ -753,7 +734,7 @@ func (db *DB) ListTalkgroupsBySYSID(ctx context.Context, sysid string, limit, of
 	for rows.Next() {
 		var t models.Talkgroup
 		if err := rows.Scan(
-			&t.ID, &t.SYSID, &t.TGID, &t.AlphaTag, &t.Description, &t.Group, &t.Tag, &t.Priority, &t.Mode, &t.FirstSeen, &t.LastSeen,
+			&t.SYSID, &t.TGID, &t.AlphaTag, &t.Description, &t.Group, &t.Tag, &t.Priority, &t.Mode, &t.FirstSeen, &t.LastSeen,
 		); err != nil {
 			return nil, err
 		}
@@ -763,16 +744,17 @@ func (db *DB) ListTalkgroupsBySYSID(ctx context.Context, sysid string, limit, of
 }
 
 // ListCalls returns calls with optional filters
-func (db *DB) ListCalls(ctx context.Context, systemID *int, talkgroupID *int, startTime, endTime *time.Time, limit, offset int) ([]*models.Call, error) {
+// Note: tgid parameter is the actual talkgroup ID (not a database ID)
+func (db *DB) ListCalls(ctx context.Context, systemID *int, tgid *int, startTime, endTime *time.Time, limit, offset int) ([]*models.Call, error) {
 	query := `
-		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.talkgroup_id, c.recorder_id,
+		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid, c.recorder_id,
 			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
 			c.call_state, c.mon_state, c.encrypted, c.emergency, c.phase2_tdma, c.tdma_slot,
 			c.conventional, c.analog, c.audio_type, c.freq, c.freq_error, c.error_count, c.spike_count,
 			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json,
-			tg.tgid, tg.alpha_tag
+			tg.alpha_tag
 		FROM calls c
-		LEFT JOIN talkgroups tg ON tg.id = c.talkgroup_id
+		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
 		WHERE c.audio_path IS NOT NULL AND c.audio_path != ''`
 	args := []interface{}{}
 	argNum := 1
@@ -782,9 +764,9 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, talkgroupID *int, st
 		args = append(args, *systemID)
 		argNum++
 	}
-	if talkgroupID != nil {
-		query += fmt.Sprintf(" AND c.talkgroup_id = $%d", argNum)
-		args = append(args, *talkgroupID)
+	if tgid != nil {
+		query += fmt.Sprintf(" AND c.tgid = $%d", argNum)
+		args = append(args, *tgid)
 		argNum++
 	}
 	if startTime != nil {
@@ -814,12 +796,12 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, talkgroupID *int, st
 	for rows.Next() {
 		var c models.Call
 		if err := rows.Scan(
-			&c.ID, &c.CallGroupID, &c.InstanceID, &c.SystemID, &c.TalkgroupID, &c.RecorderID,
+			&c.ID, &c.CallGroupID, &c.InstanceID, &c.SystemID, &c.TgSysid, &c.TGID, &c.RecorderID,
 			&c.TRCallID, &c.CallNum, &c.StartTime, &c.StopTime, &c.Duration,
 			&c.CallState, &c.MonState, &c.Encrypted, &c.Emergency, &c.Phase2TDMA, &c.TDMASlot,
 			&c.Conventional, &c.Analog, &c.AudioType, &c.Freq, &c.FreqError, &c.ErrorCount, &c.SpikeCount,
 			&c.SignalDB, &c.NoiseDB, &c.AudioPath, &c.AudioSize, &c.PatchedTGIDs, &c.MetadataJSON,
-			&c.TGID, &c.TGAlphaTag,
+			&c.TGAlphaTag,
 		); err != nil {
 			return nil, err
 		}
@@ -840,7 +822,7 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, talkgroupID *int, st
 		unitQuery := `
 			SELECT DISTINCT t.call_id, t.unit_rid, COALESCE(u.alpha_tag, '') as alpha_tag
 			FROM transmissions t
-			LEFT JOIN units u ON u.id = t.unit_id
+			LEFT JOIN units u ON u.sysid = t.unit_sysid AND u.unit_id = t.unit_rid
 			WHERE t.call_id = ANY($1)
 			ORDER BY t.call_id, t.unit_rid
 		`
@@ -870,18 +852,22 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, talkgroupID *int, st
 func (db *DB) GetCallByID(ctx context.Context, id int64) (*models.Call, error) {
 	var call models.Call
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, call_group_id, instance_id, system_id, talkgroup_id, recorder_id,
-			tr_call_id, call_num, start_time, stop_time, duration,
-			call_state, mon_state, encrypted, emergency, phase2_tdma, tdma_slot,
-			conventional, analog, audio_type, freq, freq_error, error_count, spike_count,
-			signal_db, noise_db, audio_path, audio_size, patched_tgids, metadata_json
-		FROM calls WHERE id = $1
+		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid, c.recorder_id,
+			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
+			c.call_state, c.mon_state, c.encrypted, c.emergency, c.phase2_tdma, c.tdma_slot,
+			c.conventional, c.analog, c.audio_type, c.freq, c.freq_error, c.error_count, c.spike_count,
+			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json,
+			tg.alpha_tag
+		FROM calls c
+		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
+		WHERE c.id = $1
 	`, id).Scan(
-		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TalkgroupID, &call.RecorderID,
+		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TgSysid, &call.TGID, &call.RecorderID,
 		&call.TRCallID, &call.CallNum, &call.StartTime, &call.StopTime, &call.Duration,
 		&call.CallState, &call.MonState, &call.Encrypted, &call.Emergency, &call.Phase2TDMA, &call.TDMASlot,
 		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
 		&call.SignalDB, &call.NoiseDB, &call.AudioPath, &call.AudioSize, &call.PatchedTGIDs, &call.MetadataJSON,
+		&call.TGAlphaTag,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -893,19 +879,23 @@ func (db *DB) GetCallByID(ctx context.Context, id int64) (*models.Call, error) {
 func (db *DB) GetCallByTRCallID(ctx context.Context, trCallID string) (*models.Call, error) {
 	var call models.Call
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, call_group_id, instance_id, system_id, talkgroup_id, recorder_id,
-			tr_call_id, call_num, start_time, stop_time, duration,
-			call_state, mon_state, encrypted, emergency, phase2_tdma, tdma_slot,
-			conventional, analog, audio_type, freq, freq_error, error_count, spike_count,
-			signal_db, noise_db, audio_path, audio_size, patched_tgids, metadata_json
-		FROM calls WHERE tr_call_id = $1
-		ORDER BY start_time DESC LIMIT 1
+		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid, c.recorder_id,
+			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
+			c.call_state, c.mon_state, c.encrypted, c.emergency, c.phase2_tdma, c.tdma_slot,
+			c.conventional, c.analog, c.audio_type, c.freq, c.freq_error, c.error_count, c.spike_count,
+			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json,
+			tg.alpha_tag
+		FROM calls c
+		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
+		WHERE c.tr_call_id = $1
+		ORDER BY c.start_time DESC LIMIT 1
 	`, trCallID).Scan(
-		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TalkgroupID, &call.RecorderID,
+		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TgSysid, &call.TGID, &call.RecorderID,
 		&call.TRCallID, &call.CallNum, &call.StartTime, &call.StopTime, &call.Duration,
 		&call.CallState, &call.MonState, &call.Encrypted, &call.Emergency, &call.Phase2TDMA, &call.TDMASlot,
 		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
 		&call.SignalDB, &call.NoiseDB, &call.AudioPath, &call.AudioSize, &call.PatchedTGIDs, &call.MetadataJSON,
+		&call.TGAlphaTag,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -919,13 +909,13 @@ func (db *DB) ListUnits(ctx context.Context, systemID *int, limit, offset int) (
 	var args []interface{}
 	if systemID != nil {
 		// Filter by site via junction table
-		query = `SELECT u.id, u.sysid, u.unit_id, u.alpha_tag, u.alpha_tag_source, u.first_seen, u.last_seen
+		query = `SELECT u.sysid, u.unit_id, u.alpha_tag, u.alpha_tag_source, u.first_seen, u.last_seen
 			FROM units u
-			JOIN unit_sites us ON us.unit_id = u.id
+			JOIN unit_sites us ON us.sysid = u.sysid AND us.rid = u.unit_id
 			WHERE us.system_id = $1 ORDER BY u.unit_id LIMIT $2 OFFSET $3`
 		args = []interface{}{*systemID, limit, offset}
 	} else {
-		query = `SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		query = `SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
 			FROM units ORDER BY unit_id LIMIT $1 OFFSET $2`
 		args = []interface{}{limit, offset}
 	}
@@ -939,7 +929,7 @@ func (db *DB) ListUnits(ctx context.Context, systemID *int, limit, offset int) (
 	var units []*models.Unit
 	for rows.Next() {
 		var u models.Unit
-		if err := rows.Scan(&u.ID, &u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
+		if err := rows.Scan(&u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
 			return nil, err
 		}
 		units = append(units, &u)
@@ -950,7 +940,7 @@ func (db *DB) ListUnits(ctx context.Context, systemID *int, limit, offset int) (
 // ListUnitsBySYSID returns all units for a given SYSID
 func (db *DB) ListUnitsBySYSID(ctx context.Context, sysid string, limit, offset int) ([]*models.Unit, error) {
 	rows, err := db.pool.Query(ctx, `
-		SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
+		SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
 		FROM units WHERE sysid = $1 ORDER BY unit_id LIMIT $2 OFFSET $3
 	`, sysid, limit, offset)
 	if err != nil {
@@ -961,25 +951,12 @@ func (db *DB) ListUnitsBySYSID(ctx context.Context, sysid string, limit, offset 
 	var units []*models.Unit
 	for rows.Next() {
 		var u models.Unit
-		if err := rows.Scan(&u.ID, &u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
+		if err := rows.Scan(&u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
 			return nil, err
 		}
 		units = append(units, &u)
 	}
 	return units, rows.Err()
-}
-
-// GetUnitByID gets a unit by its database ID
-func (db *DB) GetUnitByID(ctx context.Context, id int) (*models.Unit, error) {
-	var unit models.Unit
-	err := db.pool.QueryRow(ctx, `
-		SELECT id, sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen
-		FROM units WHERE id = $1
-	`, id).Scan(&unit.ID, &unit.SYSID, &unit.UnitID, &unit.AlphaTag, &unit.AlphaTagSource, &unit.FirstSeen, &unit.LastSeen)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	return &unit, err
 }
 
 // Stats holds database statistics
@@ -1042,15 +1019,16 @@ func (db *DB) GetStats(ctx context.Context) (*Stats, error) {
 }
 
 // ListUnitEvents returns unit events with optional filters
-func (db *DB) ListUnitEvents(ctx context.Context, unitID *int, systemID *int, eventType *string, tgid *int, startTime, endTime *time.Time, limit, offset int) ([]*models.UnitEvent, error) {
-	query := `SELECT id, instance_id, system_id, unit_id, unit_rid, event_type, talkgroup_id, tgid, time, metadata_json
+// Note: unitRID parameter is the actual unit radio ID (not a database ID)
+func (db *DB) ListUnitEvents(ctx context.Context, unitRID *int64, systemID *int, eventType *string, tgid *int, startTime, endTime *time.Time, limit, offset int) ([]*models.UnitEvent, error) {
+	query := `SELECT id, instance_id, system_id, unit_sysid, unit_rid, event_type, tg_sysid, tgid, time, metadata_json
 		FROM unit_events WHERE 1=1`
 	args := []interface{}{}
 	argNum := 1
 
-	if unitID != nil {
-		query += " AND unit_id = $" + strconv.Itoa(argNum)
-		args = append(args, *unitID)
+	if unitRID != nil {
+		query += " AND unit_rid = $" + strconv.Itoa(argNum)
+		args = append(args, *unitRID)
 		argNum++
 	}
 	if systemID != nil {
@@ -1094,7 +1072,7 @@ func (db *DB) ListUnitEvents(ctx context.Context, unitID *int, systemID *int, ev
 	var events []*models.UnitEvent
 	for rows.Next() {
 		var e models.UnitEvent
-		if err := rows.Scan(&e.ID, &e.InstanceID, &e.SystemID, &e.UnitID, &e.UnitRID, &e.EventType, &e.TalkgroupID, &e.TGID, &e.Time, &e.MetadataJSON); err != nil {
+		if err := rows.Scan(&e.ID, &e.InstanceID, &e.SystemID, &e.UnitSysid, &e.UnitRID, &e.EventType, &e.TgSysid, &e.TGID, &e.Time, &e.MetadataJSON); err != nil {
 			return nil, err
 		}
 		events = append(events, &e)
@@ -1104,17 +1082,17 @@ func (db *DB) ListUnitEvents(ctx context.Context, unitID *int, systemID *int, ev
 
 // ActiveCallFilters contains filters for active calls query
 type ActiveCallFilters struct {
-	SystemID    *int
-	ShortName   *string
-	TalkgroupID *int
-	Emergency   *bool
-	Encrypted   *bool
+	SystemID  *int
+	ShortName *string
+	TGID      *int // Actual talkgroup ID (not database ID)
+	Emergency *bool
+	Encrypted *bool
 }
 
 // ListActiveCalls returns calls that are currently active (no stop_time)
 func (db *DB) ListActiveCalls(ctx context.Context, filters ActiveCallFilters, limit, offset int) ([]*models.Call, error) {
 	query := `
-		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.talkgroup_id, c.recorder_id,
+		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid, c.recorder_id,
 			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
 			c.call_state, c.mon_state, c.encrypted, c.emergency, c.phase2_tdma, c.tdma_slot,
 			c.conventional, c.analog, c.audio_type, c.freq, c.freq_error, c.error_count, c.spike_count,
@@ -1141,9 +1119,9 @@ func (db *DB) ListActiveCalls(ctx context.Context, filters ActiveCallFilters, li
 		args = append(args, *filters.ShortName)
 		argNum++
 	}
-	if filters.TalkgroupID != nil {
-		query += fmt.Sprintf(" AND c.talkgroup_id = $%d", argNum)
-		args = append(args, *filters.TalkgroupID)
+	if filters.TGID != nil {
+		query += fmt.Sprintf(" AND c.tgid = $%d", argNum)
+		args = append(args, *filters.TGID)
 		argNum++
 	}
 	if filters.Emergency != nil {
@@ -1170,7 +1148,7 @@ func (db *DB) ListActiveCalls(ctx context.Context, filters ActiveCallFilters, li
 	for rows.Next() {
 		var c models.Call
 		if err := rows.Scan(
-			&c.ID, &c.CallGroupID, &c.InstanceID, &c.SystemID, &c.TalkgroupID, &c.RecorderID,
+			&c.ID, &c.CallGroupID, &c.InstanceID, &c.SystemID, &c.TgSysid, &c.TGID, &c.RecorderID,
 			&c.TRCallID, &c.CallNum, &c.StartTime, &c.StopTime, &c.Duration,
 			&c.CallState, &c.MonState, &c.Encrypted, &c.Emergency, &c.Phase2TDMA, &c.TDMASlot,
 			&c.Conventional, &c.Analog, &c.AudioType, &c.Freq, &c.FreqError, &c.ErrorCount, &c.SpikeCount,
@@ -1185,13 +1163,13 @@ func (db *DB) ListActiveCalls(ctx context.Context, filters ActiveCallFilters, li
 
 // ActiveUnitFilters contains filters for active units query
 type ActiveUnitFilters struct {
-	SystemID    *int
-	ShortName   *string
-	SYSID       *string // P25 SYSID for filtering (units.sysid)
-	TalkgroupID *int
-	WindowMins  int    // How many minutes back to consider "active"
-	SortField   string // Sort field: alpha_tag, unit_id, last_seen, first_seen
-	SortDir     string // Sort direction: asc, desc
+	SystemID   *int
+	ShortName  *string
+	SYSID      *string // P25 SYSID for filtering (units.sysid)
+	TGID       *int    // Talkgroup ID filter
+	WindowMins int     // How many minutes back to consider "active"
+	SortField  string  // Sort field: alpha_tag, unit_id, last_seen, first_seen
+	SortDir    string  // Sort direction: asc, desc
 }
 
 // ListActiveUnits returns units that have been active within the specified window
@@ -1202,20 +1180,20 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 	}
 
 	query := `
-		SELECT DISTINCT u.id, u.sysid, u.unit_id, u.alpha_tag, u.alpha_tag_source, u.first_seen, u.last_seen
+		SELECT DISTINCT u.sysid, u.unit_id, u.alpha_tag, u.alpha_tag_source, u.first_seen, u.last_seen
 		FROM units u`
 
 	// Join with unit_sites and systems if filtering by system_id or short_name
 	if filters.SystemID != nil || filters.ShortName != nil {
-		query += ` JOIN unit_sites us ON us.unit_id = u.id`
+		query += ` JOIN unit_sites us ON us.sysid = u.sysid AND us.rid = u.unit_id`
 		if filters.ShortName != nil {
 			query += ` JOIN systems s ON s.id = us.system_id`
 		}
 	}
 
-	// Join with unit_events to filter by recent activity or talkgroup
-	if filters.TalkgroupID != nil {
-		query += ` JOIN unit_events ue ON ue.unit_id = u.id`
+	// Join with unit_events to filter by talkgroup
+	if filters.TGID != nil {
+		query += ` JOIN unit_events ue ON ue.unit_sysid = u.sysid AND ue.unit_rid = u.unit_id`
 	}
 
 	query += fmt.Sprintf(` WHERE u.last_seen > NOW() - INTERVAL '%d minutes'`, windowMins)
@@ -1238,9 +1216,9 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 		args = append(args, *filters.SYSID)
 		argNum++
 	}
-	if filters.TalkgroupID != nil {
+	if filters.TGID != nil {
 		query += fmt.Sprintf(" AND ue.tgid = $%d AND ue.time > NOW() - INTERVAL '%d minutes'", argNum, windowMins)
-		args = append(args, *filters.TalkgroupID)
+		args = append(args, *filters.TGID)
 		argNum++
 	}
 
@@ -1276,46 +1254,60 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 	defer rows.Close()
 
 	var units []*models.Unit
-	var unitIDs []int
-	unitMap := make(map[int]*models.Unit)
+	type unitKey struct {
+		sysid  string
+		unitID int64
+	}
+	var unitKeys []unitKey
+	unitMap := make(map[unitKey]*models.Unit)
 	for rows.Next() {
 		var u models.Unit
-		if err := rows.Scan(&u.ID, &u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
+		if err := rows.Scan(&u.SYSID, &u.UnitID, &u.AlphaTag, &u.AlphaTagSource, &u.FirstSeen, &u.LastSeen); err != nil {
 			return nil, err
 		}
 		units = append(units, &u)
-		unitIDs = append(unitIDs, u.ID)
-		unitMap[u.ID] = &u
+		key := unitKey{sysid: u.SYSID, unitID: u.UnitID}
+		unitKeys = append(unitKeys, key)
+		unitMap[key] = &u
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	// Fetch most recent event per unit
-	if len(unitIDs) > 0 {
+	// Fetch most recent event per unit using composite key
+	if len(unitKeys) > 0 {
+		// Build arrays for the query
+		sysids := make([]string, len(unitKeys))
+		unitIDs := make([]int64, len(unitKeys))
+		for i, k := range unitKeys {
+			sysids[i] = k.sysid
+			unitIDs[i] = k.unitID
+		}
+
 		eventQuery := `
-			SELECT DISTINCT ON (ue.unit_id)
-				ue.unit_id, ue.event_type, ue.tgid, ue.time,
+			SELECT DISTINCT ON (ue.unit_sysid, ue.unit_rid)
+				ue.unit_sysid, ue.unit_rid, ue.event_type, ue.tgid, ue.time,
 				COALESCE(tg.alpha_tag, '') as tg_alpha_tag
 			FROM unit_events ue
-			LEFT JOIN systems s ON s.id = ue.system_id
-			LEFT JOIN talkgroups tg ON tg.tgid = ue.tgid AND tg.sysid = COALESCE(s.sysid, s.short_name)
-			WHERE ue.unit_id = ANY($1)
-			ORDER BY ue.unit_id, ue.time DESC
+			LEFT JOIN talkgroups tg ON tg.tgid = ue.tgid AND tg.sysid = ue.tg_sysid
+			WHERE (ue.unit_sysid, ue.unit_rid) IN (SELECT unnest($1::varchar[]), unnest($2::bigint[]))
+			ORDER BY ue.unit_sysid, ue.unit_rid, ue.time DESC
 		`
-		eventRows, err := db.pool.Query(ctx, eventQuery, unitIDs)
+		eventRows, err := db.pool.Query(ctx, eventQuery, sysids, unitIDs)
 		if err == nil {
 			defer eventRows.Close()
 			for eventRows.Next() {
-				var unitID int
+				var sysid string
+				var unitRID int64
 				var eventType string
 				var tgid *int64
 				var eventTime time.Time
 				var tgTag string
-				if err := eventRows.Scan(&unitID, &eventType, &tgid, &eventTime, &tgTag); err != nil {
+				if err := eventRows.Scan(&sysid, &unitRID, &eventType, &tgid, &eventTime, &tgTag); err != nil {
 					continue
 				}
-				if u, ok := unitMap[unitID]; ok {
+				key := unitKey{sysid: sysid, unitID: unitRID}
+				if u, ok := unitMap[key]; ok {
 					u.LastEventType = &eventType
 					u.LastEventTGID = tgid
 					u.LastEventTime = &eventTime
@@ -1368,7 +1360,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int) ([]*RecentCallInfo
 			c.stop_time,
 			c.duration,
 			COALESCE(s.short_name, '') as system,
-			COALESCE(t.tgid, 0) as tgid,
+			COALESCE(c.tgid, 0) as tgid,
 			COALESCE(t.alpha_tag, '') as tg_alpha_tag,
 			c.freq,
 			c.encrypted,
@@ -1377,7 +1369,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int) ([]*RecentCallInfo
 			c.id
 		FROM calls c
 		LEFT JOIN systems s ON s.id = c.system_id
-		LEFT JOIN talkgroups t ON t.id = c.talkgroup_id
+		LEFT JOIN talkgroups t ON t.sysid = c.tg_sysid AND t.tgid = c.tgid
 		WHERE c.audio_path IS NOT NULL AND c.audio_path != ''
 		ORDER BY c.stop_time DESC
 		LIMIT $1
@@ -1425,7 +1417,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int) ([]*RecentCallInfo
 				t.unit_rid,
 				COALESCE(u.alpha_tag, '') as unit_tag
 			FROM transmissions t
-			LEFT JOIN units u ON u.id = t.unit_id
+			LEFT JOIN units u ON u.sysid = t.unit_sysid AND u.unit_id = t.unit_rid
 			WHERE t.call_id = ANY($1)
 			ORDER BY t.call_id, t.unit_rid
 		`
@@ -1462,7 +1454,7 @@ func (db *DB) GetCallUnits(ctx context.Context, callID int64) ([]RecentCallUnit,
 			t.unit_rid,
 			COALESCE(u.alpha_tag, '') as unit_tag
 		FROM transmissions t
-		LEFT JOIN units u ON u.id = t.unit_id
+		LEFT JOIN units u ON u.sysid = t.unit_sysid AND u.unit_id = t.unit_rid
 		WHERE t.call_id = $1
 		ORDER BY t.unit_rid
 	`
@@ -1482,4 +1474,258 @@ func (db *DB) GetCallUnits(ctx context.Context, callID int64) ([]RecentCallUnit,
 		units = append(units, u)
 	}
 	return units, rows.Err()
+}
+
+// ============================================================================
+// Transcription queries
+// ============================================================================
+
+// QueueTranscription adds a call to the transcription queue
+func (db *DB) QueueTranscription(ctx context.Context, callID int64, priority int) error {
+	_, err := db.pool.Exec(ctx, `
+		INSERT INTO transcription_queue (call_id, priority, status, created_at, updated_at)
+		VALUES ($1, $2, 'pending', NOW(), NOW())
+		ON CONFLICT (call_id) DO UPDATE SET
+			priority = GREATEST(transcription_queue.priority, EXCLUDED.priority),
+			status = CASE WHEN transcription_queue.status = 'failed' THEN 'pending' ELSE transcription_queue.status END,
+			updated_at = NOW()
+	`, callID, priority)
+	return err
+}
+
+// GetPendingTranscription gets the next pending transcription job using SELECT FOR UPDATE SKIP LOCKED
+func (db *DB) GetPendingTranscription(ctx context.Context) (*models.TranscriptionQueueItem, error) {
+	var item models.TranscriptionQueueItem
+	err := db.pool.QueryRow(ctx, `
+		SELECT id, call_id, status, priority, attempts, COALESCE(last_error, ''), created_at, updated_at
+		FROM transcription_queue
+		WHERE status = 'pending'
+		ORDER BY priority DESC, created_at ASC
+		LIMIT 1
+		FOR UPDATE SKIP LOCKED
+	`).Scan(&item.ID, &item.CallID, &item.Status, &item.Priority, &item.Attempts, &item.LastError, &item.CreatedAt, &item.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &item, err
+}
+
+// UpdateTranscriptionQueueStatus updates the status of a transcription queue item
+func (db *DB) UpdateTranscriptionQueueStatus(ctx context.Context, id int64, status string, lastError string) error {
+	_, err := db.pool.Exec(ctx, `
+		UPDATE transcription_queue
+		SET status = $1, last_error = $2, attempts = attempts + 1, updated_at = NOW()
+		WHERE id = $3
+	`, status, lastError, id)
+	return err
+}
+
+// MarkTranscriptionProcessing marks a transcription job as in progress
+func (db *DB) MarkTranscriptionProcessing(ctx context.Context, id int64) error {
+	_, err := db.pool.Exec(ctx, `
+		UPDATE transcription_queue
+		SET status = 'processing', updated_at = NOW()
+		WHERE id = $1
+	`, id)
+	return err
+}
+
+// InsertTranscription inserts a transcription result and links it to the call
+func (db *DB) InsertTranscription(ctx context.Context, t *models.Transcription) error {
+	// Marshal words to JSON if present
+	var wordsJSON []byte
+	var err error
+	if len(t.Words) > 0 {
+		wordsJSON, err = json.Marshal(t.Words)
+		if err != nil {
+			return fmt.Errorf("failed to marshal words: %w", err)
+		}
+	}
+
+	err = db.pool.QueryRow(ctx, `
+		INSERT INTO transcriptions (call_id, provider, model, language, text, confidence, word_count, duration_ms, words_json, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+		RETURNING id, created_at
+	`, t.CallID, t.Provider, t.Model, t.Language, t.Text, t.Confidence, t.WordCount, t.DurationMs, wordsJSON).Scan(&t.ID, &t.CreatedAt)
+	if err != nil {
+		return err
+	}
+
+	// Update the call with the transcription ID
+	_, err = db.pool.Exec(ctx, `
+		UPDATE calls SET transcription_id = $1 WHERE id = $2
+	`, t.ID, t.CallID)
+	return err
+}
+
+// GetTranscriptionByCallID gets the transcription for a specific call
+func (db *DB) GetTranscriptionByCallID(ctx context.Context, callID int64) (*models.Transcription, error) {
+	var t models.Transcription
+	var wordsJSON []byte
+	err := db.pool.QueryRow(ctx, `
+		SELECT id, call_id, provider, COALESCE(model, ''), COALESCE(language, ''), text,
+			confidence, COALESCE(word_count, 0), COALESCE(duration_ms, 0), words_json, created_at
+		FROM transcriptions
+		WHERE call_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, callID).Scan(&t.ID, &t.CallID, &t.Provider, &t.Model, &t.Language, &t.Text,
+		&t.Confidence, &t.WordCount, &t.DurationMs, &wordsJSON, &t.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal words JSON if present
+	if len(wordsJSON) > 0 {
+		if err := json.Unmarshal(wordsJSON, &t.Words); err != nil {
+			// Log but don't fail - words are optional
+			t.Words = nil
+		}
+	}
+
+	return &t, nil
+}
+
+// SearchTranscriptions performs full-text search on transcriptions
+func (db *DB) SearchTranscriptions(ctx context.Context, query string, limit, offset int) ([]*models.Transcription, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT t.id, t.call_id, t.provider, COALESCE(t.model, ''), COALESCE(t.language, ''), t.text,
+			t.confidence, COALESCE(t.word_count, 0), COALESCE(t.duration_ms, 0), t.words_json, t.created_at
+		FROM transcriptions t
+		WHERE to_tsvector('english', t.text) @@ plainto_tsquery('english', $1)
+		ORDER BY ts_rank(to_tsvector('english', t.text), plainto_tsquery('english', $1)) DESC, t.created_at DESC
+		LIMIT $2 OFFSET $3
+	`, query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var transcriptions []*models.Transcription
+	for rows.Next() {
+		var t models.Transcription
+		var wordsJSON []byte
+		if err := rows.Scan(&t.ID, &t.CallID, &t.Provider, &t.Model, &t.Language, &t.Text,
+			&t.Confidence, &t.WordCount, &t.DurationMs, &wordsJSON, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		// Unmarshal words JSON if present
+		if len(wordsJSON) > 0 {
+			json.Unmarshal(wordsJSON, &t.Words) // Ignore errors, words are optional
+		}
+		transcriptions = append(transcriptions, &t)
+	}
+	return transcriptions, rows.Err()
+}
+
+// RecentTranscriptionInfo contains transcription with call context for display
+type RecentTranscriptionInfo struct {
+	ID         int64     `json:"id"`
+	CallID     int64     `json:"call_id"`
+	Text       string    `json:"text"`
+	WordCount  int       `json:"word_count"`
+	Provider   string    `json:"provider"`
+	CreatedAt  time.Time `json:"created_at"`
+	System     string    `json:"system"`
+	TgSysid    *string   `json:"tg_sysid,omitempty"`
+	TGID       int       `json:"tgid"`
+	TGAlphaTag string    `json:"tg_alpha_tag"`
+	Duration   float32   `json:"call_duration"`
+	AudioURL   string    `json:"audio_url"`
+}
+
+// ListRecentTranscriptions returns recently created transcriptions with call context
+func (db *DB) ListRecentTranscriptions(ctx context.Context, limit, offset int) ([]*RecentTranscriptionInfo, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT
+			t.id, t.call_id, t.text, COALESCE(t.word_count, 0), t.provider, t.created_at,
+			COALESCE(s.short_name, '') as system,
+			c.tg_sysid,
+			COALESCE(c.tgid, 0) as tgid,
+			COALESCE(tg.alpha_tag, '') as tg_alpha_tag,
+			COALESCE(c.duration, 0) as call_duration
+		FROM transcriptions t
+		JOIN calls c ON c.id = t.call_id
+		LEFT JOIN systems s ON s.id = c.system_id
+		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
+		ORDER BY t.created_at DESC
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var transcriptions []*RecentTranscriptionInfo
+	for rows.Next() {
+		var t RecentTranscriptionInfo
+		if err := rows.Scan(&t.ID, &t.CallID, &t.Text, &t.WordCount, &t.Provider, &t.CreatedAt,
+			&t.System, &t.TgSysid, &t.TGID, &t.TGAlphaTag, &t.Duration); err != nil {
+			return nil, err
+		}
+		t.AudioURL = fmt.Sprintf("/api/v1/calls/%d/audio", t.CallID)
+		transcriptions = append(transcriptions, &t)
+	}
+	return transcriptions, rows.Err()
+}
+
+// TranscriptionQueueStats holds queue statistics
+type TranscriptionQueueStats struct {
+	Pending    int `json:"pending"`
+	Processing int `json:"processing"`
+	Completed  int `json:"completed"`
+	Failed     int `json:"failed"`
+}
+
+// GetTranscriptionQueueStats returns counts by status
+func (db *DB) GetTranscriptionQueueStats(ctx context.Context) (*TranscriptionQueueStats, error) {
+	var stats TranscriptionQueueStats
+	err := db.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'pending') as pending,
+			COUNT(*) FILTER (WHERE status = 'processing') as processing,
+			COUNT(*) FILTER (WHERE status = 'completed') as completed,
+			COUNT(*) FILTER (WHERE status = 'failed') as failed
+		FROM transcription_queue
+	`).Scan(&stats.Pending, &stats.Processing, &stats.Completed, &stats.Failed)
+	return &stats, err
+}
+
+// GetCallsForTranscriptionBackfill returns calls that have audio but no transcription
+func (db *DB) GetCallsForTranscriptionBackfill(ctx context.Context, minDuration float64, limit int) ([]int64, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT c.id
+		FROM calls c
+		LEFT JOIN transcription_queue tq ON tq.call_id = c.id
+		WHERE c.audio_path IS NOT NULL
+		AND c.audio_path != ''
+		AND c.transcription_id IS NULL
+		AND c.duration >= $1
+		AND tq.id IS NULL
+		ORDER BY c.start_time DESC
+		LIMIT $2
+	`, minDuration, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var callIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		callIDs = append(callIDs, id)
+	}
+	return callIDs, rows.Err()
+}
+
+// DeleteTranscriptionQueueItem removes a completed item from the queue
+func (db *DB) DeleteTranscriptionQueueItem(ctx context.Context, id int64) error {
+	_, err := db.pool.Exec(ctx, `DELETE FROM transcription_queue WHERE id = $1`, id)
+	return err
 }

@@ -203,7 +203,7 @@ func (e *Engine) linkToGroup(ctx context.Context, call *models.Call, group *mode
 func (e *Engine) createGroup(ctx context.Context, call *models.Call, tgid int) (*models.CallGroup, error) {
 	group := &models.CallGroup{
 		SystemID:      call.SystemID,
-		TalkgroupID:   call.TalkgroupID,
+		TgSysid:       call.TgSysid,
 		TGID:          tgid,
 		StartTime:     call.StartTime,
 		EndTime:       call.StopTime,

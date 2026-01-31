@@ -43,7 +43,7 @@ GET /systems/{id}
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | int | yes | System database ID |
+| id | path | int | yes | System ID |
 
 **Response:** Single system object
 
@@ -56,7 +56,7 @@ GET /systems/{id}/talkgroups
 **Parameters:**
 | Name | In | Type | Required | Default | Description |
 |------|-----|------|----------|---------|-------------|
-| id | path | int | yes | - | System database ID |
+| id | path | int | yes | - | System ID |
 | limit | query | int | no | 50 | Results per page |
 | offset | query | int | no | 0 | Page offset |
 
@@ -111,15 +111,14 @@ GET /talkgroups
 GET /talkgroups/{id}
 ```
 
-Accepts multiple identifier formats:
-- `sysid:tgid` - Scoped lookup (e.g., `348:9178`)
-- Plain `tgid` - Radio ID lookup (returns 409 if ambiguous)
-- `id:number` - Explicit database ID (e.g., `id:123`)
+Accepts two identifier formats:
+- `sysid:tgid` - Explicit scoped lookup (e.g., `348:9178`) - recommended for multi-system
+- Plain `tgid` - Radio ID lookup (returns 409 if ambiguous across systems)
 
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | string | yes | Talkgroup identifier (see formats above) |
+| id | path | string | yes | Talkgroup identifier: `sysid:tgid` or plain `tgid` |
 
 **409 Conflict Response** (when tgid exists in multiple systems):
 ```json
@@ -143,7 +142,7 @@ GET /talkgroups/{id}/calls
 **Parameters:**
 | Name | In | Type | Required | Default | Description |
 |------|-----|------|----------|---------|-------------|
-| id | path | int | yes | - | Talkgroup database ID |
+| id | path | int | yes | - | Talkgroup ID (TGID) |
 | start_time | query | RFC3339 | no | - | Filter calls after this time |
 | end_time | query | RFC3339 | no | - | Filter calls before this time |
 | limit | query | int | no | 50 | Results per page |
@@ -157,7 +156,7 @@ GET /talkgroups/{id}/calls
       "id": 12345,
       "tr_call_id": "1705312200_850387500_9178",
       "system_id": 1,
-      "talkgroup_id": 8,
+      "tg_sysid": "348",
       "tgid": 9178,
       "tg_alpha_tag": "PD Dispatch",
       "start_time": "2024-01-15T10:30:00Z",
@@ -251,20 +250,18 @@ GET /units
 GET /units/{id}
 ```
 
-Accepts multiple identifier formats:
-- `sysid:unit_id` - Scoped lookup (e.g., `348:9001234`)
-- Plain `unit_id` - Radio ID lookup (returns 409 if ambiguous)
-- `id:number` - Explicit database ID (e.g., `id:1729`)
+Accepts two identifier formats:
+- `sysid:unit_id` - Explicit scoped lookup (e.g., `348:9001234`) - recommended for multi-system
+- Plain `unit_id` - Radio ID lookup (returns 409 if ambiguous across systems)
 
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | string | yes | Unit identifier (see formats above) |
+| id | path | string | yes | Unit identifier: `sysid:unit_id` or plain `unit_id` |
 
 **Response:**
 ```json
 {
-  "id": 1729,
   "sysid": "348",
   "unit_id": 9001234,
   "alpha_tag": "Unit 123",
@@ -298,7 +295,7 @@ Get unit activity events (affiliations, registrations, calls, etc.)
 **Parameters:**
 | Name | In | Type | Required | Default | Description |
 |------|-----|------|----------|---------|-------------|
-| id | path | int | yes | - | Unit database ID |
+| id | path | int | yes | - | Unit radio ID (RID) |
 | type | query | string | no | - | Filter by event type |
 | talkgroup | query | int | no | - | Filter by talkgroup ID (TGID) |
 | start_time | query | RFC3339 | no | - | Filter events after this time |
@@ -316,10 +313,10 @@ Get unit activity events (affiliations, registrations, calls, etc.)
       "id": 98765,
       "instance_id": 1,
       "system_id": 1,
-      "unit_id": 1729,
+      "unit_sysid": "348",
       "unit_rid": 9001234,
       "event_type": "call",
-      "talkgroup_id": 8,
+      "tg_sysid": "348",
       "tgid": 9178,
       "time": "2024-01-15T10:30:00Z",
       "metadata_json": {}
@@ -342,7 +339,7 @@ Get calls that include transmissions from this unit.
 **Parameters:**
 | Name | In | Type | Required | Default | Description |
 |------|-----|------|----------|---------|-------------|
-| id | path | int | yes | - | Unit database ID |
+| id | path | int | yes | - | Unit radio ID (RID) |
 | start_time | query | RFC3339 | no | - | Filter calls after this time |
 | end_time | query | RFC3339 | no | - | Filter calls before this time |
 | limit | query | int | no | 50 | Results per page |
@@ -425,7 +422,7 @@ Returns calls with audio recordings only.
       "id": 12345,
       "tr_call_id": "1705312200_850387500_9178",
       "system_id": 1,
-      "talkgroup_id": 8,
+      "tg_sysid": "348",
       "tgid": 9178,
       "tg_alpha_tag": "PD Dispatch",
       "start_time": "2024-01-15T10:30:00Z",
@@ -455,11 +452,11 @@ GET /calls/{id}
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | string/int | yes | Call `tr_call_id` or database ID |
+| id | path | string/int | yes | Call `tr_call_id` or numeric row ID |
 
 The endpoint accepts both:
 - Trunk-recorder call ID (string): `1705312200_850387500_9178`
-- Database row ID (int): `12345`
+- Numeric row ID (int): `12345`
 
 **Response:** Full call object with all fields.
 
@@ -474,7 +471,7 @@ Stream the audio file for a call.
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | string/int | yes | Call `tr_call_id` or database ID |
+| id | path | string/int | yes | Call `tr_call_id` or numeric row ID |
 
 **Response:**
 - Content-Type: `audio/mpeg`, `audio/mp4`, `audio/wav`, or `audio/ogg`
@@ -498,7 +495,7 @@ Get individual unit transmissions (srcList) within a call, ordered by position.
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | string/int | yes | Call `tr_call_id` or database ID |
+| id | path | string/int | yes | Call `tr_call_id` or numeric row ID |
 
 **Response:**
 ```json
@@ -507,7 +504,7 @@ Get individual unit transmissions (srcList) within a call, ordered by position.
     {
       "id": 54321,
       "call_id": 12345,
-      "unit_id": 1729,
+      "unit_sysid": "348",
       "unit_rid": 9001234,
       "start_time": "2024-01-15T10:30:00Z",
       "stop_time": "2024-01-15T10:30:15Z",
@@ -520,7 +517,7 @@ Get individual unit transmissions (srcList) within a call, ordered by position.
     {
       "id": 54322,
       "call_id": 12345,
-      "unit_id": 1730,
+      "unit_sysid": "348",
       "unit_rid": 9001235,
       "start_time": "2024-01-15T10:30:18Z",
       "stop_time": "2024-01-15T10:30:30Z",
@@ -546,7 +543,7 @@ Get frequency usage (freqList) during a call, ordered by position.
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | string/int | yes | Call `tr_call_id` or database ID |
+| id | path | string/int | yes | Call `tr_call_id` or numeric row ID |
 
 **Response:**
 ```json
@@ -672,7 +669,7 @@ GET /call-groups
     {
       "id": 100,
       "system_id": 1,
-      "talkgroup_id": 8,
+      "tg_sysid": "348",
       "tgid": 9178,
       "start_time": "2024-01-15T10:30:00Z",
       "end_time": "2024-01-15T10:30:45Z",
@@ -697,7 +694,7 @@ GET /call-groups/{id}
 **Parameters:**
 | Name | In | Type | Required | Description |
 |------|-----|------|----------|-------------|
-| id | path | int | yes | Call group database ID |
+| id | path | int | yes | Call group ID |
 
 **Response:**
 ```json
@@ -705,7 +702,7 @@ GET /call-groups/{id}
   "call_group": {
     "id": 100,
     "system_id": 1,
-    "talkgroup_id": 8,
+    "tg_sysid": "348",
     "tgid": 9178,
     "start_time": "2024-01-15T10:30:00Z",
     "end_time": "2024-01-15T10:30:45Z",
