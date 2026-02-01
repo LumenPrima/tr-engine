@@ -6,20 +6,42 @@ Backend service for aggregating [trunk-recorder](https://github.com/robotastic/t
 
 ## Highlights
 
-- **Self-contained deployment** - Single binary with embedded PostgreSQL and MQTT broker. No external dependencies required. Optional external services for high-volume scaling.
-- **Data ingestion** - Receives calls, audio, unit events, recorder status via MQTT. Stores audio with per-unit transmission metadata.
+- **Easy Mode** - Zero-config deployment. Just point at trunk-recorder's audio/logs directories. No MQTT required.
+- **Self-contained deployment** - Single binary with embedded PostgreSQL and MQTT broker. No external dependencies required.
+- **Watch Mode** - File watcher + log tailing for MQTT-free operation with real-time updates.
+- **Data ingestion** - Receives calls, audio, unit events, recorder status via MQTT or file watching.
 - **Speech-to-text transcription** - Whisper API support with word-level timestamps for synchronized playback.
 - **Cross-site deduplication** - Links duplicate P25 call recordings from multi-site systems.
-- **REST API** - Historical queries for calls, talkgroups, units, statistics.
+- **REST API** - Historical queries for calls, talkgroups, units, statistics with server-side search/sort.
 - **WebSocket API** - Real-time event streaming with subscription filtering.
 - **Authentication** - Optional API key and session-based auth with admin key management.
 - **Interactive docs** - Swagger UI at `/swagger/`, WebSocket tester at `/websocket`.
-- **Demo web UI** - Dashboard with call history, unit tracking, audio playback, transcription search. Recorder status monitor.
+- **Demo web UI** - Dashboard with call history, unit tracking, audio playback, transcription search.
 - **Prometheus metrics** - System health and decode rate monitoring at `/metrics`.
 
 ## Quick Start
 
-### Option 1: Self-Contained Binary (Easiest)
+### Option 1: Easy Mode (Simplest - No MQTT Required)
+
+Zero configuration. Just point at trunk-recorder's audio and log directories:
+
+```bash
+docker run -d -p 8080:8080 \
+  -v ./data:/data \
+  -v /path/to/trunk-recorder/audio:/audio:ro \
+  -v /path/to/trunk-recorder/logs:/logs:ro \
+  ghcr.io/lumenprima/tr-engine:0.3.1-beta1 --easy
+```
+
+That's it. No MQTT setup, no config file, no database setup. Open `http://localhost:8080` to browse recordings.
+
+- Automatically imports all historical recordings in the background
+- Real-time call tracking via log tailing
+- Embedded database for zero dependencies
+
+### Option 2: Self-Contained with MQTT
+
+For real-time MQTT integration with trunk-recorder's MQTT plugin:
 
 **1. Build or download the binary:**
 ```bash
@@ -38,7 +60,7 @@ Creates `config.yaml` with embedded mode defaults, then exits.
 ```
 Starts embedded PostgreSQL (port 5432), MQTT broker (port 1883), and HTTP server (port 8080).
 
-### Option 2: Docker
+### Option 3: Docker with MQTT
 
 Run the pre-built image (self-contained mode with embedded PostgreSQL and MQTT):
 
@@ -62,7 +84,7 @@ docker run -d \
 
 **Note:** Beta releases require the specific version tag (e.g., `:0.3.1-beta1`). The `:latest` tag is only applied to stable releases.
 
-### Option 3: Docker Compose (TimescaleDB)
+### Option 4: Docker Compose (TimescaleDB)
 
 Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker. Use this for high-volume deployments where time-series optimizations and long-term retention matter. Data stored in local `./data/` folder.
 
@@ -70,7 +92,7 @@ Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker.
 docker-compose up -d
 ```
 
-### Configure trunk-recorder
+### Configure trunk-recorder (Options 2-4 only)
 
 Install the [MQTT status plugin](https://github.com/TrunkRecorder/tr-plugin-mqtt) and add to your trunk-recorder config:
 
@@ -187,7 +209,14 @@ storage:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
+| `storage.mode` | Storage mode: `copy`, `external`, or `watch` | `copy` |
 | `storage.audio_path` | Audio file directory | `./data/audio` |
+| `storage.log_path` | TR log directory (for watch mode) | |
+
+**Storage Modes:**
+- `copy` - Audio received via MQTT, copied to audio_path
+- `external` - References TR's audio files directly (no copy)
+- `watch` - File watcher mode, no MQTT required. Uses `--easy` flag.
 
 ### Authentication (Optional)
 
