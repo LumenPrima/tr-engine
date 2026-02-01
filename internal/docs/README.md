@@ -35,13 +35,20 @@ docker run -d -p 8080:8080 \
 
 That's it. No MQTT setup, no config file, no database setup. Open `http://localhost:8080` to browse recordings.
 
-- Automatically imports all historical recordings in the background
+**What works:**
+- Automatic import of all historical recordings
 - Real-time call tracking via log tailing
+- Decode rate monitoring
 - Embedded database for zero dependencies
+
+**Limitations vs MQTT mode:**
+- No active unit tracking (unit on/off/affiliate events require MQTT)
+- No real-time recorder status
+- Transmission metadata parsed from JSON sidecars (less detailed than MQTT)
 
 ### Option 2: Self-Contained with MQTT
 
-For real-time MQTT integration with trunk-recorder's MQTT plugin:
+For full real-time features including unit tracking and recorder status:
 
 **1. Build or download the binary:**
 ```bash
