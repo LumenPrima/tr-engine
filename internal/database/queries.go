@@ -65,6 +65,8 @@ func (db *DB) UpsertSource(ctx context.Context, instanceID, sourceNum int, cente
 }
 
 // UpsertSystem creates or updates a system
+// P25 system info (sysid, wacn, nac, rfss, site_id) is preserved when new values are empty/zero,
+// since config messages don't include this info but systems status messages do.
 func (db *DB) UpsertSystem(ctx context.Context, instanceID, sysNum int, shortName, systemType, sysID, wacn, nac string, rfss, siteID int, configJSON json.RawMessage) (*models.System, error) {
 	var sys models.System
 	err := db.pool.QueryRow(ctx, `
@@ -73,12 +75,12 @@ func (db *DB) UpsertSystem(ctx context.Context, instanceID, sysNum int, shortNam
 		ON CONFLICT (instance_id, sys_num) DO UPDATE SET
 			short_name = EXCLUDED.short_name,
 			system_type = EXCLUDED.system_type,
-			sysid = EXCLUDED.sysid,
-			wacn = EXCLUDED.wacn,
-			nac = EXCLUDED.nac,
-			rfss = EXCLUDED.rfss,
-			site_id = EXCLUDED.site_id,
-			config_json = EXCLUDED.config_json
+			sysid = CASE WHEN EXCLUDED.sysid = '' OR EXCLUDED.sysid IS NULL THEN systems.sysid ELSE EXCLUDED.sysid END,
+			wacn = CASE WHEN EXCLUDED.wacn = '' OR EXCLUDED.wacn IS NULL THEN systems.wacn ELSE EXCLUDED.wacn END,
+			nac = CASE WHEN EXCLUDED.nac = '' OR EXCLUDED.nac IS NULL THEN systems.nac ELSE EXCLUDED.nac END,
+			rfss = CASE WHEN EXCLUDED.rfss = 0 THEN systems.rfss ELSE EXCLUDED.rfss END,
+			site_id = CASE WHEN EXCLUDED.site_id = 0 THEN systems.site_id ELSE EXCLUDED.site_id END,
+			config_json = CASE WHEN EXCLUDED.config_json IS NULL THEN systems.config_json ELSE EXCLUDED.config_json END
 		RETURNING id, instance_id, sys_num, short_name, system_type, sysid, wacn, nac, rfss, site_id, config_json
 	`, instanceID, sysNum, shortName, systemType, sysID, wacn, nac, rfss, siteID, configJSON).Scan(
 		&sys.ID, &sys.InstanceID, &sys.SysNum, &sys.ShortName, &sys.SystemType, &sys.SysID, &sys.WACN, &sys.NAC, &sys.RFSS, &sys.SiteID, &sys.ConfigJSON,
