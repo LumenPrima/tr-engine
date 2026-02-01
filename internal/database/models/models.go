@@ -303,3 +303,17 @@ type TranscriptionQueueItem struct {
 	CreatedAt time.Time `json:"created_at" example:"2024-01-15T12:30:00Z"`
 	UpdatedAt time.Time `json:"updated_at" example:"2024-01-15T12:30:00Z"`
 }
+
+// APIKey represents a database-managed API key
+// @Description An API key for authenticating REST API requests
+type APIKey struct {
+	ID         int        `json:"id" example:"1"`
+	KeyPrefix  string     `json:"key_prefix" example:"tr_api_a1b2"` // First 12 chars for identification
+	Name       string     `json:"name" example:"frontend"`
+	Scopes     []string   `json:"scopes,omitempty"`
+	ReadOnly   bool       `json:"read_only" example:"false"`
+	CreatedAt  time.Time  `json:"created_at" example:"2024-01-15T12:30:00Z"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+}

@@ -70,7 +70,7 @@ func NewServer(cfg config.ServerConfig, authCfg config.AuthConfig, db *database.
 	}
 
 	// Create auth middleware
-	auth := middleware.NewAuthMiddleware(authCfg)
+	auth := middleware.NewAuthMiddleware(authCfg, db)
 
 	// Start session cleanup goroutine
 	go func() {
@@ -290,7 +290,78 @@ func (s *Server) setupRoutes() {
 		api.GET("/transcriptions/recent", handler.GetRecentTranscriptions)
 		api.GET("/transcriptions/search", handler.SearchTranscriptions)
 		api.GET("/transcription/status", handler.GetTranscriptionStatus)
+
+		// Admin - API Keys
+		api.GET("/admin/api-keys", s.listAPIKeys)
+		api.POST("/admin/api-keys", s.createAPIKey)
+		api.DELETE("/admin/api-keys/:id", s.revokeAPIKey)
 	}
+}
+
+// createAPIKey creates a new API key
+func (s *Server) createAPIKey(c *gin.Context) {
+	var req struct {
+		Name      string     `json:"name" binding:"required"`
+		Scopes    []string   `json:"scopes"`
+		ReadOnly  bool       `json:"read_only"`
+		ExpiresAt *time.Time `json:"expires_at"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	plaintext, key, err := s.auth.CreateAPIKey(c.Request.Context(), req.Name, req.Scopes, req.ReadOnly, req.ExpiresAt)
+	if err != nil {
+		s.logger.Error("Failed to create API key", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create API key"})
+		return
+	}
+
+	// Return the plaintext key only once
+	c.JSON(http.StatusCreated, gin.H{
+		"key":        plaintext,
+		"id":         key.ID,
+		"key_prefix": key.KeyPrefix,
+		"name":       key.Name,
+		"created_at": key.CreatedAt,
+		"expires_at": key.ExpiresAt,
+		"message":    "Save this key now - it cannot be retrieved again",
+	})
+}
+
+// listAPIKeys returns all API keys (without the actual key values)
+func (s *Server) listAPIKeys(c *gin.Context) {
+	keys, err := s.auth.ListAPIKeys(c.Request.Context())
+	if err != nil {
+		s.logger.Error("Failed to list API keys", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list API keys"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"api_keys": keys,
+		"count":    len(keys),
+	})
+}
+
+// revokeAPIKey revokes an API key
+func (s *Server) revokeAPIKey(c *gin.Context) {
+	idStr := c.Param("id")
+	var id int
+	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key ID"})
+		return
+	}
+
+	if err := s.auth.RevokeAPIKey(c.Request.Context(), id); err != nil {
+		s.logger.Error("Failed to revoke API key", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke API key"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "API key revoked"})
 }
 
 func requestLogger(logger *zap.Logger) gin.HandlerFunc {

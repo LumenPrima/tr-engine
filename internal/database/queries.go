@@ -1729,3 +1729,84 @@ func (db *DB) DeleteTranscriptionQueueItem(ctx context.Context, id int64) error 
 	_, err := db.pool.Exec(ctx, `DELETE FROM transcription_queue WHERE id = $1`, id)
 	return err
 }
+
+// --- API Keys ---
+
+// CreateAPIKey creates a new API key in the database
+func (db *DB) CreateAPIKey(ctx context.Context, keyHash, keyPrefix, name string, scopes []string, readOnly bool, expiresAt *time.Time) (*models.APIKey, error) {
+	var key models.APIKey
+	err := db.pool.QueryRow(ctx, `
+		INSERT INTO api_keys (key_hash, key_prefix, name, scopes, read_only, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, key_prefix, name, scopes, read_only, created_at, last_used_at, expires_at, revoked_at
+	`, keyHash, keyPrefix, name, scopes, readOnly, expiresAt).Scan(
+		&key.ID, &key.KeyPrefix, &key.Name, &key.Scopes, &key.ReadOnly,
+		&key.CreatedAt, &key.LastUsedAt, &key.ExpiresAt, &key.RevokedAt,
+	)
+	return &key, err
+}
+
+// GetAPIKeyByHash retrieves an API key by its hash (for validation)
+func (db *DB) GetAPIKeyByHash(ctx context.Context, keyHash string) (*models.APIKey, error) {
+	var key models.APIKey
+	err := db.pool.QueryRow(ctx, `
+		SELECT id, key_prefix, name, scopes, read_only, created_at, last_used_at, expires_at, revoked_at
+		FROM api_keys
+		WHERE key_hash = $1
+	`, keyHash).Scan(
+		&key.ID, &key.KeyPrefix, &key.Name, &key.Scopes, &key.ReadOnly,
+		&key.CreatedAt, &key.LastUsedAt, &key.ExpiresAt, &key.RevokedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &key, err
+}
+
+// ListAPIKeys returns all API keys (without hashes)
+func (db *DB) ListAPIKeys(ctx context.Context) ([]*models.APIKey, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT id, key_prefix, name, scopes, read_only, created_at, last_used_at, expires_at, revoked_at
+		FROM api_keys
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []*models.APIKey
+	for rows.Next() {
+		var key models.APIKey
+		if err := rows.Scan(
+			&key.ID, &key.KeyPrefix, &key.Name, &key.Scopes, &key.ReadOnly,
+			&key.CreatedAt, &key.LastUsedAt, &key.ExpiresAt, &key.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		keys = append(keys, &key)
+	}
+	return keys, rows.Err()
+}
+
+// UpdateAPIKeyLastUsed updates the last_used_at timestamp
+func (db *DB) UpdateAPIKeyLastUsed(ctx context.Context, id int) error {
+	_, err := db.pool.Exec(ctx, `
+		UPDATE api_keys SET last_used_at = NOW() WHERE id = $1
+	`, id)
+	return err
+}
+
+// RevokeAPIKey marks an API key as revoked
+func (db *DB) RevokeAPIKey(ctx context.Context, id int) error {
+	_, err := db.pool.Exec(ctx, `
+		UPDATE api_keys SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL
+	`, id)
+	return err
+}
+
+// DeleteAPIKey permanently deletes an API key
+func (db *DB) DeleteAPIKey(ctx context.Context, id int) error {
+	_, err := db.pool.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
+	return err
+}
