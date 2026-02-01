@@ -8,11 +8,13 @@ Backend service for aggregating [trunk-recorder](https://github.com/robotastic/t
 
 - **Self-contained deployment** - Single binary with embedded PostgreSQL and MQTT broker. No external dependencies required. Optional external services for high-volume scaling.
 - **Data ingestion** - Receives calls, audio, unit events, recorder status via MQTT. Stores audio with per-unit transmission metadata.
+- **Speech-to-text transcription** - Whisper API support with word-level timestamps for synchronized playback.
 - **Cross-site deduplication** - Links duplicate P25 call recordings from multi-site systems.
 - **REST API** - Historical queries for calls, talkgroups, units, statistics.
 - **WebSocket API** - Real-time event streaming with subscription filtering.
+- **Authentication** - Optional API key and session-based auth with admin key management.
 - **Interactive docs** - Swagger UI at `/swagger/`, WebSocket tester at `/websocket`.
-- **Demo web UI** - Dashboard with call history, unit tracking, audio playback. Recorder status monitor.
+- **Demo web UI** - Dashboard with call history, unit tracking, audio playback, transcription search. Recorder status monitor.
 - **Prometheus metrics** - System health and decode rate monitoring at `/metrics`.
 
 ## Quick Start
@@ -187,6 +189,28 @@ storage:
 |---------|-------------|---------|
 | `storage.audio_path` | Audio file directory | `./data/audio` |
 
+### Authentication (Optional)
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `auth.enabled` | Enable authentication | `false` |
+| `auth.dashboard.username` | Dashboard login username | |
+| `auth.dashboard.password` | Dashboard login password | |
+| `auth.api_keys` | List of root API keys | `[]` |
+
+### Transcription (Optional)
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `transcription.enabled` | Enable transcription | `false` |
+| `transcription.provider` | Provider (`openai`) | `openai` |
+| `transcription.openai.api_key` | OpenAI API key | |
+| `transcription.openai.base_url` | API base URL (for compatible APIs) | |
+| `transcription.openai.model` | Model name | `whisper-1` |
+| `transcription.openai.prompt` | Initial prompt for context | |
+| `transcription.min_duration` | Min call duration to transcribe | `2.0` |
+| `transcription.concurrency` | Concurrent transcription jobs | `2` |
+
 ### Environment Variables
 
 | Variable | Config Path |
@@ -198,6 +222,7 @@ storage:
 | `DB_PASSWORD` | database.password |
 | `MQTT_BROKER` | mqtt.broker |
 | `AUDIO_PATH` | storage.audio_path |
+| `OPENAI_API_KEY` | transcription.openai.api_key |
 
 ---
 
@@ -218,9 +243,16 @@ Full interactive documentation at `/swagger/` and `/websocket`.
 | `GET /api/v1/calls/{id}` | Get call details |
 | `GET /api/v1/calls/{id}/audio` | Stream audio file |
 | `GET /api/v1/calls/{id}/transmissions` | Unit transmissions in call |
+| `GET /api/v1/calls/{id}/transcription` | Get call transcription |
+| `POST /api/v1/calls/{id}/transcribe` | Queue call for transcription |
+| `GET /api/v1/transcriptions/search` | Full-text search transcriptions |
+| `GET /api/v1/transcriptions/recent` | Recent transcriptions |
 | `GET /api/v1/call-groups` | Deduplicated call groups |
 | `GET /api/v1/stats` | System statistics |
 | `GET /api/v1/recorders` | Recorder status |
+| `GET /api/v1/admin/api-keys` | List API keys (admin) |
+| `POST /api/v1/admin/api-keys` | Create API key (admin) |
+| `DELETE /api/v1/admin/api-keys/{id}` | Revoke API key (admin) |
 
 ### WebSocket
 
@@ -237,37 +269,32 @@ Connect to `ws://<host>:8080/api/ws` and subscribe:
 ## Building from Source
 
 ```bash
-# Build
-go build -o tr-engine
+# Build (stripped binary, ~10MB)
+go build -ldflags="-w -s" -o tr-engine
 
-# Run tests
+# Run tests (193 tests)
 go test ./...
 
 # Cross-compile
-GOOS=linux GOARCH=amd64 go build -o tr-engine-linux
-GOOS=windows GOARCH=amd64 go build -o tr-engine.exe
+GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o tr-engine-linux
+GOOS=windows GOARCH=amd64 go build -ldflags="-w -s" -o tr-engine.exe
 ```
 
 ---
 
 ## Roadmap
 
-### Testing
-- [ ] Integration tests for storage package (0% coverage)
-- [ ] Integration tests for watcher package (0% coverage)
-- [ ] Integration tests for importer package (0% coverage)
-- [ ] Improve database test coverage (currently 21.8%)
-- [ ] Clean up test port allocation
+### Completed (v0.3.x)
+- [x] Authentication/authorization (API keys, session auth, admin API)
+- [x] Speech-to-text transcription (Whisper API with word timestamps)
+- [x] Comprehensive test suite (193 tests across all packages)
+- [x] Natural composite keys for talkgroups/units (sysid scoping)
+- [x] Full-text search for transcriptions
 
-### Performance
-- [ ] Batch insert optimization for transmissions/frequencies
-- [ ] Database query optimization (indexes, query plans)
-- [ ] Connection pool tuning
-- [ ] API response caching
+### In Progress
+- [ ] Performance optimization (batch inserts, query tuning)
 
-### Features
-- [ ] Authentication/authorization (API keys, JWT, RBAC)
-- [ ] Speech-to-text transcription (Whisper/cloud API integration)
+### Future Features
 - [ ] Talkgroup replay/timeline view
 - [ ] MQTT publish capability (publish state back to MQTT)
 - [ ] Historical unit data import from external sources
