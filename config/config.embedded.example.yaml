@@ -47,6 +47,15 @@ logging:
   level: "info"
   format: "json"
 
+# Authentication (optional)
+auth:
+  enabled: false  # Set to true to require authentication
+  dashboard:
+    username: "admin"
+    password: "admin"
+  api_keys:
+    - "tr_api_key"
+
 # Note: In embedded mode, TimescaleDB hypertables are not available.
 # The schema uses plain PostgreSQL tables with appropriate indexes.
 # This is suitable for small to medium deployments (1-2 systems).

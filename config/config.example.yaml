@@ -63,6 +63,20 @@ logging:
   level: "info"  # debug, info, warn, error
   format: "json"  # json or text
 
+# Authentication configuration
+auth:
+  enabled: false  # Set to true to require authentication
+
+  # Dashboard login credentials (for web UI)
+  dashboard:
+    username: "admin"
+    password: "changeme"  # Change this in production!
+
+  # API keys for REST API access (multiple allowed)
+  # Use with: Authorization: Bearer <key>
+  api_keys:
+    - "tr_api_changeme"  # Change this in production!
+
 # Prometheus metrics configuration
 # Metrics are exposed at /metrics endpoint
 metrics:

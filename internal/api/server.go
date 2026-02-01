@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/trunk-recorder/tr-engine/docs"
+	"github.com/trunk-recorder/tr-engine/internal/api/middleware"
 	"github.com/trunk-recorder/tr-engine/internal/api/rest"
 	"github.com/trunk-recorder/tr-engine/internal/api/ws"
 	"github.com/trunk-recorder/tr-engine/internal/config"
@@ -28,19 +30,21 @@ import (
 // Server is the HTTP/WebSocket server
 type Server struct {
 	config        config.ServerConfig
+	authConfig    config.AuthConfig
 	db            *database.DB
 	processor     *ingest.Processor
 	logger        *zap.Logger
 	server        *http.Server
 	hub           *ws.Hub
 	router        *gin.Engine
+	auth          *middleware.AuthMiddleware
 	stopMetrics   chan struct{}
 	audioBasePath string
 	handler       *rest.Handler
 }
 
 // NewServer creates a new API server
-func NewServer(cfg config.ServerConfig, db *database.DB, processor *ingest.Processor, logger *zap.Logger, audioBasePath string) *Server {
+func NewServer(cfg config.ServerConfig, authCfg config.AuthConfig, db *database.DB, processor *ingest.Processor, logger *zap.Logger, audioBasePath string) *Server {
 	// Set gin mode based on log level
 	gin.SetMode(gin.ReleaseMode)
 
@@ -48,6 +52,14 @@ func NewServer(cfg config.ServerConfig, db *database.DB, processor *ingest.Proce
 	router.Use(gin.Recovery())
 	router.Use(requestLogger(logger))
 	router.Use(corsMiddleware())
+
+	// Load login template
+	loginTmpl, err := loadLoginTemplate()
+	if err != nil {
+		logger.Warn("Failed to load login template", zap.Error(err))
+	} else {
+		router.SetHTMLTemplate(loginTmpl)
+	}
 
 	hub := ws.NewHub(logger)
 	go hub.Run()
@@ -57,13 +69,27 @@ func NewServer(cfg config.ServerConfig, db *database.DB, processor *ingest.Proce
 		processor.SetHub(hub)
 	}
 
+	// Create auth middleware
+	auth := middleware.NewAuthMiddleware(authCfg)
+
+	// Start session cleanup goroutine
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			auth.CleanupSessions()
+		}
+	}()
+
 	s := &Server{
 		config:        cfg,
+		authConfig:    authCfg,
 		db:            db,
 		processor:     processor,
 		logger:        logger,
 		hub:           hub,
 		router:        router,
+		auth:          auth,
 		stopMetrics:   make(chan struct{}),
 		audioBasePath: audioBasePath,
 	}
@@ -74,6 +100,21 @@ func NewServer(cfg config.ServerConfig, db *database.DB, processor *ingest.Proce
 	go s.updateMetricsGauges()
 
 	return s
+}
+
+// loadLoginTemplate loads the login page template from embedded files
+func loadLoginTemplate() (*template.Template, error) {
+	staticFS, err := ui.StaticFiles()
+	if err != nil {
+		return nil, err
+	}
+
+	loginHTML, err := fs.ReadFile(staticFS, "login.html")
+	if err != nil {
+		return nil, err
+	}
+
+	return template.New("login.html").Parse(string(loginHTML))
 }
 
 // Start starts the HTTP server
@@ -162,15 +203,20 @@ func (s *Server) WSClientCount() int {
 }
 
 func (s *Server) setupRoutes() {
-	// Embedded UI routes
+	// Auth routes (always accessible)
+	s.router.GET("/login", s.auth.LoginPage)
+	s.router.POST("/login", s.auth.Login)
+	s.router.GET("/logout", s.auth.Logout)
+
+	// Embedded UI routes (protected by dashboard auth)
 	s.setupUIRoutes()
 
-	// Health check
+	// Health check (always accessible)
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// Prometheus metrics endpoint
+	// Prometheus metrics endpoint (always accessible for monitoring)
 	s.router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Swagger documentation - set host dynamically via middleware
@@ -185,12 +231,14 @@ func (s *Server) setupRoutes() {
 	}, ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// WebSocket endpoint (under /api to work with Vite proxy)
+	// Auth handled by cookie (dashboard users) or skip if auth disabled
 	s.router.GET("/api/ws", func(c *gin.Context) {
 		ws.HandleWebSocket(s.hub, c.Writer, c.Request, s.logger)
 	})
 
-	// REST API
+	// REST API (protected by API key auth)
 	api := s.router.Group("/api/v1")
+	api.Use(s.auth.APIKeyAuth())
 	{
 		// Create REST handler
 		s.handler = rest.NewHandler(s.db, s.processor, s.logger, s.audioBasePath)
@@ -303,30 +351,33 @@ func (s *Server) setupUIRoutes() {
 		return
 	}
 
-	// Serve individual HTML files
-	s.router.GET("/dashboard", func(c *gin.Context) {
+	// Dashboard auth middleware
+	dashAuth := s.auth.DashboardAuth()
+
+	// Serve individual HTML files (protected)
+	s.router.GET("/dashboard", dashAuth, func(c *gin.Context) {
 		serveEmbeddedFile(c, staticFS, "dashboard.html")
 	})
-	s.router.GET("/dashboard.html", func(c *gin.Context) {
+	s.router.GET("/dashboard.html", dashAuth, func(c *gin.Context) {
 		serveEmbeddedFile(c, staticFS, "dashboard.html")
 	})
 
-	s.router.GET("/recorders", func(c *gin.Context) {
+	s.router.GET("/recorders", dashAuth, func(c *gin.Context) {
 		serveEmbeddedFile(c, staticFS, "recorders.html")
 	})
-	s.router.GET("/recorders.html", func(c *gin.Context) {
+	s.router.GET("/recorders.html", dashAuth, func(c *gin.Context) {
 		serveEmbeddedFile(c, staticFS, "recorders.html")
 	})
 
-	s.router.GET("/websocket", func(c *gin.Context) {
+	s.router.GET("/websocket", dashAuth, func(c *gin.Context) {
 		serveEmbeddedFile(c, staticFS, "websocket.html")
 	})
-	s.router.GET("/websocket.html", func(c *gin.Context) {
+	s.router.GET("/websocket.html", dashAuth, func(c *gin.Context) {
 		serveEmbeddedFile(c, staticFS, "websocket.html")
 	})
 
-	// Root serves landing page
-	s.router.GET("/", func(c *gin.Context) {
+	// Root serves landing page (protected)
+	s.router.GET("/", dashAuth, func(c *gin.Context) {
 		serveEmbeddedFile(c, staticFS, "index.html")
 	})
 }

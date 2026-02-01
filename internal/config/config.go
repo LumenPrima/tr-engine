@@ -16,7 +16,21 @@ type Config struct {
 	Storage       StorageConfig       `mapstructure:"storage"`
 	Deduplication DeduplicationConfig `mapstructure:"deduplication"`
 	Transcription TranscriptionConfig `mapstructure:"transcription"`
+	Auth          AuthConfig          `mapstructure:"auth"`
 	Logging       LoggingConfig       `mapstructure:"logging"`
+}
+
+// AuthConfig holds authentication configuration
+type AuthConfig struct {
+	Enabled   bool              `mapstructure:"enabled"`
+	Dashboard DashboardAuth     `mapstructure:"dashboard"`
+	APIKeys   []string          `mapstructure:"api_keys"`
+}
+
+// DashboardAuth holds dashboard login credentials
+type DashboardAuth struct {
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
 }
 
 // ServerConfig holds HTTP/WebSocket server configuration
@@ -217,6 +231,11 @@ func setDefaults(v *viper.Viper) {
 	// Logging defaults
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
+
+	// Auth defaults
+	v.SetDefault("auth.enabled", false)
+	v.SetDefault("auth.dashboard.username", "admin")
+	v.SetDefault("auth.dashboard.password", "admin")
 
 	// Transcription defaults
 	v.SetDefault("transcription.enabled", false)
