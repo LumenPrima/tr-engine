@@ -591,10 +591,10 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 
 // ListTalkgroupCalls godoc
 // @Summary      List talkgroup calls
-// @Description  Returns calls for a specific talkgroup by TGID
+// @Description  Returns calls for a specific talkgroup. Accepts sysid:tgid format (e.g., "348:9178") or plain tgid.
 // @Tags         talkgroups
 // @Produce      json
-// @Param        id          path   int     true   "Talkgroup ID (TGID)"
+// @Param        id          path   string  true   "Talkgroup ID (sysid:tgid or plain tgid)"
 // @Param        start_time  query  string  false  "Start time filter (RFC3339)"
 // @Param        end_time    query  string  false  "End time filter (RFC3339)"
 // @Param        limit       query  int     false  "Results per page"  default(50)
@@ -605,16 +605,32 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 // @Router       /talkgroups/{id}/calls [get]
 func (h *Handler) ListTalkgroupCalls(c *gin.Context) {
 	idParam := c.Param("id")
-	tgid, err := strconv.Atoi(idParam)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID"})
-		return
+
+	var sysid *string
+	var tgid int
+	var err error
+
+	// Check if it's a sysid:tgid format
+	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
+		sysid = &parts[0]
+		tgid, err = strconv.Atoi(parts[1])
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID format"})
+			return
+		}
+	} else {
+		// Plain numeric tgid
+		tgid, err = strconv.Atoi(idParam)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID"})
+			return
+		}
 	}
 
 	limit, offset := h.parsePagination(c)
 	startTime, endTime := h.parseTimeRange(c)
 
-	calls, err := h.db.ListCalls(c.Request.Context(), nil, &tgid, startTime, endTime, limit, offset)
+	calls, err := h.db.ListCalls(c.Request.Context(), nil, sysid, &tgid, startTime, endTime, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list calls", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list calls"})
@@ -877,11 +893,26 @@ func (h *Handler) GetUnit(c *gin.Context) {
 // @Router       /units/{id}/events [get]
 func (h *Handler) ListUnitEvents(c *gin.Context) {
 	idParam := c.Param("id")
-	// Parse unit_id (the radio ID, not a database ID)
-	unitRID, err := strconv.ParseInt(idParam, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
-		return
+
+	var sysid *string
+	var unitRID int64
+	var err error
+
+	// Check if it's a sysid:unit_id format
+	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
+		sysid = &parts[0]
+		unitRID, err = strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID format"})
+			return
+		}
+	} else {
+		// Plain numeric unit_id
+		unitRID, err = strconv.ParseInt(idParam, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
+			return
+		}
 	}
 
 	limit, offset := h.parsePagination(c)
@@ -899,7 +930,7 @@ func (h *Handler) ListUnitEvents(c *gin.Context) {
 		}
 	}
 
-	events, err := h.db.ListUnitEvents(c.Request.Context(), &unitRID, nil, eventType, tgid, startTime, endTime, limit, offset)
+	events, err := h.db.ListUnitEvents(c.Request.Context(), &unitRID, sysid, nil, eventType, tgid, startTime, endTime, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list unit events", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list unit events"})
@@ -916,10 +947,10 @@ func (h *Handler) ListUnitEvents(c *gin.Context) {
 
 // ListUnitCalls godoc
 // @Summary      List unit calls
-// @Description  Returns calls that include transmissions from a specific unit by radio ID
+// @Description  Returns calls that include transmissions from a specific unit. Accepts sysid:unit_id format (e.g., "348:902001") or plain unit_id.
 // @Tags         units
 // @Produce      json
-// @Param        id          path   int     true   "Unit radio ID (RID)"
+// @Param        id          path   string  true   "Unit ID (sysid:unit_id or plain unit_id)"
 // @Param        start_time  query  string  false  "Start time filter (RFC3339)"
 // @Param        end_time    query  string  false  "End time filter (RFC3339)"
 // @Param        limit       query  int     false  "Results per page"  default(50)
@@ -930,10 +961,26 @@ func (h *Handler) ListUnitEvents(c *gin.Context) {
 // @Router       /units/{id}/calls [get]
 func (h *Handler) ListUnitCalls(c *gin.Context) {
 	idParam := c.Param("id")
-	id, err := strconv.ParseInt(idParam, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
-		return
+
+	var sysid *string
+	var unitID int64
+	var err error
+
+	// Check if it's a sysid:unit_id format
+	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
+		sysid = &parts[0]
+		unitID, err = strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID format"})
+			return
+		}
+	} else {
+		// Plain numeric unit_id
+		unitID, err = strconv.ParseInt(idParam, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid unit ID"})
+			return
+		}
 	}
 
 	limit, offset := h.parsePagination(c)
@@ -950,8 +997,14 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
 		WHERE t.unit_rid = $1
 	`
-	args := []interface{}{id}
+	args := []any{unitID}
 	argNum := 2
+
+	if sysid != nil {
+		query += " AND t.unit_sysid = $" + strconv.Itoa(argNum)
+		args = append(args, *sysid)
+		argNum++
+	}
 
 	if startTime != nil {
 		query += " AND c.start_time >= $" + strconv.Itoa(argNum)
@@ -1078,7 +1131,8 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 // @Description  Returns call recordings with optional filters
 // @Tags         calls
 // @Produce      json
-// @Param        system      query  int     false  "Filter by system ID"
+// @Param        system      query  int     false  "Filter by system ID (database ID)"
+// @Param        sysid       query  string  false  "Filter by P25 SYSID (e.g., '348')"
 // @Param        talkgroup   query  int     false  "Filter by talkgroup ID"
 // @Param        start_time  query  string  false  "Start time filter (RFC3339)"
 // @Param        end_time    query  string  false  "End time filter (RFC3339)"
@@ -1092,10 +1146,14 @@ func (h *Handler) ListCalls(c *gin.Context) {
 	startTime, endTime := h.parseTimeRange(c)
 
 	var systemID, talkgroupID *int
+	var sysid *string
 	if s := c.Query("system"); s != "" {
 		if id, err := strconv.Atoi(s); err == nil {
 			systemID = &id
 		}
+	}
+	if s := c.Query("sysid"); s != "" {
+		sysid = &s
 	}
 	if t := c.Query("talkgroup"); t != "" {
 		if id, err := strconv.Atoi(t); err == nil {
@@ -1103,7 +1161,7 @@ func (h *Handler) ListCalls(c *gin.Context) {
 		}
 	}
 
-	calls, err := h.db.ListCalls(c.Request.Context(), systemID, talkgroupID, startTime, endTime, limit, offset)
+	calls, err := h.db.ListCalls(c.Request.Context(), systemID, sysid, talkgroupID, startTime, endTime, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list calls", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list calls"})

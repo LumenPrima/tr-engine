@@ -129,8 +129,14 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Filter by system ID",
+                        "description": "Filter by system ID (database ID)",
                         "name": "system",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by P25 SYSID (e.g., '348')",
+                        "name": "sysid",
                         "in": "query"
                     },
                     {
@@ -971,7 +977,7 @@ const docTemplate = `{
         },
         "/talkgroups/{id}/calls": {
             "get": {
-                "description": "Returns calls for a specific talkgroup by TGID",
+                "description": "Returns calls for a specific talkgroup. Accepts sysid:tgid format (e.g., \"348:9178\") or plain tgid.",
                 "produces": [
                     "application/json"
                 ],
@@ -981,8 +987,8 @@ const docTemplate = `{
                 "summary": "List talkgroup calls",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Talkgroup ID (TGID)",
+                        "type": "string",
+                        "description": "Talkgroup ID (sysid:tgid or plain tgid)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1337,7 +1343,7 @@ const docTemplate = `{
         },
         "/units/{id}/calls": {
             "get": {
-                "description": "Returns calls that include transmissions from a specific unit by radio ID",
+                "description": "Returns calls that include transmissions from a specific unit. Accepts sysid:unit_id format (e.g., \"348:902001\") or plain unit_id.",
                 "produces": [
                     "application/json"
                 ],
@@ -1347,8 +1353,8 @@ const docTemplate = `{
                 "summary": "List unit calls",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Unit radio ID (RID)",
+                        "type": "string",
+                        "description": "Unit ID (sysid:unit_id or plain unit_id)",
                         "name": "id",
                         "in": "path",
                         "required": true

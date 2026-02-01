@@ -747,7 +747,8 @@ func (db *DB) ListTalkgroupsBySYSID(ctx context.Context, sysid string, limit, of
 
 // ListCalls returns calls with optional filters
 // Note: tgid parameter is the actual talkgroup ID (not a database ID)
-func (db *DB) ListCalls(ctx context.Context, systemID *int, tgid *int, startTime, endTime *time.Time, limit, offset int) ([]*models.Call, error) {
+// sysid is the P25 System ID string for filtering by system
+func (db *DB) ListCalls(ctx context.Context, systemID *int, sysid *string, tgid *int, startTime, endTime *time.Time, limit, offset int) ([]*models.Call, error) {
 	query := `
 		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid, c.recorder_id,
 			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
@@ -758,12 +759,17 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, tgid *int, startTime
 		FROM calls c
 		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
 		WHERE c.audio_path IS NOT NULL AND c.audio_path != ''`
-	args := []interface{}{}
+	args := []any{}
 	argNum := 1
 
 	if systemID != nil {
 		query += fmt.Sprintf(" AND c.system_id = $%d", argNum)
 		args = append(args, *systemID)
+		argNum++
+	}
+	if sysid != nil {
+		query += fmt.Sprintf(" AND c.tg_sysid = $%d", argNum)
+		args = append(args, *sysid)
 		argNum++
 	}
 	if tgid != nil {
@@ -1022,15 +1028,21 @@ func (db *DB) GetStats(ctx context.Context) (*Stats, error) {
 
 // ListUnitEvents returns unit events with optional filters
 // Note: unitRID parameter is the actual unit radio ID (not a database ID)
-func (db *DB) ListUnitEvents(ctx context.Context, unitRID *int64, systemID *int, eventType *string, tgid *int, startTime, endTime *time.Time, limit, offset int) ([]*models.UnitEvent, error) {
+// unitSysid is the P25 System ID string for filtering by system
+func (db *DB) ListUnitEvents(ctx context.Context, unitRID *int64, unitSysid *string, systemID *int, eventType *string, tgid *int, startTime, endTime *time.Time, limit, offset int) ([]*models.UnitEvent, error) {
 	query := `SELECT id, instance_id, system_id, unit_sysid, unit_rid, event_type, tg_sysid, tgid, time, metadata_json
 		FROM unit_events WHERE 1=1`
-	args := []interface{}{}
+	args := []any{}
 	argNum := 1
 
 	if unitRID != nil {
 		query += " AND unit_rid = $" + strconv.Itoa(argNum)
 		args = append(args, *unitRID)
+		argNum++
+	}
+	if unitSysid != nil {
+		query += " AND unit_sysid = $" + strconv.Itoa(argNum)
+		args = append(args, *unitSysid)
 		argNum++
 	}
 	if systemID != nil {

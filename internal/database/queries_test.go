@@ -196,7 +196,7 @@ func TestListCalls_FilterBySystem(t *testing.T) {
 	ctx := context.Background()
 
 	systemID := f.MetroSystemID
-	calls, err := testDB.DB.ListCalls(ctx, &systemID, nil, nil, nil, 100, 0)
+	calls, err := testDB.DB.ListCalls(ctx, &systemID, nil, nil, nil, nil, 100, 0)
 	require.NoError(t, err)
 
 	// Metro system has 4 calls (including encrypted one without audio)
@@ -214,7 +214,7 @@ func TestListCalls_FilterByTalkgroup(t *testing.T) {
 	ctx := context.Background()
 
 	tgID := f.MetroPDMainTGID
-	calls, err := testDB.DB.ListCalls(ctx, nil, &tgID, nil, nil, 100, 0)
+	calls, err := testDB.DB.ListCalls(ctx, nil, nil, &tgID, nil, nil, 100, 0)
 	require.NoError(t, err)
 
 	// Metro PD Main (tgid 9178) has calls in both Metro and County systems
@@ -231,7 +231,7 @@ func TestListCalls_FilterByTimeRange(t *testing.T) {
 	// Get calls from last 60 seconds only
 	startTime := f.BaseTime.Add(-60 * time.Second)
 	endTime := f.BaseTime
-	calls, err := testDB.DB.ListCalls(ctx, nil, nil, &startTime, &endTime, 100, 0)
+	calls, err := testDB.DB.ListCalls(ctx, nil, nil, nil, &startTime, &endTime, 100, 0)
 	require.NoError(t, err)
 
 	// Should include Call 1 (30s ago) and Call 2 (60s ago), but not Call 3 (90s ago) or Call 4 (120s ago)
@@ -245,12 +245,12 @@ func TestListCalls_Pagination(t *testing.T) {
 	systemID := f.MetroSystemID
 
 	// Get first 2
-	calls1, err := testDB.DB.ListCalls(ctx, &systemID, nil, nil, nil, 2, 0)
+	calls1, err := testDB.DB.ListCalls(ctx, &systemID, nil, nil, nil, nil, 2, 0)
 	require.NoError(t, err)
 	assert.Len(t, calls1, 2)
 
 	// Get next 2
-	calls2, err := testDB.DB.ListCalls(ctx, &systemID, nil, nil, nil, 2, 2)
+	calls2, err := testDB.DB.ListCalls(ctx, &systemID, nil, nil, nil, nil, 2, 2)
 	require.NoError(t, err)
 	assert.Len(t, calls2, 1) // Only 3 total with audio
 

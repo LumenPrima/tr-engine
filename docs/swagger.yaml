@@ -586,10 +586,14 @@ paths:
     get:
       description: Returns call recordings with optional filters
       parameters:
-      - description: Filter by system ID
+      - description: Filter by system ID (database ID)
         in: query
         name: system
         type: integer
+      - description: Filter by P25 SYSID (e.g., '348')
+        in: query
+        name: sysid
+        type: string
       - description: Filter by talkgroup ID
         in: query
         name: talkgroup
@@ -1133,13 +1137,14 @@ paths:
       - talkgroups
   /talkgroups/{id}/calls:
     get:
-      description: Returns calls for a specific talkgroup by TGID
+      description: Returns calls for a specific talkgroup. Accepts sysid:tgid format
+        (e.g., "348:9178") or plain tgid.
       parameters:
-      - description: Talkgroup ID (TGID)
+      - description: Talkgroup ID (sysid:tgid or plain tgid)
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       - description: Start time filter (RFC3339)
         in: query
         name: start_time
@@ -1354,14 +1359,14 @@ paths:
       - units
   /units/{id}/calls:
     get:
-      description: Returns calls that include transmissions from a specific unit by
-        radio ID
+      description: Returns calls that include transmissions from a specific unit.
+        Accepts sysid:unit_id format (e.g., "348:902001") or plain unit_id.
       parameters:
-      - description: Unit radio ID (RID)
+      - description: Unit ID (sysid:unit_id or plain unit_id)
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       - description: Start time filter (RFC3339)
         in: query
         name: start_time
