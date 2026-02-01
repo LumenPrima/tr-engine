@@ -331,6 +331,7 @@ GOOS=windows GOARCH=amd64 go build -ldflags="-w -s" -o tr-engine.exe
 - [ ] Performance optimization (batch inserts, query tuning)
 
 ### Future Features
+- [ ] Embedded local transcription (download whisper.cpp + model on demand, no external API needed)
 - [ ] Talkgroup replay/timeline view
 - [ ] MQTT publish capability (publish state back to MQTT)
 - [ ] Historical unit data import from external sources
