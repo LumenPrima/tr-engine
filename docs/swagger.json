@@ -7,7 +7,7 @@
         "description": "Backend service for trunk-recorder data ingestion and querying. Provides REST APIs for accessing radio system data, calls, talkgroups, and units.",
         "title": "tr-engine API",
         "contact": {},
-        "version": "0.3.0-beta1"
+        "version": "0.3.1-beta1"
     },
     "host": "localhost:8080",
     "basePath": "/api/v1",

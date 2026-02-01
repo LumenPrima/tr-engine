@@ -1,0 +1,259 @@
+# Estimated Ground Truth Transcriptions
+#
+# These are best-effort estimates based on:
+# - Context from talkgroup metadata
+# - Consensus across multiple transcription models
+# - Domain knowledge of P25 radio dispatch terminology
+# - Logical interpretation of dispatch scenarios
+#
+# Generated: 2026-01-30
+# Audio Source: Butler County, OH P25 radio system
+
+================================================================================
+FILE: 21006-1769530437_855962500.0-call_6896.wav
+SIZE: 305,324 bytes
+TALKGROUP: 21006 - UC Air Care Dispatch (EMS Dispatch)
+CONTEXT: Air ambulance helicopter notification
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+Care Air 2 and the Butler County team, this is your notification for your scene
+flight into Bright, Indiana for a 75-year-old male with chest pains. Time is
+11:14.
+
+Human corrected ground truth:
+Air Care 2 and the Butler County team, this is your notification for your scene
+flight into Bright, Indiana for a 75-year-old male with chest pains. Time is
+11:14.
+
+NOTES:
+- "Air Care 2" is the air ambulance callsign (all models heard "Care care" or
+  "Hair care" - acoustic ambiguity)
+- "scene flight" = flight to an emergency scene (vs. inter-facility transfer)
+- Time format likely "eleven fourteen" spoken
+
+================================================================================
+FILE: 21006-1769530769_852200000.0-call_6991.wav
+SIZE: 69,164 bytes
+TALKGROUP: 21006 - UC Air Care Dispatch (EMS Dispatch)
+CONTEXT: Helicopter maintenance abort
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+Hey, base, this is 2. I've got a maintenance issue. I'll have to abort.
+
+Human verified grouth truth:
+Hey, base, this is 2. I've got a maintenance issue. I'll have to abort.
+
+NOTES:
+- High confidence - all models agreed
+- "2" refers to Care Air 2 aircraft
+
+================================================================================
+FILE: 9173-1769554590_852200000.0-call_1109.wav
+SIZE: 207,404 bytes
+TALKGROUP: 9173 - 09-3L Main (Fire Dispatch)
+CONTEXT: Traffic accident dispatch with information exchange request
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+182. Go ahead. Respond to Drive Smart at 6121 Dixie Highway for an auto
+accident, no injury, assist with information exchange. Okay. 1756.
+
+Human verified:
+182. Go ahead. Respond to Drive Smart at 6121 Dixie Highway for an auto
+accident, no injury, assist with information exchange. Okay. 1756.
+
+NOTES:
+- "182" - unit callsign
+- "1756" - time in 24 hour format
+- "Drive Smart" is likely a business name (auto shop)
+- "assist with information exchange" = help drivers exchange insurance info
+- AssemblyAI got "assist with" correct; Whisper said "This is with"
+
+================================================================================
+FILE: 9179-1769497185_852687500.0-call_815.wav
+SIZE: 175,724 bytes
+TALKGROUP: 9179 - County Dispatch ZULU (Law Dispatch)
+CONTEXT: Domestic situation with weapons dispute
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+6-8-5 clear. 6-0-1 clear. FYI, caller advises no weapons, but the male in the
+background yelled that the caller has weapons. Caller is female.
+
+Human clarified:
+6-8-5 clear. 6-0-1 clear. Just information, caller advises no weapons, but the male in the background yelled that the caller has weapons. [Going to] be a female.
+
+NOTES:
+- Unit numbers likely "685" and "601"
+- "Just information" - advisory only, not dispatch
+- Models varied: "I think 85", "6-8-5", "601", "6.01"
+- Domestic dispute context with conflicting weapons claims
+
+================================================================================
+FILE: 9138-1769521316_851350000.0-call_3854.wav
+SIZE: 72,044 bytes
+TALKGROUP: 9138 (Fire/EMS)
+CONTEXT: Unit transport status
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+Medic A3 transporting.
+
+Human corrected:
+Medic 83 transporting to Atrium. Medic 83 transporting
+
+NOTES:
+- First segment is faint, no 
+- Short transmission - unit announcing transport status
+- Models heard: "Mag A3", "Meg A3", "Mike A3", "Medic A3"
+- "Medic A3" most likely given EMS context
+
+================================================================================
+FILE: 9264-1769530261_855962500.0-call_6818.wav
+SIZE: 57,644 bytes
+TALKGROUP: 9264 (Fire Dispatch)
+CONTEXT: Unit status on township location
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+Chief 141 to Medic 141 on Township.
+
+Human verified:
+Chief 141 to Medic 141 on Township.
+
+NOTES:
+- Two units communicating: Chief 141 and Medic 141
+- "on Township" = location reference (Township Road or similar)
+- Models varied on first unit: "2-141", "Dometic-141", "Chief 141"
+
+================================================================================
+FILE: 9451-1769512797_855962500.0-call_2208.wav
+SIZE: (not recorded)
+TALKGROUP: 9451 (Fire)
+CONTEXT: Fire alarm at facility
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+Luke, that fire alarm is showing a first floor southwest vestibule, but one of
+the housekeepers just called from over there and said it's clear.
+
+Human clarified:
+Luke, that fire alarm is showing a first floor southwest vestibule, but one of
+the housekeepings just called from over there and said there's a sprinkler system that gushing water off it. That's clear I've got a Fire-Tac responding.
+
+NOTES:
+- "Luke" is likely the person being addressed
+- "housekeepings" - housekeepings is the accurate transcription
+
+================================================================================
+FILE: 9130-1769527750_851350000.0-call_5625.wav
+SIZE: (not recorded)
+TALKGROUP: 9130 (EMS Dispatch)
+CONTEXT: Transport and availability status
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+9-com, Medic 28 is transporting to Fort. Medic 28, you're out to Fort. Engine
+26 available. Engine 26 is available.
+
+Human verified:
+9-com, Medic 28 is transporting to Fort. Medic 28, you're out to Fort. Engine
+26 available. Engine 26 is available.
+
+NOTES:
+- "9-com" = dispatch center
+- "Fort" likely "Fort Hamilton Hospital"
+- OpenAI heard "port" instead of "Fort"
+
+================================================================================
+incorrect FILE: 9468-1769545162_853287500.0-call_12405.wav
+actual FILE: 9468-1769545162_853287500.0-call_12291.wav
+SIZE: (not recorded)
+TALKGROUP: 9468 (County Regional Transit 2)
+CONTEXT: Radio check
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+Go ahead, 1-5-8. Radio check. I see that you logged in. Hear you loud and
+clear. Have a great day and be safe out there.
+
+Human corrected:
+Go ahead, 1-5-8. Radio check. I see that. I see that you logged in. Hear you loud and
+clear. Have a great day and be safe out there.
+
+NOTES:
+- Without preprocessing: severe hallucination (repeated "8" endlessly)
+- Voice bandpass filter recovered the actual content
+- "1-5-8" is the unit being radio-checked
+
+================================================================================
+FILE: 9177-1769530121_851762500.0-call_6748.wav
+SIZE: (not recorded)
+TALKGROUP: 9177 (Fire Dispatch)
+CONTEXT: Vehicle stuck on steep driveway
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+...It's a large box truck. It's approximately 10 feet off of the private
+driveway on a steep hill. Wow.
+
+Human corrected:
+Go ahead. Paul 71. It's Ohio Paul [garbled] 8046. PNB8046. It's a large box truck. It's approximately 10 feet off of the private driveway on a steep hill. [garbled]
+
+NOTES:
+- Original transcription said "proxy MP" - nonsensical
+- Bandpass filter produced "approximately 10 feet" - logical
+- Partial transmission (beginning cut off)
+
+================================================================================
+FILE: 9173-1769539244_855737500.0-call_9923.wav
+SIZE: (not recorded)
+TALKGROUP: 9173 (Fire Dispatch)
+CONTEXT: Unit location and tag request
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+Come on, 34, go ahead. I'm going to be at Augusta and Wood Creek. Stand by
+for tag.
+
+Human verified:
+134, go ahead. I'm going to be at Augusta and Wood Creek. Stand by for tag.
+
+NOTES:
+- "134" = unit being addressed
+- "Augusta and Wood Creek" = intersection
+- "Stand by for tag" = waiting for license plate lookup
+- Voice bandpass captured "Come on, 34, go ahead" that original missed
+
+================================================================================
+FILE: 53317-1769493124_859262500.0-call_417.wav
+SIZE: (not recorded)
+TALKGROUP: 53317
+CONTEXT: Radio check
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+285, Butler County radio check. Loud and clear. Thank you.
+
+Human verified:
+285, Butler County radio check. Loud and clear. Thank you, sir.
+
+NOTES:
+- "285" = unit callsign
+- Models disagreed: "Walter County" vs "Butler County"
+- "Butler County" more likely given the system
+- "Hot and clear" vs "Loud and clear" - both common radio terminology
+
+================================================================================
+FILE: 9069-1769552246_851762500.0-call_402.wav
+SIZE: 224,684 bytes
+TALKGROUP: 9069 (Security/Industrial)
+CONTEXT: Industrial facility security coordination
+--------------------------------------------------------------------------------
+ESTIMATED GROUND TRUTH:
+In all units, I got Miller's head of security here with me. The VP's on the
+way and so is their operations. I can have them assign an electrician to you
+if you need me to.
+
+Human corrected:
+Attention all units, I got Miller's head of security here with me. The VP's on the
+way and so is their operations. I can have them assign an electrician to you
+if you need me to.
+
+NOTES:
+- "In all units" prefix captured by local Whisper without prompt
+- "Miller's" = Miller Brewing/Coors facility (MillerCoors)
+- Industrial security context
+
+
+UNABLE TO VERIFY ANY FILES AFTER THIS POINT, FILENAMES WERE MANGLED
