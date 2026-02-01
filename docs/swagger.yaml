@@ -512,7 +512,7 @@ info:
   description: Backend service for trunk-recorder data ingestion and querying. Provides
     REST APIs for accessing radio system data, calls, talkgroups, and units.
   title: tr-engine API
-  version: 0.3.1-beta3
+  version: 0.3.1-beta4
 paths:
   /call-groups:
     get:
