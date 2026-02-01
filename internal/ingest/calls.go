@@ -723,6 +723,17 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 			zap.String("path", audioPath),
 		)
 
+		// Run deduplication on newly created call
+		if p.dedup != nil && p.dedup.IsEnabled() {
+			callGroup, err := p.dedup.ProcessCall(ctx, call, data.TGID, data.ShortName)
+			if err != nil {
+				p.logger.Error("Deduplication failed for audio-created call", zap.Error(err))
+			} else if callGroup != nil {
+				call.CallGroupID = &callGroup.ID
+				p.db.UpdateCall(ctx, call)
+			}
+		}
+
 		// Track metrics
 		metrics.CallsProcessed.WithLabelValues("audio_created", data.ShortName).Inc()
 	} else {
