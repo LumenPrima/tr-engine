@@ -301,12 +301,29 @@ CREATE TABLE IF NOT EXISTS transcription_queue (
 
 CREATE INDEX IF NOT EXISTS idx_transcription_queue_status ON transcription_queue(status, priority DESC, created_at);
 
+-- API keys table for database-managed keys
+CREATE TABLE IF NOT EXISTS api_keys (
+    id SERIAL PRIMARY KEY,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_prefix VARCHAR(12) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    scopes TEXT[] DEFAULT '{}',
+    read_only BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
+
 -- Migration tracking table (for compatibility)
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version BIGINT PRIMARY KEY,
     dirty BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- Mark as migrated to version 5 (removed surrogate IDs)
-INSERT INTO schema_migrations (version, dirty) VALUES (5, FALSE) ON CONFLICT DO NOTHING;
+-- Mark as migrated to version 6 (api_keys table)
+INSERT INTO schema_migrations (version, dirty) VALUES (6, FALSE) ON CONFLICT DO NOTHING;
 `

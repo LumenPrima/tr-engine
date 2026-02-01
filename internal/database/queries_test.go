@@ -351,5 +351,201 @@ func TestIsP25System(t *testing.T) {
 	assert.True(t, isP25)
 }
 
+// ============================================================================
+// API Key Tests
+// ============================================================================
+
+func TestCreateAPIKey(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	key, err := testDB.DB.CreateAPIKey(ctx, "hash123", "tr_api_abc", "Test Key", []string{"read"}, false, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "tr_api_abc", key.KeyPrefix)
+	assert.Equal(t, "Test Key", key.Name)
+	assert.Equal(t, []string{"read"}, key.Scopes)
+	assert.False(t, key.ReadOnly)
+	assert.NotZero(t, key.CreatedAt)
+	assert.Nil(t, key.LastUsedAt)
+	assert.Nil(t, key.ExpiresAt)
+	assert.Nil(t, key.RevokedAt)
+}
+
+func TestCreateAPIKey_WithExpiration(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	expiresAt := time.Now().Add(24 * time.Hour)
+	key, err := testDB.DB.CreateAPIKey(ctx, "hash456", "tr_api_def", "Expiring Key", nil, true, &expiresAt)
+	require.NoError(t, err)
+	assert.Equal(t, "Expiring Key", key.Name)
+	assert.True(t, key.ReadOnly)
+	assert.NotNil(t, key.ExpiresAt)
+	assert.WithinDuration(t, expiresAt, *key.ExpiresAt, time.Second)
+}
+
+func TestCreateAPIKey_DuplicateHash(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	_, err := testDB.DB.CreateAPIKey(ctx, "duplicate_hash", "tr_api_1", "Key 1", nil, false, nil)
+	require.NoError(t, err)
+
+	// Same hash should fail
+	_, err = testDB.DB.CreateAPIKey(ctx, "duplicate_hash", "tr_api_2", "Key 2", nil, false, nil)
+	assert.Error(t, err)
+}
+
+func TestGetAPIKeyByHash(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	// Create a key first
+	created, err := testDB.DB.CreateAPIKey(ctx, "lookup_hash", "tr_api_xyz", "Lookup Key", []string{"admin"}, false, nil)
+	require.NoError(t, err)
+
+	// Look it up
+	found, err := testDB.DB.GetAPIKeyByHash(ctx, "lookup_hash")
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, created.ID, found.ID)
+	assert.Equal(t, "Lookup Key", found.Name)
+	assert.Equal(t, []string{"admin"}, found.Scopes)
+}
+
+func TestGetAPIKeyByHash_NotFound(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	key, err := testDB.DB.GetAPIKeyByHash(ctx, "nonexistent_hash")
+	assert.NoError(t, err)
+	assert.Nil(t, key)
+}
+
+func TestListAPIKeys(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	// Create multiple keys
+	_, err := testDB.DB.CreateAPIKey(ctx, "hash_a", "tr_api_aaa", "Key A", nil, false, nil)
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond) // Ensure different created_at
+	_, err = testDB.DB.CreateAPIKey(ctx, "hash_b", "tr_api_bbb", "Key B", nil, false, nil)
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+	_, err = testDB.DB.CreateAPIKey(ctx, "hash_c", "tr_api_ccc", "Key C", nil, false, nil)
+	require.NoError(t, err)
+
+	keys, err := testDB.DB.ListAPIKeys(ctx)
+	require.NoError(t, err)
+	assert.Len(t, keys, 3)
+
+	// Should be ordered by created_at DESC (newest first)
+	assert.Equal(t, "Key C", keys[0].Name)
+	assert.Equal(t, "Key B", keys[1].Name)
+	assert.Equal(t, "Key A", keys[2].Name)
+}
+
+func TestListAPIKeys_Empty(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	keys, err := testDB.DB.ListAPIKeys(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, keys)
+}
+
+func TestUpdateAPIKeyLastUsed(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	// Create a key
+	key, err := testDB.DB.CreateAPIKey(ctx, "usage_hash", "tr_api_use", "Usage Key", nil, false, nil)
+	require.NoError(t, err)
+	assert.Nil(t, key.LastUsedAt)
+
+	// Update last used
+	err = testDB.DB.UpdateAPIKeyLastUsed(ctx, key.ID)
+	require.NoError(t, err)
+
+	// Verify it was updated
+	updated, err := testDB.DB.GetAPIKeyByHash(ctx, "usage_hash")
+	require.NoError(t, err)
+	assert.NotNil(t, updated.LastUsedAt)
+	assert.WithinDuration(t, time.Now(), *updated.LastUsedAt, 5*time.Second)
+}
+
+func TestRevokeAPIKey(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	// Create a key
+	key, err := testDB.DB.CreateAPIKey(ctx, "revoke_hash", "tr_api_rev", "Revoke Key", nil, false, nil)
+	require.NoError(t, err)
+	assert.Nil(t, key.RevokedAt)
+
+	// Revoke it
+	err = testDB.DB.RevokeAPIKey(ctx, key.ID)
+	require.NoError(t, err)
+
+	// Verify it was revoked
+	revoked, err := testDB.DB.GetAPIKeyByHash(ctx, "revoke_hash")
+	require.NoError(t, err)
+	assert.NotNil(t, revoked.RevokedAt)
+	assert.WithinDuration(t, time.Now(), *revoked.RevokedAt, 5*time.Second)
+}
+
+func TestRevokeAPIKey_AlreadyRevoked(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	// Create and revoke a key
+	key, err := testDB.DB.CreateAPIKey(ctx, "double_revoke", "tr_api_dr", "Double Revoke", nil, false, nil)
+	require.NoError(t, err)
+
+	err = testDB.DB.RevokeAPIKey(ctx, key.ID)
+	require.NoError(t, err)
+
+	// Get the revoked time
+	revoked, _ := testDB.DB.GetAPIKeyByHash(ctx, "double_revoke")
+	firstRevoke := *revoked.RevokedAt
+
+	// Try to revoke again (should not update)
+	time.Sleep(10 * time.Millisecond)
+	err = testDB.DB.RevokeAPIKey(ctx, key.ID)
+	require.NoError(t, err)
+
+	// Verify revoked_at didn't change
+	revoked2, _ := testDB.DB.GetAPIKeyByHash(ctx, "double_revoke")
+	assert.Equal(t, firstRevoke.Unix(), revoked2.RevokedAt.Unix())
+}
+
+func TestDeleteAPIKey(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	// Create a key
+	key, err := testDB.DB.CreateAPIKey(ctx, "delete_hash", "tr_api_del", "Delete Key", nil, false, nil)
+	require.NoError(t, err)
+
+	// Delete it
+	err = testDB.DB.DeleteAPIKey(ctx, key.ID)
+	require.NoError(t, err)
+
+	// Verify it's gone
+	deleted, err := testDB.DB.GetAPIKeyByHash(ctx, "delete_hash")
+	assert.NoError(t, err)
+	assert.Nil(t, deleted)
+}
+
+func TestDeleteAPIKey_NonExistent(t *testing.T) {
+	_ = setupTest(t)
+	ctx := context.Background()
+
+	// Deleting non-existent key should not error
+	err := testDB.DB.DeleteAPIKey(ctx, 99999)
+	assert.NoError(t, err)
+}
+
 // Ensure database package is imported for side effects
 var _ = database.New
