@@ -458,8 +458,9 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 				}
 
 				// Broadcast audio availability
+				call.PopulateCallID()
 				p.broadcast("audio_available", map[string]interface{}{
-					"call_id":             call.ID,
+					"call_id":             call.CallID, // Deterministic composite ID (sysid:tgid:start_unix)
 					"tr_call_id":          data.CallID,
 					"talkgroup":           data.TGID,
 					"talkgroup_alpha_tag": data.TGAlphaTag,
@@ -762,8 +763,9 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 
 	// Broadcast audio availability so frontend knows to fetch/enable playback
 	if call != nil {
+		call.PopulateCallID()
 		p.broadcast("audio_available", map[string]interface{}{
-			"call_id":             call.ID,
+			"call_id":             call.CallID, // Deterministic composite ID (sysid:tgid:start_unix)
 			"tr_call_id":          data.CallID,
 			"talkgroup":           data.TGID,
 			"talkgroup_alpha_tag": data.TGAlphaTag,

@@ -99,6 +99,22 @@ Runs tr-engine with external PostgreSQL (TimescaleDB) and Mosquitto MQTT broker.
 docker-compose up -d
 ```
 
+**Using the pre-built image with external services:**
+
+The pre-built Docker image includes embedded PostgreSQL. To use it with external PostgreSQL/MQTT, set `TR_ENGINE_STANDALONE=true`:
+
+```yaml
+tr-engine:
+  image: ghcr.io/lumenprima/tr-engine:0.3.2-beta1
+  environment:
+    TR_ENGINE_STANDALONE: "true"
+    DB_HOST: postgres
+    DB_PASSWORD: your-password
+    MQTT_BROKER: tcp://mqtt:1883
+  volumes:
+    - ./config.yaml:/app/config/config.yaml:ro
+```
+
 ### Configure trunk-recorder (Options 2-4 only)
 
 Install the [MQTT status plugin](https://github.com/TrunkRecorder/tr-plugin-mqtt) and add to your trunk-recorder config:

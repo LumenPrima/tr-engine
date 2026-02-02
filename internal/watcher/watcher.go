@@ -428,9 +428,10 @@ func (w *Watcher) processFile(ctx context.Context, jsonPath string) {
 
 	w.callsProcessed++
 
-	// Broadcast audio available event
+	// Broadcast audio available event with deterministic composite call_id
+	compositeCallID := fmt.Sprintf("%s:%d:%d", sysid, sidecar.Talkgroup, sidecar.StartTime)
 	w.broadcast("audio_available", map[string]interface{}{
-		"call_id":             call.ID,
+		"call_id":             compositeCallID,
 		"system":              system,
 		"talkgroup":           sidecar.Talkgroup,
 		"talkgroup_alpha_tag": sidecar.TGTag,

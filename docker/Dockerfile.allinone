@@ -42,16 +42,16 @@ RUN mkdir -p /data/audio /data/postgres /run/postgresql /app/config /var/log/sup
 # Supervisor configuration
 COPY docker/supervisord.conf /etc/supervisord.conf
 
-# PostgreSQL init script
-COPY docker/init-db.sh /docker-entrypoint-initdb.d/
+# Smart entrypoint script
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Default environment
 ENV POSTGRES_USER=tr_engine \
     POSTGRES_PASSWORD=tr_engine \
     POSTGRES_DB=tr_engine \
     PGDATA=/data/postgres \
-    TR_ENGINE_CONFIG=/app/config/config.yaml \
-    TR_ENGINE_DATABASE_EMBEDDED=false
+    TR_ENGINE_CONFIG=/app/config/config.yaml
 
 EXPOSE 8080 5432
 
@@ -61,4 +61,5 @@ VOLUME ["/data/audio", "/data/postgres"]
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD wget -qO- http://localhost:8080/health || exit 1
 
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["--config", "/app/config/config.yaml"]
