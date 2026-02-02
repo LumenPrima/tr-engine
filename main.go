@@ -46,10 +46,10 @@ var (
 	transcribeBackfillN  = flag.Int("transcribe-backfill-count", 1000, "Number of calls to queue for backfill")
 )
 
-const version = "0.3.1-beta5"
+const version = "0.3.1-beta6"
 
 // @title           tr-engine API
-// @version         0.3.1-beta5
+// @version         0.3.1-beta6
 // @description     Backend service for trunk-recorder data ingestion and querying. Provides REST APIs for accessing radio system data, calls, talkgroups, and units.
 
 // @host            localhost:8080
