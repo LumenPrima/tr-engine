@@ -73,10 +73,10 @@ type ActiveUnitListResponse struct {
 
 // CallListResponse represents a list of calls
 type CallListResponse struct {
-	Calls  interface{} `json:"calls"`
 	Count  int         `json:"count" example:"25"`
 	Limit  int         `json:"limit" example:"50"`
 	Offset int         `json:"offset" example:"0"`
+	Calls  interface{} `json:"calls"`
 }
 
 // UnitEventListResponse represents a list of unit events
@@ -1312,11 +1312,11 @@ func (h *Handler) ListCalls(c *gin.Context) {
 	}
 
 	populateAudioURLs(calls)
-	c.JSON(http.StatusOK, gin.H{
-		"calls":  calls,
-		"count":  totalCount,
-		"limit":  limit,
-		"offset": offset,
+	c.JSON(http.StatusOK, CallListResponse{
+		Count:  totalCount,
+		Limit:  limit,
+		Offset: offset,
+		Calls:  calls,
 	})
 }
 
