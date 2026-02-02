@@ -743,19 +743,19 @@
         },
         "/systems": {
             "get": {
-                "description": "Returns all registered radio systems",
+                "description": "Returns all trunk-recorder recording sites. Each site monitors one radio system/site combination. For P25 networks with multiple sites, use /p25-systems to see them grouped by sysid+wacn.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "systems"
                 ],
-                "summary": "List all systems",
+                "summary": "List recording sites",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/rest.SystemListResponse"
+                            "$ref": "#/definitions/rest.SiteListResponse"
                         }
                     },
                     "500": {
@@ -2127,17 +2127,79 @@
                 }
             }
         },
-        "rest.SystemListResponse": {
+        "rest.Site": {
+            "description": "A trunk-recorder recording site. Note: \"system_id\" is the database ID used in API calls.",
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "Deprecated: use system_id",
+                    "type": "integer",
+                    "example": 1
+                },
+                "instance_id": {
+                    "description": "Trunk-recorder instance",
+                    "type": "integer",
+                    "example": 1
+                },
+                "nac": {
+                    "description": "P25 NAC (site-specific)",
+                    "type": "string",
+                    "example": "340"
+                },
+                "rfss": {
+                    "description": "P25 RFSS",
+                    "type": "integer",
+                    "example": 4
+                },
+                "short_name": {
+                    "description": "Trunk-recorder short name",
+                    "type": "string",
+                    "example": "butco"
+                },
+                "site_id": {
+                    "description": "P25 Site ID",
+                    "type": "integer",
+                    "example": 1
+                },
+                "sys_num": {
+                    "description": "System number within TR config",
+                    "type": "integer",
+                    "example": 0
+                },
+                "sysid": {
+                    "description": "P25 System ID (hex)",
+                    "type": "string",
+                    "example": "348"
+                },
+                "system_id": {
+                    "description": "Database ID, use this in API calls",
+                    "type": "integer",
+                    "example": 1
+                },
+                "system_type": {
+                    "description": "p25, smartnet, conventional",
+                    "type": "string",
+                    "example": "p25"
+                },
+                "wacn": {
+                    "description": "P25 WACN",
+                    "type": "string",
+                    "example": "BEE00"
+                }
+            }
+        },
+        "rest.SiteListResponse": {
+            "description": "List of trunk-recorder recording sites. Each site monitors one radio system/site combination.",
             "type": "object",
             "properties": {
                 "count": {
                     "type": "integer",
-                    "example": 5
+                    "example": 2
                 },
-                "systems": {
+                "sites": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.System"
+                        "$ref": "#/definitions/rest.Site"
                     }
                 }
             }

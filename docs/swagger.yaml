@@ -446,14 +446,65 @@ definitions:
           $ref: '#/definitions/ingest.RecorderInfo'
         type: array
     type: object
-  rest.SystemListResponse:
+  rest.Site:
+    description: 'A trunk-recorder recording site. Note: "system_id" is the database
+      ID used in API calls.'
+    properties:
+      id:
+        description: 'Deprecated: use system_id'
+        example: 1
+        type: integer
+      instance_id:
+        description: Trunk-recorder instance
+        example: 1
+        type: integer
+      nac:
+        description: P25 NAC (site-specific)
+        example: "340"
+        type: string
+      rfss:
+        description: P25 RFSS
+        example: 4
+        type: integer
+      short_name:
+        description: Trunk-recorder short name
+        example: butco
+        type: string
+      site_id:
+        description: P25 Site ID
+        example: 1
+        type: integer
+      sys_num:
+        description: System number within TR config
+        example: 0
+        type: integer
+      sysid:
+        description: P25 System ID (hex)
+        example: "348"
+        type: string
+      system_id:
+        description: Database ID, use this in API calls
+        example: 1
+        type: integer
+      system_type:
+        description: p25, smartnet, conventional
+        example: p25
+        type: string
+      wacn:
+        description: P25 WACN
+        example: BEE00
+        type: string
+    type: object
+  rest.SiteListResponse:
+    description: List of trunk-recorder recording sites. Each site monitors one radio
+      system/site combination.
     properties:
       count:
-        example: 5
+        example: 2
         type: integer
-      systems:
+      sites:
         items:
-          $ref: '#/definitions/models.System'
+          $ref: '#/definitions/rest.Site'
         type: array
     type: object
   rest.TalkgroupListResponse:
@@ -1008,19 +1059,21 @@ paths:
       - stats
   /systems:
     get:
-      description: Returns all registered radio systems
+      description: Returns all trunk-recorder recording sites. Each site monitors
+        one radio system/site combination. For P25 networks with multiple sites, use
+        /p25-systems to see them grouped by sysid+wacn.
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/rest.SystemListResponse'
+            $ref: '#/definitions/rest.SiteListResponse'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/rest.ErrorResponse'
-      summary: List all systems
+      summary: List recording sites
       tags:
       - systems
   /systems/{id}:

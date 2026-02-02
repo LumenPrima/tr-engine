@@ -91,23 +91,25 @@ func TestListSystems_Integration(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response struct {
-		Systems []struct {
-			ID        int    `json:"id"`
+		Sites []struct {
+			SystemID  int    `json:"system_id"`
+			ID        int    `json:"id"` // deprecated alias
 			ShortName string `json:"short_name"`
 			SysID     string `json:"sysid"`
-		} `json:"systems"`
+		} `json:"sites"`
 		Count int `json:"count"`
 	}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, response.Count)
-	assert.Len(t, response.Systems, 2)
+	assert.Len(t, response.Sites, 2)
 
-	// Verify systems are present
+	// Verify sites are present and system_id matches id
 	shortNames := make(map[string]bool)
-	for _, sys := range response.Systems {
-		shortNames[sys.ShortName] = true
+	for _, site := range response.Sites {
+		shortNames[site.ShortName] = true
+		assert.Equal(t, site.SystemID, site.ID, "system_id should match id")
 	}
 	assert.True(t, shortNames["metro"])
 	assert.True(t, shortNames["county"])

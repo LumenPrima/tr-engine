@@ -23,10 +23,27 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"Resource not found"`
 }
 
-// SystemListResponse represents a list of systems
-type SystemListResponse struct {
-	Systems []*models.System `json:"systems"`
-	Count   int              `json:"count" example:"5"`
+// Site represents a trunk-recorder recording site (wraps System with clearer field names)
+// @Description A trunk-recorder recording site. Note: "system_id" is the database ID used in API calls.
+type Site struct {
+	SystemID   int    `json:"system_id" example:"1"`                    // Database ID, use this in API calls
+	ID         int    `json:"id" example:"1"`                           // Deprecated: use system_id
+	InstanceID int    `json:"instance_id" example:"1"`                  // Trunk-recorder instance
+	SysNum     int    `json:"sys_num" example:"0"`                      // System number within TR config
+	ShortName  string `json:"short_name" example:"butco"`               // Trunk-recorder short name
+	SystemType string `json:"system_type,omitempty" example:"p25"`      // p25, smartnet, conventional
+	SysID      string `json:"sysid,omitempty" example:"348"`            // P25 System ID (hex)
+	WACN       string `json:"wacn,omitempty" example:"BEE00"`           // P25 WACN
+	NAC        string `json:"nac,omitempty" example:"340"`              // P25 NAC (site-specific)
+	RFSS       int    `json:"rfss,omitempty" example:"4"`               // P25 RFSS
+	SiteID     int    `json:"site_id,omitempty" example:"1"`            // P25 Site ID
+}
+
+// SiteListResponse represents a list of recording sites
+// @Description List of trunk-recorder recording sites. Each site monitors one radio system/site combination.
+type SiteListResponse struct {
+	Sites []Site `json:"sites"`
+	Count int    `json:"count" example:"2"`
 }
 
 // TalkgroupListResponse represents a list of talkgroups
@@ -215,11 +232,11 @@ func (h *Handler) parseTimeRange(c *gin.Context) (startTime, endTime *time.Time)
 }
 
 // ListSystems godoc
-// @Summary      List all systems
-// @Description  Returns all registered radio systems
+// @Summary      List recording sites
+// @Description  Returns all trunk-recorder recording sites. Each site monitors one radio system/site combination. For P25 networks with multiple sites, use /p25-systems to see them grouped by sysid+wacn.
 // @Tags         systems
 // @Produce      json
-// @Success      200  {object}  rest.SystemListResponse
+// @Success      200  {object}  rest.SiteListResponse
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /systems [get]
 func (h *Handler) ListSystems(c *gin.Context) {
@@ -230,9 +247,27 @@ func (h *Handler) ListSystems(c *gin.Context) {
 		return
 	}
 
+	// Convert to Site response type with clearer field names
+	sites := make([]Site, len(systems))
+	for i, sys := range systems {
+		sites[i] = Site{
+			SystemID:   sys.ID,
+			ID:         sys.ID, // deprecated alias
+			InstanceID: sys.InstanceID,
+			SysNum:     sys.SysNum,
+			ShortName:  sys.ShortName,
+			SystemType: sys.SystemType,
+			SysID:      sys.SysID,
+			WACN:       sys.WACN,
+			NAC:        sys.NAC,
+			RFSS:       sys.RFSS,
+			SiteID:     sys.SiteID,
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"systems": systems,
-		"count":   len(systems),
+		"sites": sites,
+		"count": len(sites),
 	})
 }
 
