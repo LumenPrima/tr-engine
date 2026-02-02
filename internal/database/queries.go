@@ -968,6 +968,10 @@ func (db *DB) GetCallByCallID(ctx context.Context, sysid string, tgid int64, sta
 		FROM calls c
 		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
 		WHERE c.tg_sysid = $1 AND c.tgid = $2 AND c.start_time = $3
+		ORDER BY
+			CASE WHEN c.audio_path IS NOT NULL AND c.audio_path != '' THEN 0 ELSE 1 END,
+			c.error_count ASC NULLS LAST,
+			c.duration DESC NULLS LAST
 		LIMIT 1
 	`, sysid, tgid, startTime).Scan(
 		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TgSysid, &call.TGID, &call.RecorderID,
