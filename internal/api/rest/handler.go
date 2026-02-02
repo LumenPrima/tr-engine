@@ -154,7 +154,8 @@ func (h *Handler) SetRecorderProvider(provider RecorderProvider) {
 // populateAudioURL sets the AudioURL field on a call if it has audio
 func populateAudioURL(call *models.Call) {
 	if call != nil && call.AudioPath != "" {
-		call.AudioURL = "/api/v1/calls/" + strconv.FormatInt(call.ID, 10) + "/audio"
+		call.PopulateCallID()
+		call.AudioURL = "/api/v1/calls/" + call.CallID + "/audio"
 	}
 }
 
@@ -169,33 +170,42 @@ func populateAudioURLs(calls []*models.Call) {
 func populateRecentCallAudioURLs(calls []*database.RecentCallInfo) {
 	for _, call := range calls {
 		if call != nil && call.AudioPath != "" {
-			call.AudioURL = "/api/v1/calls/" + strconv.FormatInt(call.ID, 10) + "/audio"
+			call.PopulateCallID()
+			call.AudioURL = "/api/v1/calls/" + call.CallID + "/audio"
 		}
 	}
 }
 
-// resolveCall looks up a call by tr_call_id string, falling back to numeric DB id
+// resolveCall looks up a call by call_id (sysid:tgid:start_unix format)
 func (h *Handler) resolveCall(c *gin.Context) (*models.Call, error) {
 	idParam := c.Param("id")
 	if idParam == "" {
 		return nil, nil
 	}
 
-	// Try as tr_call_id first
+	// Try parsing as deterministic call_id format: sysid:tgid:start_unix
+	parts := strings.Split(idParam, ":")
+	if len(parts) == 3 {
+		sysid := parts[0]
+		tgid, tgidErr := strconv.ParseInt(parts[1], 10, 64)
+		startUnix, startErr := strconv.ParseInt(parts[2], 10, 64)
+		if tgidErr == nil && startErr == nil {
+			call, err := h.db.GetCallByCallID(c.Request.Context(), sysid, tgid, startUnix)
+			if err != nil {
+				return nil, err
+			}
+			if call != nil {
+				return call, nil
+			}
+		}
+	}
+
+	// Fall back to tr_call_id (legacy format from trunk-recorder)
 	call, err := h.db.GetCallByTRCallID(c.Request.Context(), idParam)
 	if err != nil {
 		return nil, err
 	}
 	if call != nil {
-		return call, nil
-	}
-
-	// Fall back to numeric DB id
-	if numID, parseErr := strconv.ParseInt(idParam, 10, 64); parseErr == nil {
-		call, err = h.db.GetCallByID(c.Request.Context(), numID)
-		if err != nil {
-			return nil, err
-		}
 		return call, nil
 	}
 
@@ -422,12 +432,15 @@ func (h *Handler) ListSystemTalkgroups(c *gin.Context) {
 
 // ListTalkgroups godoc
 // @Summary      List all talkgroups
-// @Description  Returns all talkgroups, optionally filtered by SYSID
+// @Description  Returns all talkgroups with stats (call_count, calls_1h, calls_24h, unit_count). Optionally filtered by SYSID.
 // @Tags         talkgroups
 // @Produce      json
-// @Param        sysid   query  string  false  "Filter by SYSID (P25 system identifier)"
-// @Param        limit   query  int     false  "Results per page"  default(50)
-// @Param        offset  query  int     false  "Page offset"       default(0)
+// @Param        sysid    query  string  false  "Filter by SYSID (P25 system identifier)"
+// @Param        search   query  string  false  "Search by alpha_tag, tgid, group, or tag"
+// @Param        sort     query  string  false  "Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count, calls_1h, calls_24h, unit_count"  default(alpha_tag)
+// @Param        sort_dir query  string  false  "Sort direction: asc, desc"  default(asc)
+// @Param        limit    query  int     false  "Results per page"  default(50)
+// @Param        offset   query  int     false  "Page offset"       default(0)
 // @Success      200  {object}  rest.TalkgroupListResponse
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /talkgroups [get]
@@ -446,12 +459,17 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 
 	// Validate sort field (whitelist to prevent SQL injection)
 	// For text columns, add NULLS LAST to put nulls at end
+	// Use tg. prefix for stats query with joins
 	validSortFields := map[string]string{
-		"alpha_tag":  "alpha_tag",
-		"tgid":       "tgid",
-		"last_seen":  "last_seen",
-		"first_seen": "first_seen",
-		"group":      "tg_group",
+		"alpha_tag":  "tg.alpha_tag",
+		"tgid":       "tg.tgid",
+		"last_seen":  "tg.last_seen",
+		"first_seen": "tg.first_seen",
+		"group":      "tg.tg_group",
+		"call_count": "call_count",
+		"calls_1h":   "calls_1h",
+		"calls_24h":  "calls_24h",
+		"unit_count": "unit_count",
 	}
 	nullsLastFields := map[string]bool{"alpha_tag": true, "group": true}
 
@@ -473,36 +491,48 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 	var talkgroups interface{}
 	var err error
 
-	// Build query
-	var conditions []string
-	var args []interface{}
+	// Build query conditions (two versions: one for count query, one for stats query with tg. prefix)
+	var countConditions []string
+	var statsConditions []string
+	var args []any
 	argIdx := 1
 
 	if sysidFilter != "" {
-		conditions = append(conditions, "sysid = $"+strconv.Itoa(argIdx))
+		countConditions = append(countConditions, "sysid = $"+strconv.Itoa(argIdx))
+		statsConditions = append(statsConditions, "tg.sysid = $"+strconv.Itoa(argIdx))
 		args = append(args, sysidFilter)
 		argIdx++
 	}
 
 	if search != "" {
 		searchPattern := "%" + search + "%"
-		searchCond := "(LOWER(alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(tgid AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + " OR LOWER(tg_group) LIKE LOWER($" + strconv.Itoa(argIdx+2) + ") OR LOWER(tag) LIKE LOWER($" + strconv.Itoa(argIdx+3) + "))"
-		conditions = append(conditions, searchCond)
+		countSearchCond := "(LOWER(alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(tgid AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + " OR LOWER(tg_group) LIKE LOWER($" + strconv.Itoa(argIdx+2) + ") OR LOWER(tag) LIKE LOWER($" + strconv.Itoa(argIdx+3) + "))"
+		statsSearchCond := "(LOWER(tg.alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(tg.tgid AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + " OR LOWER(tg.tg_group) LIKE LOWER($" + strconv.Itoa(argIdx+2) + ") OR LOWER(tg.tag) LIKE LOWER($" + strconv.Itoa(argIdx+3) + "))"
+		countConditions = append(countConditions, countSearchCond)
+		statsConditions = append(statsConditions, statsSearchCond)
 		args = append(args, searchPattern, searchPattern, searchPattern, searchPattern)
 		argIdx += 4
 	}
 
-	// Build WHERE clause
-	whereClause := ""
-	if len(conditions) > 0 {
-		whereClause = " WHERE " + conditions[0]
-		for i := 1; i < len(conditions); i++ {
-			whereClause += " AND " + conditions[i]
+	// Build WHERE clauses
+	countWhereClause := ""
+	if len(countConditions) > 0 {
+		countWhereClause = " WHERE " + countConditions[0]
+		for i := 1; i < len(countConditions); i++ {
+			countWhereClause += " AND " + countConditions[i]
+		}
+	}
+
+	statsWhereClause := ""
+	if len(statsConditions) > 0 {
+		statsWhereClause = " WHERE " + statsConditions[0]
+		for i := 1; i < len(statsConditions); i++ {
+			statsWhereClause += " AND " + statsConditions[i]
 		}
 	}
 
 	// Get total count first (without LIMIT/OFFSET)
-	countQuery := `SELECT COUNT(*) FROM talkgroups` + whereClause
+	countQuery := `SELECT COUNT(*) FROM talkgroups` + countWhereClause
 	var totalCount int
 	if err := h.db.Pool().QueryRow(c.Request.Context(), countQuery, args...).Scan(&totalCount); err != nil {
 		h.logger.Error("Failed to count talkgroups", zap.Error(err))
@@ -510,8 +540,31 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		return
 	}
 
-	// Get paginated data
-	query := `SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen FROM talkgroups` + whereClause
+	// Get paginated data with stats via LATERAL joins
+	// This efficiently computes call_count, calls_1h, calls_24h, and unit_count
+	query := `
+		SELECT
+			tg.sysid, tg.tgid, tg.alpha_tag, tg.description, tg.tg_group, tg.tag,
+			tg.priority, tg.mode, tg.first_seen, tg.last_seen,
+			COALESCE(call_stats.call_count, 0) as call_count,
+			COALESCE(call_stats.calls_1h, 0) as calls_1h,
+			COALESCE(call_stats.calls_24h, 0) as calls_24h,
+			COALESCE(unit_stats.unit_count, 0) as unit_count
+		FROM talkgroups tg
+		LEFT JOIN LATERAL (
+			SELECT
+				COUNT(*) as call_count,
+				COUNT(*) FILTER (WHERE start_time > NOW() - INTERVAL '1 hour') as calls_1h,
+				COUNT(*) FILTER (WHERE start_time > NOW() - INTERVAL '24 hours') as calls_24h
+			FROM calls c
+			WHERE c.tg_sysid = tg.sysid AND c.tgid = tg.tgid
+		) call_stats ON true
+		LEFT JOIN LATERAL (
+			SELECT COUNT(DISTINCT t.unit_rid) as unit_count
+			FROM transmissions t
+			JOIN calls c ON t.call_id = c.id
+			WHERE c.tg_sysid = tg.sysid AND c.tgid = tg.tgid
+		) unit_stats ON true` + statsWhereClause
 	query += " ORDER BY " + orderClause + " LIMIT $" + strconv.Itoa(argIdx) + " OFFSET $" + strconv.Itoa(argIdx+1)
 	args = append(args, limit, offset)
 
@@ -521,10 +574,13 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		var results []map[string]any
 		for rows.Next() {
 			var tgid, priority int
+			var callCount, calls1h, calls24h, unitCount int
 			var sysid string
 			var alphaTag, description, group, tag, mode *string
 			var firstSeen, lastSeen time.Time
-			if scanErr := rows.Scan(&sysid, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen); scanErr != nil {
+			if scanErr := rows.Scan(&sysid, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen,
+				&callCount, &calls1h, &calls24h, &unitCount); scanErr != nil {
+				h.logger.Error("Failed to scan talkgroup row", zap.Error(scanErr))
 				continue
 			}
 			results = append(results, map[string]any{
@@ -538,6 +594,10 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 				"mode":        mode,
 				"first_seen":  firstSeen,
 				"last_seen":   lastSeen,
+				"call_count":  callCount,
+				"calls_1h":    calls1h,
+				"calls_24h":   calls24h,
+				"unit_count":  unitCount,
 			})
 		}
 		talkgroups = results
@@ -610,7 +670,7 @@ func (h *Handler) GetTalkgroupEncryptionStats(c *gin.Context) {
 
 // GetTalkgroup godoc
 // @Summary      Get a talkgroup
-// @Description  Returns a single talkgroup. Accepts sysid:tgid format (e.g., "348:9178") or plain tgid (returns 409 if ambiguous)
+// @Description  Returns a single talkgroup with stats (call_count, calls_1h, calls_24h, unit_count). Accepts sysid:tgid format (e.g., "348:9178") or plain tgid (returns 409 if ambiguous)
 // @Tags         talkgroups
 // @Produce      json
 // @Param        id   path      string  true  "Talkgroup ID (sysid:tgid or plain tgid)"
@@ -633,10 +693,40 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 		Mode        *string   `json:"mode"`
 		FirstSeen   time.Time `json:"first_seen"`
 		LastSeen    time.Time `json:"last_seen"`
+		CallCount   int       `json:"call_count"`
+		Calls1h     int       `json:"calls_1h"`
+		Calls24h    int       `json:"calls_24h"`
+		UnitCount   int       `json:"unit_count"`
 	}
 
 	ctx := c.Request.Context()
 	var err error
+
+	// Query with stats via LATERAL joins
+	statsQuery := `
+		SELECT
+			tg.sysid, tg.tgid, tg.alpha_tag, tg.description, tg.tg_group, tg.tag,
+			tg.priority, tg.mode, tg.first_seen, tg.last_seen,
+			COALESCE(call_stats.call_count, 0) as call_count,
+			COALESCE(call_stats.calls_1h, 0) as calls_1h,
+			COALESCE(call_stats.calls_24h, 0) as calls_24h,
+			COALESCE(unit_stats.unit_count, 0) as unit_count
+		FROM talkgroups tg
+		LEFT JOIN LATERAL (
+			SELECT
+				COUNT(*) as call_count,
+				COUNT(*) FILTER (WHERE start_time > NOW() - INTERVAL '1 hour') as calls_1h,
+				COUNT(*) FILTER (WHERE start_time > NOW() - INTERVAL '24 hours') as calls_24h
+			FROM calls c
+			WHERE c.tg_sysid = tg.sysid AND c.tgid = tg.tgid
+		) call_stats ON true
+		LEFT JOIN LATERAL (
+			SELECT COUNT(DISTINCT t.unit_rid) as unit_count
+			FROM transmissions t
+			JOIN calls c ON t.call_id = c.id
+			WHERE c.tg_sysid = tg.sysid AND c.tgid = tg.tgid
+		) unit_stats ON true
+		WHERE `
 
 	// Check if it's a sysid:tgid format
 	if parts := strings.Split(idParam, ":"); len(parts) == 2 {
@@ -646,10 +736,10 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid talkgroup ID format"})
 			return
 		}
-		err = h.db.Pool().QueryRow(ctx, `
-			SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-			FROM talkgroups WHERE sysid = $1 AND tgid = $2
-		`, sysid, tgid).Scan(&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+		err = h.db.Pool().QueryRow(ctx, statsQuery+`tg.sysid = $1 AND tg.tgid = $2`, sysid, tgid).Scan(
+			&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag,
+			&tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+			&tg.CallCount, &tg.Calls1h, &tg.Calls24h, &tg.UnitCount)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})
 			return
@@ -705,11 +795,11 @@ func (h *Handler) GetTalkgroup(c *gin.Context) {
 		return
 	}
 
-	// Unique - get full talkgroup details
-	err = h.db.Pool().QueryRow(ctx, `
-		SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen
-		FROM talkgroups WHERE tgid = $1
-	`, tgid).Scan(&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag, &tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen)
+	// Unique - get full talkgroup details with stats
+	err = h.db.Pool().QueryRow(ctx, statsQuery+`tg.tgid = $1`, tgid).Scan(
+		&tg.SYSID, &tg.TGID, &tg.AlphaTag, &tg.Description, &tg.Group, &tg.Tag,
+		&tg.Priority, &tg.Mode, &tg.FirstSeen, &tg.LastSeen,
+		&tg.CallCount, &tg.Calls1h, &tg.Calls24h, &tg.UnitCount)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Talkgroup not found"})

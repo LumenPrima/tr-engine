@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -32,12 +33,19 @@ type TestFixtures struct {
 	CountyUnit1SYSID  string // "15a"
 	CountyUnit1UnitID int64  // 1001234
 
-	// Calls
-	Call1ID int64 // Metro PD Main, with audio
-	Call2ID int64 // Metro PD Main, with audio
-	Call3ID int64 // Metro Fire, with audio
-	Call4ID int64 // County PD Main, with audio
-	Call5ID int64 // Metro PD Main, encrypted (no audio)
+	// Calls - internal database IDs (for database-layer tests)
+	Call1DBID int64 // Metro PD Main, with audio
+	Call2DBID int64 // Metro PD Main, with audio
+	Call3DBID int64 // Metro Fire, with audio
+	Call4DBID int64 // County PD Main, with audio
+	Call5DBID int64 // Metro PD Main, encrypted (no audio)
+
+	// Calls - deterministic call_ids (for API-layer tests): sysid:tgid:start_unix
+	Call1ID string // 348:9178:...
+	Call2ID string
+	Call3ID string
+	Call4ID string
+	Call5ID string
 
 	// Base time for test data
 	BaseTime time.Time
@@ -161,11 +169,19 @@ func SeedTestData(t testing.TB, db *TestDB) *TestFixtures {
 		850387500, 0, 0, 0, -55.0, -98.0)`,
 		f.BaseTime.Add(-150*time.Second), f.BaseTime.Add(-140*time.Second))
 
-	f.Call1ID = 1
-	f.Call2ID = 2
-	f.Call3ID = 3
-	f.Call4ID = 4
-	f.Call5ID = 5
+	// Database IDs (for internal database tests)
+	f.Call1DBID = 1
+	f.Call2DBID = 2
+	f.Call3DBID = 3
+	f.Call4DBID = 4
+	f.Call5DBID = 5
+
+	// Generate deterministic call_ids (for API tests): sysid:tgid:start_unix
+	f.Call1ID = fmt.Sprintf("348:9178:%d", f.BaseTime.Add(-30*time.Second).Unix())
+	f.Call2ID = fmt.Sprintf("348:9178:%d", f.BaseTime.Add(-60*time.Second).Unix())
+	f.Call3ID = fmt.Sprintf("348:9200:%d", f.BaseTime.Add(-90*time.Second).Unix())
+	f.Call4ID = fmt.Sprintf("15a:9178:%d", f.BaseTime.Add(-120*time.Second).Unix())
+	f.Call5ID = fmt.Sprintf("348:9178:%d", f.BaseTime.Add(-150*time.Second).Unix())
 
 	// Transmissions for Call 1 - use unit_sysid instead of unit_id
 	db.MustExec(t, `INSERT INTO transmissions (id, call_id, unit_sysid, unit_rid, start_time, duration, position, emergency, error_count, spike_count)

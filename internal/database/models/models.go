@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -60,6 +61,12 @@ type Talkgroup struct {
 	Mode        string    `json:"mode,omitempty" example:"D"`
 	FirstSeen   time.Time `json:"first_seen" example:"2024-01-01T00:00:00Z"`
 	LastSeen    time.Time `json:"last_seen" example:"2024-01-15T12:30:00Z"`
+
+	// Stats (populated by list/detail queries)
+	CallCount  int `json:"call_count" example:"1547"`
+	Calls1h    int `json:"calls_1h" example:"12"`
+	Calls24h   int `json:"calls_24h" example:"234"`
+	UnitCount  int `json:"unit_count" example:"45"`
 }
 
 // TalkgroupSite tracks which sites have seen a talkgroup
@@ -127,16 +134,17 @@ type CallGroup struct {
 // Call represents an individual call recording
 // @Description A recorded radio call/transmission
 type Call struct {
-	ID          int64   `json:"id" example:"1"`
+	ID          int64   `json:"-"` // Internal database ID, not exposed
 	CallGroupID *int64  `json:"call_group_id,omitempty" example:"1"`
-	InstanceID  int     `json:"instance_id" example:"1"`
-	SystemID    int     `json:"system_id" example:"1"`
+	InstanceID  int     `json:"-"` // Internal, not exposed
+	SystemID    int     `json:"-"` // Internal, not exposed
 	TgSysid     *string `json:"tg_sysid,omitempty" example:"348"`
-	RecorderID  *int    `json:"recorder_id,omitempty" example:"1"`
+	RecorderID  *int    `json:"-"` // Internal, not exposed
 
 	// Identifiers
-	TRCallID string `json:"tr_call_id,omitempty" example:"butco-1001-1705319400"`
-	CallNum  int64  `json:"call_num,omitempty" example:"12345"`
+	CallID   string `json:"call_id,omitempty" example:"348:9173:1769997011"` // Deterministic ID: {sysid}:{tgid}:{start_unix}
+	TRCallID string `json:"-"`                                               // Internal trunk-recorder ID
+	CallNum  int64  `json:"-"`                                               // Internal
 
 	// Timing
 	StartTime time.Time  `json:"start_time" example:"2024-01-15T10:30:00Z"`
@@ -183,6 +191,26 @@ type Call struct {
 type CallUnit struct {
 	UnitRID  int64  `json:"unit_rid" example:"924003"`
 	AlphaTag string `json:"alpha_tag,omitempty" example:"09 7COM3"`
+}
+
+// GenerateCallID creates a deterministic call ID from sysid, tgid, and start time
+func (c *Call) GenerateCallID() string {
+	sysid := ""
+	if c.TgSysid != nil {
+		sysid = *c.TgSysid
+	}
+	tgid := int64(0)
+	if c.TGID != nil {
+		tgid = *c.TGID
+	}
+	return fmt.Sprintf("%s:%d:%d", sysid, tgid, c.StartTime.Unix())
+}
+
+// PopulateCallID sets the CallID field if not already set
+func (c *Call) PopulateCallID() {
+	if c.CallID == "" {
+		c.CallID = c.GenerateCallID()
+	}
 }
 
 // Transmission represents a unit transmission within a call

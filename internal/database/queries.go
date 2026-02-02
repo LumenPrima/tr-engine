@@ -853,6 +853,11 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, sysid *string, tgid 
 		}
 	}
 
+	// Populate deterministic CallID for each call
+	for _, c := range calls {
+		c.PopulateCallID()
+	}
+
 	return calls, nil
 }
 
@@ -916,6 +921,7 @@ func (db *DB) GetCallByID(ctx context.Context, id int64) (*models.Call, error) {
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
+	call.PopulateCallID()
 	return &call, err
 }
 
@@ -944,6 +950,37 @@ func (db *DB) GetCallByTRCallID(ctx context.Context, trCallID string) (*models.C
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
+	call.PopulateCallID()
+	return &call, err
+}
+
+// GetCallByCallID returns a call by deterministic call ID (format: sysid:tgid:start_unix)
+func (db *DB) GetCallByCallID(ctx context.Context, sysid string, tgid int64, startUnix int64) (*models.Call, error) {
+	startTime := time.Unix(startUnix, 0)
+	var call models.Call
+	err := db.pool.QueryRow(ctx, `
+		SELECT c.id, c.call_group_id, c.instance_id, c.system_id, c.tg_sysid, c.tgid, c.recorder_id,
+			c.tr_call_id, c.call_num, c.start_time, c.stop_time, c.duration,
+			c.call_state, c.mon_state, c.encrypted, c.emergency, c.phase2_tdma, c.tdma_slot,
+			c.conventional, c.analog, c.audio_type, c.freq, c.freq_error, c.error_count, c.spike_count,
+			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json,
+			tg.alpha_tag
+		FROM calls c
+		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
+		WHERE c.tg_sysid = $1 AND c.tgid = $2 AND c.start_time = $3
+		LIMIT 1
+	`, sysid, tgid, startTime).Scan(
+		&call.ID, &call.CallGroupID, &call.InstanceID, &call.SystemID, &call.TgSysid, &call.TGID, &call.RecorderID,
+		&call.TRCallID, &call.CallNum, &call.StartTime, &call.StopTime, &call.Duration,
+		&call.CallState, &call.MonState, &call.Encrypted, &call.Emergency, &call.Phase2TDMA, &call.TDMASlot,
+		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
+		&call.SignalDB, &call.NoiseDB, &call.AudioPath, &call.AudioSize, &call.PatchedTGIDs, &call.MetadataJSON,
+		&call.TGAlphaTag,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	call.PopulateCallID()
 	return &call, err
 }
 
@@ -1374,24 +1411,32 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 
 // RecentCallInfo contains call info with system/talkgroup details for display
 type RecentCallInfo struct {
-	ID          int64            `json:"id"`
+	ID          int64            `json:"-"` // Internal database ID, not exposed
 	CallID      string           `json:"call_id,omitempty"`
-	TRCallID    string           `json:"tr_call_id,omitempty"`
-	CallNum     int64            `json:"call_num"`
+	TRCallID    string           `json:"-"` // Internal
+	CallNum     int64            `json:"-"` // Internal
 	StartTime   time.Time        `json:"start_time"`
 	StopTime    time.Time        `json:"stop_time"`
 	Duration    float32          `json:"duration"`
 	System      string           `json:"system"`
+	Sysid       string           `json:"sysid,omitempty"` // P25 System ID for call_id generation
 	TGID        int              `json:"tgid"`
 	TGAlphaTag  string           `json:"tg_alpha_tag"`
 	Freq        int64            `json:"freq"`
 	Encrypted   bool             `json:"encrypted"`
 	Emergency   bool             `json:"emergency"`
-	AudioPath   string           `json:"audio_path,omitempty"`
+	AudioPath   string           `json:"-"` // Internal, use audio_url instead
 	AudioURL    string           `json:"audio_url,omitempty"`
 	HasAudio    bool             `json:"has_audio"`
 	CallGroupID *int64           `json:"call_group_id,omitempty"`
 	Units       []RecentCallUnit `json:"units"`
+}
+
+// PopulateCallID generates and sets the deterministic call_id
+func (c *RecentCallInfo) PopulateCallID() {
+	if c.CallID == "" {
+		c.CallID = fmt.Sprintf("%s:%d:%d", c.Sysid, c.TGID, c.StartTime.Unix())
+	}
 }
 
 // RecentCallUnit contains unit info for a call
@@ -1415,6 +1460,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 				c.stop_time,
 				c.duration,
 				COALESCE(s.short_name, '') as system,
+				COALESCE(c.tg_sysid, '') as sysid,
 				COALESCE(c.tgid, 0) as tgid,
 				COALESCE(t.alpha_tag, '') as tg_alpha_tag,
 				c.freq,
@@ -1440,6 +1486,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 				c.stop_time,
 				c.duration,
 				COALESCE(s.short_name, '') as system,
+				COALESCE(c.tg_sysid, '') as sysid,
 				COALESCE(c.tgid, 0) as tgid,
 				COALESCE(t.alpha_tag, '') as tg_alpha_tag,
 				c.freq,
@@ -1472,7 +1519,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 		var stopTime *time.Time
 		if err := rows.Scan(
 			&c.TRCallID, &c.CallNum, &c.StartTime, &stopTime, &c.Duration,
-			&c.System, &c.TGID, &c.TGAlphaTag, &c.Freq,
+			&c.System, &c.Sysid, &c.TGID, &c.TGAlphaTag, &c.Freq,
 			&c.Encrypted, &c.Emergency, &c.AudioPath, &c.ID, &c.CallGroupID,
 		); err != nil {
 			return nil, err
@@ -1480,7 +1527,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 		if stopTime != nil {
 			c.StopTime = *stopTime
 		}
-		c.CallID = c.TRCallID // backwards compat
+		c.PopulateCallID() // Generate deterministic call_id
 		c.HasAudio = c.AudioPath != ""
 		c.Units = []RecentCallUnit{}
 		calls = append(calls, &c)

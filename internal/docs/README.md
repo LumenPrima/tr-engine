@@ -30,7 +30,7 @@ docker run -d -p 8080:8080 \
   -v ./data:/data \
   -v /path/to/trunk-recorder/audio:/audio:ro \
   -v /path/to/trunk-recorder/logs:/logs:ro \
-  ghcr.io/lumenprima/tr-engine:0.3.1-beta9 --easy
+  ghcr.io/lumenprima/tr-engine:0.3.2-beta1 --easy
 ```
 
 That's it. No MQTT setup, no config file, no database setup. Open `http://localhost:8080` to browse recordings.
@@ -79,14 +79,14 @@ mkdir -p data config
 docker run --rm \
   -v ./data:/data \
   -v ./config:/app/config \
-  ghcr.io/lumenprima/tr-engine:0.3.1-beta9
+  ghcr.io/lumenprima/tr-engine:0.3.2-beta1
 
 # Second run starts the service
 docker run -d \
   -p 8080:8080 -p 1883:1883 \
   -v ./data:/data \
   -v ./config:/app/config \
-  ghcr.io/lumenprima/tr-engine:0.3.1-beta9
+  ghcr.io/lumenprima/tr-engine:0.3.2-beta1
 ```
 
 **Note:** Beta releases require the specific version tag (e.g., `:0.3.1-beta5`). The `:latest` tag is only applied to stable releases.
@@ -272,12 +272,12 @@ Full interactive documentation at `/swagger/` and `/websocket`.
 |----------|-------------|
 | `GET /api/v1/systems` | List recording sites (returns `sites` array with `system_id`) |
 | `GET /api/v1/p25-systems` | List P25 systems grouped by sysid+wacn |
-| `GET /api/v1/talkgroups` | List/search talkgroups |
+| `GET /api/v1/talkgroups` | List/search talkgroups with stats (`call_count`, `calls_1h`, `calls_24h`, `unit_count`) |
 | `GET /api/v1/units` | List/search units |
 | `GET /api/v1/units/active` | Currently active units |
-| `GET /api/v1/calls` | List calls (with audio) |
+| `GET /api/v1/calls` | List calls (with audio). Call ID format: `{sysid}:{tgid}:{start_unix}` |
 | `GET /api/v1/calls/recent` | Recent completed calls (deduplicated by default) |
-| `GET /api/v1/calls/{id}` | Get call details |
+| `GET /api/v1/calls/{id}` | Get call details (accepts `sysid:tgid:timestamp` or legacy `tr_call_id`) |
 | `GET /api/v1/calls/{id}/audio` | Stream audio file |
 | `GET /api/v1/calls/{id}/transmissions` | Unit transmissions in call |
 | `GET /api/v1/calls/{id}/transcription` | Get call transcription |

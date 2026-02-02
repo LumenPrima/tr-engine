@@ -162,11 +162,15 @@ func TestListTalkgroups_Integration(t *testing.T) {
 
 	var response struct {
 		Talkgroups []struct {
-			ID       int    `json:"id"`
-			SYSID    string `json:"sysid"`
-			TGID     int    `json:"tgid"`
-			AlphaTag string `json:"alpha_tag"`
+			SYSID     string `json:"sysid"`
+			TGID      int    `json:"tgid"`
+			AlphaTag  string `json:"alpha_tag"`
+			CallCount int    `json:"call_count"`
+			Calls1h   int    `json:"calls_1h"`
+			Calls24h  int    `json:"calls_24h"`
+			UnitCount int    `json:"unit_count"`
 		} `json:"talkgroups"`
+		Count  int `json:"count"`
 		Limit  int `json:"limit"`
 		Offset int `json:"offset"`
 	}
@@ -174,6 +178,20 @@ func TestListTalkgroups_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Len(t, response.Talkgroups, 4)
+	assert.Equal(t, 4, response.Count)
+
+	// Find Metro PD Main (348:9178) and verify it has stats
+	// Fixture data: 3 calls on this talkgroup (calls 1, 2, 5) but call 5 is encrypted (no audio)
+	// But the stats count ALL calls, not just those with audio
+	for _, tg := range response.Talkgroups {
+		if tg.SYSID == "348" && tg.TGID == 9178 {
+			// Metro PD Main has calls 1, 2, 5 = 3 total
+			assert.Equal(t, 3, tg.CallCount, "Metro PD Main should have 3 calls")
+			// Unit count: calls 1 and 2 have transmissions from units 1001234, 1001235
+			assert.GreaterOrEqual(t, tg.UnitCount, 1, "Metro PD Main should have at least 1 unit")
+			break
+		}
+	}
 }
 
 func TestGetTalkgroup_BySysidAndTgid(t *testing.T) {
@@ -416,7 +434,7 @@ func TestListCalls_FilterBySystem(t *testing.T) {
 
 	var response struct {
 		Calls []struct {
-			SystemID int `json:"system_id"`
+			TgSysid string `json:"tg_sysid"`
 		} `json:"calls"`
 		Count int `json:"count"`
 	}
@@ -424,37 +442,38 @@ func TestListCalls_FilterBySystem(t *testing.T) {
 	require.NoError(t, err)
 
 	// Metro has 3 calls with audio (call 5 is encrypted without audio)
+	// Metro system has sysid "348"
 	assert.Equal(t, 3, response.Count)
 	for _, call := range response.Calls {
-		assert.Equal(t, f.MetroSystemID, call.SystemID)
+		assert.Equal(t, f.MetroPDMainSYSID, call.TgSysid)
 	}
 }
 
-func TestGetCall_ByID(t *testing.T) {
+func TestGetCall_ByCallID(t *testing.T) {
 	f := setupTest(t)
 
-	req, _ := http.NewRequest("GET", "/api/v1/calls/1", nil)
+	// Use deterministic call_id format: sysid:tgid:start_unix
+	req, _ := http.NewRequest("GET", "/api/v1/calls/"+f.Call1ID, nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response struct {
-		ID       int64  `json:"id"`
-		TRCallID string `json:"tr_call_id"`
+		CallID   string `json:"call_id"`
 		AudioURL string `json:"audio_url"`
 	}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, f.Call1ID, response.ID)
-	assert.Equal(t, "1705312200_850387500_9178", response.TRCallID)
+	assert.Equal(t, f.Call1ID, response.CallID)
 	assert.NotEmpty(t, response.AudioURL)
 }
 
 func TestGetCall_ByTRCallID(t *testing.T) {
 	f := setupTest(t)
 
+	// Legacy tr_call_id format still supported
 	req, _ := http.NewRequest("GET", "/api/v1/calls/1705312200_850387500_9178", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -462,19 +481,18 @@ func TestGetCall_ByTRCallID(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response struct {
-		ID       int64  `json:"id"`
-		TRCallID string `json:"tr_call_id"`
+		CallID string `json:"call_id"`
 	}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, f.Call1ID, response.ID)
+	assert.Equal(t, f.Call1ID, response.CallID)
 }
 
 func TestGetCallTransmissions_Integration(t *testing.T) {
-	_ = setupTest(t)
+	f := setupTest(t)
 
-	req, _ := http.NewRequest("GET", "/api/v1/calls/1/transmissions", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/calls/"+f.Call1ID+"/transmissions", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -513,14 +531,16 @@ func TestListCalls_Pagination(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response1 struct {
-		Calls  []struct{ ID int64 } `json:"calls"`
-		Count  int                  `json:"count"`
-		Limit  int                  `json:"limit"`
-		Offset int                  `json:"offset"`
+		Calls  []struct{ CallID string `json:"call_id"` } `json:"calls"`
+		Count  int                                        `json:"count"`
+		Limit  int                                        `json:"limit"`
+		Offset int                                        `json:"offset"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &response1)
 
-	assert.Equal(t, 2, response1.Count)
+	// Count is total count (4 calls with audio), not page size
+	assert.Equal(t, 4, response1.Count)
+	assert.Equal(t, 2, len(response1.Calls)) // 2 calls on this page
 	assert.Equal(t, 2, response1.Limit)
 	assert.Equal(t, 0, response1.Offset)
 
@@ -530,19 +550,21 @@ func TestListCalls_Pagination(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	var response2 struct {
-		Calls  []struct{ ID int64 } `json:"calls"`
-		Count  int                  `json:"count"`
-		Offset int                  `json:"offset"`
+		Calls  []struct{ CallID string `json:"call_id"` } `json:"calls"`
+		Count  int                                        `json:"count"`
+		Offset int                                        `json:"offset"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &response2)
 
-	assert.Equal(t, 2, response2.Count)
+	// Count is total count (4 calls with audio), not page size
+	assert.Equal(t, 4, response2.Count)
+	assert.Equal(t, 2, len(response2.Calls)) // 2 calls on this page
 	assert.Equal(t, 2, response2.Offset)
 
-	// Verify no overlap
+	// Verify no overlap (deterministic call_ids should be unique)
 	for _, c1 := range response1.Calls {
 		for _, c2 := range response2.Calls {
-			assert.NotEqual(t, c1.ID, c2.ID)
+			assert.NotEqual(t, c1.CallID, c2.CallID)
 		}
 	}
 }

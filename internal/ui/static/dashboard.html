@@ -1369,6 +1369,10 @@ Tabs.talkgroups = {
         '<div class="filter-group"><label>Sort</label><select id="tg-sort">' +
           '<option value="alpha_tag">Alpha Tag</option>' +
           '<option value="tgid">TGID</option>' +
+          '<option value="call_count">Total Calls</option>' +
+          '<option value="calls_24h">Calls (24h)</option>' +
+          '<option value="calls_1h">Calls (1h)</option>' +
+          '<option value="unit_count">Units</option>' +
           '<option value="last_seen">Last Seen</option>' +
           '<option value="first_seen">First Seen</option>' +
           '<option value="group">Group</option>' +
@@ -1410,7 +1414,13 @@ Tabs.talkgroups = {
         '<div class="entity-card" onclick="Tabs.talkgroups.showDetail(' + t.tgid + ')">' +
         '<div class="title">' + UI.esc(t.alpha_tag || 'TG ' + t.tgid) + '</div>' +
         '<div class="detail">TGID: ' + t.tgid + ' | ' + UI.esc(t.group || '') + ' | ' + UI.esc(t.tag || '') + '</div>' +
-        '<div class="detail" style="color:var(--text-muted);">Last: ' + UI.ago(t.last_seen) + '</div>' +
+        '<div class="detail" style="color:var(--text-muted);">' +
+          '<span title="Total calls">' + (t.call_count || 0) + ' calls</span> · ' +
+          '<span title="Calls in past hour">' + (t.calls_1h || 0) + '/1h</span> · ' +
+          '<span title="Calls in past 24h">' + (t.calls_24h || 0) + '/24h</span> · ' +
+          '<span title="Unique units">' + (t.unit_count || 0) + ' units</span>' +
+        '</div>' +
+        '<div class="detail" style="color:var(--text-muted);font-size:10px;">Last: ' + UI.ago(t.last_seen) + '</div>' +
         '</div>'
       ).join('') + '</div>';
       UI.$('tg-pagination').innerHTML = paginationHtml(this.offset, this.limit, tgs.length, 'tg');
@@ -1432,6 +1442,14 @@ Tabs.talkgroups = {
       ];
       html += fields.map(([k,v]) => '<tr><td style="color:var(--text-dim);width:100px;">' + k + '</td><td>' + UI.esc(String(v ?? '--')) + '</td></tr>').join('');
       html += '</table></div>';
+      // Stats section
+      html += '<div class="panel-section"><div class="panel-section-title">Activity Stats</div>';
+      html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center;">';
+      html += '<div><div style="font-size:20px;font-weight:bold;">' + (tg.call_count || 0) + '</div><div style="font-size:10px;color:var(--text-dim);">Total Calls</div></div>';
+      html += '<div><div style="font-size:20px;font-weight:bold;">' + (tg.calls_1h || 0) + '</div><div style="font-size:10px;color:var(--text-dim);">Last Hour</div></div>';
+      html += '<div><div style="font-size:20px;font-weight:bold;">' + (tg.calls_24h || 0) + '</div><div style="font-size:10px;color:var(--text-dim);">Last 24h</div></div>';
+      html += '<div><div style="font-size:20px;font-weight:bold;">' + (tg.unit_count || 0) + '</div><div style="font-size:10px;color:var(--text-dim);">Units</div></div>';
+      html += '</div></div>';
       html += '<div class="panel-section"><div class="panel-section-title">Recent Calls</div><div id="panel-tg-calls"><div class="loading">Loading...</div></div><div id="panel-tg-calls-pg"></div></div>';
       Panel.open(html);
       this.loadCalls(id, 0);

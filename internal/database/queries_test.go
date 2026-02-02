@@ -175,9 +175,9 @@ func TestGetCallByID(t *testing.T) {
 	f := setupTest(t)
 	ctx := context.Background()
 
-	call, err := testDB.DB.GetCallByID(ctx, f.Call1ID)
+	call, err := testDB.DB.GetCallByID(ctx, f.Call1DBID)
 	require.NoError(t, err)
-	assert.Equal(t, f.Call1ID, call.ID)
+	assert.Equal(t, f.Call1DBID, call.ID)
 	assert.Equal(t, "1705312200_850387500_9178", call.TRCallID)
 	assert.False(t, call.Encrypted)
 }
@@ -188,7 +188,7 @@ func TestGetCallByTRID(t *testing.T) {
 
 	call, err := testDB.DB.GetCallByTRID(ctx, "1705312200_850387500_9178", f.BaseTime.Add(-30*time.Second))
 	require.NoError(t, err)
-	assert.Equal(t, f.Call1ID, call.ID)
+	assert.Equal(t, f.Call1DBID, call.ID)
 }
 
 func TestListCalls_FilterBySystem(t *testing.T) {
@@ -267,7 +267,7 @@ func TestGetTransmissionsByCallID(t *testing.T) {
 	f := setupTest(t)
 	ctx := context.Background()
 
-	txs, err := testDB.DB.GetTransmissionsByCallID(ctx, f.Call1ID)
+	txs, err := testDB.DB.GetTransmissionsByCallID(ctx, f.Call1DBID)
 	require.NoError(t, err)
 	assert.Len(t, txs, 3)
 
