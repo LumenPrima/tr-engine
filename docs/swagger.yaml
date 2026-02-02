@@ -166,42 +166,6 @@ definitions:
         example: 924003
         type: integer
     type: object
-  models.System:
-    description: A radio system (P25, SmartNet, conventional, etc.)
-    properties:
-      config_json:
-        type: object
-      id:
-        example: 1
-        type: integer
-      instance_id:
-        example: 1
-        type: integer
-      nac:
-        example: "293"
-        type: string
-      rfss:
-        example: 1
-        type: integer
-      short_name:
-        example: butco
-        type: string
-      site_id:
-        example: 1
-        type: integer
-      sys_num:
-        example: 0
-        type: integer
-      sysid:
-        example: "1234"
-        type: string
-      system_type:
-        example: p25
-        type: string
-      wacn:
-        example: BEE00
-        type: string
-    type: object
   models.Talkgroup:
     description: A talkgroup on a radio system, unique within a SYSID
     properties:
@@ -1078,7 +1042,7 @@ paths:
       - systems
   /systems/{id}:
     get:
-      description: Returns a single system by ID
+      description: Returns a single recording site by system_id
       parameters:
       - description: System ID
         in: path
@@ -1091,7 +1055,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/models.System'
+            $ref: '#/definitions/rest.Site'
         "400":
           description: Bad Request
           schema:
@@ -1104,7 +1068,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/rest.ErrorResponse'
-      summary: Get a system
+      summary: Get a recording site
       tags:
       - systems
   /systems/{id}/talkgroups:

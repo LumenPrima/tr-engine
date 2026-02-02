@@ -272,12 +272,12 @@ func (h *Handler) ListSystems(c *gin.Context) {
 }
 
 // GetSystem godoc
-// @Summary      Get a system
-// @Description  Returns a single system by ID
+// @Summary      Get a recording site
+// @Description  Returns a single recording site by system_id
 // @Tags         systems
 // @Produce      json
 // @Param        id   path      int  true  "System ID"
-// @Success      200  {object}  models.System
+// @Success      200  {object}  rest.Site
 // @Failure      400  {object}  rest.ErrorResponse
 // @Failure      404  {object}  rest.ErrorResponse
 // @Failure      500  {object}  rest.ErrorResponse
@@ -289,18 +289,32 @@ func (h *Handler) GetSystem(c *gin.Context) {
 		return
 	}
 
-	system, err := h.db.GetSystemByID(c.Request.Context(), id)
+	sys, err := h.db.GetSystemByID(c.Request.Context(), id)
 	if err != nil {
 		h.logger.Error("Failed to get system", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get system"})
 		return
 	}
-	if system == nil {
+	if sys == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "System not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, system)
+	// Return as Site with clearer field names
+	site := Site{
+		SystemID:   sys.ID,
+		ID:         sys.ID, // deprecated alias
+		InstanceID: sys.InstanceID,
+		SysNum:     sys.SysNum,
+		ShortName:  sys.ShortName,
+		SystemType: sys.SystemType,
+		SysID:      sys.SysID,
+		WACN:       sys.WACN,
+		NAC:        sys.NAC,
+		RFSS:       sys.RFSS,
+		SiteID:     sys.SiteID,
+	}
+	c.JSON(http.StatusOK, site)
 }
 
 // P25Site represents a trunk-recorder site within a P25 system

@@ -772,14 +772,14 @@ const docTemplate = `{
         },
         "/systems/{id}": {
             "get": {
-                "description": "Returns a single system by ID",
+                "description": "Returns a single recording site by system_id",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "systems"
                 ],
-                "summary": "Get a system",
+                "summary": "Get a recording site",
                 "parameters": [
                     {
                         "type": "integer",
@@ -793,7 +793,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.System"
+                            "$ref": "#/definitions/rest.Site"
                         }
                     },
                     "400": {
@@ -1743,55 +1743,6 @@ const docTemplate = `{
                 "unit_rid": {
                     "type": "integer",
                     "example": 924003
-                }
-            }
-        },
-        "models.System": {
-            "description": "A radio system (P25, SmartNet, conventional, etc.)",
-            "type": "object",
-            "properties": {
-                "config_json": {
-                    "type": "object"
-                },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "instance_id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "nac": {
-                    "type": "string",
-                    "example": "293"
-                },
-                "rfss": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "short_name": {
-                    "type": "string",
-                    "example": "butco"
-                },
-                "site_id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "sys_num": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "sysid": {
-                    "type": "string",
-                    "example": "1234"
-                },
-                "system_type": {
-                    "type": "string",
-                    "example": "p25"
-                },
-                "wacn": {
-                    "type": "string",
-                    "example": "BEE00"
                 }
             }
         },

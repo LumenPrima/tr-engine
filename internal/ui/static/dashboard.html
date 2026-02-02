@@ -940,12 +940,12 @@ let systemsCache = [];
 async function loadSystems() {
   try {
     const data = await API.systems();
-    systemsCache = data.systems || [];
+    systemsCache = data.sites || [];
     const sel = UI.$('system-select');
     const cur = sel.value;
     sel.innerHTML = '<option value="">All Systems</option>';
     systemsCache.forEach(s => {
-      sel.innerHTML += '<option value="' + s.id + '">' + UI.esc(s.short_name) + '</option>';
+      sel.innerHTML += '<option value="' + s.system_id + '">' + UI.esc(s.short_name) + '</option>';
     });
     sel.value = cur || Prefs.get('selectedSystem', '');
   } catch {}
@@ -957,7 +957,7 @@ function getSelectedSystem() {
 function getSelectedSysid() {
   const id = getSelectedSystem();
   if (!id) return undefined;
-  const sys = systemsCache.find(s => String(s.id) === String(id));
+  const sys = systemsCache.find(s => String(s.system_id) === String(id));
   return sys ? sys.sysid : undefined;
 }
 UI.$('system-select').onchange = () => {
@@ -1669,30 +1669,31 @@ Tabs.units = {
   },
 };
 
-// --- Systems ---
+// --- Systems (Recording Sites) ---
 Tabs.systems = {
   async render() {
     const el = UI.$('content');
-    el.innerHTML = '<div id="sys-grid"><div class="loading">Loading systems...</div></div>';
+    el.innerHTML = '<div id="sys-grid"><div class="loading">Loading sites...</div></div>';
     try {
       const d = await API.systems();
-      const systems = d.systems || [];
-      if (!systems.length) { el.innerHTML = '<div class="empty">No systems</div>'; return; }
-      UI.$('sys-grid').innerHTML = '<div class="entity-grid">' + systems.map(s =>
-        '<div class="entity-card" onclick="Tabs.systems.showDetail(' + s.id + ')">' +
-        '<div class="title">' + UI.esc(s.short_name || 'System ' + s.id) + '</div>' +
+      const sites = d.sites || [];
+      if (!sites.length) { el.innerHTML = '<div class="empty">No sites</div>'; return; }
+      UI.$('sys-grid').innerHTML = '<div class="entity-grid">' + sites.map(s =>
+        '<div class="entity-card" onclick="Tabs.systems.showDetail(' + s.system_id + ')">' +
+        '<div class="title">' + UI.esc(s.short_name || 'Site ' + s.system_id) + '</div>' +
         '<div class="detail">Type: ' + UI.esc(s.system_type || '--') + ' | SysID: ' + (s.sysid || '--') + '</div>' +
         '<div class="detail">WACN: ' + (s.wacn || '--') + ' | NAC: ' + (s.nac || '--') + '</div>' +
         '</div>'
       ).join('') + '</div>';
-    } catch { el.innerHTML = '<div class="empty">Failed to load systems</div>'; }
+    } catch { el.innerHTML = '<div class="empty">Failed to load sites</div>'; }
   },
   async showDetail(id) {
-    Panel.open('<div class="loading">Loading system...</div>');
+    Panel.open('<div class="loading">Loading site...</div>');
     try {
       const sys = await API.system(id);
-      let html = '<div class="panel-title">' + UI.esc(sys.short_name || 'System ' + sys.id) + '</div>';
+      let html = '<div class="panel-title">' + UI.esc(sys.short_name || 'Site ' + sys.system_id) + '</div>';
       html += '<div class="panel-section"><table class="data-table">';
+      // Filter out deprecated 'id' field, show system_id first
       const fields = Object.entries(sys).filter(([k]) => k !== 'id');
       html += fields.map(([k,v]) => '<tr><td style="color:var(--text-dim);width:120px;">' + UI.esc(k) + '</td><td>' + UI.esc(String(v ?? '--')) + '</td></tr>').join('');
       html += '</table></div>';
@@ -1700,7 +1701,7 @@ Tabs.systems = {
       html += '<div class="panel-section"><div class="panel-section-title">Talkgroups</div><div id="panel-sys-tgs"><div class="loading">Loading...</div></div><div id="panel-sys-tgs-pg"></div></div>';
       Panel.open(html);
       this.loadTalkgroups(id, 0);
-    } catch { Panel.open('<div class="empty">Failed to load system</div>'); }
+    } catch { Panel.open('<div class="empty">Failed to load site</div>'); }
   },
   async loadTalkgroups(sysId, offset) {
     try {
