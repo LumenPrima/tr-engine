@@ -1833,11 +1833,11 @@ func (h *Handler) GetActiveCallsRealtime(c *gin.Context) {
 
 // GetRecentCalls godoc
 // @Summary      Get recently ended calls
-// @Description  Returns recently completed calls from database with full unit list and audio status. Use deduplicate=true to show only one call per call group (for simulcast systems).
+// @Description  Returns recently completed calls from database with full unit list and audio status. Deduplication is enabled by default (one call per call group). Use deduplicate=false to show all recordings including simulcast duplicates.
 // @Tags         calls
 // @Produce      json
 // @Param        limit        query  int   false  "Number of calls to return"  default(50)
-// @Param        deduplicate  query  bool  false  "Deduplicate by call_group (show one per group)"  default(false)
+// @Param        deduplicate  query  bool  false  "Deduplicate by call_group (show one per group)"  default(true)
 // @Success      200  {object}  map[string]interface{}
 // @Router       /calls/recent [get]
 func (h *Handler) GetRecentCalls(c *gin.Context) {
@@ -1846,7 +1846,8 @@ func (h *Handler) GetRecentCalls(c *gin.Context) {
 		limit = l
 	}
 
-	deduplicate := c.Query("deduplicate") == "true" || c.Query("deduplicate") == "1"
+	// Deduplicate by default, only disable if explicitly set to false
+	deduplicate := c.Query("deduplicate") != "false" && c.Query("deduplicate") != "0"
 
 	calls, err := h.db.ListRecentCalls(c.Request.Context(), limit, deduplicate)
 	if err != nil {

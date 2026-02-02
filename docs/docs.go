@@ -283,7 +283,7 @@ const docTemplate = `{
         },
         "/calls/recent": {
             "get": {
-                "description": "Returns recently completed calls from database with full unit list and audio status. Use deduplicate=true to show only one call per call group (for simulcast systems).",
+                "description": "Returns recently completed calls from database with full unit list and audio status. Deduplication is enabled by default (one call per call group). Use deduplicate=false to show all recordings including simulcast duplicates.",
                 "produces": [
                     "application/json"
                 ],
@@ -301,7 +301,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "boolean",
-                        "default": false,
+                        "default": true,
                         "description": "Deduplicate by call_group (show one per group)",
                         "name": "deduplicate",
                         "in": "query"
