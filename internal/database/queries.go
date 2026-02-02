@@ -856,6 +856,42 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, sysid *string, tgid 
 	return calls, nil
 }
 
+// CountCalls returns the total number of calls matching the filters (for pagination)
+func (db *DB) CountCalls(ctx context.Context, systemID *int, sysid *string, tgid *int, startTime, endTime *time.Time) (int, error) {
+	query := `SELECT COUNT(*) FROM calls c WHERE c.audio_path IS NOT NULL AND c.audio_path != ''`
+	args := []any{}
+	argNum := 1
+
+	if systemID != nil {
+		query += fmt.Sprintf(" AND c.system_id = $%d", argNum)
+		args = append(args, *systemID)
+		argNum++
+	}
+	if sysid != nil {
+		query += fmt.Sprintf(" AND c.tg_sysid = $%d", argNum)
+		args = append(args, *sysid)
+		argNum++
+	}
+	if tgid != nil {
+		query += fmt.Sprintf(" AND c.tgid = $%d", argNum)
+		args = append(args, *tgid)
+		argNum++
+	}
+	if startTime != nil {
+		query += fmt.Sprintf(" AND c.start_time >= $%d", argNum)
+		args = append(args, *startTime)
+		argNum++
+	}
+	if endTime != nil {
+		query += fmt.Sprintf(" AND c.start_time <= $%d", argNum)
+		args = append(args, *endTime)
+	}
+
+	var count int
+	err := db.pool.QueryRow(ctx, query, args...).Scan(&count)
+	return count, err
+}
+
 // GetCallByID gets a call by its ID
 func (db *DB) GetCallByID(ctx context.Context, id int64) (*models.Call, error) {
 	var call models.Call

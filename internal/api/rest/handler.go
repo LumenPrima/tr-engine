@@ -492,20 +492,33 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		argIdx += 4
 	}
 
-	query := `SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen FROM talkgroups`
+	// Build WHERE clause
+	whereClause := ""
 	if len(conditions) > 0 {
-		query += " WHERE " + conditions[0]
+		whereClause = " WHERE " + conditions[0]
 		for i := 1; i < len(conditions); i++ {
-			query += " AND " + conditions[i]
+			whereClause += " AND " + conditions[i]
 		}
 	}
+
+	// Get total count first (without LIMIT/OFFSET)
+	countQuery := `SELECT COUNT(*) FROM talkgroups` + whereClause
+	var totalCount int
+	if err := h.db.Pool().QueryRow(c.Request.Context(), countQuery, args...).Scan(&totalCount); err != nil {
+		h.logger.Error("Failed to count talkgroups", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list talkgroups"})
+		return
+	}
+
+	// Get paginated data
+	query := `SELECT sysid, tgid, alpha_tag, description, tg_group, tag, priority, mode, first_seen, last_seen FROM talkgroups` + whereClause
 	query += " ORDER BY " + orderClause + " LIMIT $" + strconv.Itoa(argIdx) + " OFFSET $" + strconv.Itoa(argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := h.db.Pool().Query(c.Request.Context(), query, args...)
 	if err == nil {
 		defer rows.Close()
-		var results []map[string]interface{}
+		var results []map[string]any
 		for rows.Next() {
 			var tgid, priority int
 			var sysid string
@@ -514,7 +527,7 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 			if scanErr := rows.Scan(&sysid, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen); scanErr != nil {
 				continue
 			}
-			results = append(results, map[string]interface{}{
+			results = append(results, map[string]any{
 				"sysid":       sysid,
 				"tgid":        tgid,
 				"alpha_tag":   alphaTag,
@@ -538,6 +551,7 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"talkgroups": talkgroups,
+		"count":      totalCount,
 		"limit":      limit,
 		"offset":     offset,
 	})
@@ -832,20 +846,33 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		argIdx += 2
 	}
 
-	query := `SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen FROM units`
+	// Build WHERE clause
+	whereClause := ""
 	if len(conditions) > 0 {
-		query += " WHERE " + conditions[0]
+		whereClause = " WHERE " + conditions[0]
 		for i := 1; i < len(conditions); i++ {
-			query += " AND " + conditions[i]
+			whereClause += " AND " + conditions[i]
 		}
 	}
+
+	// Get total count first (without LIMIT/OFFSET)
+	countQuery := `SELECT COUNT(*) FROM units` + whereClause
+	var totalCount int
+	if err := h.db.Pool().QueryRow(c.Request.Context(), countQuery, args...).Scan(&totalCount); err != nil {
+		h.logger.Error("Failed to count units", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list units"})
+		return
+	}
+
+	// Get paginated data
+	query := `SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen FROM units` + whereClause
 	query += " ORDER BY " + orderClause + " LIMIT $" + strconv.Itoa(argIdx) + " OFFSET $" + strconv.Itoa(argIdx+1)
 	args = append(args, limit, offset)
 
 	rows, err := h.db.Pool().Query(c.Request.Context(), query, args...)
 	if err == nil {
 		defer rows.Close()
-		var results []map[string]interface{}
+		var results []map[string]any
 		for rows.Next() {
 			var sysid string
 			var unitID int64
@@ -854,7 +881,7 @@ func (h *Handler) ListUnits(c *gin.Context) {
 			if scanErr := rows.Scan(&sysid, &unitID, &alphaTag, &alphaTagSource, &firstSeen, &lastSeen); scanErr != nil {
 				continue
 			}
-			results = append(results, map[string]interface{}{
+			results = append(results, map[string]any{
 				"sysid":            sysid,
 				"unit_id":          unitID,
 				"alpha_tag":        alphaTag,
@@ -872,17 +899,9 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		return
 	}
 
-	// Get count for response
-	count := 0
-	if unitSlice, ok := units.([]map[string]interface{}); ok {
-		count = len(unitSlice)
-	} else if unitSlice, ok := units.([]*models.Unit); ok {
-		count = len(unitSlice)
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"units":  units,
-		"count":  count,
+		"count":  totalCount,
 		"limit":  limit,
 		"offset": offset,
 	})
@@ -1277,6 +1296,14 @@ func (h *Handler) ListCalls(c *gin.Context) {
 		}
 	}
 
+	// Get total count first
+	totalCount, err := h.db.CountCalls(c.Request.Context(), systemID, sysid, talkgroupID, startTime, endTime)
+	if err != nil {
+		h.logger.Error("Failed to count calls", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list calls"})
+		return
+	}
+
 	calls, err := h.db.ListCalls(c.Request.Context(), systemID, sysid, talkgroupID, startTime, endTime, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list calls", zap.Error(err))
@@ -1287,7 +1314,7 @@ func (h *Handler) ListCalls(c *gin.Context) {
 	populateAudioURLs(calls)
 	c.JSON(http.StatusOK, gin.H{
 		"calls":  calls,
-		"count":  len(calls),
+		"count":  totalCount,
 		"limit":  limit,
 		"offset": offset,
 	})
