@@ -276,7 +276,7 @@ Full interactive documentation at `/swagger/` and `/websocket`.
 | `GET /api/v1/units` | List/search units |
 | `GET /api/v1/units/active` | Currently active units |
 | `GET /api/v1/calls` | List calls (with audio) |
-| `GET /api/v1/calls/recent` | Recent completed calls (`?deduplicate=true` for unique) |
+| `GET /api/v1/calls/recent` | Recent completed calls (deduplicated by default) |
 | `GET /api/v1/calls/{id}` | Get call details |
 | `GET /api/v1/calls/{id}/audio` | Stream audio file |
 | `GET /api/v1/calls/{id}/transmissions` | Unit transmissions in call |
