@@ -1338,23 +1338,24 @@ func (db *DB) ListActiveUnits(ctx context.Context, filters ActiveUnitFilters, li
 
 // RecentCallInfo contains call info with system/talkgroup details for display
 type RecentCallInfo struct {
-	ID         int64            `json:"id"`
-	CallID     string           `json:"call_id,omitempty"`
-	TRCallID   string           `json:"tr_call_id,omitempty"`
-	CallNum    int64            `json:"call_num"`
-	StartTime  time.Time        `json:"start_time"`
-	StopTime   time.Time        `json:"stop_time"`
-	Duration   float32          `json:"duration"`
-	System     string           `json:"system"`
-	TGID       int              `json:"tgid"`
-	TGAlphaTag string           `json:"tg_alpha_tag"`
-	Freq       int64            `json:"freq"`
-	Encrypted  bool             `json:"encrypted"`
-	Emergency  bool             `json:"emergency"`
-	AudioPath  string           `json:"audio_path,omitempty"`
-	AudioURL   string           `json:"audio_url,omitempty"`
-	HasAudio   bool             `json:"has_audio"`
-	Units      []RecentCallUnit `json:"units"`
+	ID          int64            `json:"id"`
+	CallID      string           `json:"call_id,omitempty"`
+	TRCallID    string           `json:"tr_call_id,omitempty"`
+	CallNum     int64            `json:"call_num"`
+	StartTime   time.Time        `json:"start_time"`
+	StopTime    time.Time        `json:"stop_time"`
+	Duration    float32          `json:"duration"`
+	System      string           `json:"system"`
+	TGID        int              `json:"tgid"`
+	TGAlphaTag  string           `json:"tg_alpha_tag"`
+	Freq        int64            `json:"freq"`
+	Encrypted   bool             `json:"encrypted"`
+	Emergency   bool             `json:"emergency"`
+	AudioPath   string           `json:"audio_path,omitempty"`
+	AudioURL    string           `json:"audio_url,omitempty"`
+	HasAudio    bool             `json:"has_audio"`
+	CallGroupID *int64           `json:"call_group_id,omitempty"`
+	Units       []RecentCallUnit `json:"units"`
 }
 
 // RecentCallUnit contains unit info for a call
@@ -1364,30 +1365,61 @@ type RecentCallUnit struct {
 }
 
 // ListRecentCalls returns recently completed calls with system/talkgroup info and units
-func (db *DB) ListRecentCalls(ctx context.Context, limit int) ([]*RecentCallInfo, error) {
+// If deduplicate is true, only returns one call per call_group (the one with longest duration)
+func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) ([]*RecentCallInfo, error) {
 	// Get recent completed calls with system and talkgroup info
-	query := `
-		SELECT
-			c.tr_call_id,
-			c.call_num,
-			c.start_time,
-			c.stop_time,
-			c.duration,
-			COALESCE(s.short_name, '') as system,
-			COALESCE(c.tgid, 0) as tgid,
-			COALESCE(t.alpha_tag, '') as tg_alpha_tag,
-			c.freq,
-			c.encrypted,
-			c.emergency,
-			COALESCE(c.audio_path, '') as audio_path,
-			c.id
-		FROM calls c
-		LEFT JOIN systems s ON s.id = c.system_id
-		LEFT JOIN talkgroups t ON t.sysid = c.tg_sysid AND t.tgid = c.tgid
-		WHERE c.audio_path IS NOT NULL AND c.audio_path != ''
-		ORDER BY c.stop_time DESC
-		LIMIT $1
-	`
+	var query string
+	if deduplicate {
+		// Use DISTINCT ON to get one call per call_group, preferring longest duration
+		query = `
+			SELECT DISTINCT ON (COALESCE(c.call_group_id, c.id))
+				c.tr_call_id,
+				c.call_num,
+				c.start_time,
+				c.stop_time,
+				c.duration,
+				COALESCE(s.short_name, '') as system,
+				COALESCE(c.tgid, 0) as tgid,
+				COALESCE(t.alpha_tag, '') as tg_alpha_tag,
+				c.freq,
+				c.encrypted,
+				c.emergency,
+				COALESCE(c.audio_path, '') as audio_path,
+				c.id,
+				c.call_group_id
+			FROM calls c
+			LEFT JOIN systems s ON s.id = c.system_id
+			LEFT JOIN talkgroups t ON t.sysid = c.tg_sysid AND t.tgid = c.tgid
+			WHERE c.audio_path IS NOT NULL AND c.audio_path != ''
+			ORDER BY COALESCE(c.call_group_id, c.id), c.duration DESC, c.stop_time DESC
+		`
+		// Wrap to re-sort by stop_time and apply limit
+		query = `SELECT * FROM (` + query + `) sub ORDER BY stop_time DESC LIMIT $1`
+	} else {
+		query = `
+			SELECT
+				c.tr_call_id,
+				c.call_num,
+				c.start_time,
+				c.stop_time,
+				c.duration,
+				COALESCE(s.short_name, '') as system,
+				COALESCE(c.tgid, 0) as tgid,
+				COALESCE(t.alpha_tag, '') as tg_alpha_tag,
+				c.freq,
+				c.encrypted,
+				c.emergency,
+				COALESCE(c.audio_path, '') as audio_path,
+				c.id,
+				c.call_group_id
+			FROM calls c
+			LEFT JOIN systems s ON s.id = c.system_id
+			LEFT JOIN talkgroups t ON t.sysid = c.tg_sysid AND t.tgid = c.tgid
+			WHERE c.audio_path IS NOT NULL AND c.audio_path != ''
+			ORDER BY c.stop_time DESC
+			LIMIT $1
+		`
+	}
 
 	rows, err := db.pool.Query(ctx, query, limit)
 	if err != nil {
@@ -1405,7 +1437,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int) ([]*RecentCallInfo
 		if err := rows.Scan(
 			&c.TRCallID, &c.CallNum, &c.StartTime, &stopTime, &c.Duration,
 			&c.System, &c.TGID, &c.TGAlphaTag, &c.Freq,
-			&c.Encrypted, &c.Emergency, &c.AudioPath, &c.ID,
+			&c.Encrypted, &c.Emergency, &c.AudioPath, &c.ID, &c.CallGroupID,
 		); err != nil {
 			return nil, err
 		}

@@ -908,13 +908,19 @@ paths:
   /calls/recent:
     get:
       description: Returns recently completed calls from database with full unit list
-        and audio status
+        and audio status. Use deduplicate=true to show only one call per call group
+        (for simulcast systems).
       parameters:
       - default: 50
         description: Number of calls to return
         in: query
         name: limit
         type: integer
+      - default: false
+        description: Deduplicate by call_group (show one per group)
+        in: query
+        name: deduplicate
+        type: boolean
       produces:
       - application/json
       responses:
