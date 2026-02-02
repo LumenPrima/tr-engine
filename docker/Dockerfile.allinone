@@ -3,6 +3,7 @@
 FROM golang:1.23-alpine AS builder
 
 ARG TARGETARCH
+ARG VERSION=dev
 
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -12,8 +13,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-# Build using TARGETARCH and point to root directory
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -ldflags="-w -s" -o tr-engine .
+# Build using TARGETARCH and inject version via ldflags
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -ldflags="-w -s -X main.Version=${VERSION#v}" -o tr-engine .
 
 # Runtime stage
 FROM alpine:3.19

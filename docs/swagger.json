@@ -7,7 +7,7 @@
         "description": "Backend service for trunk-recorder data ingestion and querying. Provides REST APIs for accessing radio system data, calls, talkgroups, and units.",
         "title": "tr-engine API",
         "contact": {},
-        "version": "0.3.1-beta10"
+        "version": "dev"
     },
     "host": "localhost:8080",
     "basePath": "/api/v1",
@@ -878,7 +878,7 @@
         },
         "/talkgroups": {
             "get": {
-                "description": "Returns all talkgroups, optionally filtered by SYSID",
+                "description": "Returns all talkgroups with stats (call_count, calls_1h, calls_24h, unit_count). Optionally filtered by SYSID.",
                 "produces": [
                     "application/json"
                 ],
@@ -891,6 +891,26 @@
                         "type": "string",
                         "description": "Filter by SYSID (P25 system identifier)",
                         "name": "sysid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by alpha_tag, tgid, group, or tag",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "alpha_tag",
+                        "description": "Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count, calls_1h, calls_24h, unit_count",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "asc",
+                        "description": "Sort direction: asc, desc",
+                        "name": "sort_dir",
                         "in": "query"
                     },
                     {
@@ -961,7 +981,7 @@
         },
         "/talkgroups/{id}": {
             "get": {
-                "description": "Returns a single talkgroup. Accepts sysid:tgid format (e.g., \"348:9178\") or plain tgid (returns 409 if ambiguous)",
+                "description": "Returns a single talkgroup with stats (call_count, calls_1h, calls_24h, unit_count). Accepts sysid:tgid format (e.g., \"348:9178\") or plain tgid (returns 409 if ambiguous)",
                 "produces": [
                     "application/json"
                 ],
@@ -1613,9 +1633,10 @@
                     "type": "integer",
                     "example": 1
                 },
-                "call_num": {
-                    "type": "integer",
-                    "example": 12345
+                "call_id": {
+                    "description": "Identifiers",
+                    "type": "string",
+                    "example": "348:9173:1769997011"
                 },
                 "call_state": {
                     "description": "Status",
@@ -1651,14 +1672,6 @@
                     "type": "integer",
                     "example": 0
                 },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "instance_id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "metadata_json": {
                     "description": "Metadata",
                     "type": "object"
@@ -1682,10 +1695,6 @@
                     "type": "boolean",
                     "example": false
                 },
-                "recorder_id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "signal_db": {
                     "type": "number",
                     "example": -45.5
@@ -1703,10 +1712,6 @@
                     "type": "string",
                     "example": "2024-01-15T10:30:45Z"
                 },
-                "system_id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "tdma_slot": {
                     "type": "integer",
                     "example": 0
@@ -1723,11 +1728,6 @@
                     "description": "Joined fields (not stored in calls table)",
                     "type": "integer",
                     "example": 9178
-                },
-                "tr_call_id": {
-                    "description": "Identifiers",
-                    "type": "string",
-                    "example": "butco-1001-1705319400"
                 },
                 "units": {
                     "type": "array",
@@ -1757,6 +1757,19 @@
                 "alpha_tag": {
                     "type": "string",
                     "example": "Fire Dispatch"
+                },
+                "call_count": {
+                    "description": "Stats (populated by list/detail queries)",
+                    "type": "integer",
+                    "example": 1547
+                },
+                "calls_1h": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "calls_24h": {
+                    "type": "integer",
+                    "example": 234
                 },
                 "description": {
                     "type": "string",
@@ -1793,6 +1806,10 @@
                 "tgid": {
                     "type": "integer",
                     "example": 1001
+                },
+                "unit_count": {
+                    "type": "integer",
+                    "example": 45
                 }
             }
         },

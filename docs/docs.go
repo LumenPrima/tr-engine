@@ -881,7 +881,7 @@ const docTemplate = `{
         },
         "/talkgroups": {
             "get": {
-                "description": "Returns all talkgroups, optionally filtered by SYSID",
+                "description": "Returns all talkgroups with stats (call_count, calls_1h, calls_24h, unit_count). Optionally filtered by SYSID.",
                 "produces": [
                     "application/json"
                 ],
@@ -894,6 +894,26 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by SYSID (P25 system identifier)",
                         "name": "sysid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by alpha_tag, tgid, group, or tag",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "alpha_tag",
+                        "description": "Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count, calls_1h, calls_24h, unit_count",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "asc",
+                        "description": "Sort direction: asc, desc",
+                        "name": "sort_dir",
                         "in": "query"
                     },
                     {
@@ -964,7 +984,7 @@ const docTemplate = `{
         },
         "/talkgroups/{id}": {
             "get": {
-                "description": "Returns a single talkgroup. Accepts sysid:tgid format (e.g., \"348:9178\") or plain tgid (returns 409 if ambiguous)",
+                "description": "Returns a single talkgroup with stats (call_count, calls_1h, calls_24h, unit_count). Accepts sysid:tgid format (e.g., \"348:9178\") or plain tgid (returns 409 if ambiguous)",
                 "produces": [
                     "application/json"
                 ],
@@ -1616,9 +1636,10 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
-                "call_num": {
-                    "type": "integer",
-                    "example": 12345
+                "call_id": {
+                    "description": "Identifiers",
+                    "type": "string",
+                    "example": "348:9173:1769997011"
                 },
                 "call_state": {
                     "description": "Status",
@@ -1654,14 +1675,6 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 0
                 },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "instance_id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "metadata_json": {
                     "description": "Metadata",
                     "type": "object"
@@ -1685,10 +1698,6 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
-                "recorder_id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "signal_db": {
                     "type": "number",
                     "example": -45.5
@@ -1706,10 +1715,6 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2024-01-15T10:30:45Z"
                 },
-                "system_id": {
-                    "type": "integer",
-                    "example": 1
-                },
                 "tdma_slot": {
                     "type": "integer",
                     "example": 0
@@ -1726,11 +1731,6 @@ const docTemplate = `{
                     "description": "Joined fields (not stored in calls table)",
                     "type": "integer",
                     "example": 9178
-                },
-                "tr_call_id": {
-                    "description": "Identifiers",
-                    "type": "string",
-                    "example": "butco-1001-1705319400"
                 },
                 "units": {
                     "type": "array",
@@ -1760,6 +1760,19 @@ const docTemplate = `{
                 "alpha_tag": {
                     "type": "string",
                     "example": "Fire Dispatch"
+                },
+                "call_count": {
+                    "description": "Stats (populated by list/detail queries)",
+                    "type": "integer",
+                    "example": 1547
+                },
+                "calls_1h": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "calls_24h": {
+                    "type": "integer",
+                    "example": 234
                 },
                 "description": {
                     "type": "string",
@@ -1796,6 +1809,10 @@ const docTemplate = `{
                 "tgid": {
                     "type": "integer",
                     "example": 1001
+                },
+                "unit_count": {
+                    "type": "integer",
+                    "example": 45
                 }
             }
         },
@@ -2268,7 +2285,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "0.3.2-beta1",
+	Version:          "dev",
 	Host:             "localhost:8080",
 	BasePath:         "/api/v1",
 	Schemes:          []string{"http"},

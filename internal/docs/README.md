@@ -30,7 +30,7 @@ docker run -d -p 8080:8080 \
   -v ./data:/data \
   -v /path/to/trunk-recorder/audio:/audio:ro \
   -v /path/to/trunk-recorder/logs:/logs:ro \
-  ghcr.io/lumenprima/tr-engine:0.3.2-beta1 --easy
+  ghcr.io/lumenprima/tr-engine:latest --easy
 ```
 
 That's it. No MQTT setup, no config file, no database setup. Open `http://localhost:8080` to browse recordings.
@@ -79,17 +79,17 @@ mkdir -p data config
 docker run --rm \
   -v ./data:/data \
   -v ./config:/app/config \
-  ghcr.io/lumenprima/tr-engine:0.3.2-beta1
+  ghcr.io/lumenprima/tr-engine:latest
 
 # Second run starts the service
 docker run -d \
   -p 8080:8080 -p 1883:1883 \
   -v ./data:/data \
   -v ./config:/app/config \
-  ghcr.io/lumenprima/tr-engine:0.3.2-beta1
+  ghcr.io/lumenprima/tr-engine:latest
 ```
 
-**Note:** Beta releases require the specific version tag (e.g., `:0.3.1-beta5`). The `:latest` tag is only applied to stable releases.
+**Note:** The `:latest` tag points to the most recent stable release. For pre-release versions, use the specific tag (e.g., `:0.3.2-beta3`).
 
 ### Option 4: Docker Compose (TimescaleDB)
 
@@ -105,7 +105,7 @@ The pre-built Docker image includes embedded PostgreSQL. To use it with external
 
 ```yaml
 tr-engine:
-  image: ghcr.io/lumenprima/tr-engine:0.3.2-beta1
+  image: ghcr.io/lumenprima/tr-engine:latest
   environment:
     TR_ENGINE_STANDALONE: "true"
     DB_HOST: postgres

@@ -64,9 +64,10 @@ definitions:
       call_group_id:
         example: 1
         type: integer
-      call_num:
-        example: 12345
-        type: integer
+      call_id:
+        description: Identifiers
+        example: 348:9173:1769997011
+        type: string
       call_state:
         description: Status
         example: 3
@@ -93,12 +94,6 @@ definitions:
       freq_error:
         example: 0
         type: integer
-      id:
-        example: 1
-        type: integer
-      instance_id:
-        example: 1
-        type: integer
       metadata_json:
         description: Metadata
         type: object
@@ -116,9 +111,6 @@ definitions:
       phase2_tdma:
         example: false
         type: boolean
-      recorder_id:
-        example: 1
-        type: integer
       signal_db:
         example: -45.5
         type: number
@@ -132,9 +124,6 @@ definitions:
       stop_time:
         example: "2024-01-15T10:30:45Z"
         type: string
-      system_id:
-        example: 1
-        type: integer
       tdma_slot:
         example: 0
         type: integer
@@ -148,10 +137,6 @@ definitions:
         description: Joined fields (not stored in calls table)
         example: 9178
         type: integer
-      tr_call_id:
-        description: Identifiers
-        example: butco-1001-1705319400
-        type: string
       units:
         items:
           $ref: '#/definitions/models.CallUnit'
@@ -172,6 +157,16 @@ definitions:
       alpha_tag:
         example: Fire Dispatch
         type: string
+      call_count:
+        description: Stats (populated by list/detail queries)
+        example: 1547
+        type: integer
+      calls_1h:
+        example: 12
+        type: integer
+      calls_24h:
+        example: 234
+        type: integer
       description:
         example: County Fire Dispatch Channel
         type: string
@@ -198,6 +193,9 @@ definitions:
         type: string
       tgid:
         example: 1001
+        type: integer
+      unit_count:
+        example: 45
         type: integer
     type: object
   models.Transcription:
@@ -527,7 +525,7 @@ info:
   description: Backend service for trunk-recorder data ingestion and querying. Provides
     REST APIs for accessing radio system data, calls, talkgroups, and units.
   title: tr-engine API
-  version: 0.3.1-beta10
+  version: dev
 paths:
   /call-groups:
     get:
@@ -1116,11 +1114,27 @@ paths:
       - systems
   /talkgroups:
     get:
-      description: Returns all talkgroups, optionally filtered by SYSID
+      description: Returns all talkgroups with stats (call_count, calls_1h, calls_24h,
+        unit_count). Optionally filtered by SYSID.
       parameters:
       - description: Filter by SYSID (P25 system identifier)
         in: query
         name: sysid
+        type: string
+      - description: Search by alpha_tag, tgid, group, or tag
+        in: query
+        name: search
+        type: string
+      - default: alpha_tag
+        description: 'Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count,
+          calls_1h, calls_24h, unit_count'
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: 'Sort direction: asc, desc'
+        in: query
+        name: sort_dir
         type: string
       - default: 50
         description: Results per page
@@ -1148,8 +1162,9 @@ paths:
       - talkgroups
   /talkgroups/{id}:
     get:
-      description: Returns a single talkgroup. Accepts sysid:tgid format (e.g., "348:9178")
-        or plain tgid (returns 409 if ambiguous)
+      description: Returns a single talkgroup with stats (call_count, calls_1h, calls_24h,
+        unit_count). Accepts sysid:tgid format (e.g., "348:9178") or plain tgid (returns
+        409 if ambiguous)
       parameters:
       - description: Talkgroup ID (sysid:tgid or plain tgid)
         in: path

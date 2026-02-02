@@ -40,7 +40,8 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-w -s" -o tr-engine-${{ matrix.suffix }} .
+          VERSION=${GITHUB_REF_NAME#v}
+          go build -ldflags="-w -s -X main.Version=${VERSION}" -o tr-engine-${{ matrix.suffix }} .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -86,6 +87,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
 
   release:
     needs: [build, docker]

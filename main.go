@@ -46,10 +46,11 @@ var (
 	transcribeBackfillN  = flag.Int("transcribe-backfill-count", 1000, "Number of calls to queue for backfill")
 )
 
-const version = "0.3.2-beta1"
+// Version is set at build time via ldflags: -ldflags "-X main.Version=v1.2.3"
+var Version = "dev"
 
 // @title           tr-engine API
-// @version         0.3.2-beta1
+// @version         dev
 // @description     Backend service for trunk-recorder data ingestion and querying. Provides REST APIs for accessing radio system data, calls, talkgroups, and units.
 
 // @host            localhost:8080
@@ -73,7 +74,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("tr-engine version %s\n", version)
+		fmt.Printf("tr-engine version %s\n", Version)
 		os.Exit(0)
 	}
 
@@ -81,7 +82,7 @@ func main() {
 	con := console.New(*quietMode, *noColor)
 
 	// Print banner
-	con.PrintBanner(version)
+	con.PrintBanner(Version)
 
 	// Create default config and README if config doesn't exist
 	if _, err := os.Stat(*configPath); os.IsNotExist(err) {
