@@ -268,6 +268,73 @@ func (h *Handler) GetSystem(c *gin.Context) {
 	c.JSON(http.StatusOK, system)
 }
 
+// P25Site represents a trunk-recorder site within a P25 system
+type P25Site struct {
+	ShortName string `json:"short_name"`
+	NAC       string `json:"nac"`
+	RFSS      int    `json:"rfss"`
+	SiteID    int    `json:"site_id"`
+	SystemID  int    `json:"system_id"` // database ID for API calls
+}
+
+// P25System represents a logical P25 system (grouped by sysid+wacn)
+type P25System struct {
+	SysID string    `json:"sysid"`
+	WACN  string    `json:"wacn"`
+	Sites []P25Site `json:"sites"`
+}
+
+// ListP25Systems godoc
+// @Summary      List P25 systems
+// @Description  Returns P25 systems grouped by sysid+wacn. Each P25 system may have multiple sites (trunk-recorder instances monitoring different NACs on the same network).
+// @Tags         systems
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Failure      500  {object}  rest.ErrorResponse
+// @Router       /p25-systems [get]
+func (h *Handler) ListP25Systems(c *gin.Context) {
+	systems, err := h.db.ListSystems(c.Request.Context())
+	if err != nil {
+		h.logger.Error("Failed to list systems", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list systems"})
+		return
+	}
+
+	// Group by sysid+wacn
+	p25Map := make(map[string]*P25System)
+	for _, sys := range systems {
+		if sys.SysID == "" {
+			continue // Skip non-P25 systems
+		}
+		key := sys.SysID + ":" + sys.WACN
+		if p25Map[key] == nil {
+			p25Map[key] = &P25System{
+				SysID: sys.SysID,
+				WACN:  sys.WACN,
+				Sites: []P25Site{},
+			}
+		}
+		p25Map[key].Sites = append(p25Map[key].Sites, P25Site{
+			ShortName: sys.ShortName,
+			NAC:       sys.NAC,
+			RFSS:      sys.RFSS,
+			SiteID:    sys.SiteID,
+			SystemID:  sys.ID,
+		})
+	}
+
+	// Convert to slice
+	p25Systems := make([]P25System, 0, len(p25Map))
+	for _, sys := range p25Map {
+		p25Systems = append(p25Systems, *sys)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"p25_systems": p25Systems,
+		"count":       len(p25Systems),
+	})
+}
+
 // ListSystemTalkgroups godoc
 // @Summary      List system talkgroups
 // @Description  Returns all talkgroups for a specific system

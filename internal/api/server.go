@@ -249,6 +249,9 @@ func (s *Server) setupRoutes() {
 		api.GET("/systems/:id", handler.GetSystem)
 		api.GET("/systems/:id/talkgroups", handler.ListSystemTalkgroups)
 
+		// P25 Systems (grouped by sysid+wacn)
+		api.GET("/p25-systems", handler.ListP25Systems)
+
 		// Talkgroups
 		api.GET("/talkgroups", handler.ListTalkgroups)
 		api.GET("/talkgroups/encryption-stats", handler.GetTalkgroupEncryptionStats)

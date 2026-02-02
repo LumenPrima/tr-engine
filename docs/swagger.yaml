@@ -911,6 +911,26 @@ paths:
       summary: Get recently ended calls
       tags:
       - calls
+  /p25-systems:
+    get:
+      description: Returns P25 systems grouped by sysid+wacn. Each P25 system may
+        have multiple sites (trunk-recorder instances monitoring different NACs on
+        the same network).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
+      summary: List P25 systems
+      tags:
+      - systems
   /recorders:
     get:
       description: Returns all known recorder states from in-memory cache (populated
