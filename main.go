@@ -377,7 +377,7 @@ func main() {
 
 	// Initialize API server
 	httpDone := con.StartTask("Starting HTTP server")
-	server := api.NewServer(cfg.Server, cfg.Auth, db, processor, logger, cfg.Storage.AudioPath)
+	server := api.NewServer(cfg.Server, cfg.Auth, db, processor, logger, cfg.Storage.AudioPath, Version)
 
 	// Connect watcher to WebSocket hub and recorder provider
 	if fileWatcher != nil {

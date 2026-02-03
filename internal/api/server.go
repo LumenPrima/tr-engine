@@ -41,10 +41,11 @@ type Server struct {
 	stopMetrics   chan struct{}
 	audioBasePath string
 	handler       *rest.Handler
+	version       string
 }
 
 // NewServer creates a new API server
-func NewServer(cfg config.ServerConfig, authCfg config.AuthConfig, db *database.DB, processor *ingest.Processor, logger *zap.Logger, audioBasePath string) *Server {
+func NewServer(cfg config.ServerConfig, authCfg config.AuthConfig, db *database.DB, processor *ingest.Processor, logger *zap.Logger, audioBasePath string, version string) *Server {
 	// Set gin mode based on log level
 	gin.SetMode(gin.ReleaseMode)
 
@@ -92,6 +93,7 @@ func NewServer(cfg config.ServerConfig, authCfg config.AuthConfig, db *database.
 		auth:          auth,
 		stopMetrics:   make(chan struct{}),
 		audioBasePath: audioBasePath,
+		version:       version,
 	}
 
 	s.setupRoutes()
@@ -213,7 +215,10 @@ func (s *Server) setupRoutes() {
 
 	// Health check (always accessible)
 	s.router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"version": s.version,
+		})
 	})
 
 	// Prometheus metrics endpoint (always accessible for monitoring)
