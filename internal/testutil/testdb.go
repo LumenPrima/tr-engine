@@ -177,7 +177,7 @@ func NewTestDBForMain(opts TestDBOptions) *TestDB {
 		} else {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if _, err := testDB.Pool.Exec(ctx, TestSchema); err != nil {
+			if _, err := testDB.Pool.Exec(ctx, TestSchema()); err != nil {
 				logger.Error("failed to apply test schema", zap.Error(err))
 				testDB.Close()
 				return nil
@@ -284,7 +284,7 @@ func NewTestDB(t testing.TB, opts TestDBOptions) *TestDB {
 			// Use test schema (works with plain PostgreSQL)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if _, err := testDB.Pool.Exec(ctx, TestSchema); err != nil {
+			if _, err := testDB.Pool.Exec(ctx, TestSchema()); err != nil {
 				testDB.Close()
 				t.Fatalf("failed to apply test schema: %v", err)
 			}

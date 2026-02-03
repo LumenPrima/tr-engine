@@ -1757,7 +1757,7 @@ func (db *DB) SearchTranscriptions(ctx context.Context, query string, limit, off
 // RecentTranscriptionInfo contains transcription with call context for display
 type RecentTranscriptionInfo struct {
 	ID         int64     `json:"id"`
-	CallID     int64     `json:"call_id"`
+	CallID     string    `json:"call_id"` // Deterministic call_id: sysid:tgid:start_unix
 	Text       string    `json:"text"`
 	WordCount  int       `json:"word_count"`
 	Provider   string    `json:"provider"`
@@ -1774,12 +1774,13 @@ type RecentTranscriptionInfo struct {
 func (db *DB) ListRecentTranscriptions(ctx context.Context, limit, offset int) ([]*RecentTranscriptionInfo, error) {
 	rows, err := db.pool.Query(ctx, `
 		SELECT
-			t.id, t.call_id, t.text, COALESCE(t.word_count, 0), t.provider, t.created_at,
+			t.id, t.text, COALESCE(t.word_count, 0), t.provider, t.created_at,
 			COALESCE(s.short_name, '') as system,
 			c.tg_sysid,
 			COALESCE(c.tgid, 0) as tgid,
 			COALESCE(tg.alpha_tag, '') as tg_alpha_tag,
-			COALESCE(c.duration, 0) as call_duration
+			COALESCE(c.duration, 0) as call_duration,
+			c.start_time
 		FROM transcriptions t
 		JOIN calls c ON c.id = t.call_id
 		LEFT JOIN systems s ON s.id = c.system_id
@@ -1795,11 +1796,18 @@ func (db *DB) ListRecentTranscriptions(ctx context.Context, limit, offset int) (
 	var transcriptions []*RecentTranscriptionInfo
 	for rows.Next() {
 		var t RecentTranscriptionInfo
-		if err := rows.Scan(&t.ID, &t.CallID, &t.Text, &t.WordCount, &t.Provider, &t.CreatedAt,
-			&t.System, &t.TgSysid, &t.TGID, &t.TGAlphaTag, &t.Duration); err != nil {
+		var startTime time.Time
+		if err := rows.Scan(&t.ID, &t.Text, &t.WordCount, &t.Provider, &t.CreatedAt,
+			&t.System, &t.TgSysid, &t.TGID, &t.TGAlphaTag, &t.Duration, &startTime); err != nil {
 			return nil, err
 		}
-		t.AudioURL = fmt.Sprintf("/api/v1/calls/%d/audio", t.CallID)
+		// Build deterministic call_id: sysid:tgid:start_unix
+		sysid := ""
+		if t.TgSysid != nil {
+			sysid = *t.TgSysid
+		}
+		t.CallID = fmt.Sprintf("%s:%d:%d", sysid, t.TGID, startTime.Unix())
+		t.AudioURL = fmt.Sprintf("/api/v1/calls/%s/audio", t.CallID)
 		transcriptions = append(transcriptions, &t)
 	}
 	return transcriptions, rows.Err()

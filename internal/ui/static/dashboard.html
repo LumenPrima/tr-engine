@@ -1040,10 +1040,10 @@ function callListItem(call, opts) {
 
 function transcriptionListItem(t) {
   // Build a call-like object for play button
-  const callObj = { id: t.call_id, tgid: t.tgid, tg_alpha_tag: t.tg_alpha_tag, audio_path: t.audio_url, duration: t.call_duration };
+  const callObj = { call_id: t.call_id, tgid: t.tgid, tg_alpha_tag: t.tg_alpha_tag, audio_path: t.audio_url, duration: t.call_duration };
   const tgObj = { id: t.talkgroup_id, tgid: t.tgid, alpha_tag: t.tg_alpha_tag };
   const truncText = t.text.length > 80 ? t.text.substring(0, 80) + '...' : t.text;
-  let html = '<div class="list-item" onclick="Tabs.calls.showDetail(' + t.call_id + ')">';
+  let html = '<div class="list-item" onclick="Tabs.calls.showDetail(\'' + UI.esc(t.call_id) + '\')">';
   html += '<div class="primary" style="font-weight:normal;font-style:italic;">"' + UI.esc(truncText) + '"</div>';
   html += '<div class="secondary">' + UI.tgLink(tgObj, {stopProp: true});
   if (t.system) html += ' | ' + UI.esc(t.system);
@@ -1796,9 +1796,9 @@ Tabs.transcriptions = {
         '</tr></thead><tbody>' +
         transcriptions.map(t => {
           const truncText = t.text.length > 100 ? t.text.substring(0, 100) + '...' : t.text;
-          const callObj = { id: t.call_id, tgid: t.tgid, tg_alpha_tag: t.tg_alpha_tag, audio_path: t.audio_url, duration: t.call_duration };
+          const callObj = { call_id: t.call_id, tgid: t.tgid, tg_alpha_tag: t.tg_alpha_tag, audio_path: t.audio_url, duration: t.call_duration };
           const tgObj = { id: t.talkgroup_id, tgid: t.tgid, alpha_tag: t.tg_alpha_tag };
-          return '<tr style="cursor:pointer;" onclick="Tabs.calls.showDetail(' + t.call_id + ')">' +
+          return '<tr style="cursor:pointer;" onclick="Tabs.calls.showDetail(\'' + UI.esc(t.call_id) + '\')">' +
             '<td style="font-style:italic;color:var(--text-dim);">"' + UI.esc(truncText) + '"</td>' +
             '<td>' + UI.tgLink(tgObj, {stopProp: true}) + '</td>' +
             '<td>' + UI.esc(t.system || '--') + '</td>' +
@@ -2087,7 +2087,7 @@ WS.on('audio_available', (data) => {
   // Build a call-like object for the audio player
   const callObj = {
     tr_call_id: data.tr_call_id,
-    id: data.call_id,
+    call_id: data.call_id,
     tg_alpha_tag: tgLabel,
     tgid: tgid,
     system_id: data.system_id,

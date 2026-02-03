@@ -18,6 +18,15 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// Schema returns the current schema SQL (for embedded PostgreSQL and tests)
+func Schema() (string, error) {
+	data, err := migrationsFS.ReadFile("migrations/001_initial_schema.up.sql")
+	if err != nil {
+		return "", fmt.Errorf("failed to read schema: %w", err)
+	}
+	return string(data), nil
+}
+
 // DB wraps the database connection pool
 type DB struct {
 	pool   *pgxpool.Pool

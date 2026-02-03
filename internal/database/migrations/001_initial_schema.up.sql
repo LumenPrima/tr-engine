@@ -1,5 +1,13 @@
--- Enable TimescaleDB extension
-CREATE EXTENSION IF NOT EXISTS timescaledb;
+-- tr-engine schema (consolidated, works with vanilla PostgreSQL)
+-- TimescaleDB is optional - hypertables will be created if available
+
+-- Try to enable TimescaleDB (silently skip if not available)
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS timescaledb;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'TimescaleDB not available, using standard PostgreSQL tables';
+END $$;
 
 -- Trunk-recorder instances connecting to this engine
 CREATE TABLE instances (
@@ -44,10 +52,9 @@ CREATE TABLE systems (
 
 CREATE INDEX idx_systems_short_name ON systems(short_name);
 
--- Talkgroups (loaded from talkgroup files or discovered)
+-- Talkgroups (keyed by sysid + tgid)
 CREATE TABLE talkgroups (
-    id              SERIAL PRIMARY KEY,
-    system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
+    sysid           VARCHAR(16) NOT NULL,
     tgid            INTEGER NOT NULL,
     alpha_tag       VARCHAR(255),
     description     TEXT,
@@ -57,24 +64,49 @@ CREATE TABLE talkgroups (
     mode            VARCHAR(16),
     first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(system_id, tgid)
+    PRIMARY KEY (sysid, tgid)
 );
 
 CREATE INDEX idx_talkgroups_last_seen ON talkgroups(last_seen DESC);
+CREATE INDEX idx_talkgroups_sysid ON talkgroups(sysid);
 
--- Radio units
+-- Radio units (keyed by sysid + unit_id)
 CREATE TABLE units (
-    id              SERIAL PRIMARY KEY,
-    system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
+    sysid           VARCHAR(16) NOT NULL,
     unit_id         BIGINT NOT NULL,
     alpha_tag       VARCHAR(255),
     alpha_tag_source VARCHAR(32),
     first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(system_id, unit_id)
+    PRIMARY KEY (sysid, unit_id)
 );
 
 CREATE INDEX idx_units_last_seen ON units(last_seen DESC);
+CREATE INDEX idx_units_sysid ON units(sysid);
+
+-- Junction table: which sites have seen which talkgroups
+CREATE TABLE talkgroup_sites (
+    sysid           VARCHAR(16) NOT NULL,
+    tgid            INTEGER NOT NULL,
+    system_id       INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+    first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (sysid, tgid, system_id)
+);
+
+CREATE INDEX idx_talkgroup_sites_system ON talkgroup_sites(system_id);
+
+-- Junction table: which sites have seen which units
+CREATE TABLE unit_sites (
+    sysid           VARCHAR(16) NOT NULL,
+    rid             BIGINT NOT NULL,
+    system_id       INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+    first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (sysid, rid, system_id)
+);
+
+CREATE INDEX idx_unit_sites_system ON unit_sites(system_id);
 
 -- Recorders from each instance
 CREATE TABLE recorders (
@@ -90,7 +122,7 @@ CREATE TABLE recorders (
 CREATE TABLE call_groups (
     id              BIGSERIAL,
     system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
-    talkgroup_id    INTEGER REFERENCES talkgroups(id) ON DELETE SET NULL,
+    tg_sysid        VARCHAR(16),
     tgid            INTEGER NOT NULL,
     start_time      TIMESTAMPTZ NOT NULL,
     end_time        TIMESTAMPTZ,
@@ -98,13 +130,10 @@ CREATE TABLE call_groups (
     call_count      INTEGER DEFAULT 1,
     encrypted       BOOLEAN DEFAULT FALSE,
     emergency       BOOLEAN DEFAULT FALSE,
-
     PRIMARY KEY (id, start_time)
 );
 
-SELECT create_hypertable('call_groups', 'start_time');
-
-CREATE INDEX idx_call_groups_talkgroup ON call_groups(talkgroup_id, start_time DESC);
+CREATE INDEX idx_call_groups_talkgroup ON call_groups(tg_sysid, tgid, start_time DESC);
 CREATE INDEX idx_call_groups_system ON call_groups(system_id, start_time DESC);
 
 -- Individual call recordings (one per site/instance)
@@ -113,7 +142,8 @@ CREATE TABLE calls (
     call_group_id   BIGINT,
     instance_id     INTEGER REFERENCES instances(id) ON DELETE CASCADE,
     system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
-    talkgroup_id    INTEGER REFERENCES talkgroups(id) ON DELETE SET NULL,
+    tg_sysid        VARCHAR(16),
+    tgid            INTEGER,
     recorder_id     INTEGER REFERENCES recorders(id) ON DELETE SET NULL,
 
     -- Call identifiers
@@ -154,12 +184,14 @@ CREATE TABLE calls (
     -- Full JSON for any fields we don't explicitly model
     metadata_json   JSONB,
 
+    -- Transcription reference
+    transcription_id BIGINT,
+
     PRIMARY KEY (id, start_time)
 );
 
-SELECT create_hypertable('calls', 'start_time');
-
-CREATE INDEX idx_calls_talkgroup ON calls(talkgroup_id, start_time DESC);
+CREATE INDEX idx_calls_talkgroup ON calls(tg_sysid, tgid, start_time DESC) WHERE tg_sysid IS NOT NULL;
+CREATE INDEX idx_calls_tg_sysid_tgid ON calls(tg_sysid, tgid, start_time DESC);
 CREATE INDEX idx_calls_instance ON calls(instance_id, start_time DESC);
 CREATE INDEX idx_calls_group ON calls(call_group_id);
 CREATE INDEX idx_calls_tr_call_id ON calls(tr_call_id);
@@ -168,7 +200,7 @@ CREATE INDEX idx_calls_tr_call_id ON calls(tr_call_id);
 CREATE TABLE transmissions (
     id              BIGSERIAL,
     call_id         BIGINT NOT NULL,
-    unit_id         INTEGER REFERENCES units(id) ON DELETE SET NULL,
+    unit_sysid      VARCHAR(16),
     unit_rid        BIGINT NOT NULL,
     start_time      TIMESTAMPTZ NOT NULL,
     stop_time       TIMESTAMPTZ,
@@ -177,13 +209,10 @@ CREATE TABLE transmissions (
     emergency       BOOLEAN DEFAULT FALSE,
     error_count     INTEGER,
     spike_count     INTEGER,
-
     PRIMARY KEY (id, start_time)
 );
 
-SELECT create_hypertable('transmissions', 'start_time');
-
-CREATE INDEX idx_transmissions_unit ON transmissions(unit_id, start_time DESC);
+CREATE INDEX idx_transmissions_unit ON transmissions(unit_sysid, unit_rid, start_time DESC) WHERE unit_sysid IS NOT NULL;
 CREATE INDEX idx_transmissions_call ON transmissions(call_id);
 
 -- Frequency usage within calls
@@ -196,31 +225,26 @@ CREATE TABLE call_frequencies (
     duration        REAL,
     error_count     INTEGER,
     spike_count     INTEGER,
-
     PRIMARY KEY (id, time)
 );
-
-SELECT create_hypertable('call_frequencies', 'time');
 
 -- Unit events (registration, affiliation, etc.)
 CREATE TABLE unit_events (
     id              BIGSERIAL,
     instance_id     INTEGER REFERENCES instances(id) ON DELETE CASCADE,
     system_id       INTEGER REFERENCES systems(id) ON DELETE CASCADE,
-    unit_id         INTEGER REFERENCES units(id) ON DELETE SET NULL,
+    unit_sysid      VARCHAR(16),
     unit_rid        BIGINT NOT NULL,
     event_type      VARCHAR(16) NOT NULL,
-    talkgroup_id    INTEGER REFERENCES talkgroups(id) ON DELETE SET NULL,
+    tg_sysid        VARCHAR(16),
     tgid            INTEGER,
     time            TIMESTAMPTZ NOT NULL,
     metadata_json   JSONB,
-
     PRIMARY KEY (id, time)
 );
 
-SELECT create_hypertable('unit_events', 'time');
-
-CREATE INDEX idx_unit_events_unit ON unit_events(unit_id, time DESC);
+CREATE INDEX idx_unit_events_unit ON unit_events(unit_sysid, unit_rid, time DESC) WHERE unit_sysid IS NOT NULL;
+CREATE INDEX idx_unit_events_talkgroup ON unit_events(tg_sysid, tgid, time DESC) WHERE tg_sysid IS NOT NULL;
 CREATE INDEX idx_unit_events_system ON unit_events(system_id, time DESC);
 CREATE INDEX idx_unit_events_type ON unit_events(event_type, time DESC);
 
@@ -231,11 +255,8 @@ CREATE TABLE system_rates (
     time            TIMESTAMPTZ NOT NULL,
     decode_rate     REAL,
     control_channel BIGINT,
-
     PRIMARY KEY (id, time)
 );
-
-SELECT create_hypertable('system_rates', 'time');
 
 -- Recorder status snapshots
 CREATE TABLE recorder_status (
@@ -247,11 +268,8 @@ CREATE TABLE recorder_status (
     call_count      INTEGER,
     duration        REAL,
     squelched       BOOLEAN,
-
     PRIMARY KEY (id, time)
 );
-
-SELECT create_hypertable('recorder_status', 'time');
 
 -- Trunking messages (optional, high volume)
 CREATE TABLE trunk_messages (
@@ -264,8 +282,76 @@ CREATE TABLE trunk_messages (
     opcode_type     VARCHAR(32),
     opcode_desc     VARCHAR(128),
     meta            TEXT,
-
     PRIMARY KEY (id, time)
 );
 
-SELECT create_hypertable('trunk_messages', 'time');
+-- Transcriptions
+CREATE TABLE transcriptions (
+    id              BIGSERIAL PRIMARY KEY,
+    call_id         BIGINT NOT NULL UNIQUE,
+    provider        VARCHAR(32) NOT NULL,
+    model           VARCHAR(64),
+    language        VARCHAR(10),
+    text            TEXT NOT NULL,
+    confidence      REAL,
+    word_count      INTEGER,
+    duration_ms     INTEGER,
+    words_json      JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_transcriptions_call ON transcriptions(call_id);
+CREATE INDEX idx_transcriptions_created ON transcriptions(created_at DESC);
+
+-- Transcription queue
+CREATE TABLE transcription_queue (
+    id              BIGSERIAL PRIMARY KEY,
+    call_id         BIGINT NOT NULL UNIQUE,
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+    priority        INTEGER NOT NULL DEFAULT 0,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_transcription_queue_status ON transcription_queue(status, priority DESC, created_at);
+
+-- API keys
+CREATE TABLE api_keys (
+    id              SERIAL PRIMARY KEY,
+    key_hash        VARCHAR(64) NOT NULL UNIQUE,
+    key_prefix      VARCHAR(12) NOT NULL,
+    name            VARCHAR(255) NOT NULL,
+    scopes          TEXT[] DEFAULT '{}',
+    read_only       BOOLEAN DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_used_at    TIMESTAMPTZ,
+    expires_at      TIMESTAMPTZ,
+    revoked_at      TIMESTAMPTZ
+);
+
+CREATE INDEX idx_api_keys_hash ON api_keys(key_hash) WHERE revoked_at IS NULL;
+
+-- Migration tracking (created by golang-migrate for external DB, manually for embedded)
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version BIGINT PRIMARY KEY,
+    dirty BOOLEAN NOT NULL DEFAULT FALSE
+);
+INSERT INTO schema_migrations (version, dirty) VALUES (1, FALSE) ON CONFLICT DO NOTHING;
+
+-- Try to create hypertables if TimescaleDB is available
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'create_hypertable') THEN
+        PERFORM create_hypertable('call_groups', 'start_time', if_not_exists => TRUE);
+        PERFORM create_hypertable('calls', 'start_time', if_not_exists => TRUE);
+        PERFORM create_hypertable('transmissions', 'start_time', if_not_exists => TRUE);
+        PERFORM create_hypertable('call_frequencies', 'time', if_not_exists => TRUE);
+        PERFORM create_hypertable('unit_events', 'time', if_not_exists => TRUE);
+        PERFORM create_hypertable('system_rates', 'time', if_not_exists => TRUE);
+        PERFORM create_hypertable('recorder_status', 'time', if_not_exists => TRUE);
+        PERFORM create_hypertable('trunk_messages', 'time', if_not_exists => TRUE);
+        RAISE NOTICE 'TimescaleDB hypertables created';
+    END IF;
+END $$;
