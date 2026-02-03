@@ -1675,6 +1675,11 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 0
                 },
+                "has_transcription": {
+                    "description": "Transcription preview (populated by queries)",
+                    "type": "boolean",
+                    "example": true
+                },
                 "metadata_json": {
                     "description": "Metadata",
                     "type": "object"
@@ -1731,6 +1736,14 @@ const docTemplate = `{
                     "description": "Joined fields (not stored in calls table)",
                     "type": "integer",
                     "example": 9178
+                },
+                "transcription_preview": {
+                    "type": "string",
+                    "example": "Engine 5 responding to the scene"
+                },
+                "transcription_word_count": {
+                    "type": "integer",
+                    "example": 6
                 },
                 "units": {
                     "type": "array",

@@ -321,12 +321,21 @@ func (s *Service) processNextJob(workerID int) {
 	metrics.TranscriptionDuration.Observe(processingTime.Seconds())
 	metrics.TranscriptionQueueDepth.Dec()
 
-	// Broadcast event
+	// Broadcast event with call context
+	textPreview := result.Text
+	if len(textPreview) > 100 {
+		textPreview = textPreview[:100]
+	}
 	s.broadcast("transcription_complete", map[string]interface{}{
-		"call_id":          item.CallID,
+		"call_id":          call.CallID,                    // Deterministic: sysid:tgid:start
 		"transcription_id": transcription.ID,
 		"text":             result.Text,
+		"text_preview":     textPreview,
 		"word_count":       wordCount,
+		"tgid":             call.TGID,                      // For filtering
+		"tg_alpha_tag":     call.TGAlphaTag,
+		"sysid":            call.TgSysid,                   // For filtering
+		"duration":         call.Duration,
 		"language":         result.Language,
 		"provider":         s.provider.Name(),
 		"words":            words,

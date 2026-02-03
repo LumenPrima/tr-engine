@@ -185,6 +185,11 @@ type Call struct {
 	TGID       *int64     `json:"tgid,omitempty" example:"9178"`
 	TGAlphaTag *string    `json:"tg_alpha_tag,omitempty" example:"09-8L Main"`
 	Units      []CallUnit `json:"units,omitempty"`
+
+	// Transcription preview (populated by queries)
+	HasTranscription       bool    `json:"has_transcription" example:"true"`
+	TranscriptionPreview   *string `json:"transcription_preview,omitempty" example:"Engine 5 responding to the scene"`
+	TranscriptionWordCount *int    `json:"transcription_word_count,omitempty" example:"6"`
 }
 
 // CallUnit represents a unit involved in a call

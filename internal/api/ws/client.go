@@ -341,6 +341,8 @@ func eventToChannel(eventType string) string {
 		return "rates"
 	case "recorder_update":
 		return "recorders"
+	case "transcription_complete":
+		return "transcriptions"
 	default:
 		return eventType
 	}

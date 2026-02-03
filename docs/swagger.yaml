@@ -94,6 +94,10 @@ definitions:
       freq_error:
         example: 0
         type: integer
+      has_transcription:
+        description: Transcription preview (populated by queries)
+        example: true
+        type: boolean
       metadata_json:
         description: Metadata
         type: object
@@ -136,6 +140,12 @@ definitions:
       tgid:
         description: Joined fields (not stored in calls table)
         example: 9178
+        type: integer
+      transcription_preview:
+        example: Engine 5 responding to the scene
+        type: string
+      transcription_word_count:
+        example: 6
         type: integer
       units:
         items:
