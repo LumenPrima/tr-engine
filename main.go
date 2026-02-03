@@ -327,11 +327,14 @@ func main() {
 		// Initialize embedded MQTT broker if configured
 		if cfg.MQTT.Embedded {
 			brokerDone := con.StartTask("Starting embedded MQTT broker")
+			// Derive MQTT data path from database embedded path (sibling directory)
+			mqttDataPath := filepath.Join(filepath.Dir(cfg.Database.EmbeddedDataPath), "mqtt")
 			var err error
 			mqttBroker, err = embeddedmqtt.New(embeddedmqtt.Config{
 				Port:     cfg.MQTT.EmbeddedPort,
 				Username: cfg.MQTT.Username,
 				Password: cfg.MQTT.Password,
+				DataPath: mqttDataPath,
 			}, logger)
 			if err != nil {
 				brokerDone(false, err.Error())

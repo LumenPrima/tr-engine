@@ -6,6 +6,7 @@ import (
 
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
+	"github.com/mochi-mqtt/server/v2/hooks/storage/badger"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"go.uber.org/zap"
 )
@@ -22,6 +23,7 @@ type Config struct {
 	Port     int
 	Username string
 	Password string
+	DataPath string // Path for persistent storage (retained messages, etc.)
 }
 
 // New creates and starts a new embedded MQTT broker
@@ -35,6 +37,17 @@ func New(cfg Config, logger *zap.Logger) (*Broker, error) {
 	server := mqtt.New(&mqtt.Options{
 		InlineClient: true, // Allow the server to publish/subscribe internally
 	})
+
+	// Add persistence hook if data path provided
+	if cfg.DataPath != "" {
+		err := server.AddHook(new(badger.Hook), &badger.Options{
+			Path: cfg.DataPath,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to add persistence hook: %w", err)
+		}
+		logger.Info("MQTT persistence enabled", zap.String("path", cfg.DataPath))
+	}
 
 	// Add auth hook if credentials provided
 	if cfg.Username != "" && cfg.Password != "" {
