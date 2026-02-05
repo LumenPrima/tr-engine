@@ -1676,7 +1676,7 @@ const docTemplate = `{
                     "example": 0
                 },
                 "has_transcription": {
-                    "description": "Transcription preview (populated by queries)",
+                    "description": "Transcription fields (populated by queries)",
                     "type": "boolean",
                     "example": true
                 },
@@ -1737,7 +1737,7 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 9178
                 },
-                "transcription_preview": {
+                "transcription_text": {
                     "type": "string",
                     "example": "Engine 5 responding to the scene"
                 },

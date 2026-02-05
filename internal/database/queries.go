@@ -757,7 +757,7 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, sysid *string, tgid 
 			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json,
 			tg.alpha_tag,
 			c.transcription_id IS NOT NULL as has_transcription,
-			LEFT(tr.text, 100) as transcription_preview,
+			tr.text as transcription_text,
 			tr.word_count as transcription_word_count
 		FROM calls c
 		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
@@ -814,7 +814,7 @@ func (db *DB) ListCalls(ctx context.Context, systemID *int, sysid *string, tgid 
 			&c.Conventional, &c.Analog, &c.AudioType, &c.Freq, &c.FreqError, &c.ErrorCount, &c.SpikeCount,
 			&c.SignalDB, &c.NoiseDB, &c.AudioPath, &c.AudioSize, &c.PatchedTGIDs, &c.MetadataJSON,
 			&c.TGAlphaTag,
-			&c.HasTranscription, &c.TranscriptionPreview, &c.TranscriptionWordCount,
+			&c.HasTranscription, &c.TranscriptionText, &c.TranscriptionWordCount,
 		); err != nil {
 			return nil, err
 		}
@@ -913,7 +913,7 @@ func (db *DB) GetCallByID(ctx context.Context, id int64) (*models.Call, error) {
 			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json,
 			tg.alpha_tag,
 			c.transcription_id IS NOT NULL as has_transcription,
-			LEFT(tr.text, 100) as transcription_preview,
+			tr.text as transcription_text,
 			tr.word_count as transcription_word_count
 		FROM calls c
 		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
@@ -926,7 +926,7 @@ func (db *DB) GetCallByID(ctx context.Context, id int64) (*models.Call, error) {
 		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
 		&call.SignalDB, &call.NoiseDB, &call.AudioPath, &call.AudioSize, &call.PatchedTGIDs, &call.MetadataJSON,
 		&call.TGAlphaTag,
-		&call.HasTranscription, &call.TranscriptionPreview, &call.TranscriptionWordCount,
+		&call.HasTranscription, &call.TranscriptionText, &call.TranscriptionWordCount,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -946,7 +946,7 @@ func (db *DB) GetCallByTRCallID(ctx context.Context, trCallID string) (*models.C
 			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json,
 			tg.alpha_tag,
 			c.transcription_id IS NOT NULL as has_transcription,
-			LEFT(tr.text, 100) as transcription_preview,
+			tr.text as transcription_text,
 			tr.word_count as transcription_word_count
 		FROM calls c
 		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
@@ -960,7 +960,7 @@ func (db *DB) GetCallByTRCallID(ctx context.Context, trCallID string) (*models.C
 		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
 		&call.SignalDB, &call.NoiseDB, &call.AudioPath, &call.AudioSize, &call.PatchedTGIDs, &call.MetadataJSON,
 		&call.TGAlphaTag,
-		&call.HasTranscription, &call.TranscriptionPreview, &call.TranscriptionWordCount,
+		&call.HasTranscription, &call.TranscriptionText, &call.TranscriptionWordCount,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -981,7 +981,7 @@ func (db *DB) GetCallByCallID(ctx context.Context, sysid string, tgid int64, sta
 			c.signal_db, c.noise_db, c.audio_path, c.audio_size, c.patched_tgids, c.metadata_json,
 			tg.alpha_tag,
 			c.transcription_id IS NOT NULL as has_transcription,
-			LEFT(tr.text, 100) as transcription_preview,
+			tr.text as transcription_text,
 			tr.word_count as transcription_word_count
 		FROM calls c
 		LEFT JOIN talkgroups tg ON tg.sysid = c.tg_sysid AND tg.tgid = c.tgid
@@ -999,7 +999,7 @@ func (db *DB) GetCallByCallID(ctx context.Context, sysid string, tgid int64, sta
 		&call.Conventional, &call.Analog, &call.AudioType, &call.Freq, &call.FreqError, &call.ErrorCount, &call.SpikeCount,
 		&call.SignalDB, &call.NoiseDB, &call.AudioPath, &call.AudioSize, &call.PatchedTGIDs, &call.MetadataJSON,
 		&call.TGAlphaTag,
-		&call.HasTranscription, &call.TranscriptionPreview, &call.TranscriptionWordCount,
+		&call.HasTranscription, &call.TranscriptionText, &call.TranscriptionWordCount,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -1455,9 +1455,9 @@ type RecentCallInfo struct {
 	CallGroupID *int64           `json:"call_group_id,omitempty"`
 	Units       []RecentCallUnit `json:"units"`
 
-	// Transcription preview (populated by queries)
+	// Transcription fields (populated by queries)
 	HasTranscription       bool    `json:"has_transcription"`
-	TranscriptionPreview   *string `json:"transcription_preview,omitempty"`
+	TranscriptionText      *string `json:"transcription_text,omitempty"`
 	TranscriptionWordCount *int    `json:"transcription_word_count,omitempty"`
 }
 
@@ -1499,7 +1499,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 				c.id,
 				c.call_group_id,
 				c.transcription_id IS NOT NULL as has_transcription,
-				LEFT(tr.text, 100) as transcription_preview,
+				tr.text as transcription_text,
 				tr.word_count as transcription_word_count
 			FROM calls c
 			LEFT JOIN systems s ON s.id = c.system_id
@@ -1529,7 +1529,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 				c.id,
 				c.call_group_id,
 				c.transcription_id IS NOT NULL as has_transcription,
-				LEFT(tr.text, 100) as transcription_preview,
+				tr.text as transcription_text,
 				tr.word_count as transcription_word_count
 			FROM calls c
 			LEFT JOIN systems s ON s.id = c.system_id
@@ -1558,7 +1558,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 			&c.TRCallID, &c.CallNum, &c.StartTime, &stopTime, &c.Duration,
 			&c.System, &c.Sysid, &c.TGID, &c.TGAlphaTag, &c.Freq,
 			&c.Encrypted, &c.Emergency, &c.AudioPath, &c.ID, &c.CallGroupID,
-			&c.HasTranscription, &c.TranscriptionPreview, &c.TranscriptionWordCount,
+			&c.HasTranscription, &c.TranscriptionText, &c.TranscriptionWordCount,
 		); err != nil {
 			return nil, err
 		}
