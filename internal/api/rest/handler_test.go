@@ -44,7 +44,8 @@ func setupTestRouter() *gin.Engine {
 func TestParsePagination(t *testing.T) {
 	h := &Handler{}
 
-	tests := []struct {
+	// Test valid cases
+	validTests := []struct {
 		name           string
 		queryParams    string
 		expectedLimit  int
@@ -75,30 +76,6 @@ func TestParsePagination(t *testing.T) {
 			expectedOffset: 50,
 		},
 		{
-			name:           "limit too high",
-			queryParams:    "limit=2000",
-			expectedLimit:  50, // max 1000, so defaults
-			expectedOffset: 0,
-		},
-		{
-			name:           "negative limit",
-			queryParams:    "limit=-5",
-			expectedLimit:  50, // defaults
-			expectedOffset: 0,
-		},
-		{
-			name:           "negative offset",
-			queryParams:    "offset=-10",
-			expectedLimit:  50,
-			expectedOffset: 0, // stays 0
-		},
-		{
-			name:           "invalid limit string",
-			queryParams:    "limit=abc",
-			expectedLimit:  50,
-			expectedOffset: 0,
-		},
-		{
 			name:           "max allowed limit",
 			queryParams:    "limit=1000",
 			expectedLimit:  1000,
@@ -106,11 +83,15 @@ func TestParsePagination(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range validTests {
 		t.Run(tt.name, func(t *testing.T) {
 			router := setupTestRouter()
 			router.GET("/test", func(c *gin.Context) {
-				limit, offset := h.parsePagination(c)
+				limit, offset, err := h.parsePagination(c)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
 				c.JSON(http.StatusOK, gin.H{"limit": limit, "offset": offset})
 			})
 
@@ -118,11 +99,70 @@ func TestParsePagination(t *testing.T) {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
+			assert.Equal(t, http.StatusOK, w.Code)
 			var response map[string]int
 			json.Unmarshal(w.Body.Bytes(), &response)
-
 			assert.Equal(t, tt.expectedLimit, response["limit"])
 			assert.Equal(t, tt.expectedOffset, response["offset"])
+		})
+	}
+
+	// Test error cases
+	errorTests := []struct {
+		name        string
+		queryParams string
+		errContains string
+	}{
+		{
+			name:        "limit too high",
+			queryParams: "limit=2000",
+			errContains: "must be between 1 and 1000",
+		},
+		{
+			name:        "negative limit",
+			queryParams: "limit=-5",
+			errContains: "must be between 1 and 1000",
+		},
+		{
+			name:        "zero limit",
+			queryParams: "limit=0",
+			errContains: "must be between 1 and 1000",
+		},
+		{
+			name:        "negative offset",
+			queryParams: "offset=-10",
+			errContains: "must be", // >= is escaped in JSON
+		},
+		{
+			name:        "invalid limit string",
+			queryParams: "limit=abc",
+			errContains: "must be an integer",
+		},
+		{
+			name:        "invalid offset string",
+			queryParams: "offset=xyz",
+			errContains: "must be an integer",
+		},
+	}
+
+	for _, tt := range errorTests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := setupTestRouter()
+			router.GET("/test", func(c *gin.Context) {
+				limit, offset, err := h.parsePagination(c)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"limit": limit, "offset": offset})
+			})
+
+			req, _ := http.NewRequest("GET", "/test?"+tt.queryParams, nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), tt.errContains)
 		})
 	}
 }
@@ -426,7 +466,11 @@ func TestPaginationInResponses(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			router := setupTestRouter()
 			router.GET("/test", func(c *gin.Context) {
-				limit, offset := h.parsePagination(c)
+				limit, offset, err := h.parsePagination(c)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
 				c.JSON(http.StatusOK, gin.H{
 					"limit":  limit,
 					"offset": offset,
@@ -437,6 +481,7 @@ func TestPaginationInResponses(t *testing.T) {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
+			assert.Equal(t, http.StatusOK, w.Code)
 			var response map[string]int
 			err := json.Unmarshal(w.Body.Bytes(), &response)
 			require.NoError(t, err)

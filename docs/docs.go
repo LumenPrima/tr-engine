@@ -295,8 +295,15 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "default": 50,
-                        "description": "Number of calls to return",
+                        "description": "Number of calls to return (1-1000)",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset for pagination",
+                        "name": "offset",
                         "in": "query"
                     },
                     {
@@ -313,6 +320,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/rest.ErrorResponse"
                         }
                     }
                 }

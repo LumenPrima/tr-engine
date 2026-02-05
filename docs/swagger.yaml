@@ -920,9 +920,14 @@ paths:
         Use deduplicate=false to show all recordings including simulcast duplicates.
       parameters:
       - default: 50
-        description: Number of calls to return
+        description: Number of calls to return (1-1000)
         in: query
         name: limit
+        type: integer
+      - default: 0
+        description: Page offset for pagination
+        in: query
+        name: offset
         type: integer
       - default: true
         description: Deduplicate by call_group (show one per group)
@@ -937,6 +942,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/rest.ErrorResponse'
       summary: Get recently ended calls
       tags:
       - calls

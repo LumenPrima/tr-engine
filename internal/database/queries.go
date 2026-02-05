@@ -1481,7 +1481,27 @@ type RecentCallUnit struct {
 
 // ListRecentCalls returns recently completed calls with system/talkgroup info and units
 // If deduplicate is true, only returns one call per call_group (the one with longest duration)
-func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) ([]*RecentCallInfo, error) {
+func (db *DB) ListRecentCalls(ctx context.Context, limit int, offset int, deduplicate bool) ([]*RecentCallInfo, int, error) {
+	// Get total count first
+	var countQuery string
+	if deduplicate {
+		countQuery = `
+			SELECT COUNT(DISTINCT COALESCE(c.call_group_id, c.id))
+			FROM calls c
+			WHERE c.audio_path IS NOT NULL AND c.audio_path != ''
+		`
+	} else {
+		countQuery = `
+			SELECT COUNT(*)
+			FROM calls c
+			WHERE c.audio_path IS NOT NULL AND c.audio_path != ''
+		`
+	}
+	var totalCount int
+	if err := db.pool.QueryRow(ctx, countQuery).Scan(&totalCount); err != nil {
+		return nil, 0, err
+	}
+
 	// Get recent completed calls with system and talkgroup info
 	var query string
 	if deduplicate {
@@ -1513,8 +1533,8 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 			WHERE c.audio_path IS NOT NULL AND c.audio_path != ''
 			ORDER BY COALESCE(c.call_group_id, c.id), c.duration DESC, c.stop_time DESC
 		`
-		// Wrap to re-sort by stop_time and apply limit
-		query = `SELECT * FROM (` + query + `) sub ORDER BY stop_time DESC LIMIT $1`
+		// Wrap to re-sort by stop_time and apply limit/offset
+		query = `SELECT * FROM (` + query + `) sub ORDER BY stop_time DESC LIMIT $1 OFFSET $2`
 	} else {
 		query = `
 			SELECT
@@ -1542,13 +1562,13 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 			LEFT JOIN transcriptions tr ON tr.call_id = c.id
 			WHERE c.audio_path IS NOT NULL AND c.audio_path != ''
 			ORDER BY c.stop_time DESC
-			LIMIT $1
+			LIMIT $1 OFFSET $2
 		`
 	}
 
-	rows, err := db.pool.Query(ctx, query, limit)
+	rows, err := db.pool.Query(ctx, query, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -1565,7 +1585,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 			&c.Encrypted, &c.Emergency, &c.AudioPath, &c.ID, &c.CallGroupID,
 			&c.HasTranscription, &c.TranscriptionText, &c.TranscriptionWordCount,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if stopTime != nil {
 			c.StopTime = *stopTime
@@ -1578,7 +1598,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 		callMap[c.ID] = &c
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Now get units for all these calls from transmissions table
@@ -1596,7 +1616,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 		unitRows, err := db.pool.Query(ctx, unitQuery, callIDs)
 		if err != nil {
 			// Just return calls without units if query fails
-			return calls, nil
+			return calls, totalCount, nil
 		}
 		defer unitRows.Close()
 
@@ -1616,7 +1636,7 @@ func (db *DB) ListRecentCalls(ctx context.Context, limit int, deduplicate bool) 
 		}
 	}
 
-	return calls, nil
+	return calls, totalCount, nil
 }
 
 // GetCallUnits returns all units that transmitted during a call

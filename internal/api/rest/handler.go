@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -213,18 +214,30 @@ func (h *Handler) resolveCall(c *gin.Context) (*models.Call, error) {
 }
 
 // Common query parameter parsing
-func (h *Handler) parsePagination(c *gin.Context) (limit, offset int) {
+func (h *Handler) parsePagination(c *gin.Context) (limit, offset int, err error) {
 	limit = 50
 	offset = 0
 
-	if l, err := strconv.Atoi(c.Query("limit")); err == nil && l > 0 && l <= 1000 {
-		limit = l
+	if l := c.Query("limit"); l != "" {
+		limit, err = strconv.Atoi(l)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid limit: must be an integer")
+		}
+		if limit < 1 || limit > 1000 {
+			return 0, 0, fmt.Errorf("invalid limit: must be between 1 and 1000")
+		}
 	}
-	if o, err := strconv.Atoi(c.Query("offset")); err == nil && o >= 0 {
-		offset = o
+	if o := c.Query("offset"); o != "" {
+		offset, err = strconv.Atoi(o)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid offset: must be an integer")
+		}
+		if offset < 0 {
+			return 0, 0, fmt.Errorf("invalid offset: must be >= 0")
+		}
 	}
 
-	return
+	return limit, offset, nil
 }
 
 func (h *Handler) parseTimeRange(c *gin.Context) (startTime, endTime *time.Time) {
@@ -413,7 +426,11 @@ func (h *Handler) ListSystemTalkgroups(c *gin.Context) {
 		return
 	}
 
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	talkgroups, err := h.db.ListTalkgroupsBySystem(c.Request.Context(), id, limit, offset)
 	if err != nil {
@@ -445,7 +462,11 @@ func (h *Handler) ListSystemTalkgroups(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /talkgroups [get]
 func (h *Handler) ListTalkgroups(c *gin.Context) {
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Get SYSID filter (new: filter by P25 SYSID string)
 	sysidFilter := c.Query("sysid")
@@ -490,7 +511,6 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 	}
 
 	var talkgroups interface{}
-	var err error
 
 	// Build query conditions (two versions: one for count query, one for stats query with tg. prefix)
 	var countConditions []string
@@ -666,10 +686,17 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 // @Router       /talkgroups/encryption-stats [get]
 func (h *Handler) GetTalkgroupEncryptionStats(c *gin.Context) {
 	hours := 24
-	if h := c.Query("hours"); h != "" {
-		if v, err := strconv.Atoi(h); err == nil && v > 0 && v <= 168 {
-			hours = v
+	if hoursStr := c.Query("hours"); hoursStr != "" {
+		v, err := strconv.Atoi(hoursStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid hours: must be an integer"})
+			return
 		}
+		if v < 1 || v > 168 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid hours: must be between 1 and 168"})
+			return
+		}
+		hours = v
 	}
 
 	rows, err := h.db.Pool().Query(c.Request.Context(), `
@@ -885,7 +912,11 @@ func (h *Handler) ListTalkgroupCalls(c *gin.Context) {
 		}
 	}
 
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	startTime, endTime := h.parseTimeRange(c)
 
 	calls, err := h.db.ListCalls(c.Request.Context(), nil, sysid, &tgid, startTime, endTime, limit, offset)
@@ -919,7 +950,11 @@ func (h *Handler) ListTalkgroupCalls(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /units [get]
 func (h *Handler) ListUnits(c *gin.Context) {
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Get SYSID filter (new: filter by P25 SYSID string)
 	sysidFilter := c.Query("sysid")
@@ -957,7 +992,6 @@ func (h *Handler) ListUnits(c *gin.Context) {
 	}
 
 	var units interface{}
-	var err error
 
 	// Build query
 	var conditions []string
@@ -1216,7 +1250,11 @@ func (h *Handler) ListUnitEvents(c *gin.Context) {
 		}
 	}
 
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	startTime, endTime := h.parseTimeRange(c)
 
 	var eventType *string
@@ -1284,7 +1322,11 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 		}
 	}
 
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	startTime, endTime := h.parseTimeRange(c)
 
 	// Query calls that have transmissions from this unit
@@ -1443,7 +1485,11 @@ func (h *Handler) ListUnitCalls(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /calls [get]
 func (h *Handler) ListCalls(c *gin.Context) {
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	startTime, endTime := h.parseTimeRange(c)
 
 	var systemID, talkgroupID *int
@@ -1660,7 +1706,11 @@ func (h *Handler) GetCallFrequencies(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /call-groups [get]
 func (h *Handler) ListCallGroups(c *gin.Context) {
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	startTime, endTime := h.parseTimeRange(c)
 
 	query := `
@@ -2029,20 +2079,47 @@ func (h *Handler) GetActiveCallsRealtime(c *gin.Context) {
 // @Description  Returns recently completed calls from database with full unit list and audio status. Deduplication is enabled by default (one call per call group). Use deduplicate=false to show all recordings including simulcast duplicates.
 // @Tags         calls
 // @Produce      json
-// @Param        limit        query  int   false  "Number of calls to return"  default(50)
+// @Param        limit        query  int   false  "Number of calls to return (1-1000)"  default(50)
+// @Param        offset       query  int   false  "Page offset for pagination"  default(0)
 // @Param        deduplicate  query  bool  false  "Deduplicate by call_group (show one per group)"  default(true)
 // @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  rest.ErrorResponse
 // @Router       /calls/recent [get]
 func (h *Handler) GetRecentCalls(c *gin.Context) {
+	// Parse limit
 	limit := 50
-	if l, err := strconv.Atoi(c.Query("limit")); err == nil && l > 0 && l <= 200 {
+	if limitStr := c.Query("limit"); limitStr != "" {
+		l, err := strconv.Atoi(limitStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit: must be an integer"})
+			return
+		}
+		if l < 1 || l > 1000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit: must be between 1 and 1000"})
+			return
+		}
 		limit = l
+	}
+
+	// Parse offset
+	offset := 0
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		o, err := strconv.Atoi(offsetStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset: must be an integer"})
+			return
+		}
+		if o < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset: must be >= 0"})
+			return
+		}
+		offset = o
 	}
 
 	// Deduplicate by default, only disable if explicitly set to false
 	deduplicate := c.Query("deduplicate") != "false" && c.Query("deduplicate") != "0"
 
-	calls, err := h.db.ListRecentCalls(c.Request.Context(), limit, deduplicate)
+	calls, totalCount, err := h.db.ListRecentCalls(c.Request.Context(), limit, offset, deduplicate)
 	if err != nil {
 		h.logger.Error("Failed to list recent calls", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list recent calls"})
@@ -2052,7 +2129,9 @@ func (h *Handler) GetRecentCalls(c *gin.Context) {
 	populateRecentCallAudioURLs(calls)
 	c.JSON(http.StatusOK, gin.H{
 		"calls":        calls,
-		"count":        len(calls),
+		"count":        totalCount,
+		"limit":        limit,
+		"offset":       offset,
 		"deduplicated": deduplicate,
 	})
 }
@@ -2073,7 +2152,11 @@ func (h *Handler) GetRecentCalls(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /calls/active [get]
 func (h *Handler) ListActiveCalls(c *gin.Context) {
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	filters := database.ActiveCallFilters{}
 
@@ -2138,7 +2221,11 @@ func (h *Handler) ListActiveCalls(c *gin.Context) {
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /units/active [get]
 func (h *Handler) ListActiveUnits(c *gin.Context) {
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	filters := database.ActiveUnitFilters{
 		WindowMins: 5, // Default 5 minutes
@@ -2146,9 +2233,16 @@ func (h *Handler) ListActiveUnits(c *gin.Context) {
 
 	// Parse window parameter
 	if w := c.Query("window"); w != "" {
-		if mins, err := strconv.Atoi(w); err == nil && mins > 0 && mins <= 60 {
-			filters.WindowMins = mins
+		mins, err := strconv.Atoi(w)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid window: must be an integer"})
+			return
 		}
+		if mins < 1 || mins > 60 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid window: must be between 1 and 60"})
+			return
+		}
+		filters.WindowMins = mins
 	}
 
 	// Parse SYSID filter (preferred for units)
@@ -2348,15 +2442,29 @@ func (h *Handler) QueueCallTranscription(c *gin.Context) {
 func (h *Handler) GetRecentTranscriptions(c *gin.Context) {
 	limit := 20
 	if l := c.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
+		parsed, err := strconv.Atoi(l)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit: must be an integer"})
+			return
 		}
+		if parsed < 1 || parsed > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit: must be between 1 and 100"})
+			return
+		}
+		limit = parsed
 	}
 	offset := 0
 	if o := c.Query("offset"); o != "" {
-		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
-			offset = parsed
+		parsed, err := strconv.Atoi(o)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset: must be an integer"})
+			return
 		}
+		if parsed < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset: must be >= 0"})
+			return
+		}
+		offset = parsed
 	}
 
 	transcriptions, err := h.db.ListRecentTranscriptions(c.Request.Context(), limit, offset)
@@ -2391,7 +2499,11 @@ func (h *Handler) SearchTranscriptions(c *gin.Context) {
 		return
 	}
 
-	limit, offset := h.parsePagination(c)
+	limit, offset, err := h.parsePagination(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	transcriptions, err := h.db.SearchTranscriptions(c.Request.Context(), query, limit, offset)
 	if err != nil {
