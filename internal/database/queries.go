@@ -120,8 +120,9 @@ func (db *DB) GetSystemByInstanceAndNum(ctx context.Context, instanceID, sysNum 
 
 // EffectiveSYSID returns the SYSID for scoping talkgroups and units.
 // For P25 systems, this is the sysid field. For conventional systems without sysid, falls back to short_name.
+// Note: trunk-recorder sends "0" when the P25 sysid isn't known yet, so we treat that as unknown too.
 func EffectiveSYSID(sys *models.System) string {
-	if sys.SysID != "" {
+	if sys.SysID != "" && sys.SysID != "0" {
 		return sys.SysID
 	}
 	return sys.ShortName
