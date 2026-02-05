@@ -142,14 +142,14 @@ Install the [MQTT status plugin](https://github.com/TrunkRecorder/tr-plugin-mqtt
 - **Note:** MQTT authentication is not currently implemented. Run on a trusted network or use a firewall.
 - **Note:** If running multiple tr-engine instances against the same MQTT broker, each must have a unique `mqtt.client_id` in config.
 
-### Open the dashboard
+### Open the web UI
 
 Navigate to `http://<tr-engine-host>:8080/`
 
 | URL | Description |
 |-----|-------------|
 | `/` | Landing page |
-| `/dashboard` | Real-time dashboard |
+| `/monitor` | Demo monitor (real-time calls, talkgroups, units) |
 | `/recorders` | Recorder status monitor |
 | `/swagger/` | REST API docs |
 | `/websocket` | WebSocket API docs + live tester |

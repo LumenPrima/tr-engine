@@ -153,7 +153,7 @@ func (a *AuthMiddleware) DashboardAuth() gin.HandlerFunc {
 // Login handles the login form submission
 func (a *AuthMiddleware) Login(c *gin.Context) {
 	if !a.config.Enabled {
-		c.Redirect(http.StatusFound, "/dashboard")
+		c.Redirect(http.StatusFound, "/monitor")
 		return
 	}
 
@@ -188,7 +188,7 @@ func (a *AuthMiddleware) Login(c *gin.Context) {
 	// Redirect to dashboard
 	redirect := c.Query("redirect")
 	if redirect == "" {
-		redirect = "/dashboard"
+		redirect = "/monitor"
 	}
 	c.Redirect(http.StatusFound, redirect)
 }
@@ -208,14 +208,14 @@ func (a *AuthMiddleware) Logout(c *gin.Context) {
 // LoginPage serves the login page
 func (a *AuthMiddleware) LoginPage(c *gin.Context) {
 	if !a.config.Enabled {
-		c.Redirect(http.StatusFound, "/dashboard")
+		c.Redirect(http.StatusFound, "/monitor")
 		return
 	}
 
 	// If already logged in, redirect to dashboard
 	token, err := c.Cookie(sessionCookieName)
 	if err == nil && a.validateSession(token) {
-		c.Redirect(http.StatusFound, "/dashboard")
+		c.Redirect(http.StatusFound, "/monitor")
 		return
 	}
 

@@ -199,11 +199,11 @@ func TestDashboardAuth_Disabled(t *testing.T) {
 
 	router := gin.New()
 	router.Use(auth.DashboardAuth())
-	router.GET("/dashboard", func(c *gin.Context) {
+	router.GET("/monitor", func(c *gin.Context) {
 		c.String(http.StatusOK, "dashboard")
 	})
 
-	req, _ := http.NewRequest("GET", "/dashboard", nil)
+	req, _ := http.NewRequest("GET", "/monitor", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -215,11 +215,11 @@ func TestDashboardAuth_NoSession(t *testing.T) {
 
 	router := gin.New()
 	router.Use(auth.DashboardAuth())
-	router.GET("/dashboard", func(c *gin.Context) {
+	router.GET("/monitor", func(c *gin.Context) {
 		c.String(http.StatusOK, "dashboard")
 	})
 
-	req, _ := http.NewRequest("GET", "/dashboard", nil)
+	req, _ := http.NewRequest("GET", "/monitor", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -235,11 +235,11 @@ func TestDashboardAuth_ValidSession(t *testing.T) {
 
 	router := gin.New()
 	router.Use(auth.DashboardAuth())
-	router.GET("/dashboard", func(c *gin.Context) {
+	router.GET("/monitor", func(c *gin.Context) {
 		c.String(http.StatusOK, "dashboard")
 	})
 
-	req, _ := http.NewRequest("GET", "/dashboard", nil)
+	req, _ := http.NewRequest("GET", "/monitor", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -253,11 +253,11 @@ func TestDashboardAuth_InvalidSession(t *testing.T) {
 
 	router := gin.New()
 	router.Use(auth.DashboardAuth())
-	router.GET("/dashboard", func(c *gin.Context) {
+	router.GET("/monitor", func(c *gin.Context) {
 		c.String(http.StatusOK, "dashboard")
 	})
 
-	req, _ := http.NewRequest("GET", "/dashboard", nil)
+	req, _ := http.NewRequest("GET", "/monitor", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "invalid_token"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -338,7 +338,7 @@ func TestLogin_Disabled(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusFound, w.Code)
-	assert.Equal(t, "/dashboard", w.Header().Get("Location"))
+	assert.Equal(t, "/monitor", w.Header().Get("Location"))
 }
 
 func TestLogin_InvalidCredentials(t *testing.T) {
@@ -380,7 +380,7 @@ func TestLogin_ValidCredentials(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusFound, w.Code)
-	assert.Equal(t, "/dashboard", w.Header().Get("Location"))
+	assert.Equal(t, "/monitor", w.Header().Get("Location"))
 
 	// Check that session cookie was set
 	cookies := w.Result().Cookies()
@@ -465,7 +465,7 @@ func TestLoginPage_Disabled(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusFound, w.Code)
-	assert.Equal(t, "/dashboard", w.Header().Get("Location"))
+	assert.Equal(t, "/monitor", w.Header().Get("Location"))
 }
 
 func TestLoginPage_AlreadyLoggedIn(t *testing.T) {
@@ -481,7 +481,7 @@ func TestLoginPage_AlreadyLoggedIn(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusFound, w.Code)
-	assert.Equal(t, "/dashboard", w.Header().Get("Location"))
+	assert.Equal(t, "/monitor", w.Header().Get("Location"))
 }
 
 func TestLoginPage_NotLoggedIn(t *testing.T) {

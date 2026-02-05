@@ -434,11 +434,11 @@ func (s *Server) setupUIRoutes() {
 	dashAuth := s.auth.DashboardAuth()
 
 	// Serve individual HTML files (protected)
-	s.router.GET("/dashboard", dashAuth, func(c *gin.Context) {
-		serveEmbeddedFile(c, staticFS, "dashboard.html")
+	s.router.GET("/monitor", dashAuth, func(c *gin.Context) {
+		serveEmbeddedFile(c, staticFS, "monitor.html")
 	})
-	s.router.GET("/dashboard.html", dashAuth, func(c *gin.Context) {
-		serveEmbeddedFile(c, staticFS, "dashboard.html")
+	s.router.GET("/monitor.html", dashAuth, func(c *gin.Context) {
+		serveEmbeddedFile(c, staticFS, "monitor.html")
 	})
 
 	s.router.GET("/recorders", dashAuth, func(c *gin.Context) {
