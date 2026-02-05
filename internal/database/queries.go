@@ -317,6 +317,10 @@ func (db *DB) UpsertRecorder(ctx context.Context, instanceID int, sourceID *int,
 
 // InsertCall inserts a new call record
 func (db *DB) InsertCall(ctx context.Context, call *models.Call, tgid int) error {
+	// Set TGID on the struct so PopulateCallID works correctly
+	tgid64 := int64(tgid)
+	call.TGID = &tgid64
+
 	return db.pool.QueryRow(ctx, `
 		INSERT INTO calls (
 			call_group_id, instance_id, system_id, tg_sysid, tgid, recorder_id,
