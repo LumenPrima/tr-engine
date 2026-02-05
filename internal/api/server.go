@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi2"
+	"github.com/getkin/kin-openapi/openapi2conv"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	swaggerFiles "github.com/swaggo/files"
@@ -234,6 +237,49 @@ func (s *Server) setupRoutes() {
 		}
 		c.Next()
 	}, ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// OpenAPI 3.0 spec (converted from Swagger 2.0)
+	s.router.GET("/openapi.json", func(c *gin.Context) {
+		// Set host dynamically
+		host := c.Request.Host
+		scheme := "http"
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
+
+		// Update swagger info for conversion
+		docs.SwaggerInfo.Host = host
+		docs.SwaggerInfo.Schemes = []string{scheme}
+
+		// Get Swagger 2.0 spec
+		swagger2JSON := docs.SwaggerInfo.ReadDoc()
+
+		// Parse Swagger 2.0
+		var swagger2Doc openapi2.T
+		if err := json.Unmarshal([]byte(swagger2JSON), &swagger2Doc); err != nil {
+			s.logger.Error("Failed to parse Swagger 2.0 spec", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse spec"})
+			return
+		}
+
+		// Convert to OpenAPI 3.0
+		openapi3Doc, err := openapi2conv.ToV3(&swagger2Doc)
+		if err != nil {
+			s.logger.Error("Failed to convert to OpenAPI 3.0", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to convert spec"})
+			return
+		}
+
+		// Serialize to JSON
+		openapi3JSON, err := json.MarshalIndent(openapi3Doc, "", "  ")
+		if err != nil {
+			s.logger.Error("Failed to serialize OpenAPI 3.0", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to serialize spec"})
+			return
+		}
+
+		c.Data(http.StatusOK, "application/json", openapi3JSON)
+	})
 
 	// WebSocket endpoint (under /api to work with Vite proxy)
 	// Auth handled by cookie (dashboard users) or skip if auth disabled
