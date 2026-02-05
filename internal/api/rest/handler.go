@@ -432,12 +432,12 @@ func (h *Handler) ListSystemTalkgroups(c *gin.Context) {
 
 // ListTalkgroups godoc
 // @Summary      List all talkgroups
-// @Description  Returns all talkgroups with stats (call_count, calls_1h, calls_24h, unit_count). Optionally filtered by SYSID.
+// @Description  Returns all talkgroups with stats (call_count, calls_1h, calls_24h, unit_count). Optionally filtered by SYSID. When searching, results include relevance_score (100=exact, 50=prefix, 10=contains).
 // @Tags         talkgroups
 // @Produce      json
 // @Param        sysid    query  string  false  "Filter by SYSID (P25 system identifier)"
-// @Param        search   query  string  false  "Search by alpha_tag, tgid, group, or tag"
-// @Param        sort     query  string  false  "Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count, calls_1h, calls_24h, unit_count"  default(alpha_tag)
+// @Param        search   query  string  false  "Search by alpha_tag, tgid, group, tag, or description"
+// @Param        sort     query  string  false  "Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count, calls_1h, calls_24h, unit_count, relevance"  default(alpha_tag)
 // @Param        sort_dir query  string  false  "Sort direction: asc, desc"  default(asc)
 // @Param        limit    query  int     false  "Results per page"  default(50)
 // @Param        offset   query  int     false  "Page offset"       default(0)
@@ -470,6 +470,7 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		"calls_1h":   "calls_1h",
 		"calls_24h":  "calls_24h",
 		"unit_count": "unit_count",
+		"relevance":  "relevance_score",
 	}
 	nullsLastFields := map[string]bool{"alpha_tag": true, "group": true}
 
@@ -504,14 +505,21 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		argIdx++
 	}
 
+	// Track search term for relevance scoring
+	var searchTerm string
+
 	if search != "" {
 		searchPattern := "%" + search + "%"
-		countSearchCond := "(LOWER(alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(tgid AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + " OR LOWER(tg_group) LIKE LOWER($" + strconv.Itoa(argIdx+2) + ") OR LOWER(tag) LIKE LOWER($" + strconv.Itoa(argIdx+3) + "))"
-		statsSearchCond := "(LOWER(tg.alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(tg.tgid AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + " OR LOWER(tg.tg_group) LIKE LOWER($" + strconv.Itoa(argIdx+2) + ") OR LOWER(tg.tag) LIKE LOWER($" + strconv.Itoa(argIdx+3) + "))"
+		searchTerm = search
+
+		// Search across: alpha_tag, tgid, tg_group, tag, description
+		countSearchCond := "(LOWER(alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(tgid AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + " OR LOWER(tg_group) LIKE LOWER($" + strconv.Itoa(argIdx+2) + ") OR LOWER(tag) LIKE LOWER($" + strconv.Itoa(argIdx+3) + ") OR LOWER(description) LIKE LOWER($" + strconv.Itoa(argIdx+4) + "))"
+		statsSearchCond := "(LOWER(tg.alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(tg.tgid AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + " OR LOWER(tg.tg_group) LIKE LOWER($" + strconv.Itoa(argIdx+2) + ") OR LOWER(tg.tag) LIKE LOWER($" + strconv.Itoa(argIdx+3) + ") OR LOWER(tg.description) LIKE LOWER($" + strconv.Itoa(argIdx+4) + "))"
 		countConditions = append(countConditions, countSearchCond)
 		statsConditions = append(statsConditions, statsSearchCond)
-		args = append(args, searchPattern, searchPattern, searchPattern, searchPattern)
-		argIdx += 4
+		// 5 pattern args (count and stats queries use same args)
+		args = append(args, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern)
+		argIdx += 5
 	}
 
 	// Build WHERE clauses
@@ -532,9 +540,11 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 	}
 
 	// Get total count first (without LIMIT/OFFSET)
+	// Use only the args needed for count query (up to countArgIdx)
 	countQuery := `SELECT COUNT(*) FROM talkgroups` + countWhereClause
 	var totalCount int
-	if err := h.db.Pool().QueryRow(c.Request.Context(), countQuery, args...).Scan(&totalCount); err != nil {
+	countArgs := args // Use all args for count (they're all filter args)
+	if err := h.db.Pool().QueryRow(c.Request.Context(), countQuery, countArgs...).Scan(&totalCount); err != nil {
 		h.logger.Error("Failed to count talkgroups", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list talkgroups"})
 		return
@@ -542,6 +552,29 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 
 	// Get paginated data with stats via LATERAL joins
 	// This efficiently computes call_count, calls_1h, calls_24h, and unit_count
+	// When searching, also compute relevance_score for ranking
+	var relevanceSelect string
+	searchArgIdx := argIdx // Index for raw search term (will be added next)
+	if searchTerm != "" {
+		// Add raw search term for relevance scoring
+		args = append(args, searchTerm)
+		argIdx++
+
+		// Relevance scoring: exact match > prefix match > contains
+		relevanceSelect = `,
+			CASE
+				WHEN LOWER(tg.alpha_tag) = LOWER($` + strconv.Itoa(searchArgIdx) + `) THEN 100
+				WHEN CAST(tg.tgid AS TEXT) = $` + strconv.Itoa(searchArgIdx) + ` THEN 100
+				WHEN LOWER(tg.alpha_tag) LIKE LOWER($` + strconv.Itoa(searchArgIdx) + ` || '%') THEN 50
+				WHEN CAST(tg.tgid AS TEXT) LIKE $` + strconv.Itoa(searchArgIdx) + ` || '%' THEN 50
+				WHEN LOWER(tg.tg_group) = LOWER($` + strconv.Itoa(searchArgIdx) + `) THEN 40
+				WHEN LOWER(tg.tag) = LOWER($` + strconv.Itoa(searchArgIdx) + `) THEN 40
+				ELSE 10
+			END as relevance_score`
+	} else {
+		relevanceSelect = `, 0 as relevance_score`
+	}
+
 	query := `
 		SELECT
 			tg.sysid, tg.tgid, tg.alpha_tag, tg.description, tg.tg_group, tg.tag,
@@ -549,7 +582,7 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 			COALESCE(call_stats.call_count, 0) as call_count,
 			COALESCE(call_stats.calls_1h, 0) as calls_1h,
 			COALESCE(call_stats.calls_24h, 0) as calls_24h,
-			COALESCE(unit_stats.unit_count, 0) as unit_count
+			COALESCE(unit_stats.unit_count, 0) as unit_count` + relevanceSelect + `
 		FROM talkgroups tg
 		LEFT JOIN LATERAL (
 			SELECT
@@ -574,16 +607,16 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 		var results []map[string]any
 		for rows.Next() {
 			var tgid, priority int
-			var callCount, calls1h, calls24h, unitCount int
+			var callCount, calls1h, calls24h, unitCount, relevanceScore int
 			var sysid string
 			var alphaTag, description, group, tag, mode *string
 			var firstSeen, lastSeen time.Time
 			if scanErr := rows.Scan(&sysid, &tgid, &alphaTag, &description, &group, &tag, &priority, &mode, &firstSeen, &lastSeen,
-				&callCount, &calls1h, &calls24h, &unitCount); scanErr != nil {
+				&callCount, &calls1h, &calls24h, &unitCount, &relevanceScore); scanErr != nil {
 				h.logger.Error("Failed to scan talkgroup row", zap.Error(scanErr))
 				continue
 			}
-			results = append(results, map[string]any{
+			result := map[string]any{
 				"sysid":       sysid,
 				"tgid":        tgid,
 				"alpha_tag":   alphaTag,
@@ -598,7 +631,12 @@ func (h *Handler) ListTalkgroups(c *gin.Context) {
 				"calls_1h":    calls1h,
 				"calls_24h":   calls24h,
 				"unit_count":  unitCount,
-			})
+			}
+			// Only include relevance_score when searching
+			if searchTerm != "" {
+				result["relevance_score"] = relevanceScore
+			}
+			results = append(results, result)
 		}
 		talkgroups = results
 	}
@@ -868,12 +906,15 @@ func (h *Handler) ListTalkgroupCalls(c *gin.Context) {
 
 // ListUnits godoc
 // @Summary      List all units
-// @Description  Returns all radio units, optionally filtered by SYSID
+// @Description  Returns all radio units, optionally filtered by SYSID. When searching, results include relevance_score (100=exact, 50=prefix, 10=contains).
 // @Tags         units
 // @Produce      json
-// @Param        sysid   query  string  false  "Filter by SYSID (P25 system identifier)"
-// @Param        limit   query  int     false  "Results per page"  default(50)
-// @Param        offset  query  int     false  "Page offset"       default(0)
+// @Param        sysid    query  string  false  "Filter by SYSID (P25 system identifier)"
+// @Param        search   query  string  false  "Search by alpha_tag or unit_id"
+// @Param        sort     query  string  false  "Sort field: alpha_tag, unit_id, last_seen, first_seen, relevance"  default(alpha_tag)
+// @Param        sort_dir query  string  false  "Sort direction: asc, desc"  default(asc)
+// @Param        limit    query  int     false  "Results per page"  default(50)
+// @Param        offset   query  int     false  "Page offset"       default(0)
 // @Success      200  {object}  rest.UnitListResponse
 // @Failure      500  {object}  rest.ErrorResponse
 // @Router       /units [get]
@@ -896,6 +937,7 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		"unit_id":    "unit_id",
 		"last_seen":  "last_seen",
 		"first_seen": "first_seen",
+		"relevance":  "relevance_score",
 	}
 	nullsLastFields := map[string]bool{"alpha_tag": true}
 
@@ -928,10 +970,16 @@ func (h *Handler) ListUnits(c *gin.Context) {
 		argIdx++
 	}
 
+	// Track search term for relevance scoring
+	var unitSearchTerm string
+
 	if search != "" {
 		searchPattern := "%" + search + "%"
+		unitSearchTerm = search
+
 		searchCond := "(LOWER(alpha_tag) LIKE LOWER($" + strconv.Itoa(argIdx) + ") OR CAST(unit_id AS TEXT) LIKE $" + strconv.Itoa(argIdx+1) + ")"
 		conditions = append(conditions, searchCond)
+		// 2 pattern args for filtering
 		args = append(args, searchPattern, searchPattern)
 		argIdx += 2
 	}
@@ -948,14 +996,36 @@ func (h *Handler) ListUnits(c *gin.Context) {
 	// Get total count first (without LIMIT/OFFSET)
 	countQuery := `SELECT COUNT(*) FROM units` + whereClause
 	var totalCount int
-	if err := h.db.Pool().QueryRow(c.Request.Context(), countQuery, args...).Scan(&totalCount); err != nil {
+	countArgs := args // Use all args for count
+	if err := h.db.Pool().QueryRow(c.Request.Context(), countQuery, countArgs...).Scan(&totalCount); err != nil {
 		h.logger.Error("Failed to count units", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list units"})
 		return
 	}
 
+	// Build relevance select for sorting when searching
+	var unitRelevanceSelect string
+	unitSearchArgIdx := argIdx // Index for raw search term
+	if unitSearchTerm != "" {
+		// Add raw search term for relevance scoring
+		args = append(args, unitSearchTerm)
+		argIdx++
+
+		// Relevance scoring: exact match > prefix match > contains
+		unitRelevanceSelect = `,
+			CASE
+				WHEN LOWER(alpha_tag) = LOWER($` + strconv.Itoa(unitSearchArgIdx) + `) THEN 100
+				WHEN CAST(unit_id AS TEXT) = $` + strconv.Itoa(unitSearchArgIdx) + ` THEN 100
+				WHEN LOWER(alpha_tag) LIKE LOWER($` + strconv.Itoa(unitSearchArgIdx) + ` || '%') THEN 50
+				WHEN CAST(unit_id AS TEXT) LIKE $` + strconv.Itoa(unitSearchArgIdx) + ` || '%' THEN 50
+				ELSE 10
+			END as relevance_score`
+	} else {
+		unitRelevanceSelect = `, 0 as relevance_score`
+	}
+
 	// Get paginated data
-	query := `SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen FROM units` + whereClause
+	query := `SELECT sysid, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen` + unitRelevanceSelect + ` FROM units` + whereClause
 	query += " ORDER BY " + orderClause + " LIMIT $" + strconv.Itoa(argIdx) + " OFFSET $" + strconv.Itoa(argIdx+1)
 	args = append(args, limit, offset)
 
@@ -968,17 +1038,23 @@ func (h *Handler) ListUnits(c *gin.Context) {
 			var unitID int64
 			var alphaTag, alphaTagSource *string
 			var firstSeen, lastSeen time.Time
-			if scanErr := rows.Scan(&sysid, &unitID, &alphaTag, &alphaTagSource, &firstSeen, &lastSeen); scanErr != nil {
+			var relevanceScore int
+			if scanErr := rows.Scan(&sysid, &unitID, &alphaTag, &alphaTagSource, &firstSeen, &lastSeen, &relevanceScore); scanErr != nil {
 				continue
 			}
-			results = append(results, map[string]any{
+			result := map[string]any{
 				"sysid":            sysid,
 				"unit_id":          unitID,
 				"alpha_tag":        alphaTag,
 				"alpha_tag_source": alphaTagSource,
 				"first_seen":       firstSeen,
 				"last_seen":        lastSeen,
-			})
+			}
+			// Only include relevance_score when searching
+			if unitSearchTerm != "" {
+				result["relevance_score"] = relevanceScore
+			}
+			results = append(results, result)
 		}
 		units = results
 	}

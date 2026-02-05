@@ -1125,19 +1125,20 @@ paths:
   /talkgroups:
     get:
       description: Returns all talkgroups with stats (call_count, calls_1h, calls_24h,
-        unit_count). Optionally filtered by SYSID.
+        unit_count). Optionally filtered by SYSID. When searching, results include
+        relevance_score (100=exact, 50=prefix, 10=contains).
       parameters:
       - description: Filter by SYSID (P25 system identifier)
         in: query
         name: sysid
         type: string
-      - description: Search by alpha_tag, tgid, group, or tag
+      - description: Search by alpha_tag, tgid, group, tag, or description
         in: query
         name: search
         type: string
       - default: alpha_tag
         description: 'Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count,
-          calls_1h, calls_24h, unit_count'
+          calls_1h, calls_24h, unit_count, relevance'
         in: query
         name: sort
         type: string
@@ -1359,11 +1360,26 @@ paths:
       - transcriptions
   /units:
     get:
-      description: Returns all radio units, optionally filtered by SYSID
+      description: Returns all radio units, optionally filtered by SYSID. When searching,
+        results include relevance_score (100=exact, 50=prefix, 10=contains).
       parameters:
       - description: Filter by SYSID (P25 system identifier)
         in: query
         name: sysid
+        type: string
+      - description: Search by alpha_tag or unit_id
+        in: query
+        name: search
+        type: string
+      - default: alpha_tag
+        description: 'Sort field: alpha_tag, unit_id, last_seen, first_seen, relevance'
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: 'Sort direction: asc, desc'
+        in: query
+        name: sort_dir
         type: string
       - default: 50
         description: Results per page

@@ -881,7 +881,7 @@ const docTemplate = `{
         },
         "/talkgroups": {
             "get": {
-                "description": "Returns all talkgroups with stats (call_count, calls_1h, calls_24h, unit_count). Optionally filtered by SYSID.",
+                "description": "Returns all talkgroups with stats (call_count, calls_1h, calls_24h, unit_count). Optionally filtered by SYSID. When searching, results include relevance_score (100=exact, 50=prefix, 10=contains).",
                 "produces": [
                     "application/json"
                 ],
@@ -898,14 +898,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Search by alpha_tag, tgid, group, or tag",
+                        "description": "Search by alpha_tag, tgid, group, tag, or description",
                         "name": "search",
                         "in": "query"
                     },
                     {
                         "type": "string",
                         "default": "alpha_tag",
-                        "description": "Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count, calls_1h, calls_24h, unit_count",
+                        "description": "Sort field: alpha_tag, tgid, last_seen, first_seen, group, call_count, calls_1h, calls_24h, unit_count, relevance",
                         "name": "sort",
                         "in": "query"
                     },
@@ -1223,7 +1223,7 @@ const docTemplate = `{
         },
         "/units": {
             "get": {
-                "description": "Returns all radio units, optionally filtered by SYSID",
+                "description": "Returns all radio units, optionally filtered by SYSID. When searching, results include relevance_score (100=exact, 50=prefix, 10=contains).",
                 "produces": [
                     "application/json"
                 ],
@@ -1236,6 +1236,26 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by SYSID (P25 system identifier)",
                         "name": "sysid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by alpha_tag or unit_id",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "alpha_tag",
+                        "description": "Sort field: alpha_tag, unit_id, last_seen, first_seen, relevance",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "asc",
+                        "description": "Sort direction: asc, desc",
+                        "name": "sort_dir",
                         "in": "query"
                     },
                     {
