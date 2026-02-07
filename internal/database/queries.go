@@ -1761,7 +1761,8 @@ func (db *DB) MarkTranscriptionProcessing(ctx context.Context, id int64) error {
 	return err
 }
 
-// InsertTranscription inserts a transcription result and links it to the call
+// InsertTranscription inserts a transcription result and links it to the call.
+// Returns nil if transcription already exists for this call (expected for simulcast/duplicate recordings).
 func (db *DB) InsertTranscription(ctx context.Context, t *models.Transcription) error {
 	// Marshal words to JSON if present
 	var wordsJSON []byte
@@ -1773,11 +1774,19 @@ func (db *DB) InsertTranscription(ctx context.Context, t *models.Transcription) 
 		}
 	}
 
+	// Use ON CONFLICT to handle duplicate transcriptions gracefully.
+	// This happens when the same call is recorded by multiple systems (simulcast).
 	err = db.pool.QueryRow(ctx, `
 		INSERT INTO transcriptions (call_id, provider, model, language, text, confidence, word_count, duration_ms, words_json, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+		ON CONFLICT (call_id) DO NOTHING
 		RETURNING id, created_at
 	`, t.CallID, t.Provider, t.Model, t.Language, t.Text, t.Confidence, t.WordCount, t.DurationMs, wordsJSON).Scan(&t.ID, &t.CreatedAt)
+
+	// pgx.ErrNoRows means ON CONFLICT triggered - transcription already exists
+	if err == pgx.ErrNoRows {
+		return nil // Not an error - just a duplicate
+	}
 	if err != nil {
 		return err
 	}

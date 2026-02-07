@@ -313,6 +313,15 @@ func (s *Service) processNextJob(workerID int) {
 	s.db.UpdateTranscriptionQueueStatus(ctx, item.ID, "completed", "")
 	s.db.DeleteTranscriptionQueueItem(ctx, item.ID)
 
+	// Check if this was a duplicate (transcription.ID will be 0)
+	if transcription.ID == 0 {
+		s.logger.Debug("Transcription already exists (duplicate recording)",
+			zap.String("call_id", call.CallID),
+		)
+		metrics.TranscriptionQueueDepth.Dec()
+		return
+	}
+
 	s.logger.Info("Transcription completed",
 		zap.String("call_id", call.CallID),
 		zap.Int64("transcription_id", transcription.ID),
