@@ -217,9 +217,12 @@ func (s *Service) processNextJob(workerID int) {
 		return
 	}
 
+	// Populate deterministic call ID for logging
+	call.PopulateCallID()
+
 	if call.AudioPath == "" {
 		s.logger.Warn("Call has no audio path",
-			zap.Int64("call_id", item.CallID),
+			zap.String("call_id", call.CallID),
 		)
 		s.db.DeleteTranscriptionQueueItem(ctx, item.ID)
 		return
@@ -235,7 +238,7 @@ func (s *Service) processNextJob(workerID int) {
 		processedPath, err = s.preprocessor.Process(ctx, audioPath)
 		if err != nil {
 			s.logger.Warn("Audio preprocessing failed, using original file",
-				zap.Int64("call_id", item.CallID),
+				zap.String("call_id", call.CallID),
 				zap.Error(err),
 			)
 			processedPath = audioPath
@@ -252,7 +255,7 @@ func (s *Service) processNextJob(workerID int) {
 
 	if err != nil {
 		s.logger.Error("Transcription failed",
-			zap.Int64("call_id", item.CallID),
+			zap.String("call_id", call.CallID),
 			zap.String("audio_path", audioPath),
 			zap.Error(err),
 		)
@@ -299,7 +302,7 @@ func (s *Service) processNextJob(workerID int) {
 
 	if err := s.db.InsertTranscription(ctx, transcription); err != nil {
 		s.logger.Error("Failed to save transcription",
-			zap.Int64("call_id", item.CallID),
+			zap.String("call_id", call.CallID),
 			zap.Error(err),
 		)
 		s.markFailed(ctx, item, "failed to save: "+err.Error())
@@ -311,7 +314,7 @@ func (s *Service) processNextJob(workerID int) {
 	s.db.DeleteTranscriptionQueueItem(ctx, item.ID)
 
 	s.logger.Info("Transcription completed",
-		zap.Int64("call_id", item.CallID),
+		zap.String("call_id", call.CallID),
 		zap.Int64("transcription_id", transcription.ID),
 		zap.Int("word_count", wordCount),
 		zap.Duration("processing_time", processingTime),
