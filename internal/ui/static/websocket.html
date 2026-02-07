@@ -243,11 +243,12 @@ code { color: var(--text); }
   <div class="event-body">
     <div class="event-desc">Emitted when a new call begins on a talkgroup.</div>
     <div class="fields">
-      <div class="field"><span class="field-name">call_id</span><span class="field-type">int64</span><span class="field-desc">Database call ID</span></div>
+      <div class="field"><span class="field-name">call_id</span><span class="field-type">string</span><span class="field-desc">Deterministic call ID (sysid:tgid:start_unix)</span></div>
       <div class="field"><span class="field-name">tr_call_id</span><span class="field-type">string</span><span class="field-desc">Trunk-recorder call ID</span></div>
       <div class="field"><span class="field-name">talkgroup</span><span class="field-type">int</span><span class="field-desc">Talkgroup ID (TGID)</span></div>
       <div class="field"><span class="field-name">talkgroup_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Talkgroup name</span></div>
       <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+      <div class="field"><span class="field-name">sysid</span><span class="field-type">string</span><span class="field-desc">P25 System ID</span></div>
       <div class="field"><span class="field-name">freq</span><span class="field-type">int64</span><span class="field-desc">Frequency in Hz</span></div>
       <div class="field"><span class="field-name">unit</span><span class="field-type">int64</span><span class="field-desc">Initiating unit radio ID</span></div>
       <div class="field"><span class="field-name">unit_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Unit name</span></div>
@@ -266,11 +267,12 @@ code { color: var(--text); }
   <div class="event-body">
     <div class="event-desc">Emitted when a call ends. Contains final call statistics.</div>
     <div class="fields">
-      <div class="field"><span class="field-name">call_id</span><span class="field-type">int64</span><span class="field-desc">Database call ID</span></div>
+      <div class="field"><span class="field-name">call_id</span><span class="field-type">string</span><span class="field-desc">Deterministic call ID (sysid:tgid:start_unix)</span></div>
       <div class="field"><span class="field-name">tr_call_id</span><span class="field-type">string</span><span class="field-desc">Trunk-recorder call ID</span></div>
       <div class="field"><span class="field-name">talkgroup</span><span class="field-type">int</span><span class="field-desc">Talkgroup ID</span></div>
       <div class="field"><span class="field-name">talkgroup_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Talkgroup name</span></div>
       <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+      <div class="field"><span class="field-name">sysid</span><span class="field-type">string</span><span class="field-desc">P25 System ID</span></div>
       <div class="field"><span class="field-name">duration</span><span class="field-type">float32</span><span class="field-desc">Call duration in seconds</span></div>
       <div class="field"><span class="field-name">encrypted</span><span class="field-type">bool</span><span class="field-desc">Call was encrypted</span></div>
       <div class="field"><span class="field-name">emergency</span><span class="field-type">bool</span><span class="field-desc">Emergency flag</span></div>
@@ -289,11 +291,12 @@ code { color: var(--text); }
   <div class="event-body">
     <div class="event-desc">Emitted when audio recording is ready for playback.</div>
     <div class="fields">
-      <div class="field"><span class="field-name">call_id</span><span class="field-type">int64</span><span class="field-desc">Database call ID</span></div>
+      <div class="field"><span class="field-name">call_id</span><span class="field-type">string</span><span class="field-desc">Deterministic call ID (sysid:tgid:start_unix)</span></div>
       <div class="field"><span class="field-name">tr_call_id</span><span class="field-type">string</span><span class="field-desc">Trunk-recorder call ID</span></div>
       <div class="field"><span class="field-name">talkgroup</span><span class="field-type">int</span><span class="field-desc">Talkgroup ID</span></div>
       <div class="field"><span class="field-name">talkgroup_alpha_tag</span><span class="field-type">string</span><span class="field-desc">Talkgroup name</span></div>
       <div class="field"><span class="field-name">system</span><span class="field-type">string</span><span class="field-desc">System short name</span></div>
+      <div class="field"><span class="field-name">sysid</span><span class="field-type">string</span><span class="field-desc">P25 System ID</span></div>
       <div class="field"><span class="field-name">audio_size</span><span class="field-type">int</span><span class="field-desc">Audio file size in bytes</span></div>
       <div class="field"><span class="field-name">duration</span><span class="field-type">float32</span><span class="field-desc">Audio duration in seconds</span></div>
       <div class="field"><span class="field-name">transmissions</span><span class="field-type">int</span><span class="field-desc">Number of unit transmissions</span></div>

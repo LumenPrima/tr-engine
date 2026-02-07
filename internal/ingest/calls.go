@@ -98,8 +98,9 @@ func (p *Processor) ProcessCallStart(ctx context.Context, data *CallEventData) e
 	metrics.CallsProcessed.WithLabelValues("start", data.ShortName).Inc()
 
 	// Broadcast call start
+	call.PopulateCallID()
 	p.broadcast("call_start", map[string]interface{}{
-		"call_id":             call.ID,
+		"call_id":             call.CallID,
 		"tr_call_id":          data.CallID,
 		"talkgroup":           data.TGID,
 		"talkgroup_alpha_tag": data.TGAlphaTag,
@@ -263,8 +264,9 @@ func (p *Processor) ProcessMissedCallEnd(ctx context.Context, ended *ActiveCallI
 
 	metrics.CallsProcessed.WithLabelValues("end_missed", ended.System).Inc()
 
+	call.PopulateCallID()
 	p.broadcast("call_end", map[string]interface{}{
-		"call_id":    call.ID,
+		"call_id":    call.CallID,
 		"talkgroup":  ended.TGID,
 		"system":     ended.System,
 		"sysid":      sysid,
@@ -502,8 +504,9 @@ func (p *Processor) ProcessCallEnd(ctx context.Context, data *CallEventData) err
 	}
 
 	// Broadcast call end
+	call.PopulateCallID()
 	p.broadcast("call_end", map[string]interface{}{
-		"call_id":             call.ID,
+		"call_id":             call.CallID,
 		"tr_call_id":          data.CallID,
 		"talkgroup":           data.TGID,
 		"talkgroup_alpha_tag": data.TGAlphaTag,
@@ -779,9 +782,9 @@ func (p *Processor) ProcessAudio(ctx context.Context, data *AudioData) error {
 
 		// Queue for transcription if service is enabled
 		if p.transcriber != nil {
-			if err := p.transcriber.QueueCall(ctx, call.ID, call.Duration, 0); err != nil {
+			if err := p.transcriber.QueueCall(ctx, call.CallID, call.Duration, 0); err != nil {
 				p.logger.Error("Failed to queue call for transcription",
-					zap.Int64("call_id", call.ID),
+					zap.String("call_id", call.CallID),
 					zap.Error(err),
 				)
 			}

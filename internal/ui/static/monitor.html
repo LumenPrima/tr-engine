@@ -457,8 +457,8 @@ const UI = {
     return '<span class="link-unit" onclick="' + onclick + 'Tabs.units.showDetail(' + unitId + ')">' + UI.esc(label) + '</span>';
   },
   callId(call) {
-    // Return the best identifier for API calls — tr_call_id if available, else numeric id
-    return call.tr_call_id || call.call_id || (call.id ? String(call.id) : '');
+    // Return the deterministic call ID (sysid:tgid:start_unix format)
+    return call.call_id || call.tr_call_id || '';
   },
   formatBytes(b) {
     if (!b) return '0 B';
@@ -1294,8 +1294,8 @@ Tabs.calls = {
         ['Call Group', call.call_group_id], ['Instance', call.instance_id],
       ];
       html += '<table class="data-table">' + fields.map(([k,v]) => '<tr><td style="color:var(--text-dim);width:120px;">' + k + '</td><td>' + (v ?? '--') + '</td></tr>').join('') + '</table>';
-      // Show play button if we have audio and a way to identify the call
-      if ((call.audio_path || call.audio_url) && (call.id || call.tr_call_id)) {
+      // Show play button if we have audio and a call ID
+      if ((call.audio_path || call.audio_url) && call.call_id) {
         html += '<div style="margin-top:8px;"><button class="btn-play" data-play="' + UI.esc(JSON.stringify(call).replace(/"/g, '&quot;')) + '">&#9654; Play Audio</button></div>';
       }
       // Monitor button for call's talkgroup

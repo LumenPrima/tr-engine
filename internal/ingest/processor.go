@@ -78,7 +78,7 @@ type RecorderInfo struct {
 
 // TranscriptionQueuer is the interface for queuing calls for transcription
 type TranscriptionQueuer interface {
-	QueueCall(ctx context.Context, callID int64, duration float32, priority int) error
+	QueueCall(ctx context.Context, callID string, duration float32, priority int) error
 }
 
 // Processor handles ingestion of MQTT messages

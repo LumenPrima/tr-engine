@@ -5,11 +5,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/trunk-recorder/tr-engine/internal/database/models"
 )
+
+// ParseCallID parses a deterministic call ID (sysid:tgid:start_unix) into components.
+// Returns sysid, tgid, startUnix, and an error if the format is invalid.
+func ParseCallID(callID string) (sysid string, tgid int64, startUnix int64, err error) {
+	parts := strings.Split(callID, ":")
+	if len(parts) != 3 {
+		return "", 0, 0, fmt.Errorf("invalid call_id format: expected sysid:tgid:start_unix")
+	}
+	sysid = parts[0]
+	tgid, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("invalid tgid in call_id: %w", err)
+	}
+	startUnix, err = strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("invalid start_unix in call_id: %w", err)
+	}
+	return sysid, tgid, startUnix, nil
+}
 
 // UpsertInstance creates or updates an instance
 func (db *DB) UpsertInstance(ctx context.Context, instanceID, instanceKey string, configJSON json.RawMessage) (*models.Instance, error) {
@@ -565,15 +585,21 @@ func (db *DB) InsertCallFrequency(ctx context.Context, cf *models.CallFrequency)
 	).Scan(&cf.ID)
 }
 
-// GetTransmissionsByCallID returns all transmissions for a call, ordered by position
-func (db *DB) GetTransmissionsByCallID(ctx context.Context, callID int64) ([]*models.Transmission, error) {
+// GetTransmissionsByCallID returns all transmissions for a call, ordered by position.
+// callID is the deterministic call ID in sysid:tgid:start_unix format.
+func (db *DB) GetTransmissionsByCallID(ctx context.Context, callID string) ([]*models.Transmission, error) {
+	sysid, tgid, startUnix, err := ParseCallID(callID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := db.pool.Query(ctx, `
 		SELECT t.id, t.call_id, t.unit_sysid, t.unit_rid, t.start_time, t.stop_time,
 			t.duration, t.position, t.emergency, t.error_count, t.spike_count
 		FROM transmissions t
-		WHERE t.call_id = $1
+		JOIN calls c ON c.id = t.call_id
+		WHERE c.tg_sysid = $1 AND c.tgid = $2 AND c.start_time = to_timestamp($3)
 		ORDER BY t.position ASC
-	`, callID)
+	`, sysid, tgid, startUnix)
 	if err != nil {
 		return nil, err
 	}
@@ -593,14 +619,20 @@ func (db *DB) GetTransmissionsByCallID(ctx context.Context, callID int64) ([]*mo
 	return txs, rows.Err()
 }
 
-// GetFrequenciesByCallID returns all frequency entries for a call, ordered by position
-func (db *DB) GetFrequenciesByCallID(ctx context.Context, callID int64) ([]*models.CallFrequency, error) {
+// GetFrequenciesByCallID returns all frequency entries for a call, ordered by position.
+// callID is the deterministic call ID in sysid:tgid:start_unix format.
+func (db *DB) GetFrequenciesByCallID(ctx context.Context, callID string) ([]*models.CallFrequency, error) {
+	sysid, tgid, startUnix, err := ParseCallID(callID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := db.pool.Query(ctx, `
-		SELECT id, call_id, freq, time, position, duration, error_count, spike_count
-		FROM call_frequencies
-		WHERE call_id = $1
-		ORDER BY position ASC
-	`, callID)
+		SELECT cf.id, cf.call_id, cf.freq, cf.time, cf.position, cf.duration, cf.error_count, cf.spike_count
+		FROM call_frequencies cf
+		JOIN calls c ON c.id = cf.call_id
+		WHERE c.tg_sysid = $1 AND c.tgid = $2 AND c.start_time = to_timestamp($3)
+		ORDER BY cf.position ASC
+	`, sysid, tgid, startUnix)
 	if err != nil {
 		return nil, err
 	}
@@ -1672,16 +1704,23 @@ func (db *DB) GetCallUnits(ctx context.Context, callID int64) ([]RecentCallUnit,
 // Transcription queries
 // ============================================================================
 
-// QueueTranscription adds a call to the transcription queue
-func (db *DB) QueueTranscription(ctx context.Context, callID int64, priority int) error {
-	_, err := db.pool.Exec(ctx, `
+// QueueTranscription adds a call to the transcription queue.
+// callID is the deterministic call ID in sysid:tgid:start_unix format.
+func (db *DB) QueueTranscription(ctx context.Context, callID string, priority int) error {
+	sysid, tgid, startUnix, err := ParseCallID(callID)
+	if err != nil {
+		return err
+	}
+	_, err = db.pool.Exec(ctx, `
 		INSERT INTO transcription_queue (call_id, priority, status, created_at, updated_at)
-		VALUES ($1, $2, 'pending', NOW(), NOW())
+		SELECT c.id, $4, 'pending', NOW(), NOW()
+		FROM calls c
+		WHERE c.tg_sysid = $1 AND c.tgid = $2 AND c.start_time = to_timestamp($3)
 		ON CONFLICT (call_id) DO UPDATE SET
 			priority = GREATEST(transcription_queue.priority, EXCLUDED.priority),
 			status = CASE WHEN transcription_queue.status = 'failed' THEN 'pending' ELSE transcription_queue.status END,
 			updated_at = NOW()
-	`, callID, priority)
+	`, sysid, tgid, startUnix, priority)
 	return err
 }
 
@@ -1750,18 +1789,24 @@ func (db *DB) InsertTranscription(ctx context.Context, t *models.Transcription) 
 	return err
 }
 
-// GetTranscriptionByCallID gets the transcription for a specific call
-func (db *DB) GetTranscriptionByCallID(ctx context.Context, callID int64) (*models.Transcription, error) {
+// GetTranscriptionByCallID gets the transcription for a specific call.
+// callID is the deterministic call ID in sysid:tgid:start_unix format.
+func (db *DB) GetTranscriptionByCallID(ctx context.Context, callID string) (*models.Transcription, error) {
+	sysid, tgid, startUnix, err := ParseCallID(callID)
+	if err != nil {
+		return nil, err
+	}
 	var t models.Transcription
 	var wordsJSON []byte
-	err := db.pool.QueryRow(ctx, `
-		SELECT id, call_id, provider, COALESCE(model, ''), COALESCE(language, ''), text,
-			confidence, COALESCE(word_count, 0), COALESCE(duration_ms, 0), words_json, created_at
-		FROM transcriptions
-		WHERE call_id = $1
-		ORDER BY created_at DESC
+	err = db.pool.QueryRow(ctx, `
+		SELECT tr.id, tr.call_id, tr.provider, COALESCE(tr.model, ''), COALESCE(tr.language, ''), tr.text,
+			tr.confidence, COALESCE(tr.word_count, 0), COALESCE(tr.duration_ms, 0), tr.words_json, tr.created_at
+		FROM transcriptions tr
+		JOIN calls c ON c.id = tr.call_id
+		WHERE c.tg_sysid = $1 AND c.tgid = $2 AND c.start_time = to_timestamp($3)
+		ORDER BY tr.created_at DESC
 		LIMIT 1
-	`, callID).Scan(&t.ID, &t.CallID, &t.Provider, &t.Model, &t.Language, &t.Text,
+	`, sysid, tgid, startUnix).Scan(&t.ID, &t.CallID, &t.Provider, &t.Model, &t.Language, &t.Text,
 		&t.Confidence, &t.WordCount, &t.DurationMs, &wordsJSON, &t.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -1894,10 +1939,11 @@ func (db *DB) GetTranscriptionQueueStats(ctx context.Context) (*TranscriptionQue
 	return &stats, err
 }
 
-// GetCallsForTranscriptionBackfill returns calls that have audio but no transcription
-func (db *DB) GetCallsForTranscriptionBackfill(ctx context.Context, minDuration float64, limit int) ([]int64, error) {
+// GetCallsForTranscriptionBackfill returns calls that have audio but no transcription.
+// Returns deterministic call IDs in sysid:tgid:start_unix format.
+func (db *DB) GetCallsForTranscriptionBackfill(ctx context.Context, minDuration float64, limit int) ([]string, error) {
 	rows, err := db.pool.Query(ctx, `
-		SELECT c.id
+		SELECT c.tg_sysid, c.tgid, EXTRACT(EPOCH FROM c.start_time)::bigint
 		FROM calls c
 		LEFT JOIN transcription_queue tq ON tq.call_id = c.id
 		WHERE c.audio_path IS NOT NULL
@@ -1913,13 +1959,18 @@ func (db *DB) GetCallsForTranscriptionBackfill(ctx context.Context, minDuration 
 	}
 	defer rows.Close()
 
-	var callIDs []int64
+	var callIDs []string
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var sysid *string
+		var tgid, startUnix int64
+		if err := rows.Scan(&sysid, &tgid, &startUnix); err != nil {
 			return nil, err
 		}
-		callIDs = append(callIDs, id)
+		s := ""
+		if sysid != nil {
+			s = *sysid
+		}
+		callIDs = append(callIDs, fmt.Sprintf("%s:%d:%d", s, tgid, startUnix))
 	}
 	return callIDs, rows.Err()
 }

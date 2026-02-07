@@ -1644,7 +1644,7 @@ func (h *Handler) GetCallTransmissions(c *gin.Context) {
 		return
 	}
 
-	txs, err := h.db.GetTransmissionsByCallID(c.Request.Context(), call.ID)
+	txs, err := h.db.GetTransmissionsByCallID(c.Request.Context(), call.CallID)
 	if err != nil {
 		h.logger.Error("Failed to get transmissions", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transmissions"})
@@ -1680,7 +1680,7 @@ func (h *Handler) GetCallFrequencies(c *gin.Context) {
 		return
 	}
 
-	freqs, err := h.db.GetFrequenciesByCallID(c.Request.Context(), call.ID)
+	freqs, err := h.db.GetFrequenciesByCallID(c.Request.Context(), call.CallID)
 	if err != nil {
 		h.logger.Error("Failed to get frequencies", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get frequencies"})
@@ -2353,7 +2353,7 @@ func (h *Handler) GetCallTranscription(c *gin.Context) {
 		return
 	}
 
-	transcription, err := h.db.GetTranscriptionByCallID(c.Request.Context(), call.ID)
+	transcription, err := h.db.GetTranscriptionByCallID(c.Request.Context(), call.CallID)
 	if err != nil {
 		h.logger.Error("Failed to get transcription", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transcription"})
@@ -2416,7 +2416,7 @@ func (h *Handler) QueueCallTranscription(c *gin.Context) {
 		priority = 100
 	}
 
-	if err := h.db.QueueTranscription(c.Request.Context(), call.ID, priority); err != nil {
+	if err := h.db.QueueTranscription(c.Request.Context(), call.CallID, priority); err != nil {
 		h.logger.Error("Failed to queue transcription", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue transcription"})
 		return
@@ -2424,7 +2424,7 @@ func (h *Handler) QueueCallTranscription(c *gin.Context) {
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"message":  "Call queued for transcription",
-		"call_id":  call.ID,
+		"call_id":  call.CallID,
 		"priority": priority,
 	})
 }

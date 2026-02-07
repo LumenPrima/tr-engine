@@ -117,12 +117,13 @@ func (s *Service) Stop() {
 	s.logger.Info("Transcription service stopped")
 }
 
-// QueueCall queues a call for transcription if it meets the criteria
-func (s *Service) QueueCall(ctx context.Context, callID int64, duration float32, priority int) error {
+// QueueCall queues a call for transcription if it meets the criteria.
+// callID is the deterministic call ID in sysid:tgid:start_unix format.
+func (s *Service) QueueCall(ctx context.Context, callID string, duration float32, priority int) error {
 	// Check minimum duration
 	if float64(duration) < s.cfg.MinDuration {
 		s.logger.Debug("Call too short for transcription",
-			zap.Int64("call_id", callID),
+			zap.String("call_id", callID),
 			zap.Float32("duration", duration),
 			zap.Float64("min_duration", s.cfg.MinDuration),
 		)
@@ -131,14 +132,14 @@ func (s *Service) QueueCall(ctx context.Context, callID int64, duration float32,
 
 	if err := s.db.QueueTranscription(ctx, callID, priority); err != nil {
 		s.logger.Error("Failed to queue transcription",
-			zap.Int64("call_id", callID),
+			zap.String("call_id", callID),
 			zap.Error(err),
 		)
 		return err
 	}
 
 	s.logger.Debug("Queued call for transcription",
-		zap.Int64("call_id", callID),
+		zap.String("call_id", callID),
 		zap.Float32("duration", duration),
 		zap.Int("priority", priority),
 	)
@@ -377,7 +378,7 @@ func (s *Service) BackfillQueue(ctx context.Context, batchSize int) (int, error)
 	for _, callID := range callIDs {
 		if err := s.db.QueueTranscription(ctx, callID, 0); err != nil {
 			s.logger.Error("Failed to queue call for backfill",
-				zap.Int64("call_id", callID),
+				zap.String("call_id", callID),
 				zap.Error(err),
 			)
 			continue

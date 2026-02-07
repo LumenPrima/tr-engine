@@ -267,7 +267,7 @@ func TestGetTransmissionsByCallID(t *testing.T) {
 	f := setupTest(t)
 	ctx := context.Background()
 
-	txs, err := testDB.DB.GetTransmissionsByCallID(ctx, f.Call1DBID)
+	txs, err := testDB.DB.GetTransmissionsByCallID(ctx, f.Call1ID)
 	require.NoError(t, err)
 	assert.Len(t, txs, 3)
 
