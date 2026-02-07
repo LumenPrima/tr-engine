@@ -21,9 +21,9 @@ type Preprocessor struct {
 
 // NewPreprocessor creates a new audio preprocessor
 func NewPreprocessor(cfg config.AudioPreprocessConfig, logger *zap.Logger) (*Preprocessor, error) {
-	// Check if sox is available
-	if _, err := exec.LookPath("sox"); err != nil {
-		return nil, fmt.Errorf("sox not found in PATH: %w", err)
+	// Check if ffmpeg is available
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return nil, fmt.Errorf("ffmpeg not found in PATH: %w", err)
 	}
 
 	// Create temp directory for processed files
@@ -46,26 +46,26 @@ func (p *Preprocessor) Process(ctx context.Context, inputPath string) (string, e
 		return inputPath, nil
 	}
 
-	// Generate output path
+	// Generate output path (always WAV for consistency)
 	baseName := filepath.Base(inputPath)
 	ext := filepath.Ext(baseName)
 	nameWithoutExt := strings.TrimSuffix(baseName, ext)
 	outputPath := filepath.Join(p.tmpDir, nameWithoutExt+"_processed.wav")
 
-	// Build sox command
-	args := p.buildSoxArgs(inputPath, outputPath)
+	// Build ffmpeg command
+	args := p.buildFFmpegArgs(inputPath, outputPath)
 
 	p.logger.Debug("Preprocessing audio",
 		zap.String("input", inputPath),
 		zap.String("output", outputPath),
-		zap.Strings("sox_args", args),
+		zap.Strings("ffmpeg_args", args),
 	)
 
-	// Run sox
-	cmd := exec.CommandContext(ctx, "sox", args...)
+	// Run ffmpeg
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		p.logger.Error("Sox preprocessing failed",
+		p.logger.Warn("FFmpeg preprocessing failed, using original file",
 			zap.String("input", inputPath),
 			zap.Error(err),
 			zap.String("output", string(output)),
@@ -85,37 +85,52 @@ func (p *Preprocessor) Process(ctx context.Context, inputPath string) (string, e
 	return outputPath, nil
 }
 
-// buildSoxArgs constructs the sox command arguments
-func (p *Preprocessor) buildSoxArgs(inputPath, outputPath string) []string {
+// buildFFmpegArgs constructs the ffmpeg command arguments
+func (p *Preprocessor) buildFFmpegArgs(inputPath, outputPath string) []string {
+	// Base args: overwrite output, hide banner, set log level
+	args := []string{"-y", "-hide_banner", "-loglevel", "error", "-i", inputPath}
+
 	// If custom filter is specified, use it directly
 	if p.cfg.CustomFilter != "" {
-		// Parse custom filter as space-separated args
 		customArgs := strings.Fields(p.cfg.CustomFilter)
-		args := []string{inputPath, outputPath}
-		return append(args, customArgs...)
+		args = append(args, customArgs...)
+		args = append(args, outputPath)
+		return args
 	}
 
-	// Build standard voice bandpass filter
-	args := []string{inputPath, outputPath}
+	// Build audio filter chain
+	var filters []string
 
-	// Resample to target rate
-	if p.cfg.SampleRate > 0 {
-		args = append(args, "rate", fmt.Sprintf("%d", p.cfg.SampleRate))
+	// Apply highpass filter
+	if p.cfg.HighpassHz > 0 {
+		filters = append(filters, fmt.Sprintf("highpass=f=%d", p.cfg.HighpassHz))
 	}
 
-	// Apply bandpass filter using sinc (combines highpass and lowpass)
-	if p.cfg.HighpassHz > 0 && p.cfg.LowpassHz > 0 {
-		args = append(args, "sinc", fmt.Sprintf("%d-%d", p.cfg.HighpassHz, p.cfg.LowpassHz))
-	} else if p.cfg.HighpassHz > 0 {
-		args = append(args, "highpass", fmt.Sprintf("%d", p.cfg.HighpassHz))
-	} else if p.cfg.LowpassHz > 0 {
-		args = append(args, "lowpass", fmt.Sprintf("%d", p.cfg.LowpassHz))
+	// Apply lowpass filter
+	if p.cfg.LowpassHz > 0 {
+		filters = append(filters, fmt.Sprintf("lowpass=f=%d", p.cfg.LowpassHz))
 	}
 
-	// Normalize audio levels
+	// Normalize audio levels (use loudnorm for broadcast-style normalization)
 	if p.cfg.Normalize {
-		args = append(args, "norm")
+		filters = append(filters, "loudnorm=I=-16:TP=-1.5:LRA=11")
 	}
+
+	// Add filter chain if we have filters
+	if len(filters) > 0 {
+		args = append(args, "-af", strings.Join(filters, ","))
+	}
+
+	// Set sample rate
+	if p.cfg.SampleRate > 0 {
+		args = append(args, "-ar", fmt.Sprintf("%d", p.cfg.SampleRate))
+	}
+
+	// Convert to mono (single channel) for speech recognition
+	args = append(args, "-ac", "1")
+
+	// Output path
+	args = append(args, outputPath)
 
 	return args
 }

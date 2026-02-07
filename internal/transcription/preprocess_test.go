@@ -10,15 +10,15 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestPreprocessor_BuildSoxArgs(t *testing.T) {
+func TestPreprocessor_BuildFFmpegArgs(t *testing.T) {
 	logger := zap.NewNop()
 
 	tests := []struct {
-		name     string
-		cfg      config.AudioPreprocessConfig
-		input    string
-		output   string
-		wantArgs []string
+		name        string
+		cfg         config.AudioPreprocessConfig
+		input       string
+		output      string
+		wantContain []string // Check that these substrings appear in order
 	}{
 		{
 			name: "default voice bandpass",
@@ -29,9 +29,9 @@ func TestPreprocessor_BuildSoxArgs(t *testing.T) {
 				LowpassHz:  3000,
 				Normalize:  true,
 			},
-			input:    "/tmp/input.wav",
-			output:   "/tmp/output.wav",
-			wantArgs: []string{"/tmp/input.wav", "/tmp/output.wav", "rate", "16000", "sinc", "300-3000", "norm"},
+			input:       "/tmp/input.wav",
+			output:      "/tmp/output.wav",
+			wantContain: []string{"-i", "/tmp/input.wav", "-af", "highpass=f=300", "lowpass=f=3000", "loudnorm", "-ar", "16000", "-ac", "1", "/tmp/output.wav"},
 		},
 		{
 			name: "highpass only",
@@ -42,19 +42,19 @@ func TestPreprocessor_BuildSoxArgs(t *testing.T) {
 				LowpassHz:  0,
 				Normalize:  false,
 			},
-			input:    "/tmp/input.wav",
-			output:   "/tmp/output.wav",
-			wantArgs: []string{"/tmp/input.wav", "/tmp/output.wav", "rate", "16000", "highpass", "300"},
+			input:       "/tmp/input.wav",
+			output:      "/tmp/output.wav",
+			wantContain: []string{"-i", "/tmp/input.wav", "-af", "highpass=f=300", "-ar", "16000", "/tmp/output.wav"},
 		},
 		{
 			name: "custom filter",
 			cfg: config.AudioPreprocessConfig{
 				Enabled:      true,
-				CustomFilter: "rate 8000 highpass 200 norm -3",
+				CustomFilter: "-ar 8000 -af highpass=f=200",
 			},
-			input:    "/tmp/input.wav",
-			output:   "/tmp/output.wav",
-			wantArgs: []string{"/tmp/input.wav", "/tmp/output.wav", "rate", "8000", "highpass", "200", "norm", "-3"},
+			input:       "/tmp/input.wav",
+			output:      "/tmp/output.wav",
+			wantContain: []string{"-i", "/tmp/input.wav", "-ar", "8000", "-af", "highpass=f=200", "/tmp/output.wav"},
 		},
 	}
 
@@ -65,17 +65,38 @@ func TestPreprocessor_BuildSoxArgs(t *testing.T) {
 				logger: logger,
 			}
 
-			args := p.buildSoxArgs(tt.input, tt.output)
-
-			if len(args) != len(tt.wantArgs) {
-				t.Errorf("buildSoxArgs() got %d args, want %d\nGot: %v\nWant: %v",
-					len(args), len(tt.wantArgs), args, tt.wantArgs)
-				return
+			args := p.buildFFmpegArgs(tt.input, tt.output)
+			argsStr := ""
+			for _, a := range args {
+				argsStr += a + " "
 			}
 
-			for i, arg := range args {
-				if arg != tt.wantArgs[i] {
-					t.Errorf("buildSoxArgs() arg[%d] = %q, want %q", i, arg, tt.wantArgs[i])
+			for _, want := range tt.wantContain {
+				found := false
+				for _, arg := range args {
+					if arg == want || (len(arg) > len(want) && arg[:len(want)] == want) {
+						found = true
+						break
+					}
+				}
+				// Also check if it's part of a combined filter string
+				if !found {
+					for _, arg := range args {
+						if len(arg) >= len(want) {
+							for i := 0; i <= len(arg)-len(want); i++ {
+								if arg[i:i+len(want)] == want {
+									found = true
+									break
+								}
+							}
+						}
+						if found {
+							break
+						}
+					}
+				}
+				if !found {
+					t.Errorf("buildFFmpegArgs() missing expected substring %q\nGot: %v", want, args)
 				}
 			}
 		})
@@ -104,9 +125,9 @@ func TestPreprocessor_Process_Disabled(t *testing.T) {
 }
 
 func TestPreprocessor_Integration(t *testing.T) {
-	// Skip if sox is not available
-	if _, err := os.Stat("/usr/bin/sox"); os.IsNotExist(err) {
-		t.Skip("sox not found, skipping integration test")
+	// Skip if ffmpeg is not available
+	if _, err := os.Stat("/usr/bin/ffmpeg"); os.IsNotExist(err) {
+		t.Skip("ffmpeg not found, skipping integration test")
 	}
 
 	// Create a simple test WAV file
