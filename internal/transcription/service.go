@@ -173,7 +173,7 @@ func (s *Service) processNextJob(workerID int) {
 	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 	defer cancel()
 
-	// Get next pending job with row locking
+	// Atomically claim the next pending job (marks as processing in single query)
 	item, err := s.db.GetPendingTranscription(ctx)
 	if err != nil {
 		s.logger.Error("Failed to get pending transcription", zap.Error(err))
@@ -181,15 +181,6 @@ func (s *Service) processNextJob(workerID int) {
 	}
 	if item == nil {
 		return // No pending jobs
-	}
-
-	// Mark as processing
-	if err := s.db.MarkTranscriptionProcessing(ctx, item.ID); err != nil {
-		s.logger.Error("Failed to mark transcription as processing",
-			zap.Int64("queue_id", item.ID),
-			zap.Error(err),
-		)
-		return
 	}
 
 	s.logger.Debug("Processing transcription job",

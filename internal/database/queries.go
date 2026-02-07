@@ -1706,6 +1706,7 @@ func (db *DB) GetCallUnits(ctx context.Context, callID int64) ([]RecentCallUnit,
 
 // QueueTranscription adds a call to the transcription queue.
 // callID is the deterministic call ID in sysid:tgid:start_unix format.
+// Only queues calls that have audio (audio_path is set).
 func (db *DB) QueueTranscription(ctx context.Context, callID string, priority int) error {
 	sysid, tgid, startUnix, err := ParseCallID(callID)
 	if err != nil {
@@ -1716,6 +1717,7 @@ func (db *DB) QueueTranscription(ctx context.Context, callID string, priority in
 		SELECT c.id, $4, 'pending', NOW(), NOW()
 		FROM calls c
 		WHERE c.tg_sysid = $1 AND c.tgid = $2 AND c.start_time = to_timestamp($3)
+		  AND c.audio_path IS NOT NULL AND c.audio_path != ''
 		ON CONFLICT (call_id) DO UPDATE SET
 			priority = GREATEST(transcription_queue.priority, EXCLUDED.priority),
 			status = CASE WHEN transcription_queue.status = 'failed' THEN 'pending' ELSE transcription_queue.status END,
@@ -1724,16 +1726,22 @@ func (db *DB) QueueTranscription(ctx context.Context, callID string, priority in
 	return err
 }
 
-// GetPendingTranscription gets the next pending transcription job using SELECT FOR UPDATE SKIP LOCKED
+// GetPendingTranscription atomically claims and returns the next pending transcription job.
+// Uses UPDATE ... RETURNING with a subquery to prevent race conditions where multiple
+// workers could grab the same job.
 func (db *DB) GetPendingTranscription(ctx context.Context) (*models.TranscriptionQueueItem, error) {
 	var item models.TranscriptionQueueItem
 	err := db.pool.QueryRow(ctx, `
-		SELECT id, call_id, status, priority, attempts, COALESCE(last_error, ''), created_at, updated_at
-		FROM transcription_queue
-		WHERE status = 'pending'
-		ORDER BY priority DESC, created_at ASC
-		LIMIT 1
-		FOR UPDATE SKIP LOCKED
+		UPDATE transcription_queue
+		SET status = 'processing', updated_at = NOW()
+		WHERE id = (
+			SELECT id FROM transcription_queue
+			WHERE status = 'pending'
+			ORDER BY priority DESC, created_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, call_id, status, priority, attempts, COALESCE(last_error, ''), created_at, updated_at
 	`).Scan(&item.ID, &item.CallID, &item.Status, &item.Priority, &item.Attempts, &item.LastError, &item.CreatedAt, &item.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -1748,16 +1756,6 @@ func (db *DB) UpdateTranscriptionQueueStatus(ctx context.Context, id int64, stat
 		SET status = $1, last_error = $2, attempts = attempts + 1, updated_at = NOW()
 		WHERE id = $3
 	`, status, lastError, id)
-	return err
-}
-
-// MarkTranscriptionProcessing marks a transcription job as in progress
-func (db *DB) MarkTranscriptionProcessing(ctx context.Context, id int64) error {
-	_, err := db.pool.Exec(ctx, `
-		UPDATE transcription_queue
-		SET status = 'processing', updated_at = NOW()
-		WHERE id = $1
-	`, id)
 	return err
 }
 
@@ -1798,7 +1796,9 @@ func (db *DB) InsertTranscription(ctx context.Context, t *models.Transcription) 
 	return err
 }
 
-// GetTranscriptionByCallID gets the transcription for a specific call.
+// GetTranscriptionByCallID gets the best transcription for a specific call.
+// When multiple simulcast recordings exist, selects the transcription from the
+// highest quality source based on: confidence, word count, and audio quality metrics.
 // callID is the deterministic call ID in sysid:tgid:start_unix format.
 func (db *DB) GetTranscriptionByCallID(ctx context.Context, callID string) (*models.Transcription, error) {
 	sysid, tgid, startUnix, err := ParseCallID(callID)
@@ -1813,7 +1813,13 @@ func (db *DB) GetTranscriptionByCallID(ctx context.Context, callID string) (*mod
 		FROM transcriptions tr
 		JOIN calls c ON c.id = tr.call_id
 		WHERE c.tg_sysid = $1 AND c.tgid = $2 AND c.start_time = to_timestamp($3)
-		ORDER BY tr.created_at DESC
+		ORDER BY
+			COALESCE(tr.confidence, 0) DESC,        -- Higher confidence is better
+			COALESCE(tr.word_count, 0) DESC,        -- More words = more complete
+			COALESCE(c.error_count, 999) ASC,       -- Fewer errors is better
+			COALESCE(c.spike_count, 999) ASC,       -- Fewer spikes is better
+			COALESCE(c.signal_db, -999) DESC,       -- Stronger signal is better
+			tr.created_at DESC                       -- Tiebreaker: most recent
 		LIMIT 1
 	`, sysid, tgid, startUnix).Scan(&t.ID, &t.CallID, &t.Provider, &t.Model, &t.Language, &t.Text,
 		&t.Confidence, &t.WordCount, &t.DurationMs, &wordsJSON, &t.CreatedAt)
