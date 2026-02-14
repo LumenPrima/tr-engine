@@ -1,0 +1,138 @@
+package ingest
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"github.com/rs/zerolog"
+	"github.com/snarg/tr-engine/internal/database"
+)
+
+// ResolvedIdentity contains the resolved system/site IDs for an MQTT message.
+type ResolvedIdentity struct {
+	InstanceDBID int
+	SystemID     int
+	SiteID       int
+	SystemName   string
+}
+
+// IdentityResolver caches instance/system/site mappings in memory.
+// It auto-creates entries on first encounter.
+type IdentityResolver struct {
+	db  *database.DB
+	log zerolog.Logger
+	mu  sync.RWMutex
+
+	// cache keyed by "instanceID:sysName"
+	cache map[string]*ResolvedIdentity
+	// instance cache keyed by instanceID
+	instances map[string]int
+}
+
+func NewIdentityResolver(db *database.DB, log zerolog.Logger) *IdentityResolver {
+	return &IdentityResolver{
+		db:        db,
+		log:       log,
+		cache:     make(map[string]*ResolvedIdentity),
+		instances: make(map[string]int),
+	}
+}
+
+// LoadCache pre-populates the cache from existing DB records.
+func (r *IdentityResolver) LoadCache(ctx context.Context) error {
+	sites, err := r.db.LoadAllSites(ctx)
+	if err != nil {
+		return fmt.Errorf("load sites: %w", err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, s := range sites {
+		key := s.InstanceID + ":" + s.ShortName
+		r.cache[key] = &ResolvedIdentity{
+			SystemID:   s.SystemID,
+			SiteID:     s.SiteID,
+			SystemName: s.ShortName,
+		}
+	}
+
+	r.log.Info().Int("cached_sites", len(sites)).Msg("identity cache loaded")
+	return nil
+}
+
+// Resolve returns the identity for the given instance and sys_name,
+// creating DB records if needed.
+func (r *IdentityResolver) Resolve(ctx context.Context, instanceID, sysName string) (*ResolvedIdentity, error) {
+	key := instanceID + ":" + sysName
+
+	// Fast path: read lock
+	r.mu.RLock()
+	if id, ok := r.cache[key]; ok {
+		r.mu.RUnlock()
+		return id, nil
+	}
+	r.mu.RUnlock()
+
+	// Slow path: write lock, create if needed
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Double-check
+	if id, ok := r.cache[key]; ok {
+		return id, nil
+	}
+
+	// Ensure instance exists
+	if _, ok := r.instances[instanceID]; !ok {
+		dbID, err := r.db.UpsertInstance(ctx, instanceID)
+		if err != nil {
+			return nil, fmt.Errorf("upsert instance %q: %w", instanceID, err)
+		}
+		r.instances[instanceID] = dbID
+	}
+
+	// Find or create system
+	systemID, err := r.db.FindOrCreateSystem(ctx, instanceID, sysName)
+	if err != nil {
+		return nil, fmt.Errorf("find/create system %q/%q: %w", instanceID, sysName, err)
+	}
+
+	// Find or create site
+	siteID, err := r.db.FindOrCreateSite(ctx, systemID, instanceID, sysName)
+	if err != nil {
+		return nil, fmt.Errorf("find/create site %q/%q: %w", instanceID, sysName, err)
+	}
+
+	id := &ResolvedIdentity{
+		InstanceDBID: r.instances[instanceID],
+		SystemID:     systemID,
+		SiteID:       siteID,
+		SystemName:   sysName,
+	}
+	r.cache[key] = id
+
+	r.log.Info().
+		Str("instance_id", instanceID).
+		Str("sys_name", sysName).
+		Int("system_id", systemID).
+		Int("site_id", siteID).
+		Msg("new identity resolved and cached")
+
+	return id, nil
+}
+
+// GetSystemIDForSysName returns the system_id for a given sys_name from any instance.
+// Returns 0 if not found.
+func (r *IdentityResolver) GetSystemIDForSysName(sysName string) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, id := range r.cache {
+		if id.SystemName == sysName {
+			return id.SystemID
+		}
+	}
+	return 0
+}

@@ -9,22 +9,34 @@ import (
 	"github.com/rs/zerolog"
 )
 
+type MessageHandler func(topic string, payload []byte)
+
 type Client struct {
 	conn      mqtt.Client
 	topics    []string
 	connected atomic.Bool
 	log       zerolog.Logger
+	handler   MessageHandler
 }
 
-func Connect(brokerURL, clientID, topics string, log zerolog.Logger) (*Client, error) {
+type Options struct {
+	BrokerURL string
+	ClientID  string
+	Topics    string
+	Username  string
+	Password  string
+	Log       zerolog.Logger
+}
+
+func Connect(opts Options) (*Client, error) {
 	c := &Client{
-		topics: parseTopics(topics),
-		log:    log,
+		topics: parseTopics(opts.Topics),
+		log:    opts.Log,
 	}
 
-	opts := mqtt.NewClientOptions().
-		AddBroker(brokerURL).
-		SetClientID(clientID).
+	clientOpts := mqtt.NewClientOptions().
+		AddBroker(opts.BrokerURL).
+		SetClientID(opts.ClientID).
 		SetAutoReconnect(true).
 		SetConnectRetryInterval(5 * time.Second).
 		SetOrderMatters(false).
@@ -32,7 +44,14 @@ func Connect(brokerURL, clientID, topics string, log zerolog.Logger) (*Client, e
 		SetConnectionLostHandler(c.onConnectionLost).
 		SetDefaultPublishHandler(c.onMessage)
 
-	c.conn = mqtt.NewClient(opts)
+	if opts.Username != "" {
+		clientOpts.SetUsername(opts.Username)
+	}
+	if opts.Password != "" {
+		clientOpts.SetPassword(opts.Password)
+	}
+
+	c.conn = mqtt.NewClient(clientOpts)
 	token := c.conn.Connect()
 	token.Wait()
 	if err := token.Error(); err != nil {
@@ -40,6 +59,10 @@ func Connect(brokerURL, clientID, topics string, log zerolog.Logger) (*Client, e
 	}
 
 	return c, nil
+}
+
+func (c *Client) SetMessageHandler(h MessageHandler) {
+	c.handler = h
 }
 
 func (c *Client) onConnect(client mqtt.Client) {
@@ -63,6 +86,10 @@ func (c *Client) onConnectionLost(_ mqtt.Client, err error) {
 }
 
 func (c *Client) onMessage(_ mqtt.Client, msg mqtt.Message) {
+	if c.handler != nil {
+		c.handler(msg.Topic(), msg.Payload())
+		return
+	}
 	c.log.Debug().
 		Str("topic", msg.Topic()).
 		Int("payload_size", len(msg.Payload())).

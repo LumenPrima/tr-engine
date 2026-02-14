@@ -11,6 +11,7 @@ import (
 	"github.com/snarg/tr-engine/internal/api"
 	"github.com/snarg/tr-engine/internal/config"
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/ingest"
 	"github.com/snarg/tr-engine/internal/mqttclient"
 )
 
@@ -48,11 +49,33 @@ func main() {
 
 	// MQTT
 	mqttLog := log.With().Str("component", "mqtt").Logger()
-	mqtt, err := mqttclient.Connect(cfg.MQTTBrokerURL, cfg.MQTTClientID, cfg.MQTTTopics, mqttLog)
+	mqtt, err := mqttclient.Connect(mqttclient.Options{
+		BrokerURL: cfg.MQTTBrokerURL,
+		ClientID:  cfg.MQTTClientID,
+		Topics:    cfg.MQTTTopics,
+		Username:  cfg.MQTTUsername,
+		Password:  cfg.MQTTPassword,
+		Log:       mqttLog,
+	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to mqtt broker")
 	}
 	defer mqtt.Close()
+
+	// Ingest Pipeline
+	pipelineLog := log.With().Str("component", "ingest").Logger()
+	pipeline := ingest.NewPipeline(ingest.PipelineOptions{
+		DB:       db,
+		AudioDir: cfg.AudioDir,
+		Log:      pipelineLog,
+	})
+	if err := pipeline.Start(ctx); err != nil {
+		log.Fatal().Err(err).Msg("failed to start ingest pipeline")
+	}
+	defer pipeline.Stop()
+
+	// Wire MQTT → Pipeline
+	mqtt.SetMessageHandler(pipeline.HandleMessage)
 
 	// HTTP Server
 	httpLog := log.With().Str("component", "http").Logger()

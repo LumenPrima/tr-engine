@@ -7,10 +7,14 @@ import (
 )
 
 type Config struct {
-	DatabaseURL  string `env:"DATABASE_URL,required"`
+	DatabaseURL   string `env:"DATABASE_URL,required"`
 	MQTTBrokerURL string `env:"MQTT_BROKER_URL,required"`
-	MQTTTopics   string `env:"MQTT_TOPICS" envDefault:"#"`
-	MQTTClientID string `env:"MQTT_CLIENT_ID" envDefault:"tr-engine"`
+	MQTTTopics    string `env:"MQTT_TOPICS" envDefault:"#"`
+	MQTTClientID  string `env:"MQTT_CLIENT_ID" envDefault:"tr-engine"`
+	MQTTUsername  string `env:"MQTT_USERNAME"`
+	MQTTPassword  string `env:"MQTT_PASSWORD"`
+
+	AudioDir string `env:"AUDIO_DIR" envDefault:"./audio"`
 
 	HTTPAddr     string        `env:"HTTP_ADDR" envDefault:":8080"`
 	ReadTimeout  time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"5s"`
