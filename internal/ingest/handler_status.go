@@ -21,10 +21,10 @@ func (p *Pipeline) handleStatus(payload []byte) error {
 		return err
 	}
 
-	// Ensure instance is tracked
+	// Ensure instance is tracked (don't resolve system — status has no sys_name)
 	if msg.InstanceID != "" {
-		if _, err := p.identity.Resolve(ctx, msg.InstanceID, ""); err != nil {
-			p.log.Warn().Err(err).Str("instance_id", msg.InstanceID).Msg("failed to resolve instance from status")
+		if _, err := p.db.UpsertInstance(ctx, msg.InstanceID); err != nil {
+			p.log.Warn().Err(err).Str("instance_id", msg.InstanceID).Msg("failed to upsert instance from status")
 		}
 	}
 
