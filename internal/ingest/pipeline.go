@@ -122,6 +122,8 @@ func (p *Pipeline) dispatch(route *Route, topic string, payload []byte, env *Env
 		err = p.handleRecorder(payload)
 	case "rates":
 		err = p.handleRates(payload)
+	case "config":
+		err = p.handleConfig(payload)
 	case "unit_event":
 		err = p.handleUnitEvent(topic, payload)
 	default:

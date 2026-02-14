@@ -216,6 +216,22 @@ type StatusMsg struct {
 	Status   string `json:"status"`
 }
 
+// ConfigMsg wraps a config message (TR instance configuration snapshot).
+type ConfigMsg struct {
+	Envelope
+	Config ConfigData `json:"config"`
+}
+
+// ConfigData is the "config" sub-object containing TR instance settings.
+type ConfigData struct {
+	CaptureDir   string          `json:"capture_dir"`
+	UploadServer string          `json:"upload_server"`
+	CallTimeout  float64         `json:"call_timeout"`
+	LogFile      json.RawMessage `json:"log_file"` // bool or string in different TR versions
+	InstanceID   string          `json:"instance_id"`
+	InstanceKey  string          `json:"instance_key"`
+}
+
 // SystemInfoData represents a system entry from the systems/system topics.
 type SystemInfoData struct {
 	SysNum  int    `json:"sys_num"`

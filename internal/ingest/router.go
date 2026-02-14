@@ -54,6 +54,8 @@ func ParseTopic(topic string) *Route {
 				return &Route{Handler: "recorder"}
 			case "rates":
 				return &Route{Handler: "rates"}
+			case "config":
+				return &Route{Handler: "config"}
 			}
 		case "units":
 			if len(parts) == 4 {

@@ -529,7 +529,7 @@ CREATE TABLE instance_configs (
     instance_id   text         REFERENCES instances (instance_id),
     capture_dir   text,
     upload_server text,
-    call_timeout  int,
+    call_timeout  real,
     log_file      text,
     instance_key  text,
     config_json   jsonb        NOT NULL,
