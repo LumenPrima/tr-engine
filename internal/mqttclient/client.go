@@ -1,0 +1,93 @@
+package mqttclient
+
+import (
+	"strings"
+	"sync/atomic"
+	"time"
+
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/rs/zerolog"
+)
+
+type Client struct {
+	conn      mqtt.Client
+	topics    []string
+	connected atomic.Bool
+	log       zerolog.Logger
+}
+
+func Connect(brokerURL, clientID, topics string, log zerolog.Logger) (*Client, error) {
+	c := &Client{
+		topics: parseTopics(topics),
+		log:    log,
+	}
+
+	opts := mqtt.NewClientOptions().
+		AddBroker(brokerURL).
+		SetClientID(clientID).
+		SetAutoReconnect(true).
+		SetConnectRetryInterval(5 * time.Second).
+		SetOrderMatters(false).
+		SetOnConnectHandler(c.onConnect).
+		SetConnectionLostHandler(c.onConnectionLost).
+		SetDefaultPublishHandler(c.onMessage)
+
+	c.conn = mqtt.NewClient(opts)
+	token := c.conn.Connect()
+	token.Wait()
+	if err := token.Error(); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+func (c *Client) onConnect(client mqtt.Client) {
+	c.connected.Store(true)
+	c.log.Info().Strs("topics", c.topics).Msg("mqtt connected, subscribing")
+
+	filters := make(map[string]byte, len(c.topics))
+	for _, t := range c.topics {
+		filters[t] = 0
+	}
+	token := client.SubscribeMultiple(filters, nil)
+	token.Wait()
+	if err := token.Error(); err != nil {
+		c.log.Error().Err(err).Msg("mqtt subscribe failed")
+	}
+}
+
+func (c *Client) onConnectionLost(_ mqtt.Client, err error) {
+	c.connected.Store(false)
+	c.log.Warn().Err(err).Msg("mqtt connection lost, will auto-reconnect")
+}
+
+func (c *Client) onMessage(_ mqtt.Client, msg mqtt.Message) {
+	c.log.Debug().
+		Str("topic", msg.Topic()).
+		Int("payload_size", len(msg.Payload())).
+		Msg("mqtt message received")
+}
+
+func (c *Client) IsConnected() bool {
+	return c.connected.Load()
+}
+
+func (c *Client) Close() {
+	c.log.Info().Msg("disconnecting mqtt client")
+	c.conn.Disconnect(1000)
+}
+
+func parseTopics(raw string) []string {
+	var topics []string
+	for _, t := range strings.Split(raw, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			topics = append(topics, t)
+		}
+	}
+	if len(topics) == 0 {
+		return []string{"#"}
+	}
+	return topics
+}

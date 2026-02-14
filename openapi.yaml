@@ -1,0 +1,3915 @@
+openapi: 3.0.3
+info:
+  title: tr-engine API
+  version: 1.0.0
+  description: |
+    Backend service for trunk-recorder data ingestion and querying.
+    Provides REST APIs for accessing radio system data, calls, talkgroups,
+    units, transcriptions, and training dataset management.
+
+    ## Data Model: Systems and Sites
+
+    The data model separates **logical radio networks** from **recording
+    sites**:
+
+    - **System** (`system_id`): a logical radio network. For P25, this
+      is the WACN-level network identified by `(sysid, wacn)`. For
+      conventional, it is identified by `(instance_id, sys_name)`.
+      Talkgroups and units belong to the system level because they are
+      shared across all sites on the same P25 network.
+
+    - **Site** (`site_id`): a recording point within a system. Each
+      TR `sys_name` entry within an instance creates a site. For P25,
+      different sites on the same network are distinguished by
+      `(nac, rfss, site_id)`. A single system may have many sites
+      (e.g., "butco" nac=340 and "warco" nac=34D are both sites on
+      the same P25 sysid=348 network). Call recordings belong to a
+      specific site.
+
+    Example:
+    ```
+    System 1 (P25 sysid=348, wacn=BEE00)
+      ├── Site 1 "butco"  (nac=340, rfss=4, p25_site=1)
+      ├── Site 2 "warco"  (nac=34D, rfss=1, p25_site=13)
+      ├── Talkgroups (shared across all sites)
+      └── Units (shared across all sites)
+    ```
+
+    For conventional systems, the hierarchy is 1:1 — each system has
+    exactly one site.
+
+    Identity resolution at ingest (from MQTT `systems` message):
+    - **System**: match by `(sysid, wacn)` for P25, or
+      `(instance_id, sys_name)` for conventional.
+    - **Site**: match by `(system_id, instance_id, sys_name)`. The
+      `sys_name` (not `sys_num`) is used because `sys_num` is a
+      positional index in the TR config that shifts when systems are
+      added or reordered.
+
+    This means cloning a TR config to a second box and pointing it at
+    the same P25 system "just works" — both instances contribute
+    recordings to the same system_id (shared talkgroups/units), each
+    as a distinct site, with call groups handling deduplication.
+
+    ## ID Formats
+
+    - **Call ID**: database auto-increment integer (e.g., `48531`).
+      Unique per recording. Opaque — clients should not parse or
+      construct call IDs.
+    - **Talkgroup ID**: `{system_id}:{tgid}` (e.g., `1:9178`) or plain
+      `{tgid}` if unambiguous across systems.
+    - **Unit ID**: `{system_id}:{unit_id}` (e.g., `1:924003`) or plain
+      `{unit_id}` if unambiguous.
+    - **Call Group key**: derived from `(system_id, tgid, start_unix)`.
+      Multiple recordings of the same transmission (possibly from
+      different sites) are grouped automatically.
+
+    When a plain (non-composite) talkgroup or unit ID matches multiple
+    systems, the API returns **409 Conflict** with the list of matching
+    systems so the client can disambiguate.
+
+    ## Pagination
+
+    All list endpoints return:
+    - `total`: total matching results across all pages
+    - `limit`: page size used
+    - `offset`: starting position
+
+    ## Embedded Context
+
+    List and detail responses embed human-readable names (system_name,
+    site_short_name, talkgroup alpha_tag/description, unit alpha_tag) to
+    minimize client-side lookup tables. Clients should not need to maintain
+    in-memory cross-reference maps for display purposes.
+
+servers:
+  - url: /api/v1
+    description: Default API base path
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: health
+    description: Service health
+  - name: systems
+    description: Radio system and recording site operations
+  - name: talkgroups
+    description: Talkgroup operations
+  - name: units
+    description: Radio unit operations
+  - name: calls
+    description: Call recording operations
+  - name: call-groups
+    description: Deduplicated call group operations
+  - name: transcriptions
+    description: Transcription access and management
+  - name: dataset
+    description: Training dataset curation and export
+  - name: stats
+    description: System statistics and metrics
+  - name: recorders
+    description: Trunk-recorder hardware state
+  - name: events
+    description: Real-time event streaming (SSE)
+  - name: admin
+    description: Administrative operations (system merge, cleanup)
+
+# ============================================================
+# PATHS
+# ============================================================
+paths:
+
+  # ----------------------------------------------------------
+  # Health
+  # ----------------------------------------------------------
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns service health status. No authentication required.
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  # ----------------------------------------------------------
+  # Systems
+  # ----------------------------------------------------------
+  /systems:
+    get:
+      operationId: listSystems
+      summary: List systems
+      description: |
+        Returns all logical radio systems. Each system contains its
+        recording sites. For P25, a system represents the WACN-level
+        network (which may span multiple sites like "butco" and "warco").
+        For conventional, each system has exactly one site.
+      tags: [systems]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /systems/{id}:
+    get:
+      operationId: getSystem
+      summary: Get a system
+      description: Returns a single system by its database ID, with embedded sites.
+      tags: [systems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: System database ID
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/System"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateSystem
+      summary: Update system metadata
+      description: |
+        Updates system-level fields. For P25, this includes the network
+        identity (sysid, wacn). Use PATCH /sites/{id} to update
+        site-level fields (short_name, nac, etc.).
+      tags: [systems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: System database ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemPatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/System"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /sites/{id}:
+    get:
+      operationId: getSite
+      summary: Get a recording site
+      description: Returns a single recording site by its database ID.
+      tags: [systems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Site database ID
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateSite
+      summary: Update site metadata
+      description: |
+        Updates site-level fields. Changing `short_name` or `instance_id`
+        updates the ingest lookup key — future MQTT messages with the new
+        name will map to this site. Update the trunk-recorder config to
+        match, or messages with the old name will create a new site
+        (fragmentation).
+      tags: [systems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Site database ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SitePatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: short_name + instance_id conflicts with an existing site
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /p25-systems:
+    get:
+      operationId: listP25Systems
+      summary: List P25 systems (grouped by network)
+      description: |
+        Returns P25 systems grouped by sysid + wacn. Each P25 system may have
+        multiple recording sites (trunk-recorder instances monitoring different
+        NACs on the same network). Use this when you need a logical network view
+        rather than a per-site view.
+      tags: [systems]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/P25SystemListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Talkgroups
+  # ----------------------------------------------------------
+  /talkgroups:
+    get:
+      operationId: listTalkgroups
+      summary: List talkgroups
+      description: |
+        Returns talkgroups with embedded stats (call_count, calls_1h, calls_24h,
+        unit_count). Supports filtering by system (database ID or P25 SYSID),
+        group category, and free-text search. Search results include a
+        relevance_score (100=exact, 50=prefix, 10=contains).
+      tags: [talkgroups]
+      parameters:
+        - name: system_id
+          in: query
+          description: Filter by system database ID
+          schema:
+            type: integer
+        - name: sysid
+          in: query
+          description: Filter by P25 SYSID (e.g., "348")
+          schema:
+            type: string
+        - name: group
+          in: query
+          description: Filter by talkgroup group/category (e.g., "Fire", "Law Dispatch")
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Search by alpha_tag, tgid, group, tag, or description
+          schema:
+            type: string
+        - $ref: "#/components/parameters/sort"
+        - $ref: "#/components/parameters/sortDir"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TalkgroupListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /talkgroups/{id}:
+    get:
+      operationId: getTalkgroup
+      summary: Get a talkgroup
+      description: |
+        Returns a single talkgroup with stats. Accepts composite `system_id:tgid`
+        format (e.g., "1:9178") or plain `tgid`. Returns 409 if a plain tgid
+        is ambiguous across systems.
+      tags: [talkgroups]
+      parameters:
+        - $ref: "#/components/parameters/talkgroupId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Talkgroup"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Ambiguous"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateTalkgroup
+      summary: Update talkgroup metadata
+      description: |
+        Updates mutable talkgroup fields (alpha_tag, description, group,
+        tag, priority). Only provided fields are changed.
+      tags: [talkgroups]
+      parameters:
+        - $ref: "#/components/parameters/talkgroupId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TalkgroupPatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Talkgroup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Ambiguous"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /talkgroups/{id}/calls:
+    get:
+      operationId: listTalkgroupCalls
+      summary: List calls for a talkgroup
+      description: |
+        Returns calls for a specific talkgroup. Accepts composite `system_id:tgid`
+        or plain `tgid`.
+      tags: [talkgroups]
+      parameters:
+        - $ref: "#/components/parameters/talkgroupId"
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Ambiguous"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /talkgroups/{id}/units:
+    get:
+      operationId: listTalkgroupUnits
+      summary: List units affiliated with a talkgroup
+      description: |
+        Returns units that have recent activity on this talkgroup, based on
+        call participation and affiliation events.
+      tags: [talkgroups]
+      parameters:
+        - $ref: "#/components/parameters/talkgroupId"
+        - name: window
+          in: query
+          description: Activity window in minutes (1-1440)
+          schema:
+            type: integer
+            default: 60
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Ambiguous"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /talkgroups/encryption-stats:
+    get:
+      operationId: getTalkgroupEncryptionStats
+      summary: Get encryption stats per talkgroup
+      description: |
+        Returns counts of encrypted vs clear calls per talkgroup from recent
+        activity. Includes talkgroup display names.
+      tags: [talkgroups]
+      parameters:
+        - name: hours
+          in: query
+          description: Hours of history to include
+          schema:
+            type: integer
+            default: 24
+        - name: sysid
+          in: query
+          description: Filter by P25 SYSID
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EncryptionStatsResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Units
+  # ----------------------------------------------------------
+  /units:
+    get:
+      operationId: listUnits
+      summary: List radio units
+      description: |
+        Returns radio units with optional filters. When searching, results
+        include relevance_score (100=exact, 50=prefix, 10=contains).
+      tags: [units]
+      parameters:
+        - name: sysid
+          in: query
+          description: Filter by P25 SYSID
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Search by alpha_tag or unit_id
+          schema:
+            type: string
+        - name: active_within
+          in: query
+          description: |
+            Only return units active within this many minutes. Replaces the
+            need for a separate "active units" endpoint when combined with
+            other filters.
+          schema:
+            type: integer
+        - name: talkgroup
+          in: query
+          description: Filter by talkgroup ID (units recently active on this TG)
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/sort"
+        - $ref: "#/components/parameters/sortDir"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /units/{id}:
+    get:
+      operationId: getUnit
+      summary: Get a unit
+      description: |
+        Returns a single unit. Accepts composite `system_id:unit_id` (e.g.,
+        "1:1234567") or plain `unit_id`. Returns 409 if ambiguous.
+      tags: [units]
+      parameters:
+        - $ref: "#/components/parameters/unitId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Unit"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Ambiguous"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateUnit
+      summary: Update unit metadata
+      description: Updates mutable unit fields (alpha_tag, alpha_tag_source).
+      tags: [units]
+      parameters:
+        - $ref: "#/components/parameters/unitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnitPatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Unit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Ambiguous"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /units/{id}/calls:
+    get:
+      operationId: listUnitCalls
+      summary: List calls for a unit
+      description: |
+        Returns calls that include transmissions from a specific unit.
+        Accepts composite `system_id:unit_id` or plain `unit_id`.
+      tags: [units]
+      parameters:
+        - $ref: "#/components/parameters/unitId"
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Ambiguous"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /units/{id}/events:
+    get:
+      operationId: listUnitEvents
+      summary: List unit events
+      description: |
+        Returns events (affiliations, registrations, calls, etc.) for a
+        specific unit. Includes embedded talkgroup and unit display names.
+      tags: [units]
+      parameters:
+        - $ref: "#/components/parameters/unitId"
+        - name: type
+          in: query
+          description: Filter by event type
+          schema:
+            $ref: "#/components/schemas/EventType"
+        - name: talkgroup
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitEventListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Ambiguous"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Calls
+  # ----------------------------------------------------------
+  /calls:
+    get:
+      operationId: listCalls
+      summary: List calls
+      description: |
+        Returns call recordings with comprehensive filters. This is the
+        primary endpoint for querying call history.
+
+        **Common patterns:**
+        - Live feed: `?sort=-stop_time&deduplicate=true&limit=50`
+        - Talkgroup history: `?tgid=9178&sysid=348&start_time=...&end_time=...`
+        - Unit activity: `?unit_id=924003`
+        - Emergency calls: `?emergency=true&sort=-start_time`
+      tags: [calls]
+      parameters:
+        - name: sysid
+          in: query
+          description: Filter by P25 SYSID (e.g., "348")
+          schema:
+            type: string
+        - name: system_id
+          in: query
+          description: Filter by system database ID
+          schema:
+            type: integer
+        - name: site_id
+          in: query
+          description: Filter by recording site ID (specific site within a system)
+          schema:
+            type: integer
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - name: unit_id
+          in: query
+          description: Filter by unit radio ID (calls containing this unit)
+          schema:
+            type: integer
+        - name: emergency
+          in: query
+          description: Filter by emergency flag
+          schema:
+            type: boolean
+        - name: encrypted
+          in: query
+          description: Filter by encryption status
+          schema:
+            type: boolean
+        - name: has_transcription
+          in: query
+          description: Filter by transcription availability
+          schema:
+            type: boolean
+        - name: transcription_status
+          in: query
+          description: Filter by transcription status
+          schema:
+            $ref: "#/components/schemas/TranscriptionStatus"
+        - name: deduplicate
+          in: query
+          description: |
+            When true, returns one call per call_group (best recording).
+            Useful for feed views where simulcast duplicates are unwanted.
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - name: sort
+          in: query
+          description: |
+            Sort field. Prefix with `-` for descending.
+            Allowed: start_time, stop_time, duration, tgid, freq
+          schema:
+            type: string
+            default: "-start_time"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/active:
+    get:
+      operationId: listActiveCalls
+      summary: List active calls (real-time)
+      description: |
+        Returns currently active calls from the in-memory MQTT tracker.
+        This is the real-time data source — use it for live dashboards.
+
+        Active calls may have incomplete fields (no stop_time, no audio_url,
+        duration is elapsed-so-far). The response uses the same Call schema
+        with nullable fields where data is not yet available.
+      tags: [calls]
+      parameters:
+        - name: sysid
+          in: query
+          description: Filter by P25 SYSID
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - name: emergency
+          in: query
+          description: Filter by emergency flag
+          schema:
+            type: boolean
+        - name: encrypted
+          in: query
+          description: Filter by encryption status
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveCallListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}:
+    get:
+      operationId: getCall
+      summary: Get a call
+      description: |
+        Returns a single call recording by its database ID.
+      tags: [calls]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Call"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/audio:
+    get:
+      operationId: getCallAudio
+      summary: Stream call audio
+      description: Streams the audio file for a call. Content-Type varies by source format.
+      tags: [calls]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: Audio stream
+          content:
+            audio/mp4:
+              schema:
+                type: string
+                format: binary
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /calls/{id}/frequencies:
+    get:
+      operationId: getCallFrequencies
+      summary: Get call frequency list
+      description: |
+        Returns the frequency entries (freqList) within a call, ordered by
+        position in the audio.
+      tags: [calls]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallFrequencyListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transmissions:
+    get:
+      operationId: getCallTransmissions
+      summary: Get call transmission list
+      description: |
+        Returns the unit transmissions (srcList) within a call, ordered by
+        position in the audio. Each entry represents a unit keying up.
+        Includes unit alpha_tags.
+      tags: [calls]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallTransmissionListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Call Groups
+  # ----------------------------------------------------------
+  /call-groups:
+    get:
+      operationId: listCallGroups
+      summary: List call groups
+      description: |
+        Returns deduplicated call groups (calls from multiple recorders
+        grouped together). Each group represents one logical transmission
+        captured by one or more recording sites.
+      tags: [call-groups]
+      parameters:
+        - name: sysid
+          in: query
+          description: Filter by P25 SYSID
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallGroupListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /call-groups/{id}:
+    get:
+      operationId: getCallGroup
+      summary: Get a call group
+      description: Returns a call group with all its individual call recordings.
+      tags: [call-groups]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Call group ID
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallGroupDetailResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Transcriptions
+  # ----------------------------------------------------------
+  /calls/{id}/transcription:
+    get:
+      operationId: getCallTranscription
+      summary: Get primary transcription for a call
+      description: Returns the current primary transcription for a specific call.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transcription"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      operationId: submitTranscriptionCorrection
+      summary: Submit human correction
+      description: |
+        Creates a human correction as a new primary transcription variant
+        and marks the call's transcription_status as "verified".
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorrectionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transcription"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcriptions:
+    get:
+      operationId: listCallTranscriptions
+      summary: List all transcription variants for a call
+      description: |
+        Returns all transcription variants (auto, human, LLM) for a call.
+        The primary variant is marked with `is_primary: true`.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcribe:
+    post:
+      operationId: transcribeCall
+      summary: Queue call for transcription
+      description: |
+        Queues a call for transcription (or re-transcription). Optionally
+        override model, prompt, temperature, and language.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranscribeRequest"
+      responses:
+        "202":
+          description: Accepted — queued for transcription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscribeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcription/verify:
+    post:
+      operationId: verifyTranscription
+      summary: Verify a transcription
+      description: Marks the call's current transcription as human-verified.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcription/reject:
+    post:
+      operationId: rejectTranscription
+      summary: Reject a transcription
+      description: Resets the call's transcription_status back to "auto" (unverified).
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcription/exclude:
+    post:
+      operationId: excludeFromDataset
+      summary: Exclude call from training dataset
+      description: Marks a call as permanently excluded from the training dataset.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcription/llm-review:
+    post:
+      operationId: llmReviewCall
+      summary: Trigger LLM review on a single call
+      description: Sends the call's transcription through LLM review for quality assessment.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMReviewResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: LLM review service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /transcriptions/search:
+    get:
+      operationId: searchTranscriptions
+      summary: Full-text search across transcriptions
+      description: |
+        Searches transcription text. Results include embedded call context
+        (talkgroup, system, timing, audio URL) so no follow-up lookups are
+        needed to render search results.
+      tags: [transcriptions]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query
+          schema:
+            type: string
+        - name: sysid
+          in: query
+          description: Filter by P25 SYSID
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionSearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /transcriptions/recent:
+    get:
+      operationId: listRecentTranscriptions
+      summary: List recent transcriptions
+      description: |
+        Returns recently created transcriptions with embedded call context.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionWithCallListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /transcriptions/queue:
+    get:
+      operationId: getTranscriptionQueueStatus
+      summary: Get transcription queue status
+      description: Returns statistics about the transcription processing queue.
+      tags: [transcriptions]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionQueueStats"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Dataset
+  # ----------------------------------------------------------
+  /dataset/stats:
+    get:
+      operationId: getDatasetStats
+      summary: Get dataset statistics
+      description: |
+        Returns dataset statistics grouped by transcription status
+        (auto, reviewed, verified, excluded).
+      tags: [dataset]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetStats"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/review:
+    get:
+      operationId: listReviewQueue
+      summary: List calls in the review queue
+      description: Returns calls needing transcription review, with embedded call and transcription data.
+      tags: [dataset]
+      parameters:
+        - name: status
+          in: query
+          description: Transcription status filter
+          schema:
+            $ref: "#/components/schemas/TranscriptionStatus"
+        - name: sysid
+          in: query
+          description: Filter by SYSID
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewQueueResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/review-queue/refill:
+    post:
+      operationId: refillReviewQueue
+      summary: Refill the review queue
+      description: Manually triggers a review queue refill from auto-transcribed calls.
+      tags: [dataset]
+      responses:
+        "202":
+          description: Accepted — refill started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefillResponse"
+        "503":
+          description: Refill already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /dataset/bulk-transcribe:
+    post:
+      operationId: bulkTranscribe
+      summary: Bulk queue calls for transcription
+      description: |
+        Queues multiple calls for (re-)transcription. Optionally override
+        model, prompt, temperature, and language for the entire batch.
+      tags: [dataset]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkTranscribeRequest"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkTranscribeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /dataset/bulk-verify:
+    post:
+      operationId: bulkVerify
+      summary: Bulk verify transcriptions
+      description: Marks multiple calls' transcriptions as verified.
+      tags: [dataset]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkCallIdsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResultResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/curate:
+    post:
+      operationId: curateDataset
+      summary: Auto-curate dataset
+      description: |
+        Auto-selects high-quality auto-transcribed calls and promotes them
+        to "reviewed" status based on duration and quality thresholds.
+      tags: [dataset]
+      parameters:
+        - name: limit
+          in: query
+          description: Max calls to curate
+          schema:
+            type: integer
+            default: 200
+        - name: min_duration
+          in: query
+          description: Minimum call duration in seconds
+          schema:
+            type: number
+            default: 2
+        - name: max_duration
+          in: query
+          description: Maximum call duration in seconds
+          schema:
+            type: number
+            default: 30
+        - name: sysid
+          in: query
+          description: Filter by SYSID
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurateResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/export:
+    get:
+      operationId: exportDataset
+      summary: Export training dataset
+      description: |
+        Exports transcribed calls for training. Supports jsonl (default),
+        whisper (HuggingFace-compatible), and json formats.
+      tags: [dataset]
+      parameters:
+        - name: status
+          in: query
+          description: Transcription status filter
+          schema:
+            $ref: "#/components/schemas/TranscriptionStatus"
+        - name: format
+          in: query
+          description: Export format
+          schema:
+            type: string
+            enum: [jsonl, whisper, json]
+            default: jsonl
+        - name: sysid
+          in: query
+          description: Filter by SYSID
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          description: Max results (1-10000)
+          schema:
+            type: integer
+            default: 1000
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: JSONL stream (when format=jsonl)
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetExportResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/llm-review:
+    post:
+      operationId: triggerBatchLLMReview
+      summary: Trigger batch LLM review
+      description: Sends a batch of auto-transcribed calls through LLM review.
+      tags: [dataset]
+      parameters:
+        - name: count
+          in: query
+          description: Number of calls to review (1-100)
+          schema:
+            type: integer
+            default: 5
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchLLMReviewResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: LLM review service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /dataset/llm-review/status:
+    get:
+      operationId: getLLMReviewStatus
+      summary: Get LLM review service status
+      description: Returns the LLM review service status and processing statistics.
+      tags: [dataset]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMReviewStatus"
+
+  # ----------------------------------------------------------
+  # Stats
+  # ----------------------------------------------------------
+  /stats:
+    get:
+      operationId: getStats
+      summary: Get system statistics
+      description: |
+        Returns overall system statistics including entity counts, call
+        metrics, and per-system activity summaries.
+      tags: [stats]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /stats/rates:
+    get:
+      operationId: getDecodeRates
+      summary: Get decode rates
+      description: Returns system decode rate measurements over time.
+      tags: [stats]
+      parameters:
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecodeRatesResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Recorders
+  # ----------------------------------------------------------
+  /recorders:
+    get:
+      operationId: listRecorders
+      summary: List recorder states
+      description: |
+        Returns all known recorder states from in-memory cache (populated
+        by MQTT recorder messages). Includes embedded system and talkgroup
+        display names.
+      tags: [recorders]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecorderListResponse"
+
+  # ----------------------------------------------------------
+  # ----------------------------------------------------------
+  # Events (SSE)
+  # ----------------------------------------------------------
+  /events/stream:
+    get:
+      operationId: streamEvents
+      summary: Real-time event stream (SSE)
+      description: |
+        Opens a Server-Sent Events (SSE) connection that pushes real-time
+        events as they are ingested from MQTT. The server filters events
+        based on the query parameters — only matching events are sent.
+
+        **Connection behavior:**
+        - Response uses `Content-Type: text/event-stream`
+        - The server sends `X-Accel-Buffering: no` for nginx compatibility
+        - A keepalive comment (`: keepalive`) is sent every 15 seconds
+        - Each event includes a unique `id` field for gap recovery
+        - On reconnect, pass the last received ID via the `Last-Event-ID`
+          header to resume without missing events (buffered for 60 seconds)
+
+        **Event format:**
+        ```
+        id: 1707912345000-42
+        event: call_start
+        data: {"call_id": 48531, "system_id": 1, "tgid": 9178, ...}
+        ```
+
+        **Filtering:**
+        All filter parameters are optional. With no filters, all events for
+        all systems are streamed. Filters are AND-ed: specifying both
+        `systems` and `tgids` means "events matching these systems AND
+        these talkgroups." To change filters, disconnect and reconnect
+        with new parameters — SSE `Last-Event-ID` provides gapless recovery.
+
+        **Event types:**
+
+        | Event | Description | Payload |
+        |-------|-------------|---------|
+        | `call_start` | New call recording started | Call object (partial — no audio/transcription yet) |
+        | `call_update` | Call updated (new transmission, freq change) | Call object (partial delta) |
+        | `call_end` | Call recording completed | Full Call object with audio_url |
+        | `unit_event` | Unit lifecycle event | UnitEvent object |
+        | `recorder_update` | Recorder state changed | Recorder object |
+        | `rate_update` | Decode rate update | DecodeRate object |
+        | `trunking_message` | P25 control channel message | TrunkingMessage object |
+        | `console` | TR console log message | ConsoleMessage object |
+
+      tags: [events]
+      parameters:
+        - name: systems
+          in: query
+          description: |
+            Comma-separated system IDs to subscribe to. Omit for all systems.
+          schema:
+            type: string
+            example: "1,2"
+        - name: sites
+          in: query
+          description: |
+            Comma-separated site IDs. Omit for all sites within the
+            selected systems.
+          schema:
+            type: string
+            example: "1,3"
+        - name: tgids
+          in: query
+          description: |
+            Comma-separated talkgroup IDs to filter on. These are plain
+            `tgid` values scoped to the selected systems. Omit for all
+            talkgroups.
+          schema:
+            type: string
+            example: "9178,5344"
+        - name: units
+          in: query
+          description: |
+            Comma-separated unit radio IDs (RIDs) to filter on. Omit for
+            all units.
+          schema:
+            type: string
+            example: "924003,104"
+        - name: types
+          in: query
+          description: |
+            Comma-separated event types to subscribe to. Omit for all
+            event types. Valid values: `call_start`, `call_update`,
+            `call_end`, `unit_event`, `recorder_update`, `rate_update`,
+            `trunking_message`, `console`.
+          schema:
+            type: string
+            example: "call_start,call_end,unit_event"
+        - name: emergency_only
+          in: query
+          description: |
+            If true, only push events with the emergency flag set.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: SSE event stream opened
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: text/event-stream
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache
+            X-Accel-Buffering:
+              schema:
+                type: string
+                example: "no"
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/SSEEvent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Admin
+  # ----------------------------------------------------------
+  /admin/systems/merge:
+    post:
+      operationId: mergeSystems
+      summary: Merge two systems
+      description: |
+        Merges all data from `source_id` into `target_id`, then deletes
+        the source system. Use this to fix fragmentation caused by
+        instance_id or sys_name changes, or to consolidate an unknown
+        system after identification.
+
+        **What happens:**
+        - All calls under source are repointed to target system_id
+          (call_ids are database PKs and do not change)
+        - Talkgroups: source talkgroups are merged into target. If both
+          have the same tgid, target metadata is kept and call counts are
+          combined. Source-only talkgroups are moved to target.
+        - Units: same merge logic as talkgroups
+        - Unit events: repointed to target system_id
+        - Call groups may be consolidated (recordings that now share
+          system_id + tgid + start_time get grouped)
+        - Source system is deleted
+
+        **Implications:**
+        - Call IDs (database PKs) are stable — bookmarks don't break
+        - Talkgroup and unit composite IDs change (old system_id prefix
+          becomes invalid, new system_id prefix is correct)
+        - This operation is **not reversible**
+
+        After merging, update the trunk-recorder config so future MQTT
+        messages use the target system's `(instance_id, short_name)`.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemMergeRequest"
+      responses:
+        "200":
+          description: Merge completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemMergeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Source or target system not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Merge would cause data conflicts that cannot be auto-resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+# ============================================================
+# COMPONENTS
+# ============================================================
+components:
+
+  # ----------------------------------------------------------
+  # Security Schemes
+  # ----------------------------------------------------------
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Bearer token authentication. Pass token in the Authorization header:
+        `Authorization: Bearer <token>`
+
+  # ----------------------------------------------------------
+  # Reusable Parameters
+  # ----------------------------------------------------------
+  parameters:
+    callId:
+      name: id
+      in: path
+      required: true
+      description: Call record database ID
+      schema:
+        type: integer
+        example: 48531
+
+    talkgroupId:
+      name: id
+      in: path
+      required: true
+      description: "Talkgroup ID: `system_id:tgid` (e.g., `1:9178`) or plain `tgid`"
+      schema:
+        type: string
+        example: "1:9178"
+
+    unitId:
+      name: id
+      in: path
+      required: true
+      description: "Unit ID: `system_id:unit_id` (e.g., `1:924003`) or plain `unit_id`"
+      schema:
+        type: string
+        example: "1:924003"
+
+    startTime:
+      name: start_time
+      in: query
+      description: Start of time range (RFC 3339)
+      schema:
+        type: string
+        format: date-time
+
+    endTime:
+      name: end_time
+      in: query
+      description: End of time range (RFC 3339)
+      schema:
+        type: string
+        format: date-time
+
+    limit:
+      name: limit
+      in: query
+      description: Results per page
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 1000
+
+    offset:
+      name: offset
+      in: query
+      description: Page offset (number of results to skip)
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+
+    sort:
+      name: sort
+      in: query
+      description: "Sort field. Prefix with `-` for descending (e.g., `-last_seen`)"
+      schema:
+        type: string
+        default: "alpha_tag"
+
+    sortDir:
+      name: sort_dir
+      in: query
+      description: Sort direction (ignored if sort field uses `-` prefix)
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+
+  # ----------------------------------------------------------
+  # Reusable Responses
+  # ----------------------------------------------------------
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    Ambiguous:
+      description: |
+        Ambiguous ID — the plain ID exists in multiple systems.
+        Response includes the list of matching systems to help the
+        client disambiguate.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AmbiguousError"
+
+    InternalError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  # ----------------------------------------------------------
+  # Schemas
+  # ----------------------------------------------------------
+  schemas:
+
+    # ========== Enums ==========
+
+    SystemType:
+      type: string
+      enum: [p25, smartnet, conventional]
+      description: Radio system protocol type
+
+    TalkgroupMode:
+      type: string
+      enum: [D, A, E, M, T]
+      description: |
+        Talkgroup mode: D=Digital, A=Analog, E=Encrypted,
+        M=Mixed (digital+analog), T=TDMA
+
+    TranscriptionStatus:
+      type: string
+      enum: [none, auto, reviewed, verified, excluded]
+      description: |
+        - **none**: no transcription attempted
+        - **auto**: machine-transcribed, unreviewed
+        - **reviewed**: passed automated quality checks (LLM review or curation)
+        - **verified**: human-verified correct
+        - **excluded**: permanently excluded from training dataset
+
+    TranscriptionSource:
+      type: string
+      enum: [auto, human, llm]
+      description: |
+        - **auto**: automated transcription (e.g., Whisper)
+        - **human**: human correction/transcription
+        - **llm**: LLM-generated correction
+
+    EventType:
+      type: string
+      enum: [on, off, join, call, end, data, ans_req, location, ackresp]
+      description: |
+        Unit event types from trunk-recorder MQTT:
+        - **on**: unit registration (radio powered on / entering system)
+        - **off**: unit deregistration (radio powered off / leaving system)
+        - **join**: talkgroup affiliation (unit joins a talkgroup)
+        - **call**: channel grant (voice call participation)
+        - **end**: transmission end (per-unit end-of-transmission report)
+        - **data**: data grant
+        - **ans_req**: answer request
+        - **location**: unit location update
+        - **ackresp**: acknowledge response
+
+    CallState:
+      type: string
+      enum: [monitoring, recording, stopped, completed]
+      description: |
+        Call recording state (mapped from trunk-recorder integer values):
+        - **monitoring**: control channel activity seen, no audio capture yet
+        - **recording**: actively capturing audio
+        - **stopped**: recording ended, finalizing
+        - **completed**: audio file written, ready for access
+
+    MonState:
+      type: string
+      enum: [unspecified, active, duplicate]
+      description: |
+        Call monitor state (from trunk-recorder):
+        - **unspecified**: default / not specifically monitored
+        - **active**: actively monitored
+        - **duplicate**: duplicate call on another recorder
+
+    RecState:
+      type: string
+      enum: [available, recording, idle, stopped]
+      description: |
+        Recorder hardware state:
+        - **available**: ready to record
+        - **recording**: actively recording a call
+        - **idle**: inactive / not assigned
+        - **stopped**: finished recording, finalizing
+
+    ExportFormat:
+      type: string
+      enum: [jsonl, whisper, json]
+
+    # ========== Error Models ==========
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: Resource not found
+        detail:
+          type: string
+          description: Additional context when available
+
+    AmbiguousError:
+      type: object
+      required: [error, matches]
+      properties:
+        error:
+          type: string
+          example: "Ambiguous ID 9178: exists in multiple systems"
+        matches:
+          type: array
+          description: |
+            Systems where this ID was found. Includes system_id so the
+            client can construct the composite ID to disambiguate.
+          items:
+            type: object
+            properties:
+              system_id:
+                type: integer
+                description: Database system ID — use this to form the composite ID
+                example: 1
+              system_name:
+                type: string
+                description: System display name
+                example: "Butler/Warren P25"
+              sysid:
+                type: string
+                description: P25 SYSID (for display context)
+                example: "348"
+
+    # ========== Core Domain Models ==========
+
+    System:
+      type: object
+      description: |
+        A logical radio network. For P25, identified by (sysid, wacn).
+        For conventional, identified by (instance_id, sys_name).
+        Talkgroups and units belong to the system level.
+      required: [system_id, system_type]
+      properties:
+        system_id:
+          type: integer
+          description: Database primary key — use this in API path parameters and composite IDs
+          example: 1
+        system_type:
+          $ref: "#/components/schemas/SystemType"
+        name:
+          type: string
+          description: |
+            User-configurable display name for this system.
+            Auto-populated from the first site's short_name, but can be
+            overridden (e.g., "Butler/Warren P25 Network").
+          example: "Butler/Warren P25"
+
+        # P25 network identity (null/zero for conventional)
+        sysid:
+          type: string
+          description: P25 System ID (hex). "0" for conventional.
+          example: "348"
+        wacn:
+          type: string
+          description: P25 WACN. "0" for conventional.
+          example: "BEE00"
+        # Sites monitoring this system
+        sites:
+          type: array
+          description: Recording sites contributing to this system
+          items:
+            $ref: "#/components/schemas/Site"
+
+    Site:
+      type: object
+      description: |
+        A recording site — one trunk-recorder sys_name entry monitoring
+        a system. Multiple sites may monitor the same P25 network from
+        different locations (different NAC/RFSS/site). For conventional
+        systems, there is exactly one site per system.
+      required: [site_id, short_name]
+      properties:
+        site_id:
+          type: integer
+          description: Database primary key for this recording site
+          example: 1
+        system_id:
+          type: integer
+          description: Parent system this site belongs to
+          example: 1
+        short_name:
+          type: string
+          description: Trunk-recorder sys_name (e.g., "butco", "warco")
+          example: butco
+        instance_id:
+          type: string
+          description: Trunk-recorder instance that owns this site
+          example: trunk-recorder
+        # P25 site-specific identity
+        nac:
+          type: string
+          description: P25 NAC (unique per physical site)
+          example: "340"
+        rfss:
+          type: integer
+          description: P25 RFSS
+          example: 4
+        p25_site_id:
+          type: integer
+          description: P25 site ID within the RFSS
+          example: 1
+        # TR config metadata
+        sys_num:
+          type: integer
+          description: |
+            Positional index in TR config. Stored for reference only —
+            never used for identity (shifts when config is reordered).
+          example: 0
+
+    P25System:
+      type: object
+      description: |
+        A logical P25 network with all its recording sites. This is
+        the same as a System with system_type=p25, presented with
+        sites expanded for the grouped network view.
+      properties:
+        system_id:
+          type: integer
+          description: Database system ID
+          example: 1
+        name:
+          type: string
+          description: User-configurable display name for this system
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          example: "348"
+        wacn:
+          type: string
+          example: "BEE00"
+        sites:
+          type: array
+          description: Recording sites monitoring this P25 network
+          items:
+            $ref: "#/components/schemas/Site"
+        talkgroup_count:
+          type: integer
+          example: 150
+        unit_count:
+          type: integer
+          example: 500
+        calls_24h:
+          type: integer
+          example: 5000
+
+    Talkgroup:
+      type: object
+      description: A talkgroup on a radio system
+      required: [system_id, tgid]
+      properties:
+        system_id:
+          type: integer
+          description: Database system ID this talkgroup belongs to
+          example: 1
+        system_name:
+          type: string
+          description: System display name (embedded to avoid lookup)
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          description: P25 SYSID (for display; "0" for conventional)
+          example: "348"
+        tgid:
+          type: integer
+          example: 1001
+        alpha_tag:
+          type: string
+          example: Fire Dispatch
+        tag:
+          type: string
+          description: Radio Reference tag category
+          example: Fire Dispatch
+        group:
+          type: string
+          description: Grouping category for UI filtering
+          example: Fire
+        description:
+          type: string
+          example: County Fire Dispatch Channel
+        mode:
+          $ref: "#/components/schemas/TalkgroupMode"
+        priority:
+          type: integer
+          description: Display priority (lower = more important)
+          example: 1
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        # Stats (populated by list/detail queries)
+        call_count:
+          type: integer
+          description: Total calls recorded on this talkgroup
+          example: 1547
+        calls_1h:
+          type: integer
+          description: Calls in the last hour
+          example: 12
+        calls_24h:
+          type: integer
+          description: Calls in the last 24 hours
+          example: 234
+        unit_count:
+          type: integer
+          description: Distinct units seen on this talkgroup
+          example: 45
+        # Search field (only present when search param is used)
+        relevance_score:
+          type: integer
+          description: "Search relevance: 100=exact, 50=prefix, 10=contains. Only present in search results."
+          example: 100
+
+    Unit:
+      type: object
+      description: A radio unit (mobile or portable radio)
+      required: [system_id, unit_id]
+      properties:
+        system_id:
+          type: integer
+          description: Database system ID this unit belongs to
+          example: 1
+        system_name:
+          type: string
+          description: System display name (embedded to avoid lookup)
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          description: P25 SYSID (for display; "0" for conventional)
+          example: "348"
+        unit_id:
+          type: integer
+          example: 1234567
+        alpha_tag:
+          type: string
+          example: Engine 1
+        alpha_tag_source:
+          type: string
+          description: Source of the alpha tag (e.g., radioreference, manual)
+          example: radioreference
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        # Last event context (embedded)
+        last_event_type:
+          $ref: "#/components/schemas/EventType"
+        last_event_time:
+          type: string
+          format: date-time
+        last_event_tgid:
+          type: integer
+          example: 9178
+        last_event_tg_tag:
+          type: string
+          description: Alpha tag of the talkgroup from last event
+          example: "09-8L Main"
+        # Search field
+        relevance_score:
+          type: integer
+          description: "Search relevance: 100=exact, 50=prefix, 10=contains. Only present in search results."
+          example: 100
+
+    Call:
+      type: object
+      description: A recorded radio call/transmission
+      required: [call_id, system_id, tgid, start_time]
+      properties:
+        # Identifiers
+        call_id:
+          type: integer
+          description: Unique database ID for this recording
+          example: 48531
+        call_group_id:
+          type: integer
+          description: |
+            Call group this recording belongs to. Multiple recordings of the
+            same transmission (from different sites) share a call_group_id.
+            Derived from (system_id, tgid, start_unix).
+          example: 1
+
+        # System context (embedded to avoid lookup)
+        system_id:
+          type: integer
+          description: Logical radio system this call belongs to
+          example: 1
+        system_name:
+          type: string
+          description: System display name
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          description: P25 SYSID (for display; "0" for conventional)
+          example: "348"
+
+        # Site context (which recorder captured this)
+        site_id:
+          type: integer
+          description: Recording site that captured this call
+          example: 1
+        site_short_name:
+          type: string
+          description: TR sys_name of the capturing site (e.g., "butco", "warco")
+          example: butco
+
+        # Talkgroup context (embedded to avoid lookup)
+        tgid:
+          type: integer
+          example: 9178
+        tg_alpha_tag:
+          type: string
+          description: Talkgroup short-form display name
+          example: "09-8L Main"
+        tg_description:
+          type: string
+          description: Human-readable talkgroup description
+          example: Middletown Police Dispatch
+        tg_tag:
+          type: string
+          description: Functional category tag (e.g., Law Dispatch, Fire Tac)
+          example: Law Dispatch
+        tg_group:
+          type: string
+          description: Broad organizational grouping
+          example: "Butler County (09) Law"
+
+        # Timing
+        start_time:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+        stop_time:
+          type: string
+          format: date-time
+          nullable: true
+          description: "Null for active (in-progress) calls"
+          example: "2024-01-15T10:30:45Z"
+        duration:
+          type: number
+          description: Duration in seconds (elapsed so far for active calls)
+          example: 45.5
+
+        # Audio
+        audio_url:
+          type: string
+          nullable: true
+          description: "Relative URL to audio endpoint. Null for active calls."
+          example: /api/v1/calls/48531/audio
+        audio_type:
+          type: string
+          description: "Audio encoding type from trunk-recorder (e.g., `digital`, `digital tdma`, `analog`)"
+          example: digital
+        audio_size:
+          type: integer
+          description: Audio file size in bytes
+          example: 45000
+
+        # Signal quality
+        freq:
+          type: integer
+          description: Frequency in Hz
+          example: 851012500
+        freq_error:
+          type: integer
+          description: Frequency error in Hz
+          example: 0
+        signal_db:
+          type: number
+          nullable: true
+          description: Signal strength in dB (null if unavailable; MQTT sends 999 as sentinel)
+          example: -23
+        noise_db:
+          type: number
+          nullable: true
+          description: Noise floor in dB (null if unavailable; MQTT sends 999 as sentinel)
+          example: -50
+        error_count:
+          type: integer
+          description: Decode error count
+          example: 2
+        spike_count:
+          type: integer
+          description: Audio spike count
+          example: 0
+
+        # Status
+        call_state:
+          $ref: "#/components/schemas/CallState"
+        mon_state:
+          $ref: "#/components/schemas/MonState"
+        emergency:
+          type: boolean
+          example: false
+        encrypted:
+          type: boolean
+          example: false
+        analog:
+          type: boolean
+          example: false
+        conventional:
+          type: boolean
+          example: false
+        phase2_tdma:
+          type: boolean
+          example: false
+        tdma_slot:
+          type: integer
+          description: "TDMA slot (0=slot 1 or N/A, 1=slot 2)"
+          example: 0
+
+        # Patches
+        patched_tgids:
+          type: array
+          description: Other talkgroup IDs patched into this call
+          items:
+            type: integer
+
+        # Transcription summary (inline to avoid separate lookup)
+        has_transcription:
+          type: boolean
+          example: true
+        transcription_status:
+          $ref: "#/components/schemas/TranscriptionStatus"
+        transcription_text:
+          type: string
+          nullable: true
+          description: Primary transcription text (null if no transcription)
+          example: Engine 5 responding to the scene
+        transcription_word_count:
+          type: integer
+          nullable: true
+          example: 6
+
+        # Units on this call (embedded)
+        units:
+          type: array
+          items:
+            $ref: "#/components/schemas/CallUnit"
+
+        # Extensible metadata
+        metadata_json:
+          type: object
+          additionalProperties: true
+          description: Arbitrary metadata from trunk-recorder
+
+    CallUnit:
+      type: object
+      description: A unit that transmitted during a call
+      required: [system_id, unit_id]
+      properties:
+        system_id:
+          type: integer
+          description: Database system ID for disambiguation in multi-system deployments
+          example: 1
+        unit_id:
+          type: integer
+          description: Unit radio ID (RID)
+          example: 924003
+        alpha_tag:
+          type: string
+          description: Unit display name
+          example: "09 7COM3"
+
+    UnitEvent:
+      type: object
+      description: A unit event (registration, affiliation, call activity, etc.)
+      required: [id, event_type, unit_rid, time]
+      properties:
+        id:
+          type: integer
+          example: 1
+        event_type:
+          $ref: "#/components/schemas/EventType"
+        time:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+
+        # System context
+        system_id:
+          type: integer
+          description: Database system ID
+          example: 1
+        system_name:
+          type: string
+          description: System display name
+          example: "Butler/Warren P25"
+
+        # Unit context (embedded to avoid lookup)
+        unit_rid:
+          type: integer
+          example: 1234567
+        unit_alpha_tag:
+          type: string
+          description: Unit display name (embedded to avoid lookup)
+          example: Engine 1
+
+        # Talkgroup context (embedded to avoid lookup)
+        tgid:
+          type: integer
+          example: 1001
+        tg_alpha_tag:
+          type: string
+          description: Talkgroup short-form display name
+          example: "09-8L Main"
+        tg_description:
+          type: string
+          description: Human-readable talkgroup description
+          example: Middletown Police Dispatch
+
+        # Internal references
+        instance_id:
+          type: string
+          description: Trunk-recorder instance that reported this event
+          example: trunk-recorder
+        metadata_json:
+          type: object
+          additionalProperties: true
+
+    CallFrequency:
+      type: object
+      description: |
+        A frequency segment from trunk-recorder's freqList. Each entry
+        represents a period of time the call spent on a given frequency.
+      properties:
+        freq:
+          type: integer
+          description: Frequency in Hz
+          example: 154875000
+        time:
+          type: integer
+          description: Unix timestamp of when this frequency segment started
+          example: 1713207802
+        pos:
+          type: number
+          description: Position in the audio file in seconds
+          example: 0.0
+        len:
+          type: number
+          description: Duration on this frequency in seconds
+          example: 3.24
+        error_count:
+          type: integer
+          example: 50
+        spike_count:
+          type: integer
+          example: 3
+
+    CallTransmission:
+      type: object
+      description: |
+        A unit key-up from trunk-recorder's srcList. Each entry represents
+        one unit's transmission within the call. The `src` field maps to
+        the unit radio ID (RID).
+      properties:
+        src:
+          type: integer
+          description: Unit radio ID (RID) — matches unit_id in other models
+          example: 104
+        tag:
+          type: string
+          description: Unit alpha tag at time of transmission (from trunk-recorder)
+          example: "09 7COM3"
+        time:
+          type: integer
+          description: Unix timestamp of when this unit keyed up
+          example: 1713207802
+        pos:
+          type: number
+          description: Position in audio file in seconds
+          example: 0.0
+        emergency:
+          type: integer
+          description: "Emergency flag (0=normal, 1=emergency)"
+          example: 0
+        signal_system:
+          type: string
+          description: Signal system identifier (typically empty)
+          example: ""
+
+    CallGroup:
+      type: object
+      description: |
+        A group of duplicate call recordings from multiple recorders.
+        Derived from (system_id, tgid, start_unix) — recordings that match
+        on all three are grouped.
+      properties:
+        id:
+          type: integer
+          example: 1
+        # System context (embedded)
+        system_id:
+          type: integer
+          example: 1
+        system_name:
+          type: string
+          description: System display name
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          description: P25 SYSID (for display)
+          example: "348"
+        # Site that captured the primary recording
+        site_id:
+          type: integer
+          example: 1
+        site_short_name:
+          type: string
+          example: butco
+        # Talkgroup context (embedded)
+        tgid:
+          type: integer
+          example: 9178
+        tg_alpha_tag:
+          type: string
+          description: Talkgroup short-form display name
+          example: "09-8L Main"
+        tg_description:
+          type: string
+          description: Human-readable talkgroup description
+          example: Middletown Police Dispatch
+        tg_tag:
+          type: string
+          description: Functional category tag
+          example: Law Dispatch
+        tg_group:
+          type: string
+          description: Broad organizational grouping
+          example: "Butler County (09) Law"
+        # Timing
+        start_time:
+          type: string
+          format: date-time
+        stop_time:
+          type: string
+          format: date-time
+        duration:
+          type: number
+          example: 45.5
+        # Group info
+        call_count:
+          type: integer
+          description: Number of recordings in this group
+          example: 2
+        primary_call_id:
+          type: integer
+          description: Call ID of the best-quality recording
+          example: 48531
+        # Transcription summary
+        has_transcription:
+          type: boolean
+          example: true
+        transcription_status:
+          $ref: "#/components/schemas/TranscriptionStatus"
+        transcription_text:
+          type: string
+          nullable: true
+          example: Engine 5 responding to the scene
+
+    Transcription:
+      type: object
+      description: A transcription of a call's audio content
+      required: [id, call_id, text, source]
+      properties:
+        id:
+          type: integer
+          example: 1
+        call_id:
+          type: integer
+          description: Database ID of the call this transcription belongs to
+          example: 48531
+        text:
+          type: string
+          example: Engine 5 responding to the scene
+        source:
+          $ref: "#/components/schemas/TranscriptionSource"
+        is_primary:
+          type: boolean
+          description: Whether this is the current active transcription for the call
+          example: true
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.95
+        language:
+          type: string
+          example: en
+        model:
+          type: string
+          description: Transcription model used
+          example: whisper-1
+        provider:
+          type: string
+          description: Transcription service provider
+          example: openai
+        word_count:
+          type: integer
+          example: 6
+        call_duration:
+          type: number
+          description: Call duration in seconds (for word timeline rendering)
+          example: 15.5
+        duration_ms:
+          type: integer
+          description: Transcription processing time in milliseconds
+          example: 1500
+        created_at:
+          type: string
+          format: date-time
+        words:
+          type: array
+          description: Word-level timestamps
+          items:
+            $ref: "#/components/schemas/TranscriptionWord"
+
+    TranscriptionWord:
+      type: object
+      description: A word with timing offsets into the audio
+      required: [word, start, end]
+      properties:
+        word:
+          type: string
+          example: Engine
+        start:
+          type: number
+          description: Seconds from start of audio
+          example: 0.5
+        end:
+          type: number
+          description: Seconds from start of audio
+          example: 0.85
+
+    TranscriptionWithCall:
+      type: object
+      description: A transcription bundled with abbreviated call context
+      properties:
+        transcription:
+          $ref: "#/components/schemas/Transcription"
+        call:
+          $ref: "#/components/schemas/CallSummary"
+
+    TranscriptionSearchHit:
+      type: object
+      description: A search result with relevance score and call context
+      properties:
+        transcription:
+          $ref: "#/components/schemas/Transcription"
+        call:
+          $ref: "#/components/schemas/CallSummary"
+        relevance_score:
+          type: number
+          description: Search relevance score (higher is better)
+          example: 0.95
+
+    CallSummary:
+      type: object
+      description: |
+        Abbreviated call metadata embedded in transcription search results
+        and listing responses. Contains enough context to render a result
+        row without any follow-up API calls.
+      properties:
+        call_id:
+          type: integer
+          example: 48531
+        system_id:
+          type: integer
+          example: 1
+        system_name:
+          type: string
+          description: System display name
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          description: P25 SYSID (for display)
+          example: "348"
+        site_id:
+          type: integer
+          example: 1
+        site_short_name:
+          type: string
+          example: butco
+        tgid:
+          type: integer
+          example: 9178
+        tg_alpha_tag:
+          type: string
+          example: "09-8L Main"
+        tg_description:
+          type: string
+          description: Human-readable talkgroup description
+          example: Middletown Police Dispatch
+        start_time:
+          type: string
+          format: date-time
+        duration:
+          type: number
+          example: 45.5
+        emergency:
+          type: boolean
+          example: false
+        audio_url:
+          type: string
+          example: "/api/v1/calls/48531/audio"
+
+    Recorder:
+      type: object
+      description: |
+        A trunk-recorder recorder (SDR channel). Core fields come directly
+        from the MQTT `recorders` message. Activity fields (talkgroup, unit)
+        are joined from active calls by the API layer when available.
+      properties:
+        id:
+          type: string
+          description: "Composite recorder ID from MQTT: `{src_num}_{rec_num}`"
+          example: "4_16"
+        src_num:
+          type: integer
+          description: Source number (which SDR dongle)
+          example: 4
+        rec_num:
+          type: integer
+          description: Recorder number within the source
+          example: 16
+        type:
+          type: string
+          description: Recorder type from trunk-recorder (P25, P25C, ANALOG, etc.)
+          example: "P25"
+        rec_state:
+          $ref: "#/components/schemas/RecState"
+        freq:
+          type: integer
+          description: Current frequency in Hz (0 when idle)
+          example: 852200000
+        duration:
+          type: number
+          description: Current recording duration in seconds
+          example: 21182.10
+        count:
+          type: integer
+          description: Number of transmissions recorded
+          example: 3563
+        squelched:
+          type: boolean
+          example: false
+        # Active call context (joined by API from active calls, nullable when idle)
+        tgid:
+          type: integer
+          nullable: true
+          description: Current talkgroup ID (null when idle). Joined from active calls.
+          example: 9178
+        tg_alpha_tag:
+          type: string
+          nullable: true
+          description: Current talkgroup display name. Joined from active calls.
+          example: "09-8L Main"
+        unit_id:
+          type: integer
+          nullable: true
+          description: Current transmitting unit ID (null when idle). Joined from active calls.
+          example: 924003
+        unit_alpha_tag:
+          type: string
+          nullable: true
+          description: Current transmitting unit display name. Joined from active calls.
+          example: "09 7COM3"
+
+    # ========== Request Models ==========
+
+    SystemPatch:
+      type: object
+      description: |
+        Mutable system-level fields. Only provided fields are updated.
+        For P25, changing sysid/wacn affects the network identity used
+        at ingest. For site-level changes (short_name, nac, instance_id),
+        use SitePatch on PATCH /sites/{id}.
+      properties:
+        sysid:
+          type: string
+          description: P25 System ID (hex)
+          example: "348"
+        wacn:
+          type: string
+          description: P25 WACN
+          example: "BEE00"
+        name:
+          type: string
+          description: Optional display name for the system (e.g., "Butler/Warren P25")
+
+    SitePatch:
+      type: object
+      description: |
+        Mutable site-level fields. Only provided fields are updated.
+        Changing `short_name` or `instance_id` updates the ingest
+        lookup key — make sure the trunk-recorder config matches or
+        future messages will create a new site (fragmentation).
+      properties:
+        short_name:
+          type: string
+          description: |
+            Trunk-recorder sys_name. Changing this updates the
+            `(instance_id, short_name)` → `site_id` mapping.
+          example: butco
+        instance_id:
+          type: string
+          description: Trunk-recorder instance ID this site belongs to
+          example: trunk-recorder
+        nac:
+          type: string
+          description: P25 NAC
+          example: "340"
+        rfss:
+          type: integer
+          example: 4
+        p25_site_id:
+          type: integer
+          example: 1
+
+    SystemMergeRequest:
+      type: object
+      required: [source_id, target_id]
+      properties:
+        source_id:
+          type: integer
+          description: System to merge FROM (will be deleted after merge)
+          example: 3
+        target_id:
+          type: integer
+          description: System to merge INTO (keeps its system_id)
+          example: 1
+        update_target_metadata:
+          type: boolean
+          description: |
+            If true, copy short_name/sysid/wacn/nac from source to target
+            (useful when the source has better metadata, e.g., was identified
+            after the target was created as "unknown").
+          default: false
+
+    SystemMergeResponse:
+      type: object
+      properties:
+        target_id:
+          type: integer
+          description: The surviving system_id
+          example: 1
+        source_id:
+          type: integer
+          description: The deleted system_id
+          example: 3
+        calls_moved:
+          type: integer
+          description: Number of call records repointed
+          example: 5200
+        talkgroups_moved:
+          type: integer
+          description: Talkgroups moved from source (source-only)
+          example: 12
+        talkgroups_merged:
+          type: integer
+          description: Talkgroups that existed in both (stats combined)
+          example: 45
+        units_moved:
+          type: integer
+          example: 30
+        units_merged:
+          type: integer
+          example: 150
+        events_moved:
+          type: integer
+          description: Unit events repointed
+          example: 25000
+
+    TalkgroupPatch:
+      type: object
+      description: Mutable talkgroup fields. Only provided fields are updated.
+      properties:
+        alpha_tag:
+          type: string
+        description:
+          type: string
+        group:
+          type: string
+        tag:
+          type: string
+        priority:
+          type: integer
+
+    UnitPatch:
+      type: object
+      description: Mutable unit fields. Only provided fields are updated.
+      properties:
+        alpha_tag:
+          type: string
+        alpha_tag_source:
+          type: string
+
+    TranscribeRequest:
+      type: object
+      description: Optional overrides for transcription. All fields are optional.
+      properties:
+        model:
+          type: string
+          description: Transcription model override
+        prompt:
+          type: string
+          description: Custom prompt for the transcription model
+        temperature:
+          type: number
+          description: Sampling temperature (0.0 - 1.0)
+          minimum: 0
+          maximum: 1
+        language:
+          type: string
+          description: ISO 639-1 language code
+        priority:
+          type: integer
+          description: Queue priority (lower = higher priority)
+
+    BulkTranscribeRequest:
+      type: object
+      required: [call_ids]
+      properties:
+        call_ids:
+          type: array
+          items:
+            type: integer
+          description: List of call IDs to transcribe
+          example: [48531, 48532]
+        model:
+          type: string
+        prompt:
+          type: string
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 1
+        language:
+          type: string
+        priority:
+          type: integer
+
+    BulkCallIdsRequest:
+      type: object
+      required: [call_ids]
+      properties:
+        call_ids:
+          type: array
+          items:
+            type: integer
+          example: [48531, 48532]
+
+    CorrectionRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Corrected transcription text
+        words:
+          type: array
+          description: Optional word-level timestamps for the correction
+          items:
+            $ref: "#/components/schemas/TranscriptionWord"
+
+    # ========== Response Wrappers ==========
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+          example: "1.0.0"
+        uptime_seconds:
+          type: integer
+          example: 86400
+        checks:
+          type: object
+          description: Individual subsystem health
+          properties:
+            database:
+              type: string
+              enum: [ok, error]
+            mqtt:
+              type: string
+              enum: [ok, error, disconnected]
+            transcription:
+              type: string
+              enum: [ok, error, disabled]
+
+    # --- Paginated list responses ---
+
+    SystemListResponse:
+      type: object
+      required: [systems, total]
+      properties:
+        systems:
+          type: array
+          items:
+            $ref: "#/components/schemas/System"
+        total:
+          type: integer
+          description: Total number of systems
+          example: 3
+
+    P25SystemListResponse:
+      type: object
+      required: [systems, total]
+      properties:
+        systems:
+          type: array
+          items:
+            $ref: "#/components/schemas/P25System"
+        total:
+          type: integer
+          description: Total number of P25 networks
+          example: 2
+
+    TalkgroupListResponse:
+      type: object
+      required: [talkgroups, total, limit, offset]
+      properties:
+        talkgroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/Talkgroup"
+        total:
+          type: integer
+          description: Total matching results (across all pages)
+          example: 150
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    UnitListResponse:
+      type: object
+      required: [units, total, limit, offset]
+      properties:
+        units:
+          type: array
+          items:
+            $ref: "#/components/schemas/Unit"
+        total:
+          type: integer
+          example: 500
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    UnitEventListResponse:
+      type: object
+      required: [events, total, limit, offset]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnitEvent"
+        total:
+          type: integer
+          example: 100
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    CallListResponse:
+      type: object
+      required: [calls, total, limit, offset]
+      properties:
+        calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/Call"
+        total:
+          type: integer
+          description: Total matching results (across all pages)
+          example: 2500
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    ActiveCallListResponse:
+      type: object
+      required: [calls, total]
+      properties:
+        calls:
+          type: array
+          description: |
+            Active calls from MQTT tracker. Fields like stop_time and
+            audio_url will be null since the call is still in progress.
+          items:
+            $ref: "#/components/schemas/Call"
+        total:
+          type: integer
+          description: Number of currently active calls
+          example: 5
+
+    CallGroupListResponse:
+      type: object
+      required: [call_groups, total, limit, offset]
+      properties:
+        call_groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/CallGroup"
+        total:
+          type: integer
+          example: 500
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    CallGroupDetailResponse:
+      type: object
+      required: [call_group, calls]
+      properties:
+        call_group:
+          $ref: "#/components/schemas/CallGroup"
+        calls:
+          type: array
+          description: All individual recordings in this group
+          items:
+            $ref: "#/components/schemas/Call"
+
+    CallFrequencyListResponse:
+      type: object
+      required: [frequencies, total]
+      properties:
+        frequencies:
+          type: array
+          items:
+            $ref: "#/components/schemas/CallFrequency"
+        total:
+          type: integer
+          example: 3
+
+    CallTransmissionListResponse:
+      type: object
+      required: [transmissions, total]
+      properties:
+        transmissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CallTransmission"
+        total:
+          type: integer
+          example: 4
+
+    TranscriptionListResponse:
+      type: object
+      required: [transcriptions, total]
+      properties:
+        transcriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transcription"
+        total:
+          type: integer
+          description: Number of variants
+          example: 3
+
+    TranscriptionSearchResponse:
+      type: object
+      required: [results, total, limit, offset]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptionSearchHit"
+        total:
+          type: integer
+          example: 42
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    TranscriptionWithCallListResponse:
+      type: object
+      required: [transcriptions, total, limit, offset]
+      properties:
+        transcriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptionWithCall"
+        total:
+          type: integer
+          example: 100
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+
+    # --- Action responses ---
+
+    TranscribeResponse:
+      type: object
+      required: [status, call_id]
+      properties:
+        status:
+          type: string
+          enum: [queued, already_queued]
+        call_id:
+          type: integer
+          example: 48531
+        position:
+          type: integer
+          description: Queue position (if newly queued)
+          example: 5
+
+    StatusChangeResponse:
+      type: object
+      required: [call_id, previous_status, new_status]
+      properties:
+        call_id:
+          type: integer
+          example: 48531
+        previous_status:
+          $ref: "#/components/schemas/TranscriptionStatus"
+        new_status:
+          $ref: "#/components/schemas/TranscriptionStatus"
+
+    LLMReviewResult:
+      type: object
+      properties:
+        call_id:
+          type: integer
+          example: 48531
+        original_text:
+          type: string
+        corrected_text:
+          type: string
+          nullable: true
+          description: Null if LLM found no corrections needed
+        confidence:
+          type: number
+          example: 0.92
+        changes_made:
+          type: boolean
+          example: true
+
+    BulkTranscribeResponse:
+      type: object
+      required: [queued, skipped]
+      properties:
+        queued:
+          type: integer
+          description: Number of calls successfully queued
+          example: 10
+        skipped:
+          type: integer
+          description: Number of calls skipped (already queued, not found, etc.)
+          example: 2
+        errors:
+          type: array
+          description: Per-call errors (only for failed items)
+          items:
+            type: object
+            properties:
+              call_id:
+                type: integer
+              error:
+                type: string
+
+    BulkResultResponse:
+      type: object
+      required: [updated, failed]
+      properties:
+        updated:
+          type: integer
+          description: Number of calls successfully updated
+          example: 8
+        failed:
+          type: integer
+          description: Number of calls that failed
+          example: 2
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              call_id:
+                type: integer
+              error:
+                type: string
+
+    RefillResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [started, already_running]
+        message:
+          type: string
+          example: Review queue refill started
+
+    CurateResponse:
+      type: object
+      properties:
+        promoted:
+          type: integer
+          description: Number of calls promoted to "reviewed"
+          example: 45
+        evaluated:
+          type: integer
+          description: Total calls evaluated
+          example: 200
+        criteria:
+          type: object
+          properties:
+            min_duration:
+              type: number
+            max_duration:
+              type: number
+            sysid:
+              type: string
+              nullable: true
+
+    BatchLLMReviewResponse:
+      type: object
+      properties:
+        processed:
+          type: integer
+          description: Number of calls reviewed
+          example: 5
+        corrected:
+          type: integer
+          description: Number of calls where LLM made corrections
+          example: 2
+        unchanged:
+          type: integer
+          description: Number of calls LLM found correct
+          example: 3
+
+    LLMReviewStatus:
+      type: object
+      properties:
+        available:
+          type: boolean
+          description: Whether the LLM review service is available
+          example: true
+        provider:
+          type: string
+          example: openai
+        model:
+          type: string
+          example: gpt-4o
+        total_reviewed:
+          type: integer
+          description: Total calls reviewed by LLM
+          example: 500
+        total_corrected:
+          type: integer
+          description: Total calls where LLM made corrections
+          example: 120
+
+    DatasetExportResponse:
+      type: object
+      description: Only used for format=json. JSONL and whisper formats return streaming NDJSON.
+      properties:
+        calls:
+          type: array
+          items:
+            type: object
+            properties:
+              call_id:
+                type: integer
+              audio_url:
+                type: string
+              text:
+                type: string
+              duration:
+                type: number
+              system_id:
+                type: integer
+              sysid:
+                type: string
+              tgid:
+                type: integer
+              tg_alpha_tag:
+                type: string
+              tg_description:
+                type: string
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    # --- Stats responses ---
+
+    TranscriptionQueueStats:
+      type: object
+      required: [pending, processing, completed, failed]
+      properties:
+        pending:
+          type: integer
+          example: 15
+        processing:
+          type: integer
+          example: 2
+        completed:
+          type: integer
+          example: 5000
+        failed:
+          type: integer
+          example: 12
+
+    DatasetStats:
+      type: object
+      properties:
+        total_calls:
+          type: integer
+          description: Total calls with any transcription
+          example: 10000
+        by_status:
+          type: object
+          properties:
+            none:
+              type: integer
+              example: 50000
+            auto:
+              type: integer
+              example: 8000
+            reviewed:
+              type: integer
+              example: 1500
+            verified:
+              type: integer
+              example: 500
+            excluded:
+              type: integer
+              example: 100
+        total_duration_hours:
+          type: number
+          description: Total audio duration of transcribed calls in hours
+          example: 125.5
+        avg_confidence:
+          type: number
+          description: Average transcription confidence score
+          example: 0.87
+
+    StatsResponse:
+      type: object
+      properties:
+        systems:
+          type: integer
+          description: Total recording sites
+          example: 3
+        talkgroups:
+          type: integer
+          description: Total talkgroups across all systems
+          example: 500
+        units:
+          type: integer
+          description: Total units across all systems
+          example: 1000
+        total_calls:
+          type: integer
+          description: Total call recordings
+          example: 250000
+        calls_24h:
+          type: integer
+          description: Calls recorded in the last 24 hours
+          example: 5000
+        calls_1h:
+          type: integer
+          description: Calls recorded in the last hour
+          example: 250
+        total_duration_hours:
+          type: number
+          description: Total recorded audio in hours
+          example: 4500.5
+        system_activity:
+          type: array
+          description: Per-system activity breakdown
+          items:
+            $ref: "#/components/schemas/SystemActivity"
+
+    SystemActivity:
+      type: object
+      properties:
+        system_id:
+          type: integer
+          example: 1
+        system_name:
+          type: string
+          description: System display name
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          example: "348"
+        calls_1h:
+          type: integer
+          example: 100
+        calls_24h:
+          type: integer
+          example: 2000
+        active_talkgroups:
+          type: integer
+          description: Talkgroups with activity in the last hour
+          example: 35
+        active_units:
+          type: integer
+          description: Units with activity in the last hour
+          example: 80
+
+    DecodeRatesResponse:
+      type: object
+      required: [rates, total]
+      properties:
+        rates:
+          type: array
+          items:
+            $ref: "#/components/schemas/DecodeRate"
+        total:
+          type: integer
+          example: 100
+
+    DecodeRate:
+      type: object
+      properties:
+        time:
+          type: string
+          format: date-time
+        system_id:
+          type: integer
+          example: 1
+        system_name:
+          type: string
+          description: System display name
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          example: "348"
+        decode_rate:
+          type: number
+          description: Decode success rate (0.0 - 1.0)
+          example: 0.98
+        total_messages:
+          type: integer
+          description: Total messages in this measurement period
+          example: 5000
+
+    EncryptionStatsResponse:
+      type: object
+      required: [stats, total]
+      properties:
+        stats:
+          type: array
+          items:
+            $ref: "#/components/schemas/TalkgroupEncryptionStat"
+        total:
+          type: integer
+          example: 50
+        hours:
+          type: integer
+          description: Time window used
+          example: 24
+
+    TalkgroupEncryptionStat:
+      type: object
+      properties:
+        system_id:
+          type: integer
+          description: Database system ID
+          example: 1
+        system_name:
+          type: string
+          description: System display name (embedded to avoid lookup)
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          description: P25 SYSID (for display)
+          example: "348"
+        tgid:
+          type: integer
+          example: 9178
+        tg_alpha_tag:
+          type: string
+          example: "09-8L Main"
+        tg_description:
+          type: string
+          description: Human-readable talkgroup description
+          example: Middletown Police Dispatch
+        tg_tag:
+          type: string
+          description: Functional category tag
+          example: Law Dispatch
+        tg_group:
+          type: string
+          description: Broad organizational grouping
+          example: "Butler County (09) Law"
+        encrypted_count:
+          type: integer
+          example: 0
+        clear_count:
+          type: integer
+          example: 150
+        total_count:
+          type: integer
+          example: 150
+        encrypted_pct:
+          type: number
+          description: Percentage of calls that were encrypted (0.0 - 100.0)
+          example: 0.0
+
+    RecorderListResponse:
+      type: object
+      required: [recorders, total]
+      properties:
+        recorders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Recorder"
+        total:
+          type: integer
+          example: 12
+
+    ReviewQueueResponse:
+      type: object
+      required: [calls, total, limit, offset]
+      properties:
+        calls:
+          type: array
+          description: Calls with transcriptions needing review
+          items:
+            $ref: "#/components/schemas/ReviewQueueItem"
+        total:
+          type: integer
+          example: 100
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    ReviewQueueItem:
+      type: object
+      description: |
+        A call in the review queue, with embedded call context and
+        transcription data. Contains everything needed to render a
+        review UI row without follow-up requests.
+      properties:
+        call:
+          $ref: "#/components/schemas/CallSummary"
+        transcription:
+          $ref: "#/components/schemas/Transcription"
+        transcription_status:
+          $ref: "#/components/schemas/TranscriptionStatus"
+
+    # ========== SSE Event Models ==========
+
+    SSEEventType:
+      type: string
+      enum:
+        - call_start
+        - call_update
+        - call_end
+        - unit_event
+        - recorder_update
+        - rate_update
+        - trunking_message
+        - console
+      description: |
+        SSE event types pushed to clients:
+        - **call_start**: new call recording began
+        - **call_update**: call updated (new transmission, freq change)
+        - **call_end**: call recording completed, audio available
+        - **unit_event**: unit lifecycle event (on/off/join/call/end/etc.)
+        - **recorder_update**: recorder hardware state changed
+        - **rate_update**: decode rate update from a system
+        - **trunking_message**: P25 control channel message
+        - **console**: trunk-recorder console log message
+
+    SSEEvent:
+      type: object
+      description: |
+        Representation of an SSE event. In the actual stream, each event
+        is formatted as SSE text:
+        ```
+        id: <event_id>
+        event: <event_type>
+        data: <JSON payload>
+        ```
+        This schema describes the JSON payload in the `data` field.
+      required: [event_id, event_type, timestamp]
+      properties:
+        event_id:
+          type: string
+          description: |
+            Unique event ID for gap recovery. Format: `{unix_ms}-{seq}`.
+            Pass as `Last-Event-ID` header on reconnect.
+          example: "1707912345000-42"
+        event_type:
+          $ref: "#/components/schemas/SSEEventType"
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp when the event was emitted
+        system_id:
+          type: integer
+          description: System this event belongs to (present on all except console)
+          example: 1
+        site_id:
+          type: integer
+          description: Site this event belongs to (present on call and recorder events)
+          example: 1
+        payload:
+          type: object
+          additionalProperties: true
+          description: |
+            Event-specific payload. Structure depends on `event_type`:
+            - `call_start` / `call_update` / `call_end`: Call object
+            - `unit_event`: UnitEvent object
+            - `recorder_update`: Recorder object
+            - `rate_update`: DecodeRate object
+            - `trunking_message`: TrunkingMessage object
+            - `console`: ConsoleMessage object
+
+    DecodeRate:
+      type: object
+      description: Decode rate snapshot from a system
+      properties:
+        system_id:
+          type: integer
+          example: 1
+        decode_rate:
+          type: number
+          description: Current decode rate (0.0 - 1.0)
+          example: 0.95
+        control_channel:
+          type: integer
+          description: Control channel frequency in Hz
+          example: 851012500
+        time:
+          type: string
+          format: date-time
+
+    TrunkingMessage:
+      type: object
+      description: P25 control channel trunking message
+      properties:
+        system_id:
+          type: integer
+          example: 1
+        opcode:
+          type: string
+          description: P25 opcode hex value
+          example: "2c"
+        opcode_type:
+          type: string
+          description: Human-readable opcode type name
+          example: "Unit Registration Response"
+        opcode_desc:
+          type: string
+          description: Detailed description of the opcode
+        meta:
+          type: object
+          additionalProperties: true
+          description: Opcode-specific metadata fields
+        time:
+          type: string
+          format: date-time
+
+    ConsoleMessage:
+      type: object
+      description: Trunk-recorder console log message
+      properties:
+        instance_id:
+          type: string
+          example: trunk-recorder
+        severity:
+          type: string
+          example: info
+        log_msg:
+          type: string
+          example: "[butco] Control Channel: 851012500"
+        log_time:
+          type: string
+          format: date-time

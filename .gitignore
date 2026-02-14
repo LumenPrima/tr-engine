@@ -1,0 +1,19 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Go build cache
+/vendor/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
