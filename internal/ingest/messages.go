@@ -215,3 +215,27 @@ type StatusMsg struct {
 	ClientID string `json:"client_id"`
 	Status   string `json:"status"`
 }
+
+// SystemInfoData represents a system entry from the systems/system topics.
+type SystemInfoData struct {
+	SysNum  int    `json:"sys_num"`
+	SysName string `json:"sys_name"`
+	Type    string `json:"type"`
+	Sysid   string `json:"sysid"`
+	Wacn    string `json:"wacn"`
+	Nac     string `json:"nac"`
+	RFSS    int    `json:"rfss"`
+	SiteID  int    `json:"site_id"`
+}
+
+// SystemsMsg wraps a systems (batch) message.
+type SystemsMsg struct {
+	Envelope
+	Systems []SystemInfoData `json:"systems"`
+}
+
+// SystemMsg wraps a single system update message.
+type SystemMsg struct {
+	Envelope
+	System SystemInfoData `json:"system"`
+}

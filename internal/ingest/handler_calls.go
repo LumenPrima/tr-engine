@@ -259,9 +259,34 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		InstanceID:    msg.InstanceID,
 	}
 
+	// Upsert talkgroup
+	if call.Talkgroup > 0 {
+		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
+			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription,
+		)
+	}
+
+	// Upsert unit
+	if call.Unit > 0 {
+		_ = p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
+			call.UnitAlphaTag, "call_end", startTime, call.Talkgroup,
+		)
+	}
+
 	callID, err := p.db.InsertCall(ctx, row)
 	if err != nil {
 		return fmt.Errorf("insert call from end: %w", err)
+	}
+
+	// Create call group (same as handleCallStart)
+	cgID, cgErr := p.db.UpsertCallGroup(ctx, identity.SystemID, call.Talkgroup, startTime,
+		call.TalkgroupAlphaTag, call.TalkgroupDescription, call.TalkgroupTag, call.TalkgroupGroup,
+	)
+	if cgErr != nil {
+		p.log.Warn().Err(cgErr).Msg("failed to upsert call group from call_end backfill")
+	} else {
+		_ = p.db.SetCallGroupID(ctx, callID, startTime, cgID)
+		_ = p.db.SetCallGroupPrimary(ctx, cgID, callID)
 	}
 
 	_ = retryAttempt

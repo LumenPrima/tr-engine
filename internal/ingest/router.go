@@ -4,7 +4,7 @@ import "strings"
 
 // Route describes a parsed MQTT topic.
 type Route struct {
-	Handler string // handler name: "status", "calls_active", "call_start", "call_end", "audio", "recorders", "recorder", "rates", "unit_event"
+	Handler string // handler name: "status", "systems", "system", "calls_active", "call_start", "call_end", "audio", "recorders", "recorder", "rates", "unit_event"
 	SysName string // only set for unit event topics
 }
 
@@ -13,6 +13,8 @@ type Route struct {
 // Feed topics:
 //
 //	trdash/feeds/trunk_recorder/status → status
+//	trdash/feeds/systems               → systems
+//	trdash/feeds/system                → system
 //	trdash/feeds/calls_active          → calls_active
 //	trdash/feeds/call_start            → call_start
 //	trdash/feeds/call_end              → call_end
@@ -34,6 +36,10 @@ func ParseTopic(topic string) *Route {
 			switch feed {
 			case "trunk_recorder/status":
 				return &Route{Handler: "status"}
+			case "systems":
+				return &Route{Handler: "systems"}
+			case "system":
+				return &Route{Handler: "system"}
 			case "calls_active":
 				return &Route{Handler: "calls_active"}
 			case "call_start":

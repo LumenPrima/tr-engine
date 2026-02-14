@@ -104,6 +104,10 @@ func (p *Pipeline) dispatch(route *Route, topic string, payload []byte, env *Env
 	switch route.Handler {
 	case "status":
 		err = p.handleStatus(payload)
+	case "systems":
+		err = p.handleSystems(payload)
+	case "system":
+		err = p.handleSystem(payload)
 	case "call_start":
 		err = p.handleCallStart(payload)
 	case "call_end":

@@ -136,3 +136,26 @@ func (r *IdentityResolver) GetSystemIDForSysName(sysName string) int {
 	}
 	return 0
 }
+
+// RewriteSystemID updates all cache entries pointing at oldSystemID to use newSystemID.
+// Called after a system merge so subsequent lookups resolve to the merged target.
+func (r *IdentityResolver) RewriteSystemID(oldSystemID, newSystemID int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for key, id := range r.cache {
+		if id.SystemID == oldSystemID {
+			r.cache[key] = &ResolvedIdentity{
+				InstanceDBID: id.InstanceDBID,
+				SystemID:     newSystemID,
+				SiteID:       id.SiteID,
+				SystemName:   id.SystemName,
+			}
+			r.log.Info().
+				Str("key", key).
+				Int("old_system_id", oldSystemID).
+				Int("new_system_id", newSystemID).
+				Msg("cache entry rewritten after merge")
+		}
+	}
+}
