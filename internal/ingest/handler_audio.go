@@ -100,15 +100,25 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 	// Insert call transmissions
 	if callID > 0 && len(meta.SrcList) > 0 {
 		txRows := make([]database.CallTransmissionRow, 0, len(meta.SrcList))
-		for _, s := range meta.SrcList {
+		for i, s := range meta.SrcList {
 			st := time.Unix(s.Time, 0)
 			pos := float32(s.Pos)
+			// Duration = next transmission's pos - this pos; last = call length - pos
+			var dur *float32
+			if i+1 < len(meta.SrcList) {
+				d := float32(meta.SrcList[i+1].Pos - s.Pos)
+				dur = &d
+			} else if meta.CallLength > 0 {
+				d := float32(float64(meta.CallLength) - s.Pos)
+				dur = &d
+			}
 			txRows = append(txRows, database.CallTransmissionRow{
 				CallID:        callID,
 				CallStartTime: callStartTime,
 				Src:           s.Src,
 				Time:          &st,
 				Pos:           &pos,
+				Duration:      dur,
 				Emergency:     int16(s.Emergency),
 				SignalSystem:  s.SignalSystem,
 				Tag:           s.Tag,

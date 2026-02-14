@@ -211,6 +211,7 @@ type CallTransmissionRow struct {
 	Src           int
 	Time          *time.Time
 	Pos           *float32
+	Duration      *float32
 	Emergency     int16
 	SignalSystem  string
 	Tag           string
@@ -222,7 +223,7 @@ func (db *DB) InsertCallTransmissions(ctx context.Context, rows []CallTransmissi
 	for i, r := range rows {
 		copyRows[i] = []any{
 			r.CallID, r.CallStartTime, r.Src,
-			r.Time, r.Pos, r.Emergency,
+			r.Time, r.Pos, r.Duration, r.Emergency,
 			r.SignalSystem, r.Tag,
 		}
 	}
@@ -231,7 +232,7 @@ func (db *DB) InsertCallTransmissions(ctx context.Context, rows []CallTransmissi
 		pgx.Identifier{"call_transmissions"},
 		[]string{
 			"call_id", "call_start_time", "src",
-			"time", "pos", "emergency",
+			"time", "pos", "duration", "emergency",
 			"signal_system", "tag",
 		},
 		pgx.CopyFromRows(copyRows),

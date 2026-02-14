@@ -329,6 +329,7 @@ CREATE TABLE call_transmissions (
     src              int          NOT NULL,
     "time"           timestamptz,
     pos              real,
+    duration         real,
     emergency        smallint     DEFAULT 0,
     signal_system    text,
     tag              text,

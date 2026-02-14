@@ -116,7 +116,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		}
 	}
 
-	if eventType == "end" {
+	if eventType == "end" || eventType == "call" {
 		pos := float32(data.Position)
 		row.Position = &pos
 		length := float32(data.Length)
