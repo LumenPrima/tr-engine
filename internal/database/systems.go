@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -211,6 +212,15 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int) (callsMo
 
 	// Move sites to target system
 	tx.Exec(ctx, `UPDATE sites SET system_id = $1 WHERE system_id = $2`, targetID, sourceID)
+
+	// Combine system names: "butco" + "warco" → "butco/warco"
+	var targetName, sourceName string
+	_ = tx.QueryRow(ctx, `SELECT COALESCE(name,'') FROM systems WHERE system_id = $1`, targetID).Scan(&targetName)
+	_ = tx.QueryRow(ctx, `SELECT COALESCE(name,'') FROM systems WHERE system_id = $1`, sourceID).Scan(&sourceName)
+	if sourceName != "" && !strings.Contains(targetName, sourceName) {
+		combined := targetName + "/" + sourceName
+		tx.Exec(ctx, `UPDATE systems SET name = $1 WHERE system_id = $2`, combined, targetID)
+	}
 
 	// Soft-delete source system
 	tx.Exec(ctx, `UPDATE systems SET deleted_at = now() WHERE system_id = $1`, sourceID)
