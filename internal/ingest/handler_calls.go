@@ -145,8 +145,15 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 		var err error
 		entry.CallID, entry.StartTime, err = p.db.FindCallByTrCallID(ctx, call.ID)
 		if err != nil {
-			// Can't find the call — insert it fresh
-			return p.handleCallStartFromEnd(ctx, &msg)
+			// Not found by tr_call_id — maybe audio handler already created it.
+			identity, idErr := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)
+			if idErr == nil {
+				entry.CallID, entry.StartTime, err = p.db.FindCallForAudio(ctx, identity.SystemID, call.Talkgroup, startTime)
+			}
+			if err != nil {
+				// Truly not found — insert it fresh
+				return p.handleCallStartFromEnd(ctx, &msg)
+			}
 		}
 	}
 
@@ -271,6 +278,37 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		_ = p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
 			call.UnitAlphaTag, "call_end", startTime, call.Talkgroup,
 		)
+	}
+
+	// Retry: audio handler may have created this call concurrently (race on reconnect bursts).
+	// By now the audio insert has had time to commit.
+	existingID, existingST, findErr := p.db.FindCallForAudio(ctx, identity.SystemID, call.Talkgroup, startTime)
+	if findErr == nil {
+		// Audio already created the call — update it with call_end data instead of inserting a duplicate.
+		err = p.db.UpdateCallEnd(ctx,
+			existingID, existingST,
+			stopTime,
+			duration,
+			freq,
+			freqError,
+			signal,
+			noise,
+			call.ErrorCount,
+			call.SpikeCount,
+			recState, call.RecStateType,
+			callState, call.CallStateType,
+			call.CallFilename,
+			retryAttempt,
+			float32(call.ProcessCallTime),
+		)
+		if err != nil {
+			return fmt.Errorf("update audio-created call: %w", err)
+		}
+		p.log.Debug().
+			Str("tr_call_id", call.ID).
+			Int64("call_id", existingID).
+			Msg("call_end matched audio-created call")
+		return nil
 	}
 
 	callID, err := p.db.InsertCall(ctx, row)

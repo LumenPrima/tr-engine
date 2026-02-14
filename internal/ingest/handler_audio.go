@@ -29,16 +29,18 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 		return fmt.Errorf("resolve identity: %w", err)
 	}
 
-	// Find the matching call
+	// Find the matching call, or create one from audio metadata
 	callID, callStartTime, err := p.db.FindCallForAudio(ctx, identity.SystemID, meta.Talkgroup, startTime)
 	if err != nil {
-		p.log.Warn().
-			Err(err).
-			Int("tgid", meta.Talkgroup).
-			Str("sys_name", meta.ShortName).
-			Time("start_time", startTime).
-			Msg("no matching call for audio, skipping freq/transmission insert")
-		// Still try to save the audio file
+		// No call record yet — create one from audio metadata.
+		// call_end will find this record later via FindCallForAudio and update it.
+		callID, callStartTime, err = p.createCallFromAudio(ctx, identity, meta, startTime)
+		if err != nil {
+			p.log.Error().Err(err).
+				Int("tgid", meta.Talkgroup).
+				Str("sys_name", meta.ShortName).
+				Msg("failed to create call from audio")
+		}
 	}
 
 	// Decode and save audio file
@@ -126,6 +128,81 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 		Msg("audio processed")
 
 	return nil
+}
+
+// createCallFromAudio creates a call record from audio metadata when no call_start was received.
+// The call_end handler will later find this record via FindCallForAudio and enrich it.
+func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedIdentity, meta *AudioMetadata, startTime time.Time) (int64, time.Time, error) {
+	freq := int64(meta.Freq)
+	duration := float32(meta.CallLength)
+	signal := float32(meta.Signal)
+	noise := float32(meta.Noise)
+	tdmaSlot := int16(meta.TDMASlot)
+	recNum := int16(meta.RecorderNum)
+	srcNum := int16(meta.SourceNum)
+	siteID := identity.SiteID
+	freqError := meta.FreqError
+	encrypted := meta.Encrypted != 0
+	emergency := meta.Emergency != 0
+
+	row := &database.CallRow{
+		SystemID:      identity.SystemID,
+		SiteID:        &siteID,
+		Tgid:          meta.Talkgroup,
+		StartTime:     startTime,
+		Duration:      &duration,
+		Freq:          &freq,
+		FreqError:     &freqError,
+		SignalDB:      &signal,
+		NoiseDB:       &noise,
+		AudioType:     meta.AudioType,
+		Phase2TDMA:    meta.Phase2TDMA != 0,
+		TDMASlot:      &tdmaSlot,
+		Encrypted:     encrypted,
+		Emergency:     emergency,
+		RecNum:        &recNum,
+		SrcNum:        &srcNum,
+		SystemName:    meta.ShortName,
+		SiteShortName: meta.ShortName,
+		TgAlphaTag:    meta.TalkgroupTag,
+		TgDescription: meta.TalkgroupDesc,
+		TgTag:         meta.TalkgroupGroupTag,
+		TgGroup:       meta.TalkgroupGroup,
+	}
+
+	if meta.StopTime > 0 {
+		st := time.Unix(meta.StopTime, 0)
+		row.StopTime = &st
+	}
+
+	callID, err := p.db.InsertCall(ctx, row)
+	if err != nil {
+		return 0, time.Time{}, fmt.Errorf("insert call from audio: %w", err)
+	}
+
+	// Upsert talkgroup
+	if meta.Talkgroup > 0 {
+		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, meta.Talkgroup,
+			meta.TalkgroupTag, meta.TalkgroupGroupTag, meta.TalkgroupGroup, meta.TalkgroupDesc,
+		)
+	}
+
+	// Create call group
+	cgID, cgErr := p.db.UpsertCallGroup(ctx, identity.SystemID, meta.Talkgroup, startTime,
+		meta.TalkgroupTag, meta.TalkgroupDesc, meta.TalkgroupGroupTag, meta.TalkgroupGroup,
+	)
+	if cgErr == nil {
+		_ = p.db.SetCallGroupID(ctx, callID, startTime, cgID)
+		_ = p.db.SetCallGroupPrimary(ctx, cgID, callID)
+	}
+
+	p.log.Debug().
+		Int64("call_id", callID).
+		Int("tgid", meta.Talkgroup).
+		Str("sys_name", meta.ShortName).
+		Msg("call created from audio metadata")
+
+	return callID, startTime, nil
 }
 
 // saveAudioFile writes decoded audio to the filesystem.
