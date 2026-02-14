@@ -3,11 +3,13 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/snarg/tr-engine/internal/api"
 	"github.com/snarg/tr-engine/internal/database"
 )
 
@@ -23,6 +25,12 @@ type Pipeline struct {
 
 	// Active call tracking: tr_call_id → db call_id
 	activeCalls *activeCallMap
+
+	// Event bus for SSE subscribers
+	eventBus *EventBus
+
+	// Recorder cache: recorder_id → latest state
+	recorderCache sync.Map
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -46,6 +54,7 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		log:         log,
 		audioDir:    opts.AudioDir,
 		activeCalls: newActiveCallMap(),
+		eventBus:    NewEventBus(4096), // ~60s of events at high rate
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -202,4 +211,77 @@ func (m *activeCallMap) Len() int {
 	n := len(m.calls)
 	m.mu.Unlock()
 	return n
+}
+
+// All returns a snapshot of all active call entries.
+func (m *activeCallMap) All() map[string]activeCallEntry {
+	m.mu.Lock()
+	result := make(map[string]activeCallEntry, len(m.calls))
+	for k, v := range m.calls {
+		result[k] = v
+	}
+	m.mu.Unlock()
+	return result
+}
+
+// ----- LiveDataSource interface implementation -----
+
+// ActiveCalls returns currently in-progress calls.
+func (p *Pipeline) ActiveCalls() []api.ActiveCallData {
+	entries := p.activeCalls.All()
+	calls := make([]api.ActiveCallData, 0, len(entries))
+	for _, e := range entries {
+		calls = append(calls, api.ActiveCallData{
+			CallID:    e.CallID,
+			StartTime: e.StartTime,
+			Duration:  float32(time.Since(e.StartTime).Seconds()),
+		})
+	}
+	return calls
+}
+
+// LatestRecorders returns the most recent recorder state snapshot.
+func (p *Pipeline) LatestRecorders() []api.RecorderStateData {
+	var recorders []api.RecorderStateData
+	p.recorderCache.Range(func(key, value any) bool {
+		if r, ok := value.(api.RecorderStateData); ok {
+			recorders = append(recorders, r)
+		}
+		return true
+	})
+	return recorders
+}
+
+// Subscribe registers a new SSE subscriber with the given filter.
+func (p *Pipeline) Subscribe(filter api.EventFilter) (<-chan api.SSEEvent, func()) {
+	return p.eventBus.Subscribe(filter)
+}
+
+// ReplaySince returns buffered events since the given event ID.
+func (p *Pipeline) ReplaySince(lastEventID string, filter api.EventFilter) []api.SSEEvent {
+	return p.eventBus.ReplaySince(lastEventID, filter)
+}
+
+// PublishEvent is a convenience method to publish an event through the event bus.
+func (p *Pipeline) PublishEvent(eventType string, systemID, siteID int, payload any) {
+	if p.eventBus != nil {
+		p.eventBus.Publish(eventType, systemID, siteID, payload)
+	}
+}
+
+// UpdateRecorderCache stores the latest recorder state in the in-memory cache.
+func (p *Pipeline) UpdateRecorderCache(instanceID string, rec database.RecorderSnapshotRow) {
+	key := fmt.Sprintf("%s_%d_%d", instanceID, rec.SrcNum, rec.RecNum)
+	p.recorderCache.Store(key, api.RecorderStateData{
+		ID:         rec.RecorderID,
+		InstanceID: instanceID,
+		SrcNum:     rec.SrcNum,
+		RecNum:     rec.RecNum,
+		Type:       rec.Type,
+		RecState:   rec.RecStateType,
+		Freq:       rec.Freq,
+		Duration:   rec.Duration,
+		Count:      rec.Count,
+		Squelched:  rec.Squelched,
+	})
 }

@@ -2,8 +2,99 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
+
+// UnitEventFilter specifies filters for listing unit events.
+type UnitEventFilter struct {
+	SystemID  int
+	UnitID    int
+	EventType *string
+	Tgid      *int
+	StartTime *time.Time
+	EndTime   *time.Time
+	Limit     int
+	Offset    int
+}
+
+// UnitEventAPI represents a unit event for API responses.
+type UnitEventAPI struct {
+	ID            int64      `json:"id"`
+	EventType     string     `json:"event_type"`
+	Time          time.Time  `json:"time"`
+	SystemID      int        `json:"system_id"`
+	SystemName    string     `json:"system_name,omitempty"`
+	UnitRID       int        `json:"unit_rid"`
+	UnitAlphaTag  string     `json:"unit_alpha_tag,omitempty"`
+	Tgid          *int       `json:"tgid,omitempty"`
+	TgAlphaTag    string     `json:"tg_alpha_tag,omitempty"`
+	InstanceID    string     `json:"instance_id,omitempty"`
+}
+
+// ListUnitEvents returns unit events matching the filter.
+func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]UnitEventAPI, int, error) {
+	qb := newQueryBuilder()
+	qb.Add("ue.system_id = %s", filter.SystemID)
+	qb.Add("ue.unit_rid = %s", filter.UnitID)
+
+	if filter.EventType != nil {
+		qb.Add("ue.event_type = %s", *filter.EventType)
+	}
+	if filter.Tgid != nil {
+		qb.Add("ue.tgid = %s", *filter.Tgid)
+	}
+	if filter.StartTime != nil {
+		qb.Add("ue.time >= %s", *filter.StartTime)
+	} else {
+		qb.Add("ue.time >= %s", time.Now().Add(-24*time.Hour))
+	}
+	if filter.EndTime != nil {
+		qb.Add("ue.time < %s", *filter.EndTime)
+	}
+
+	fromClause := "FROM unit_events ue"
+	whereClause := qb.WhereClause()
+
+	var total int
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, qb.Args()...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	dataQuery := fmt.Sprintf(`
+		SELECT ue.id, ue.event_type, ue.time, ue.system_id,
+			ue.unit_rid, COALESCE(ue.unit_alpha_tag, ''),
+			ue.tgid, COALESCE(ue.tg_alpha_tag, ''),
+			COALESCE(ue.instance_id, '')
+		%s %s
+		ORDER BY ue.time DESC
+		LIMIT %d OFFSET %d
+	`, fromClause, whereClause, filter.Limit, filter.Offset)
+
+	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var events []UnitEventAPI
+	for rows.Next() {
+		var e UnitEventAPI
+		if err := rows.Scan(
+			&e.ID, &e.EventType, &e.Time, &e.SystemID,
+			&e.UnitRID, &e.UnitAlphaTag,
+			&e.Tgid, &e.TgAlphaTag,
+			&e.InstanceID,
+		); err != nil {
+			return nil, 0, err
+		}
+		events = append(events, e)
+	}
+	if events == nil {
+		events = []UnitEventAPI{}
+	}
+	return events, total, rows.Err()
+}
 
 type UnitEventRow struct {
 	EventType            string

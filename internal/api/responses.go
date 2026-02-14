@@ -1,0 +1,218 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+)
+
+// WriteJSON writes a JSON response with the given status code.
+func WriteJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+// ErrorResponse is the standard error response body.
+type ErrorResponse struct {
+	Error  string `json:"error"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// WriteError writes a JSON error response.
+func WriteError(w http.ResponseWriter, status int, msg string) {
+	WriteJSON(w, status, ErrorResponse{Error: msg})
+}
+
+// WriteErrorDetail writes a JSON error response with detail.
+func WriteErrorDetail(w http.ResponseWriter, status int, msg, detail string) {
+	WriteJSON(w, status, ErrorResponse{Error: msg, Detail: detail})
+}
+
+// Pagination holds parsed pagination parameters.
+type Pagination struct {
+	Limit  int
+	Offset int
+}
+
+// ParsePagination extracts limit and offset from query params with defaults.
+func ParsePagination(r *http.Request) Pagination {
+	p := Pagination{Limit: 50, Offset: 0}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 1000 {
+			p.Limit = n
+		}
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			p.Offset = n
+		}
+	}
+	return p
+}
+
+// SortParam holds a parsed sort parameter.
+type SortParam struct {
+	Field string
+	Desc  bool
+}
+
+// ParseSort extracts sort field and direction from query params.
+// Returns the default if none specified. Validates against the allowlist.
+func ParseSort(r *http.Request, defaultField string, allowed map[string]string) SortParam {
+	s := SortParam{Field: defaultField, Desc: false}
+
+	sort := r.URL.Query().Get("sort")
+	if sort == "" {
+		// Check if default has a direction prefix
+		if strings.HasPrefix(defaultField, "-") {
+			s.Field = defaultField[1:]
+			s.Desc = true
+		}
+		return s
+	}
+
+	if strings.HasPrefix(sort, "-") {
+		s.Desc = true
+		sort = sort[1:]
+	} else if dir := r.URL.Query().Get("sort_dir"); dir == "desc" {
+		s.Desc = true
+	}
+
+	// Validate against allowlist
+	if _, ok := allowed[sort]; ok {
+		s.Field = sort
+	}
+
+	return s
+}
+
+// SQLColumn returns the SQL column for the sort field, using the allowlist mapping.
+func (s SortParam) SQLColumn(allowed map[string]string) string {
+	if col, ok := allowed[s.Field]; ok {
+		return col
+	}
+	return s.Field
+}
+
+// SQLDirection returns "ASC" or "DESC".
+func (s SortParam) SQLDirection() string {
+	if s.Desc {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// SQLOrderBy returns a full ORDER BY clause like "column DESC".
+func (s SortParam) SQLOrderBy(allowed map[string]string) string {
+	return s.SQLColumn(allowed) + " " + s.SQLDirection()
+}
+
+// QueryInt extracts an integer query parameter. Returns 0, false if missing or invalid.
+func QueryInt(r *http.Request, name string) (int, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// QueryInt64 extracts an int64 query parameter.
+func QueryInt64(r *http.Request, name string) (int64, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// QueryBool extracts a boolean query parameter.
+func QueryBool(r *http.Request, name string) (bool, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return false, false
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, false
+	}
+	return b, true
+}
+
+// QueryString extracts a non-empty string query parameter.
+func QueryString(r *http.Request, name string) (string, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return "", false
+	}
+	return v, true
+}
+
+// QueryTime extracts a time query parameter (RFC 3339).
+func QueryTime(r *http.Request, name string) (time.Time, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// QueryIntList extracts a comma-separated list of ints from a query param.
+func QueryIntList(r *http.Request, name string) []int {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	var result []int
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if n, err := strconv.Atoi(p); err == nil {
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
+// PathInt extracts an integer from a chi URL parameter.
+func PathInt(r *http.Request, name string) (int, error) {
+	v := chi.URLParam(r, name)
+	if v == "" {
+		return 0, fmt.Errorf("missing path parameter: %s", name)
+	}
+	return strconv.Atoi(v)
+}
+
+// PathInt64 extracts an int64 from a chi URL parameter.
+func PathInt64(r *http.Request, name string) (int64, error) {
+	v := chi.URLParam(r, name)
+	if v == "" {
+		return 0, fmt.Errorf("missing path parameter: %s", name)
+	}
+	return strconv.ParseInt(v, 10, 64)
+}
+
+// DecodeJSON reads and decodes a JSON request body into v.
+func DecodeJSON(r *http.Request, v any) error {
+	if r.Body == nil {
+		return fmt.Errorf("missing request body")
+	}
+	return json.NewDecoder(r.Body).Decode(v)
+}

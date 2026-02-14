@@ -1,0 +1,1288 @@
+# openapi-transcriptions.yaml
+#
+# Transcription and dataset endpoints extracted from openapi.yaml.
+# These depend on a transcription system that doesn't exist yet.
+# Re-integrate into openapi.yaml when the transcription pipeline is built.
+#
+# To add back:
+# 1. Add these tags to the main openapi.yaml tags section
+# 2. Add the paths under the paths section (after call-groups, before stats)
+# 3. Add the schemas to components/schemas
+# 4. Re-add TranscriptionStatus, TranscriptionSource, ExportFormat enums
+# 5. Re-add transcription fields to Call schema (has_transcription,
+#    transcription_status, transcription_text, transcription_word_count)
+# 6. Re-add transcription fields to CallGroup schema
+# 7. Re-add has_transcription/transcription_status query params to GET /calls
+# 8. Re-add transcription health check to HealthResponse
+
+# ============================================================
+# TAGS
+# ============================================================
+# - name: transcriptions
+#   description: Transcription access and management
+# - name: dataset
+#   description: Training dataset curation and export
+
+# ============================================================
+# ENUMS (add to components/schemas)
+# ============================================================
+# TranscriptionStatus:
+#   type: string
+#   enum: [none, auto, reviewed, verified, excluded]
+#   description: |
+#     - **none**: no transcription attempted
+#     - **auto**: machine-transcribed, unreviewed
+#     - **reviewed**: passed automated quality checks (LLM review or curation)
+#     - **verified**: human-verified correct
+#     - **excluded**: permanently excluded from training dataset
+#
+# TranscriptionSource:
+#   type: string
+#   enum: [auto, human, llm]
+#   description: |
+#     - **auto**: automated transcription (e.g., Whisper)
+#     - **human**: human correction/transcription
+#     - **llm**: LLM-generated correction
+#
+# ExportFormat:
+#   type: string
+#   enum: [jsonl, whisper, json]
+
+# ============================================================
+# CALL SCHEMA FIELDS (add to Call and CallGroup schemas)
+# ============================================================
+# On Call schema:
+#   has_transcription:
+#     type: boolean
+#     example: true
+#   transcription_status:
+#     $ref: "#/components/schemas/TranscriptionStatus"
+#   transcription_text:
+#     type: string
+#     nullable: true
+#     description: Primary transcription text (null if no transcription)
+#     example: Engine 5 responding to the scene
+#   transcription_word_count:
+#     type: integer
+#     nullable: true
+#     example: 6
+#
+# On CallGroup schema:
+#   has_transcription:
+#     type: boolean
+#     example: true
+#   transcription_status:
+#     $ref: "#/components/schemas/TranscriptionStatus"
+#   transcription_text:
+#     type: string
+#     nullable: true
+#     example: Engine 5 responding to the scene
+
+# ============================================================
+# GET /calls QUERY PARAMS (add back to listCalls parameters)
+# ============================================================
+#   - name: has_transcription
+#     in: query
+#     description: Filter by transcription availability
+#     schema:
+#       type: boolean
+#   - name: transcription_status
+#     in: query
+#     description: Filter by transcription status
+#     schema:
+#       $ref: "#/components/schemas/TranscriptionStatus"
+
+# ============================================================
+# PATHS
+# ============================================================
+
+openapi: 3.0.3
+info:
+  title: tr-engine Transcription & Dataset API (archived)
+  version: 1.0.0
+  description: |
+    Transcription and training dataset endpoints for tr-engine.
+    Extracted from the main API spec — to be implemented when the
+    transcription pipeline is built.
+
+servers:
+  - url: /api/v1
+
+paths:
+  # ----------------------------------------------------------
+  # Transcriptions
+  # ----------------------------------------------------------
+  /calls/{id}/transcription:
+    get:
+      operationId: getCallTranscription
+      summary: Get primary transcription for a call
+      description: Returns the current primary transcription for a specific call.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transcription"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      operationId: submitTranscriptionCorrection
+      summary: Submit human correction
+      description: |
+        Creates a human correction as a new primary transcription variant
+        and marks the call's transcription_status as "verified".
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorrectionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transcription"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcriptions:
+    get:
+      operationId: listCallTranscriptions
+      summary: List all transcription variants for a call
+      description: |
+        Returns all transcription variants (auto, human, LLM) for a call.
+        The primary variant is marked with `is_primary: true`.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcribe:
+    post:
+      operationId: transcribeCall
+      summary: Queue call for transcription
+      description: |
+        Queues a call for transcription (or re-transcription). Optionally
+        override model, prompt, temperature, and language.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranscribeRequest"
+      responses:
+        "202":
+          description: Accepted — queued for transcription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscribeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcription/verify:
+    post:
+      operationId: verifyTranscription
+      summary: Verify a transcription
+      description: Marks the call's current transcription as human-verified.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcription/reject:
+    post:
+      operationId: rejectTranscription
+      summary: Reject a transcription
+      description: Resets the call's transcription_status back to "auto" (unverified).
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcription/exclude:
+    post:
+      operationId: excludeFromDataset
+      summary: Exclude call from training dataset
+      description: Marks a call as permanently excluded from the training dataset.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /calls/{id}/transcription/llm-review:
+    post:
+      operationId: llmReviewCall
+      summary: Trigger LLM review on a single call
+      description: Sends the call's transcription through LLM review for quality assessment.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMReviewResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: LLM review service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /transcriptions/search:
+    get:
+      operationId: searchTranscriptions
+      summary: Full-text search across transcriptions
+      description: |
+        Searches transcription text. Results include embedded call context
+        (talkgroup, system, timing, audio URL) so no follow-up lookups are
+        needed to render search results.
+      tags: [transcriptions]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query
+          schema:
+            type: string
+        - name: sysid
+          in: query
+          description: Filter by P25 SYSID
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionSearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /transcriptions/recent:
+    get:
+      operationId: listRecentTranscriptions
+      summary: List recent transcriptions
+      description: |
+        Returns recently created transcriptions with embedded call context.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionWithCallListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /transcriptions/queue:
+    get:
+      operationId: getTranscriptionQueueStatus
+      summary: Get transcription queue status
+      description: Returns statistics about the transcription processing queue.
+      tags: [transcriptions]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionQueueStats"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Dataset
+  # ----------------------------------------------------------
+  /dataset/stats:
+    get:
+      operationId: getDatasetStats
+      summary: Get dataset statistics
+      description: |
+        Returns dataset statistics grouped by transcription status
+        (auto, reviewed, verified, excluded).
+      tags: [dataset]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetStats"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/review:
+    get:
+      operationId: listReviewQueue
+      summary: List calls in the review queue
+      description: Returns calls needing transcription review, with embedded call and transcription data.
+      tags: [dataset]
+      parameters:
+        - name: status
+          in: query
+          description: Transcription status filter
+          schema:
+            $ref: "#/components/schemas/TranscriptionStatus"
+        - name: sysid
+          in: query
+          description: Filter by SYSID
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewQueueResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/review-queue/refill:
+    post:
+      operationId: refillReviewQueue
+      summary: Refill the review queue
+      description: Manually triggers a review queue refill from auto-transcribed calls.
+      tags: [dataset]
+      responses:
+        "202":
+          description: Accepted — refill started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefillResponse"
+        "503":
+          description: Refill already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /dataset/bulk-transcribe:
+    post:
+      operationId: bulkTranscribe
+      summary: Bulk queue calls for transcription
+      description: |
+        Queues multiple calls for (re-)transcription. Optionally override
+        model, prompt, temperature, and language for the entire batch.
+      tags: [dataset]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkTranscribeRequest"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkTranscribeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /dataset/bulk-verify:
+    post:
+      operationId: bulkVerify
+      summary: Bulk verify transcriptions
+      description: Marks multiple calls' transcriptions as verified.
+      tags: [dataset]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkCallIdsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResultResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/curate:
+    post:
+      operationId: curateDataset
+      summary: Auto-curate dataset
+      description: |
+        Auto-selects high-quality auto-transcribed calls and promotes them
+        to "reviewed" status based on duration and quality thresholds.
+      tags: [dataset]
+      parameters:
+        - name: limit
+          in: query
+          description: Max calls to curate
+          schema:
+            type: integer
+            default: 200
+        - name: min_duration
+          in: query
+          description: Minimum call duration in seconds
+          schema:
+            type: number
+            default: 2
+        - name: max_duration
+          in: query
+          description: Maximum call duration in seconds
+          schema:
+            type: number
+            default: 30
+        - name: sysid
+          in: query
+          description: Filter by SYSID
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurateResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/export:
+    get:
+      operationId: exportDataset
+      summary: Export training dataset
+      description: |
+        Exports transcribed calls for training. Supports jsonl (default),
+        whisper (HuggingFace-compatible), and json formats.
+      tags: [dataset]
+      parameters:
+        - name: status
+          in: query
+          description: Transcription status filter
+          schema:
+            $ref: "#/components/schemas/TranscriptionStatus"
+        - name: format
+          in: query
+          description: Export format
+          schema:
+            type: string
+            enum: [jsonl, whisper, json]
+            default: jsonl
+        - name: sysid
+          in: query
+          description: Filter by SYSID
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          description: Max results (1-10000)
+          schema:
+            type: integer
+            default: 1000
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: JSONL stream (when format=jsonl)
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetExportResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dataset/llm-review:
+    post:
+      operationId: triggerBatchLLMReview
+      summary: Trigger batch LLM review
+      description: Sends a batch of auto-transcribed calls through LLM review.
+      tags: [dataset]
+      parameters:
+        - name: count
+          in: query
+          description: Number of calls to review (1-100)
+          schema:
+            type: integer
+            default: 5
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchLLMReviewResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: LLM review service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /dataset/llm-review/status:
+    get:
+      operationId: getLLMReviewStatus
+      summary: Get LLM review service status
+      description: Returns the LLM review service status and processing statistics.
+      tags: [dataset]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMReviewStatus"
+
+# ============================================================
+# COMPONENTS
+# ============================================================
+components:
+  parameters:
+    callId:
+      name: id
+      in: path
+      required: true
+      description: Call record database ID
+      schema:
+        type: integer
+        example: 48531
+
+    startTime:
+      name: start_time
+      in: query
+      description: Start of time range (RFC 3339)
+      schema:
+        type: string
+        format: date-time
+
+    endTime:
+      name: end_time
+      in: query
+      description: End of time range (RFC 3339)
+      schema:
+        type: string
+        format: date-time
+
+    limit:
+      name: limit
+      in: query
+      description: Results per page
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 1000
+
+    offset:
+      name: offset
+      in: query
+      description: Page offset (number of results to skip)
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    InternalError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    TranscriptionStatus:
+      type: string
+      enum: [none, auto, reviewed, verified, excluded]
+      description: |
+        - **none**: no transcription attempted
+        - **auto**: machine-transcribed, unreviewed
+        - **reviewed**: passed automated quality checks (LLM review or curation)
+        - **verified**: human-verified correct
+        - **excluded**: permanently excluded from training dataset
+
+    TranscriptionSource:
+      type: string
+      enum: [auto, human, llm]
+      description: |
+        - **auto**: automated transcription (e.g., Whisper)
+        - **human**: human correction/transcription
+        - **llm**: LLM-generated correction
+
+    ExportFormat:
+      type: string
+      enum: [jsonl, whisper, json]
+
+    Transcription:
+      type: object
+      description: A transcription of a call's audio content
+      required: [id, call_id, text, source]
+      properties:
+        id:
+          type: integer
+          example: 1
+        call_id:
+          type: integer
+          description: Database ID of the call this transcription belongs to
+          example: 48531
+        text:
+          type: string
+          example: Engine 5 responding to the scene
+        source:
+          $ref: "#/components/schemas/TranscriptionSource"
+        is_primary:
+          type: boolean
+          description: Whether this is the current active transcription for the call
+          example: true
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.95
+        language:
+          type: string
+          example: en
+        model:
+          type: string
+          description: Transcription model used
+          example: whisper-1
+        provider:
+          type: string
+          description: Transcription service provider
+          example: openai
+        word_count:
+          type: integer
+          example: 6
+        call_duration:
+          type: number
+          description: Call duration in seconds (for word timeline rendering)
+          example: 15.5
+        duration_ms:
+          type: integer
+          description: Transcription processing time in milliseconds
+          example: 1500
+        created_at:
+          type: string
+          format: date-time
+        words:
+          type: array
+          description: Word-level timestamps
+          items:
+            $ref: "#/components/schemas/TranscriptionWord"
+
+    TranscriptionWord:
+      type: object
+      description: A word with timing offsets into the audio
+      required: [word, start, end]
+      properties:
+        word:
+          type: string
+          example: Engine
+        start:
+          type: number
+          description: Seconds from start of audio
+          example: 0.5
+        end:
+          type: number
+          description: Seconds from start of audio
+          example: 0.85
+
+    TranscriptionWithCall:
+      type: object
+      description: A transcription bundled with abbreviated call context
+      properties:
+        transcription:
+          $ref: "#/components/schemas/Transcription"
+        call:
+          $ref: "#/components/schemas/CallSummary"
+
+    TranscriptionSearchHit:
+      type: object
+      description: A search result with relevance score and call context
+      properties:
+        transcription:
+          $ref: "#/components/schemas/Transcription"
+        call:
+          $ref: "#/components/schemas/CallSummary"
+        relevance_score:
+          type: number
+          description: Search relevance score (higher is better)
+          example: 0.95
+
+    CallSummary:
+      type: object
+      description: |
+        Abbreviated call metadata embedded in transcription search results
+        and listing responses. Contains enough context to render a result
+        row without any follow-up API calls.
+      properties:
+        call_id:
+          type: integer
+          example: 48531
+        system_id:
+          type: integer
+          example: 1
+        system_name:
+          type: string
+          description: System display name
+          example: "Butler/Warren P25"
+        sysid:
+          type: string
+          description: P25 SYSID (for display)
+          example: "348"
+        site_id:
+          type: integer
+          example: 1
+        site_short_name:
+          type: string
+          example: butco
+        tgid:
+          type: integer
+          example: 9178
+        tg_alpha_tag:
+          type: string
+          example: "09-8L Main"
+        tg_description:
+          type: string
+          description: Human-readable talkgroup description
+          example: Middletown Police Dispatch
+        start_time:
+          type: string
+          format: date-time
+        duration:
+          type: number
+          example: 45.5
+        emergency:
+          type: boolean
+          example: false
+        audio_url:
+          type: string
+          example: "/api/v1/calls/48531/audio"
+
+    # ========== Request Models ==========
+
+    TranscribeRequest:
+      type: object
+      description: Optional overrides for transcription. All fields are optional.
+      properties:
+        model:
+          type: string
+          description: Transcription model override
+        prompt:
+          type: string
+          description: Custom prompt for the transcription model
+        temperature:
+          type: number
+          description: Sampling temperature (0.0 - 1.0)
+          minimum: 0
+          maximum: 1
+        language:
+          type: string
+          description: ISO 639-1 language code
+        priority:
+          type: integer
+          description: Queue priority (lower = higher priority)
+
+    BulkTranscribeRequest:
+      type: object
+      required: [call_ids]
+      properties:
+        call_ids:
+          type: array
+          items:
+            type: integer
+          description: List of call IDs to transcribe
+          example: [48531, 48532]
+        model:
+          type: string
+        prompt:
+          type: string
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 1
+        language:
+          type: string
+        priority:
+          type: integer
+
+    BulkCallIdsRequest:
+      type: object
+      required: [call_ids]
+      properties:
+        call_ids:
+          type: array
+          items:
+            type: integer
+          example: [48531, 48532]
+
+    CorrectionRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Corrected transcription text
+        words:
+          type: array
+          description: Optional word-level timestamps for the correction
+          items:
+            $ref: "#/components/schemas/TranscriptionWord"
+
+    # ========== Response Wrappers ==========
+
+    TranscriptionListResponse:
+      type: object
+      required: [transcriptions, total]
+      properties:
+        transcriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transcription"
+        total:
+          type: integer
+          description: Number of variants
+          example: 3
+
+    TranscriptionSearchResponse:
+      type: object
+      required: [results, total, limit, offset]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptionSearchHit"
+        total:
+          type: integer
+          example: 42
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    TranscriptionWithCallListResponse:
+      type: object
+      required: [transcriptions, total, limit, offset]
+      properties:
+        transcriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptionWithCall"
+        total:
+          type: integer
+          example: 100
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+
+    TranscribeResponse:
+      type: object
+      required: [status, call_id]
+      properties:
+        status:
+          type: string
+          enum: [queued, already_queued]
+        call_id:
+          type: integer
+          example: 48531
+        position:
+          type: integer
+          description: Queue position (if newly queued)
+          example: 5
+
+    StatusChangeResponse:
+      type: object
+      required: [call_id, previous_status, new_status]
+      properties:
+        call_id:
+          type: integer
+          example: 48531
+        previous_status:
+          $ref: "#/components/schemas/TranscriptionStatus"
+        new_status:
+          $ref: "#/components/schemas/TranscriptionStatus"
+
+    LLMReviewResult:
+      type: object
+      properties:
+        call_id:
+          type: integer
+          example: 48531
+        original_text:
+          type: string
+        corrected_text:
+          type: string
+          nullable: true
+          description: Null if LLM found no corrections needed
+        confidence:
+          type: number
+          example: 0.92
+        changes_made:
+          type: boolean
+          example: true
+
+    BulkTranscribeResponse:
+      type: object
+      required: [queued, skipped]
+      properties:
+        queued:
+          type: integer
+          description: Number of calls successfully queued
+          example: 10
+        skipped:
+          type: integer
+          description: Number of calls skipped (already queued, not found, etc.)
+          example: 2
+        errors:
+          type: array
+          description: Per-call errors (only for failed items)
+          items:
+            type: object
+            properties:
+              call_id:
+                type: integer
+              error:
+                type: string
+
+    BulkResultResponse:
+      type: object
+      required: [updated, failed]
+      properties:
+        updated:
+          type: integer
+          description: Number of calls successfully updated
+          example: 8
+        failed:
+          type: integer
+          description: Number of calls that failed
+          example: 2
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              call_id:
+                type: integer
+              error:
+                type: string
+
+    RefillResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [started, already_running]
+        message:
+          type: string
+          example: Review queue refill started
+
+    CurateResponse:
+      type: object
+      properties:
+        promoted:
+          type: integer
+          description: Number of calls promoted to "reviewed"
+          example: 45
+        evaluated:
+          type: integer
+          description: Total calls evaluated
+          example: 200
+        criteria:
+          type: object
+          properties:
+            min_duration:
+              type: number
+            max_duration:
+              type: number
+            sysid:
+              type: string
+              nullable: true
+
+    BatchLLMReviewResponse:
+      type: object
+      properties:
+        processed:
+          type: integer
+          description: Number of calls reviewed
+          example: 5
+        corrected:
+          type: integer
+          description: Number of calls where LLM made corrections
+          example: 2
+        unchanged:
+          type: integer
+          description: Number of calls LLM found correct
+          example: 3
+
+    LLMReviewStatus:
+      type: object
+      properties:
+        available:
+          type: boolean
+          description: Whether the LLM review service is available
+          example: true
+        provider:
+          type: string
+          example: openai
+        model:
+          type: string
+          example: gpt-4o
+        total_reviewed:
+          type: integer
+          description: Total calls reviewed by LLM
+          example: 500
+        total_corrected:
+          type: integer
+          description: Total calls where LLM made corrections
+          example: 120
+
+    DatasetExportResponse:
+      type: object
+      description: Only used for format=json. JSONL and whisper formats return streaming NDJSON.
+      properties:
+        calls:
+          type: array
+          items:
+            type: object
+            properties:
+              call_id:
+                type: integer
+              audio_url:
+                type: string
+              text:
+                type: string
+              duration:
+                type: number
+              system_id:
+                type: integer
+              sysid:
+                type: string
+              tgid:
+                type: integer
+              tg_alpha_tag:
+                type: string
+              tg_description:
+                type: string
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    TranscriptionQueueStats:
+      type: object
+      required: [pending, processing, completed, failed]
+      properties:
+        pending:
+          type: integer
+          example: 15
+        processing:
+          type: integer
+          example: 2
+        completed:
+          type: integer
+          example: 5000
+        failed:
+          type: integer
+          example: 12
+
+    DatasetStats:
+      type: object
+      properties:
+        total_calls:
+          type: integer
+          description: Total calls with any transcription
+          example: 10000
+        by_status:
+          type: object
+          properties:
+            none:
+              type: integer
+              example: 50000
+            auto:
+              type: integer
+              example: 8000
+            reviewed:
+              type: integer
+              example: 1500
+            verified:
+              type: integer
+              example: 500
+            excluded:
+              type: integer
+              example: 100
+        total_duration_hours:
+          type: number
+          description: Total audio duration of transcribed calls in hours
+          example: 125.5
+        avg_confidence:
+          type: number
+          description: Average transcription confidence score
+          example: 0.87
+
+    ReviewQueueResponse:
+      type: object
+      required: [calls, total, limit, offset]
+      properties:
+        calls:
+          type: array
+          description: Calls with transcriptions needing review
+          items:
+            $ref: "#/components/schemas/ReviewQueueItem"
+        total:
+          type: integer
+          example: 100
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    ReviewQueueItem:
+      type: object
+      description: |
+        A call in the review queue, with embedded call context and
+        transcription data. Contains everything needed to render a
+        review UI row without follow-up requests.
+      properties:
+        call:
+          $ref: "#/components/schemas/CallSummary"
+        transcription:
+          $ref: "#/components/schemas/Transcription"
+        transcription_status:
+          $ref: "#/components/schemas/TranscriptionStatus"

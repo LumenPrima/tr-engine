@@ -16,7 +16,7 @@ func (p *Pipeline) handleRecorders(payload []byte) error {
 	ts := time.Unix(msg.Timestamp, 0)
 
 	for _, rec := range msg.Recorders {
-		p.recorderBatcher.Add(database.RecorderSnapshotRow{
+		row := database.RecorderSnapshotRow{
 			InstanceID:   msg.InstanceID,
 			RecorderID:   rec.ID,
 			SrcNum:       int16(rec.SrcNum),
@@ -29,7 +29,9 @@ func (p *Pipeline) handleRecorders(payload []byte) error {
 			Count:        rec.Count,
 			Squelched:    rec.Squelched,
 			Time:         ts,
-		})
+		}
+		p.recorderBatcher.Add(row)
+		p.UpdateRecorderCache(msg.InstanceID, row)
 	}
 
 	return nil
@@ -44,7 +46,7 @@ func (p *Pipeline) handleRecorder(payload []byte) error {
 	ts := time.Unix(msg.Timestamp, 0)
 	rec := msg.Recorder
 
-	p.recorderBatcher.Add(database.RecorderSnapshotRow{
+	row := database.RecorderSnapshotRow{
 		InstanceID:   msg.InstanceID,
 		RecorderID:   rec.ID,
 		SrcNum:       int16(rec.SrcNum),
@@ -57,7 +59,9 @@ func (p *Pipeline) handleRecorder(payload []byte) error {
 		Count:        rec.Count,
 		Squelched:    rec.Squelched,
 		Time:         ts,
-	})
+	}
+	p.recorderBatcher.Add(row)
+	p.UpdateRecorderCache(msg.InstanceID, row)
 
 	return nil
 }

@@ -17,33 +17,59 @@ type Server struct {
 	log  zerolog.Logger
 }
 
-func NewServer(cfg *config.Config, db *database.DB, mqtt *mqttclient.Client, version string, startTime time.Time, log zerolog.Logger) *Server {
+type ServerOptions struct {
+	Config    *config.Config
+	DB        *database.DB
+	MQTT      *mqttclient.Client
+	Live      LiveDataSource
+	Version   string
+	StartTime time.Time
+	Log       zerolog.Logger
+}
+
+func NewServer(opts ServerOptions) *Server {
 	r := chi.NewRouter()
 
 	// Global middleware
 	r.Use(RequestID)
 	r.Use(Recoverer)
-	r.Use(Logger(log))
+	r.Use(Logger(opts.Log))
 
 	// Health endpoint — no auth
-	health := NewHealthHandler(db, mqtt, version, startTime)
+	health := NewHealthHandler(opts.DB, opts.MQTT, opts.Version, opts.StartTime)
 	r.Get("/api/v1/health", health.ServeHTTP)
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
-		r.Use(BearerAuth(cfg.AuthToken))
-		// Future routes go here
+		r.Use(BearerAuth(opts.Config.AuthToken))
+
+		// All API routes under /api/v1
+		r.Route("/api/v1", func(r chi.Router) {
+			NewSystemsHandler(opts.DB).Routes(r)
+			NewTalkgroupsHandler(opts.DB).Routes(r)
+			NewUnitsHandler(opts.DB).Routes(r)
+			NewCallsHandler(opts.DB, opts.Config.AudioDir, opts.Live).Routes(r)
+			NewCallGroupsHandler(opts.DB).Routes(r)
+			NewStatsHandler(opts.DB).Routes(r)
+			NewRecordersHandler(opts.Live).Routes(r)
+			NewEventsHandler(opts.Live).Routes(r)
+			NewAdminHandler(opts.DB).Routes(r)
+		})
 	})
 
+	srv := &http.Server{
+		Addr:        opts.Config.HTTPAddr,
+		Handler:     r,
+		ReadTimeout: opts.Config.ReadTimeout,
+		IdleTimeout: opts.Config.IdleTimeout,
+		// WriteTimeout set to 0 to allow long-lived SSE connections.
+		// Individual non-streaming handlers complete quickly due to DB query timeouts.
+		WriteTimeout: 0,
+	}
+
 	return &Server{
-		http: &http.Server{
-			Addr:         cfg.HTTPAddr,
-			Handler:      r,
-			ReadTimeout:  cfg.ReadTimeout,
-			WriteTimeout: cfg.WriteTimeout,
-			IdleTimeout:  cfg.IdleTimeout,
-		},
-		log: log,
+		http: srv,
+		log:  opts.Log,
 	}
 }
 

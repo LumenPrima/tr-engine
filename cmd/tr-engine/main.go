@@ -79,7 +79,15 @@ func main() {
 
 	// HTTP Server
 	httpLog := log.With().Str("component", "http").Logger()
-	srv := api.NewServer(cfg, db, mqtt, version, startTime, httpLog)
+	srv := api.NewServer(api.ServerOptions{
+		Config:    cfg,
+		DB:        db,
+		MQTT:      mqtt,
+		Live:      pipeline,
+		Version:   version,
+		StartTime: startTime,
+		Log:       httpLog,
+	})
 
 	// Start HTTP server in background
 	errCh := make(chan error, 1)

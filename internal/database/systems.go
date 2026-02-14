@@ -238,6 +238,163 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performe
 	return callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved, nil
 }
 
+// SystemAPI represents a system with embedded sites for API responses.
+type SystemAPI struct {
+	SystemID   int       `json:"system_id"`
+	SystemType string    `json:"system_type"`
+	Name       string    `json:"name,omitempty"`
+	Sysid      string    `json:"sysid"`
+	Wacn       string    `json:"wacn"`
+	Sites      []SiteAPI `json:"sites"`
+}
+
+// GetSystemByID returns a single system with its sites.
+func (db *DB) GetSystemByID(ctx context.Context, systemID int) (*SystemAPI, error) {
+	var s SystemAPI
+	err := db.Pool.QueryRow(ctx, `
+		SELECT system_id, system_type, COALESCE(name, ''), sysid, wacn
+		FROM systems WHERE system_id = $1 AND deleted_at IS NULL
+	`, systemID).Scan(&s.SystemID, &s.SystemType, &s.Name, &s.Sysid, &s.Wacn)
+	if err != nil {
+		return nil, err
+	}
+
+	sites, err := db.ListSitesForSystem(ctx, systemID)
+	if err != nil {
+		return nil, err
+	}
+	s.Sites = sites
+	return &s, nil
+}
+
+// ListSystemsWithSites returns all active systems with their sites.
+func (db *DB) ListSystemsWithSites(ctx context.Context) ([]SystemAPI, error) {
+	rows, err := db.Pool.Query(ctx, `
+		SELECT system_id, system_type, COALESCE(name, ''), sysid, wacn
+		FROM systems WHERE deleted_at IS NULL
+		ORDER BY system_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var systems []SystemAPI
+	for rows.Next() {
+		var s SystemAPI
+		if err := rows.Scan(&s.SystemID, &s.SystemType, &s.Name, &s.Sysid, &s.Wacn); err != nil {
+			return nil, err
+		}
+		systems = append(systems, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Load sites for each system
+	allSites, err := db.LoadAllSitesAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sitesBySystem := make(map[int][]SiteAPI)
+	for _, s := range allSites {
+		sitesBySystem[s.SystemID] = append(sitesBySystem[s.SystemID], s)
+	}
+	for i := range systems {
+		systems[i].Sites = sitesBySystem[systems[i].SystemID]
+		if systems[i].Sites == nil {
+			systems[i].Sites = []SiteAPI{}
+		}
+	}
+
+	return systems, nil
+}
+
+// P25SystemAPI represents a P25 system with stats.
+type P25SystemAPI struct {
+	SystemID       int       `json:"system_id"`
+	Name           string    `json:"name,omitempty"`
+	Sysid          string    `json:"sysid"`
+	Wacn           string    `json:"wacn"`
+	Sites          []SiteAPI `json:"sites"`
+	TalkgroupCount int       `json:"talkgroup_count"`
+	UnitCount      int       `json:"unit_count"`
+	Calls24h       int       `json:"calls_24h"`
+}
+
+// ListP25Systems returns P25 systems with stats.
+func (db *DB) ListP25Systems(ctx context.Context) ([]P25SystemAPI, error) {
+	rows, err := db.Pool.Query(ctx, `
+		SELECT s.system_id, COALESCE(s.name, ''), s.sysid, s.wacn,
+			(SELECT count(*) FROM talkgroups t WHERE t.system_id = s.system_id),
+			(SELECT count(*) FROM units u WHERE u.system_id = s.system_id),
+			(SELECT count(*) FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '24 hours')
+		FROM systems s
+		WHERE s.system_type IN ('p25', 'smartnet') AND s.deleted_at IS NULL
+		ORDER BY s.system_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var systems []P25SystemAPI
+	for rows.Next() {
+		var s P25SystemAPI
+		if err := rows.Scan(&s.SystemID, &s.Name, &s.Sysid, &s.Wacn,
+			&s.TalkgroupCount, &s.UnitCount, &s.Calls24h); err != nil {
+			return nil, err
+		}
+		systems = append(systems, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Load sites
+	allSites, err := db.LoadAllSitesAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sitesBySystem := make(map[int][]SiteAPI)
+	for _, s := range allSites {
+		sitesBySystem[s.SystemID] = append(sitesBySystem[s.SystemID], s)
+	}
+	for i := range systems {
+		systems[i].Sites = sitesBySystem[systems[i].SystemID]
+		if systems[i].Sites == nil {
+			systems[i].Sites = []SiteAPI{}
+		}
+	}
+
+	return systems, nil
+}
+
+// UpdateSystemFields updates mutable system fields. Only non-nil fields are updated.
+func (db *DB) UpdateSystemFields(ctx context.Context, systemID int, name, sysid, wacn *string) error {
+	nameVal := ""
+	if name != nil {
+		nameVal = *name
+	}
+	sysidVal := ""
+	if sysid != nil {
+		sysidVal = *sysid
+	}
+	wacnVal := ""
+	if wacn != nil {
+		wacnVal = *wacn
+	}
+
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE systems SET
+			name  = CASE WHEN $2 <> '' THEN $2 ELSE name END,
+			sysid = CASE WHEN $3 <> '' THEN $3 ELSE sysid END,
+			wacn  = CASE WHEN $4 <> '' THEN $4 ELSE wacn END
+		WHERE system_id = $1 AND deleted_at IS NULL
+	`, systemID, nameVal, sysidVal, wacnVal)
+	return err
+}
+
 // LoadAllSystems returns all active systems.
 func (db *DB) LoadAllSystems(ctx context.Context) ([]System, error) {
 	rows, err := db.Pool.Query(ctx, `
