@@ -97,7 +97,7 @@ func (db *DB) UpdateCallEnd(ctx context.Context, callID int64, startTime time.Ti
 	stopTime time.Time, duration float32, freq int64, freqError int,
 	signalDB, noiseDB float32, errorCount, spikeCount int,
 	recState int16, recStateType string, callState int16, callStateType string,
-	audioFilePath string, retryAttempt int16, processCallTime float32,
+	callFilename string, retryAttempt int16, processCallTime float32,
 ) error {
 	_, err := db.Pool.Exec(ctx, `
 		UPDATE calls SET
@@ -122,7 +122,7 @@ func (db *DB) UpdateCallEnd(ctx context.Context, callID int64, startTime time.Ti
 		stopTime, duration, freq, freqError,
 		signalDB, noiseDB, errorCount, spikeCount,
 		recState, recStateType, callState, callStateType,
-		audioFilePath, retryAttempt, processCallTime,
+		callFilename, retryAttempt, processCallTime,
 	)
 	return err
 }

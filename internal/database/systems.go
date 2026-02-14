@@ -78,7 +78,7 @@ func (db *DB) FindSystemBySysidWacn(ctx context.Context, sysid, wacn string, exc
 
 // MergeSystems moves all child records from sourceID to targetID and soft-deletes the source.
 // Returns counts of moved records for the merge log.
-func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int) (callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved int, err error) {
+func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performedBy string) (callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved int, err error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
 		return 0, 0, 0, 0, 0, 0, fmt.Errorf("begin tx: %w", err)
@@ -227,9 +227,9 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int) (callsMo
 
 	// Log the merge
 	tx.Exec(ctx, `
-		INSERT INTO system_merge_log (source_id, target_id, calls_moved, talkgroups_moved, talkgroups_merged, units_moved, units_merged, events_moved)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, sourceID, targetID, callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved)
+		INSERT INTO system_merge_log (source_id, target_id, calls_moved, talkgroups_moved, talkgroups_merged, units_moved, units_merged, events_moved, performed_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, sourceID, targetID, callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved, performedBy)
 
 	if err := tx.Commit(ctx); err != nil {
 		return 0, 0, 0, 0, 0, 0, fmt.Errorf("commit merge: %w", err)

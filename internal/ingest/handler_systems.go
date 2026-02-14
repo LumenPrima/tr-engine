@@ -102,7 +102,7 @@ func (p *Pipeline) mergeSystem(ctx context.Context, sourceID, targetID int, sysN
 		Str("sys_name", sysName).
 		Msg("merging duplicate systems")
 
-	callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved, err := p.db.MergeSystems(ctx, sourceID, targetID)
+	callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved, err := p.db.MergeSystems(ctx, sourceID, targetID, "auto:p25-identity-match")
 	if err != nil {
 		p.log.Error().Err(err).
 			Int("source", sourceID).
