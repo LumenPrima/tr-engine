@@ -1,9 +1,11 @@
 package config
 
 import (
+	"os"
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -25,10 +27,50 @@ type Config struct {
 	LogLevel  string `env:"LOG_LEVEL" envDefault:"info"`
 }
 
-func Load() (*Config, error) {
+// Overrides holds CLI flag values that take priority over env vars.
+type Overrides struct {
+	EnvFile       string
+	HTTPAddr      string
+	LogLevel      string
+	DatabaseURL   string
+	MQTTBrokerURL string
+	AudioDir      string
+}
+
+// Load reads configuration from .env file, environment variables, and CLI overrides.
+// Priority: CLI flags > environment variables > .env file > struct defaults.
+func Load(overrides Overrides) (*Config, error) {
+	// Load .env file (silent if missing)
+	envFile := overrides.EnvFile
+	if envFile == "" {
+		envFile = ".env"
+	}
+	if _, err := os.Stat(envFile); err == nil {
+		_ = godotenv.Load(envFile)
+	}
+
+	// Parse environment variables into config struct
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+
+	// Apply CLI overrides (non-empty values win)
+	if overrides.HTTPAddr != "" {
+		cfg.HTTPAddr = overrides.HTTPAddr
+	}
+	if overrides.LogLevel != "" {
+		cfg.LogLevel = overrides.LogLevel
+	}
+	if overrides.DatabaseURL != "" {
+		cfg.DatabaseURL = overrides.DatabaseURL
+	}
+	if overrides.MQTTBrokerURL != "" {
+		cfg.MQTTBrokerURL = overrides.MQTTBrokerURL
+	}
+	if overrides.AudioDir != "" {
+		cfg.AudioDir = overrides.AudioDir
+	}
+
 	return cfg, nil
 }

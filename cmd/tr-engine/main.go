@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,10 +20,27 @@ import (
 var version = "dev"
 
 func main() {
+	// CLI flags
+	var overrides config.Overrides
+	var showVersion bool
+	flag.StringVar(&overrides.EnvFile, "env-file", "", "Path to .env file (default: .env)")
+	flag.StringVar(&overrides.HTTPAddr, "listen", "", "HTTP listen address (overrides HTTP_ADDR)")
+	flag.StringVar(&overrides.LogLevel, "log-level", "", "Log level: debug, info, warn, error (overrides LOG_LEVEL)")
+	flag.StringVar(&overrides.DatabaseURL, "database-url", "", "PostgreSQL connection URL (overrides DATABASE_URL)")
+	flag.StringVar(&overrides.MQTTBrokerURL, "mqtt-url", "", "MQTT broker URL (overrides MQTT_BROKER_URL)")
+	flag.StringVar(&overrides.AudioDir, "audio-dir", "", "Audio file directory (overrides AUDIO_DIR)")
+	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
+	flag.Parse()
+
+	if showVersion {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
 	startTime := time.Now()
 
-	// Config
-	cfg, err := config.Load()
+	// Config (loads .env automatically, then env vars, then CLI overrides)
+	cfg, err := config.Load(overrides)
 	if err != nil {
 		early := zerolog.New(os.Stderr).With().Timestamp().Logger()
 		early.Fatal().Err(err).Msg("failed to load config")
