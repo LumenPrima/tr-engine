@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -19,7 +20,7 @@ type CompositeID struct {
 
 // ParseCompositeID parses a path parameter as either "system_id:entity_id" or plain "entity_id".
 func ParseCompositeID(r *http.Request, param string) (CompositeID, error) {
-	raw := chi.URLParam(r, param)
+	raw, _ := url.PathUnescape(chi.URLParam(r, param))
 	if raw == "" {
 		return CompositeID{}, fmt.Errorf("missing path parameter: %s", param)
 	}

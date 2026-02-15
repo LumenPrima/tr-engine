@@ -1121,6 +1121,11 @@ paths:
         events as they are ingested from MQTT. The server filters events
         based on the query parameters — only matching events are sent.
 
+        > **Note:** This is a streaming endpoint. Swagger UI's "Try it out"
+        > will hang indefinitely waiting for the response to complete.
+        > Use the [Live Events](/events.html) page or connect with
+        > `curl` / `EventSource` instead.
+
         **Connection behavior:**
         - Response uses `Content-Type: text/event-stream`
         - The server sends `X-Accel-Buffering: no` for nginx compatibility
@@ -1282,7 +1287,7 @@ paths:
               parameterized:
                 summary: Units on a specific talkgroup
                 value:
-                  sql: "SELECT DISTINCT unit_id FROM calls WHERE tgid = $1"
+                  sql: "SELECT DISTINCT ct.src AS unit_id FROM call_transmissions ct JOIN calls c ON c.call_id = ct.call_id AND c.start_time = ct.call_start_time WHERE c.tgid = $1"
                   params: [9178]
                   limit: 500
       responses:
