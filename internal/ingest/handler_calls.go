@@ -465,6 +465,88 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 		p.log.Warn().Err(err).Msg("failed to insert active call checkpoint")
 	}
 
+	// Build set of TR call IDs still active in this snapshot
+	activeIDs := make(map[string]CallData, len(msg.Calls))
+	for _, c := range msg.Calls {
+		activeIDs[c.ID] = c
+	}
+
+	// Update elapsed time for active calls and detect ended calls.
+	// Calls present in our map but absent from the active list have ended.
+	// This is the only end signal for encrypted/monitor-only calls.
+	snapshot := p.activeCalls.All()
+	for trCallID, entry := range snapshot {
+		if activeCall, ok := activeIDs[trCallID]; ok {
+			// Still active — update elapsed duration for call_update events
+			if activeCall.Elapsed > 0 {
+				elapsed := float32(activeCall.Elapsed)
+				stopTime := entry.StartTime.Add(time.Duration(activeCall.Elapsed) * time.Second)
+				_ = p.db.UpdateCallElapsed(ctx, entry.CallID, entry.StartTime, &stopTime, &elapsed)
+			}
+			continue
+		}
+
+		// Call disappeared from active list — it's ended.
+		// For encrypted calls (no call_end will arrive), synthesize the ending.
+		if !entry.Encrypted {
+			continue // normal calls get a proper call_end, skip
+		}
+
+		p.log.Debug().
+			Str("tr_call_id", trCallID).
+			Int64("call_id", entry.CallID).
+			Int("tgid", entry.Tgid).
+			Bool("encrypted", entry.Encrypted).
+			Msg("encrypted call ended (disappeared from calls_active)")
+
+		// Estimate stop time as now (the call ended sometime between the last
+		// calls_active that included it and this one)
+		stopTime := time.Now()
+		duration := float32(stopTime.Sub(entry.StartTime).Seconds())
+
+		if err := p.db.UpdateCallEnd(ctx,
+			entry.CallID, entry.StartTime,
+			stopTime, duration,
+			entry.Freq,
+			0,    // freq_error
+			0, 0, // signal, noise (unknown for encrypted)
+			0, 0, // error_count, spike_count
+			0, "COMPLETED", // rec_state
+			0, "COMPLETED", // call_state
+			"",             // call_filename (no recording)
+			0,              // retry_attempt
+			0,              // process_call_time
+		); err != nil {
+			p.log.Warn().Err(err).Int64("call_id", entry.CallID).Msg("failed to close encrypted call")
+		}
+
+		p.activeCalls.Delete(trCallID)
+
+		siteID := 0
+		if entry.SiteID != nil {
+			siteID = *entry.SiteID
+		}
+
+		p.PublishEvent(EventData{
+			Type:     "call_end",
+			SystemID: entry.SystemID,
+			SiteID:   siteID,
+			Tgid:     entry.Tgid,
+			Payload: map[string]any{
+				"call_id":      entry.CallID,
+				"system_id":    entry.SystemID,
+				"tgid":         entry.Tgid,
+				"tg_alpha_tag": entry.TgAlphaTag,
+				"freq":         entry.Freq,
+				"start_time":   entry.StartTime,
+				"stop_time":    stopTime,
+				"duration":     duration,
+				"emergency":    entry.Emergency,
+				"encrypted":    entry.Encrypted,
+			},
+		})
+	}
+
 	p.log.Debug().
 		Int("active_calls", len(msg.Calls)).
 		Str("instance_id", msg.InstanceID).

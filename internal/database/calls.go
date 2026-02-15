@@ -127,6 +127,21 @@ func (db *DB) UpdateCallEnd(ctx context.Context, callID int64, startTime time.Ti
 	return err
 }
 
+// UpdateCallElapsed updates a call's running duration from calls_active elapsed data.
+func (db *DB) UpdateCallElapsed(ctx context.Context, callID int64, startTime time.Time, stopTime *time.Time, duration *float32) error {
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE calls SET
+			stop_time = COALESCE($3, stop_time),
+			duration = COALESCE($4, duration),
+			updated_at = now()
+		WHERE call_id = $1 AND start_time = $2
+			AND (duration IS NULL OR duration = 0)
+	`,
+		callID, startTime, stopTime, duration,
+	)
+	return err
+}
+
 // UpdateCallAudio updates a call with audio file path and size.
 func (db *DB) UpdateCallAudio(ctx context.Context, callID int64, startTime time.Time, audioPath string, audioSize int) error {
 	_, err := db.Pool.Exec(ctx, `

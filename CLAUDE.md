@@ -203,3 +203,11 @@ Implementation: `EventData` struct in `eventbus.go` carries `Type`, `SubType`, `
 | `trdash/feeds/trunk_recorder/status` | `handleStatus` | _(none)_ | `plugin_statuses` | Very low |
 
 Trunking messages use a `Batcher` for CopyFrom batch inserts (same as raw messages and recorder snapshots). Console logs use simple single-row INSERT. The status handler caches TR instance status in-memory for the `/api/v1/health` endpoint rather than publishing SSE events.
+
+## Known trunk-recorder Issues (Potential Upstream Bug Reports)
+
+### unit_event:end lags call_end by 3-4 seconds
+`unit_event:end` arrives 3-4s after `call_end` for the same call. `call_end` fires from the recorder when voice frames stop (immediate), but `unit_event:end` fires from the control channel parser when it sees the deaffiliation message (delayed by the P25 trunking update cycle). TR should be able to detect unit transmission end from the recorder side (voice frames going null) rather than waiting for the control channel. The P25 channel stays allocated during hang time, but the actual voice traffic stops immediately. Event Horizon works around this with a 6s coalesce window.
+
+### call ID shifts between call_start and call_end
+The trunk-recorder call ID format `{sys_num}_{tgid}_{start_time}` embeds `start_time`, which can shift by 1-2 seconds between `call_start` and `call_end` messages. This causes the call_end handler to fail exact-match lookup. tr-engine works around this with fuzzy matching by `(tgid, start_time ± 5s)` in the active calls map.

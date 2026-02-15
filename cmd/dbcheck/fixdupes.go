@@ -8,24 +8,24 @@ import (
 )
 
 func fixDuplicateCalls(ctx context.Context, pool *pgxpool.Pool, dryRun bool) {
-	// Find pairs: RECORDING row (has tr_call_id, duration=0) paired with
-	// COMPLETED row (empty tr_call_id, duration>0) on same system+tgid within 2s.
-	// Keep the RECORDING row (it has the tr_call_id), merge COMPLETED data into it.
+	// Find pairs: a duration=0 row paired with a duration>0 row on same
+	// system+tgid within 2s. Covers both patterns:
+	//   1. RECORDING (has tr_call_id) + COMPLETED (empty tr_call_id) — old dupes
+	//   2. Two rows both with tr_call_ids that differ by 1s — call ID shift dupes
+	// Keep the row with duration>0 (it has the completed data).
 	const findPairs = `
 		WITH pairs AS (
 			SELECT DISTINCT ON (r.call_id)
-				r.call_id AS keep_id,
-				r.start_time AS keep_start,
-				c.call_id AS delete_id,
-				c.start_time AS delete_start
+				c.call_id AS keep_id,
+				c.start_time AS keep_start,
+				r.call_id AS delete_id,
+				r.start_time AS delete_start
 			FROM calls r
 			JOIN calls c ON r.tgid = c.tgid
 				AND r.system_id = c.system_id
 				AND ABS(EXTRACT(EPOCH FROM (r.start_time - c.start_time))) <= 2
 				AND r.call_id != c.call_id
-			WHERE r.tr_call_id != ''
-				AND (r.duration IS NULL OR r.duration = 0)
-				AND (c.tr_call_id = '' OR c.tr_call_id IS NULL)
+			WHERE (r.duration IS NULL OR r.duration = 0)
 				AND c.duration > 0
 			ORDER BY r.call_id, ABS(EXTRACT(EPOCH FROM (r.start_time - c.start_time)))
 		)
@@ -71,28 +71,30 @@ func fixDuplicateCalls(ctx context.Context, pool *pgxpool.Pool, dryRun bool) {
 		return
 	}
 
-	// Merge COMPLETED data into RECORDING rows and delete duplicates.
+	// Merge: keep the completed row, copy any missing fields from the deleted row.
+	// Notably, preserve the tr_call_id from whichever row has it.
 	const mergeSQL = `
 		UPDATE calls keep
 		SET
-			stop_time = del.stop_time,
-			duration = del.duration,
-			freq = COALESCE(del.freq, keep.freq),
-			freq_error = COALESCE(del.freq_error, keep.freq_error),
-			signal_db = COALESCE(del.signal_db, keep.signal_db),
-			noise_db = COALESCE(del.noise_db, keep.noise_db),
-			error_count = COALESCE(del.error_count, keep.error_count),
-			spike_count = COALESCE(del.spike_count, keep.spike_count),
-			call_state = COALESCE(del.call_state, keep.call_state),
-			call_state_type = COALESCE(del.call_state_type, keep.call_state_type),
-			rec_state = COALESCE(del.rec_state, keep.rec_state),
-			rec_state_type = COALESCE(del.rec_state_type, keep.rec_state_type),
-			call_filename = COALESCE(del.call_filename, keep.call_filename),
-			audio_file_path = COALESCE(del.audio_file_path, keep.audio_file_path),
-			audio_file_size = COALESCE(del.audio_file_size, keep.audio_file_size),
-			process_call_time = COALESCE(del.process_call_time, keep.process_call_time),
-			retry_attempt = COALESCE(del.retry_attempt, keep.retry_attempt),
-			call_group_id = COALESCE(del.call_group_id, keep.call_group_id),
+			tr_call_id = COALESCE(NULLIF(keep.tr_call_id, ''), del.tr_call_id),
+			stop_time = COALESCE(keep.stop_time, del.stop_time),
+			duration = COALESCE(keep.duration, del.duration),
+			freq = COALESCE(keep.freq, del.freq),
+			freq_error = COALESCE(keep.freq_error, del.freq_error),
+			signal_db = COALESCE(keep.signal_db, del.signal_db),
+			noise_db = COALESCE(keep.noise_db, del.noise_db),
+			error_count = COALESCE(keep.error_count, del.error_count),
+			spike_count = COALESCE(keep.spike_count, del.spike_count),
+			call_state = COALESCE(keep.call_state, del.call_state),
+			call_state_type = COALESCE(NULLIF(keep.call_state_type, ''), del.call_state_type),
+			rec_state = COALESCE(keep.rec_state, del.rec_state),
+			rec_state_type = COALESCE(NULLIF(keep.rec_state_type, ''), del.rec_state_type),
+			call_filename = COALESCE(keep.call_filename, del.call_filename),
+			audio_file_path = COALESCE(keep.audio_file_path, del.audio_file_path),
+			audio_file_size = COALESCE(keep.audio_file_size, del.audio_file_size),
+			process_call_time = COALESCE(keep.process_call_time, del.process_call_time),
+			retry_attempt = COALESCE(keep.retry_attempt, del.retry_attempt),
+			call_group_id = COALESCE(keep.call_group_id, del.call_group_id),
 			updated_at = now()
 		FROM calls del
 		WHERE keep.call_id = $1 AND keep.start_time = $2

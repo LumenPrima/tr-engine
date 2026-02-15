@@ -377,6 +377,10 @@
   let everConnected = false;
   let recentTimes = [];
 
+  // Call linking: connect markers belonging to the same call
+  const callLinkMap = new Map(); // callId → SVGLineElement
+  let callLinkGroup = null;
+
   // Talkgroup lanes
   const tgLaneMap = new Map();
   let nextLane = 0;
@@ -585,6 +589,95 @@
     }
   }
 
+  // ── Event coalescing ────────────────────────────────
+  // Dedup multi-site duplicates and overlapping call/unit events.
+  // Bucket key = tgid:category:time_bucket (3s window).
+  // Categories: "start" (call_start, unit call), "end" (call_end, unit end).
+  // Call events take priority over unit events within a bucket.
+  const COALESCE_WINDOW = 6000; // ms — P25 unit events lag call events by 3-4s
+  const coalesceBuckets = new Map(); // key → { time, priority }
+
+  function coalesceCategory(type, data) {
+    if (type === 'call_start') return 'start';
+    if (type === 'call_end') return 'end';
+    if (type === 'call_update') return 'update';
+    if (type === 'unit_event') {
+      const sub = (data.event_type || '').toLowerCase();
+      if (sub === 'call') return 'start';
+      if (sub === 'end') return 'end';
+    }
+    return null; // non-coalescable unit events (on, off, join, etc.)
+  }
+
+  // Returns: false = show event, true = suppress event
+  // When a higher-priority call event arrives after a unit event,
+  // it overwrites the existing marker's visuals instead of adding a new one.
+  function shouldCoalesce(type, data, tgid, timeMs, style, detail) {
+    // Dedup identical unit events (P25 control channel sends redundant grants/affiliations)
+    if (type === 'unit_event') {
+      const sub = (data.event_type || '').toLowerCase();
+      const unitId = data.unit_id || 0;
+      const dedupPrefix = 'u:' + tgid + ':' + unitId + ':' + sub + ':';
+      const bucket = Math.floor(timeMs / COALESCE_WINDOW);
+      for (let b = bucket - 1; b <= bucket + 1; b++) {
+        const existing = coalesceBuckets.get(dedupPrefix + b);
+        if (existing && Math.abs(existing.time - timeMs) <= COALESCE_WINDOW) return true;
+      }
+      coalesceBuckets.set(dedupPrefix + bucket, { time: timeMs, priority: 0, eventIdx: -1 });
+    }
+
+    // Category coalescing: merge call_start ↔ unit call, call_end ↔ unit end
+    const cat = coalesceCategory(type, data);
+    if (!cat) return false;
+
+    const priority = type === 'unit_event' ? 1 : 2;
+    const bucket = Math.floor(timeMs / COALESCE_WINDOW);
+    const prefix = tgid + ':' + cat + ':';
+
+    // Check current and adjacent buckets to avoid boundary misses
+    for (let b = bucket - 1; b <= bucket + 1; b++) {
+      const existing = coalesceBuckets.get(prefix + b);
+      if (!existing || Math.abs(existing.time - timeMs) > COALESCE_WINDOW) continue;
+
+      if (priority > existing.priority) {
+        // Higher priority: overwrite the existing marker's visuals
+        const ev = events[existing.eventIdx];
+        if (ev) {
+          ev.icon = style.icon;
+          ev.color = style.color;
+          ev.shadow = style.shadow;
+          ev.detail = detail;
+          ev.type = type.replace(/_/g, ' ');
+          if (data.call_id) ev.callId = data.call_id;
+          // Update DOM if already created
+          const node = domNodes[existing.eventIdx];
+          if (node) {
+            node.icon.textContent = style.icon;
+            node.icon.setAttribute('fill', style.color);
+            node.icon.style.textShadow = style.shadow;
+            node.trail.setAttribute('stroke', style.color);
+          }
+          existing.priority = priority;
+        }
+      }
+      return true; // suppress either way
+    }
+
+    // First in this window — will be shown; store index so it can be overwritten
+    const eventIdx = events.length; // the event will be pushed at this index
+    coalesceBuckets.set(prefix + bucket, { time: timeMs, priority, eventIdx });
+
+    // Expire old buckets periodically
+    if (coalesceBuckets.size > 2000) {
+      const cutoff = Date.now() - MAX_AGE_SEC * 1000;
+      for (const [k, v] of coalesceBuckets) {
+        if (v.time < cutoff) coalesceBuckets.delete(k);
+      }
+    }
+
+    return false;
+  }
+
   // ── Add event ───────────────────────────────────────
   function addEvent(type, data) {
     let style;
@@ -600,12 +693,24 @@
     if (!tgid) return; // skip events with no talkgroup
 
     const tgLabel = data.tg_alpha_tag || 'TG ' + tgid;
-    const lane = getLane(tgid, tgLabel);
 
     let time;
     const ts = (type === 'call_end' ? data.stop_time : null) || data.start_time || data.time || data.log_time;
     if (ts) { time = typeof ts === 'number' && ts > 1e12 ? ts : typeof ts === 'number' ? ts * 1000 : new Date(ts).getTime(); }
     if (!time || isNaN(time)) { time = Date.now(); }
+
+    const detail = summarize(type, data);
+
+    // Coalesce: skip duplicate multi-site and overlapping call/unit events
+    // Call events overwrite unit events' visuals when they arrive later
+    if (shouldCoalesce(type, data, tgid, time, style, detail)) {
+      recentTimes.push(Date.now());
+      recentTimes = recentTimes.filter(t => Date.now() - t < 60000);
+      statRate.textContent = recentTimes.length;
+      return;
+    }
+
+    const lane = getLane(tgid, tgLabel);
 
     // Display label: "unit call", "unit off", etc. for unit events
     const displayType = type === 'unit_event' && data.event_type
@@ -620,8 +725,9 @@
       shadow: style.shadow,
       jitter: (Math.random() - 0.5) * 0.3,
       size: 10 + Math.random() * 6,
-      detail: summarize(type, data),
+      detail: detail,
       emergency: !!data.emergency,
+      callId: (type !== 'unit_event' && data.call_id) ? data.call_id : null,
     });
     domNodes.push(null); // placeholder, reconcile will create DOM
 
@@ -743,6 +849,70 @@
     }
   }
 
+  // ── Phase 3: Update call link lines ─────────────────
+  function updateCallLinks() {
+    const now = Date.now();
+
+    // Group events by callId
+    const groups = new Map();
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      if (!ev.callId) continue;
+      if (!groups.has(ev.callId)) groups.set(ev.callId, []);
+      groups.get(ev.callId).push(ev);
+    }
+
+    // Remove stale link lines
+    for (const [callId, el] of callLinkMap) {
+      if (!groups.has(callId)) {
+        el.remove();
+        callLinkMap.delete(callId);
+      }
+    }
+
+    // Update or create link lines
+    for (const [callId, evts] of groups) {
+      // Check if the call has ended
+      const hasEnd = evts.some(e => e.type === 'call end');
+
+      // Compute positions
+      let minX = Infinity, maxX = -Infinity;
+      let y = 0, opacitySum = 0;
+      for (const ev of evts) {
+        const ageSec = Math.max(1, (now - ev.time) / 1000);
+        const x = xScale(ageSec);
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        y = laneY(ev.lane);
+        let op = 1;
+        if (ageSec > 1800) op = Math.max(0.08, 1 - (ageSec - 1800) / (MAX_AGE_SEC - 1800));
+        opacitySum += op;
+      }
+
+      // Active calls: extend line to the now edge
+      if (!hasEnd) minX = rangeStart;
+
+      let el = callLinkMap.get(callId);
+      if (!el) {
+        el = document.createElementNS(SVG_NS, 'line');
+        el.setAttribute('stroke-width', '1.5');
+        el.setAttribute('stroke-linecap', 'round');
+        callLinkGroup.appendChild(el);
+        callLinkMap.set(callId, el);
+      }
+
+      const avgOpacity = opacitySum / evts.length;
+      el.style.display = '';
+      el.setAttribute('x1', minX);
+      el.setAttribute('y1', y);
+      el.setAttribute('x2', maxX);
+      el.setAttribute('y2', y);
+      el.setAttribute('stroke', hasEnd
+        ? 'rgba(0, 229, 255, ' + (avgOpacity * 0.18).toFixed(3) + ')'
+        : 'rgba(0, 229, 255, ' + (avgOpacity * 0.25).toFixed(3) + ')');
+    }
+  }
+
   // ── Animation loop ──────────────────────────────────
   let prevLaneCount = 0;
   let frame = 0;
@@ -777,6 +947,7 @@
     }
 
     updatePositions();
+    updateCallLinks();
     requestAnimationFrame(tick);
   }
 
@@ -826,6 +997,8 @@
 
   // ── Init ────────────────────────────────────────────
   initGrid();
+  callLinkGroup = document.createElementNS(SVG_NS, 'g');
+  svgEl.appendChild(callLinkGroup);
   resize();
   connect();
   requestAnimationFrame(tick);

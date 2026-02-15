@@ -36,6 +36,12 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "fix-unresolved" {
+		dryRun := !(len(os.Args) > 2 && os.Args[2] == "apply")
+		fixUnresolvedCalls(ctx, pool, dryRun)
+		return
+	}
+
 	// Default: table counts
 	tables := []string{
 		"instances", "systems", "sites", "talkgroups", "units",
