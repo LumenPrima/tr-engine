@@ -103,7 +103,27 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		return fmt.Errorf("insert call: %w", err)
 	}
 
-	p.activeCalls.Set(call.ID, callID, startTime)
+	p.activeCalls.Set(call.ID, activeCallEntry{
+		CallID:        callID,
+		StartTime:     startTime,
+		SystemID:      identity.SystemID,
+		SystemName:    call.SysName,
+		Sysid:         identity.Sysid,
+		SiteID:        &siteID,
+		SiteShortName: call.SysName,
+		Tgid:          call.Talkgroup,
+		TgAlphaTag:    call.TalkgroupAlphaTag,
+		TgDescription: call.TalkgroupDescription,
+		TgTag:         call.TalkgroupTag,
+		TgGroup:       call.TalkgroupGroup,
+		Freq:          freq,
+		Emergency:     call.Emergency,
+		Encrypted:     call.Encrypted,
+		Analog:        call.Analog,
+		Conventional:  call.Conventional,
+		Phase2TDMA:    call.Phase2TDMA,
+		AudioType:     call.AudioType,
+	})
 
 	// Create call group
 	cgID, err := p.db.UpsertCallGroup(ctx, identity.SystemID, call.Talkgroup, startTime,

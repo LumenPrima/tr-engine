@@ -172,10 +172,27 @@ func (p *Pipeline) flushRecorderSnapshots(rows []database.RecorderSnapshotRow) {
 	p.log.Debug().Int64("inserted", n).Msg("flushed recorder snapshots")
 }
 
-// activeCallMap tracks in-flight calls: tr_call_id → (db call_id, start_time).
+// activeCallMap tracks in-flight calls: tr_call_id → call metadata for API display.
 type activeCallEntry struct {
-	CallID    int64
-	StartTime time.Time
+	CallID        int64
+	StartTime     time.Time
+	SystemID      int
+	SystemName    string
+	Sysid         string
+	SiteID        *int
+	SiteShortName string
+	Tgid          int
+	TgAlphaTag    string
+	TgDescription string
+	TgTag         string
+	TgGroup       string
+	Freq          int64
+	Emergency     bool
+	Encrypted     bool
+	Analog        bool
+	Conventional  bool
+	Phase2TDMA    bool
+	AudioType     string
 }
 
 type activeCallMap struct {
@@ -187,9 +204,9 @@ func newActiveCallMap() *activeCallMap {
 	return &activeCallMap{calls: make(map[string]activeCallEntry)}
 }
 
-func (m *activeCallMap) Set(trCallID string, callID int64, startTime time.Time) {
+func (m *activeCallMap) Set(trCallID string, entry activeCallEntry) {
 	m.mu.Lock()
-	m.calls[trCallID] = activeCallEntry{CallID: callID, StartTime: startTime}
+	m.calls[trCallID] = entry
 	m.mu.Unlock()
 }
 
@@ -232,9 +249,26 @@ func (p *Pipeline) ActiveCalls() []api.ActiveCallData {
 	calls := make([]api.ActiveCallData, 0, len(entries))
 	for _, e := range entries {
 		calls = append(calls, api.ActiveCallData{
-			CallID:    e.CallID,
-			StartTime: e.StartTime,
-			Duration:  float32(time.Since(e.StartTime).Seconds()),
+			CallID:        e.CallID,
+			SystemID:      e.SystemID,
+			SystemName:    e.SystemName,
+			Sysid:         e.Sysid,
+			SiteID:        e.SiteID,
+			SiteShortName: e.SiteShortName,
+			Tgid:          e.Tgid,
+			TgAlphaTag:    e.TgAlphaTag,
+			TgDescription: e.TgDescription,
+			TgTag:         e.TgTag,
+			TgGroup:       e.TgGroup,
+			StartTime:     e.StartTime,
+			Duration:      float32(time.Since(e.StartTime).Seconds()),
+			Freq:          e.Freq,
+			Emergency:     e.Emergency,
+			Encrypted:     e.Encrypted,
+			Analog:        e.Analog,
+			Conventional:  e.Conventional,
+			Phase2TDMA:    e.Phase2TDMA,
+			AudioType:     e.AudioType,
 		})
 	}
 	return calls

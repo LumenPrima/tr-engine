@@ -15,6 +15,7 @@ type ResolvedIdentity struct {
 	SystemID     int
 	SiteID       int
 	SystemName   string
+	Sysid        string
 }
 
 // IdentityResolver caches instance/system/site mappings in memory.
@@ -55,6 +56,7 @@ func (r *IdentityResolver) LoadCache(ctx context.Context) error {
 			SystemID:   s.SystemID,
 			SiteID:     s.SiteID,
 			SystemName: s.ShortName,
+			Sysid:      s.Sysid,
 		}
 	}
 
@@ -94,7 +96,7 @@ func (r *IdentityResolver) Resolve(ctx context.Context, instanceID, sysName stri
 	}
 
 	// Find or create system
-	systemID, err := r.db.FindOrCreateSystem(ctx, instanceID, sysName)
+	systemID, sysid, err := r.db.FindOrCreateSystem(ctx, instanceID, sysName)
 	if err != nil {
 		return nil, fmt.Errorf("find/create system %q/%q: %w", instanceID, sysName, err)
 	}
@@ -110,6 +112,7 @@ func (r *IdentityResolver) Resolve(ctx context.Context, instanceID, sysName stri
 		SystemID:     systemID,
 		SiteID:       siteID,
 		SystemName:   sysName,
+		Sysid:        sysid,
 	}
 	r.cache[key] = id
 
@@ -150,6 +153,7 @@ func (r *IdentityResolver) RewriteSystemID(oldSystemID, newSystemID int) {
 				SystemID:     newSystemID,
 				SiteID:       id.SiteID,
 				SystemName:   id.SystemName,
+				Sysid:        id.Sysid,
 			}
 			r.log.Info().
 				Str("key", key).

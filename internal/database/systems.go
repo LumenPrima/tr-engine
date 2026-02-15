@@ -17,18 +17,20 @@ type System struct {
 }
 
 // FindOrCreateSystem finds an existing system by (instance_id, sys_name) via the sites table,
-// or creates a new one. Returns the system_id.
-func (db *DB) FindOrCreateSystem(ctx context.Context, instanceID, sysName string) (int, error) {
+// or creates a new one. Returns the system_id and sysid (P25 system identifier).
+func (db *DB) FindOrCreateSystem(ctx context.Context, instanceID, sysName string) (int, string, error) {
 	// Try to find via sites table first
 	var systemID int
+	var sysid string
 	err := db.Pool.QueryRow(ctx, `
-		SELECT s.system_id FROM sites s
+		SELECT s.system_id, COALESCE(sys.sysid, '') FROM sites s
+		JOIN systems sys ON sys.system_id = s.system_id
 		WHERE s.instance_id = $1 AND s.short_name = $2
 		LIMIT 1
-	`, instanceID, sysName).Scan(&systemID)
+	`, instanceID, sysName).Scan(&systemID, &sysid)
 
 	if err == nil {
-		return systemID, nil
+		return systemID, sysid, nil
 	}
 
 	// Create new system — we don't have sysid/wacn from MQTT, so use defaults
@@ -38,10 +40,10 @@ func (db *DB) FindOrCreateSystem(ctx context.Context, instanceID, sysName string
 		RETURNING system_id
 	`, sysName).Scan(&systemID)
 	if err != nil {
-		return 0, fmt.Errorf("create system %q: %w", sysName, err)
+		return 0, "", fmt.Errorf("create system %q: %w", sysName, err)
 	}
 
-	return systemID, nil
+	return systemID, "0", nil
 }
 
 // UpdateSystemIdentity updates a system's P25 identity fields.

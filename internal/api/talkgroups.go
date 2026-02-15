@@ -165,7 +165,6 @@ func (h *TalkgroupsHandler) ListTalkgroupCalls(w http.ResponseWriter, r *http.Re
 		Offset:   p.Offset,
 		SystemID: &cid.SystemID,
 		Tgid:     &cid.EntityID,
-		Sort:     "-start_time",
 	}
 	if t, ok := QueryTime(r, "start_time"); ok {
 		filter.StartTime = &t

@@ -10,6 +10,7 @@ type Site struct {
 	SystemID   int
 	InstanceID string
 	ShortName  string
+	Sysid      string
 }
 
 // FindOrCreateSite ensures a site exists for the given system, instance, and short_name.
@@ -162,7 +163,9 @@ func (db *DB) UpdateSiteFields(ctx context.Context, siteID int, shortName, insta
 // LoadAllSites returns all sites.
 func (db *DB) LoadAllSites(ctx context.Context) ([]Site, error) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT site_id, system_id, instance_id, short_name FROM sites
+		SELECT s.site_id, s.system_id, s.instance_id, s.short_name, COALESCE(sys.sysid, '')
+		FROM sites s
+		JOIN systems sys ON sys.system_id = s.system_id
 	`)
 	if err != nil {
 		return nil, err
@@ -172,7 +175,7 @@ func (db *DB) LoadAllSites(ctx context.Context) ([]Site, error) {
 	var sites []Site
 	for rows.Next() {
 		var s Site
-		if err := rows.Scan(&s.SiteID, &s.SystemID, &s.InstanceID, &s.ShortName); err != nil {
+		if err := rows.Scan(&s.SiteID, &s.SystemID, &s.InstanceID, &s.ShortName, &s.Sysid); err != nil {
 			return nil, err
 		}
 		sites = append(sites, s)
