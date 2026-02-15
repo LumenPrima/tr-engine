@@ -132,7 +132,7 @@ A live environment is available for testing:
 - MQTT ingestion pipeline — message routing, identity resolution, batch writes, all handler types (calls, units, recorders, rates, systems, config, audio, status)
 - REST API — all 29 endpoints implemented across 9 handler files (systems, talkgroups, units, calls, call_groups, stats, recorders, events/SSE, admin)
 - Database layer — complete CRUD and query builders for all tables
-- SSE event bus — real-time pub/sub with ring buffer replay and `Last-Event-ID` support
+- SSE event bus — real-time pub/sub with ring buffer replay, `Last-Event-ID` support, and event publishing wired into all ingest handlers (call_start, call_end, unit_event, recorder_update, rate_update, console)
 - Dev tools — `cmd/mqtt-dump` (MQTT traffic inspector), `cmd/dbcheck` (DB analysis)
 
 **Not yet done:**
@@ -148,3 +148,14 @@ A live environment is available for testing:
 - 15s keepalive comments
 - Server sends `X-Accel-Buffering: no` header for nginx compatibility
 - To change filters: disconnect and reconnect with new query params
+
+### SSE Filtering Details
+
+All filters are AND-ed. Events carry `SystemID`, `SiteID`, `Tgid`, and `UnitID` metadata for server-side filtering. Events with a zero value for a field (e.g., `recorder_update` has `SystemID=0` since recorders are per-instance, not per-system) pass through that filter dimension.
+
+**Compound type syntax:** The `types` param supports `base:subtype` to filter event subtypes. Currently only `unit_event` has subtypes (on, off, call, end, join, location, ackresp, data). Examples:
+- `types=unit_event` — all unit events (any subtype)
+- `types=unit_event:call` — only unit call events
+- `types=unit_event:call,unit_event:end,call_start` — mix compound and plain
+
+Implementation: `EventData` struct in `eventbus.go` carries `Type`, `SubType`, `SystemID`, `SiteID`, `Tgid`, `UnitID`. All ingest handlers publish via `p.PublishEvent(EventData{...})`. The `matchesFilter()` function in `eventbus.go` handles all filter logic including compound type parsing via `strings.Cut`.
