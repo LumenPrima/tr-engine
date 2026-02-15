@@ -52,7 +52,10 @@ func main() {
 		level = zerolog.InfoLevel
 	}
 	log := zerolog.New(os.Stdout).With().Timestamp().Logger().Level(level)
-	log.Info().Str("version", version).Msg("tr-engine starting")
+	log.Info().
+		Str("version", version).
+		Str("log_level", level.String()).
+		Msg("tr-engine starting")
 
 	// Context for graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -80,14 +83,14 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to connect to mqtt broker")
 	}
 	defer mqtt.Close()
+	log.Info().Str("broker", cfg.MQTTBrokerURL).Str("client_id", cfg.MQTTClientID).Msg("mqtt connected")
 
 	// Ingest Pipeline
-	pipelineLog := log.With().Str("component", "ingest").Logger()
 	pipeline := ingest.NewPipeline(ingest.PipelineOptions{
 		DB:               db,
 		AudioDir:         cfg.AudioDir,
 		RawExcludeTopics: cfg.RawExcludeTopics,
-		Log:              pipelineLog,
+		Log:              log,
 	})
 	if err := pipeline.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("failed to start ingest pipeline")
@@ -114,6 +117,12 @@ func main() {
 	go func() {
 		errCh <- srv.Start()
 	}()
+
+	log.Info().
+		Str("listen", cfg.HTTPAddr).
+		Str("version", version).
+		Dur("startup_ms", time.Since(startTime)).
+		Msg("tr-engine ready")
 
 	// Wait for shutdown signal or server error
 	select {

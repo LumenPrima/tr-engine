@@ -43,7 +43,8 @@ type Pipeline struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	msgCount atomic.Int64
+	msgCount     atomic.Int64
+	handlerCount sync.Map // handler name → *atomic.Int64
 }
 
 type PipelineOptions struct {
@@ -94,11 +95,12 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 	return p
 }
 
-// Start loads the identity cache.
+// Start loads the identity cache and begins periodic stats logging.
 func (p *Pipeline) Start(ctx context.Context) error {
 	if err := p.identity.LoadCache(ctx); err != nil {
 		return err
 	}
+	go p.statsLoop()
 	p.log.Info().Msg("ingest pipeline started")
 	return nil
 }
@@ -110,6 +112,37 @@ func (p *Pipeline) Stop() {
 	p.recorderBatcher.Stop()
 	p.trunkingBatcher.Stop()
 	p.cancel()
+}
+
+// statsLoop logs message counts every 60 seconds.
+func (p *Pipeline) statsLoop() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	var lastTotal int64
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			total := p.msgCount.Load()
+			delta := total - lastTotal
+			lastTotal = total
+
+			evt := p.log.Info().
+				Int64("total", total).
+				Int64("last_60s", delta).
+				Int("active_calls", p.activeCalls.Len())
+
+			// Collect per-handler counts
+			p.handlerCount.Range(func(key, value any) bool {
+				evt = evt.Int64(key.(string), value.(*atomic.Int64).Load())
+				return true
+			})
+
+			evt.Msg("stats")
+		}
+	}
 }
 
 // HandleMessage is the entry point called by the MQTT client for each message.
@@ -139,7 +172,13 @@ func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 	p.dispatch(route, topic, payload, &env)
 }
 
+func (p *Pipeline) incHandler(name string) {
+	v, _ := p.handlerCount.LoadOrStore(name, &atomic.Int64{})
+	v.(*atomic.Int64).Add(1)
+}
+
 func (p *Pipeline) dispatch(route *Route, topic string, payload []byte, env *Envelope) {
+	p.incHandler(route.Handler)
 	var err error
 
 	switch route.Handler {

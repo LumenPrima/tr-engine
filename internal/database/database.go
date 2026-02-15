@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,6 +34,7 @@ func Connect(ctx context.Context, databaseURL string, log zerolog.Logger) (*DB, 
 	}
 
 	log.Info().
+		Str("url", maskDSN(databaseURL)).
 		Int32("max_conns", cfg.MaxConns).
 		Int32("min_conns", cfg.MinConns).
 		Msg("database connected")
@@ -44,6 +46,19 @@ func (db *DB) HealthCheck(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	return db.Pool.Ping(ctx)
+}
+
+func maskDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "***"
+	}
+	if u.User != nil {
+		if _, hasPass := u.User.Password(); hasPass {
+			u.User = url.UserPassword(u.User.Username(), "***")
+		}
+	}
+	return u.String()
 }
 
 func (db *DB) Close() {
