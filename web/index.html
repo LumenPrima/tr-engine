@@ -32,25 +32,28 @@
   <h1>tr-engine</h1>
   <p class="subtitle">trunk-recorder backend</p>
 
-  <div class="cards">
-    <a class="card" href="/timeline.html">
-      <div class="card-title">Event Horizon</div>
-      <div class="card-desc">Logarithmic timeline — events drift from now into the past</div>
-    </a>
-    <a class="card" href="/events.html">
-      <div class="card-title">Live Events</div>
-      <div class="card-desc">Real-time SSE event stream with type filtering</div>
-    </a>
-    <a class="card" href="/docs.html">
-      <div class="card-title">API Docs</div>
-      <div class="card-desc">Interactive OpenAPI documentation with try-it-out</div>
-    </a>
-  </div>
+  <div class="cards" id="cards"></div>
 
   <div class="health">
     <a href="/api/v1/health">/api/v1/health</a>
   </div>
 </div>
+
+<script>
+fetch('/api/v1/pages')
+  .then(r => r.json())
+  .then(pages => {
+    const el = document.getElementById('cards');
+    for (const p of pages) {
+      const a = document.createElement('a');
+      a.className = 'card';
+      a.href = p.path;
+      a.innerHTML = '<div class="card-title">' + p.title + '</div>'
+        + (p.description ? '<div class="card-desc">' + p.description + '</div>' : '');
+      el.appendChild(a);
+    }
+  });
+</script>
 
 </body>
 </html>

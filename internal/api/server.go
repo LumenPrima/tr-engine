@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -68,9 +69,16 @@ func NewServer(opts ServerOptions) *Server {
 		w.Write(opts.OpenAPISpec)
 	})
 
-	// Serve embedded web files
-	webFS, _ := fs.Sub(opts.WebFiles, "web")
-	r.Handle("/*", http.FileServer(http.FS(webFS)))
+	// Serve web files: prefer local web/ directory on disk for dev, fall back to embedded
+	var webFSys fs.FS
+	if info, err := os.Stat("web"); err == nil && info.IsDir() {
+		webFSys = os.DirFS("web")
+		opts.Log.Info().Msg("serving web files from disk (dev mode)")
+	} else {
+		webFSys, _ = fs.Sub(opts.WebFiles, "web")
+	}
+	r.Get("/api/v1/pages", PagesHandler(webFSys))
+	r.Handle("/*", http.FileServer(http.FS(webFSys)))
 
 	srv := &http.Server{
 		Addr:        opts.Config.HTTPAddr,
