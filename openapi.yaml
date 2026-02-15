@@ -1031,6 +1031,84 @@ paths:
                 $ref: "#/components/schemas/RecorderListResponse"
 
   # ----------------------------------------------------------
+  # Trunking Messages
+  # ----------------------------------------------------------
+  /trunking-messages:
+    get:
+      operationId: listTrunkingMessages
+      summary: List trunking messages
+      description: |
+        Returns P25 control channel trunking messages. These are high-volume;
+        use time range filters and pagination. Defaults to the last hour if
+        no start_time is provided.
+      tags: [stats]
+      parameters:
+        - name: system_id
+          in: query
+          description: Filter by system ID
+          schema:
+            type: integer
+        - name: opcode
+          in: query
+          description: Filter by opcode hex value (e.g., "2c")
+          schema:
+            type: string
+        - name: opcode_type
+          in: query
+          description: Filter by opcode type name (e.g., "GRP_V_CH_GRANT")
+          schema:
+            type: string
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrunkingMessageListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Console Messages
+  # ----------------------------------------------------------
+  /console-messages:
+    get:
+      operationId: listConsoleMessages
+      summary: List console messages
+      description: |
+        Returns trunk-recorder console log messages. Defaults to the last
+        hour if no start_time is provided.
+      tags: [stats]
+      parameters:
+        - name: instance_id
+          in: query
+          description: Filter by trunk-recorder instance ID
+          schema:
+            type: string
+        - name: severity
+          in: query
+          description: Filter by log severity (e.g., "info", "error")
+          schema:
+            type: string
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleMessageListResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
   # ----------------------------------------------------------
   # Events (SSE)
   # ----------------------------------------------------------
@@ -2779,9 +2857,21 @@ components:
       type: object
       description: P25 control channel trunking message
       properties:
+        id:
+          type: integer
         system_id:
           type: integer
           example: 1
+        sys_name:
+          type: string
+          example: "butco"
+        trunk_msg:
+          type: integer
+          description: Trunk message code
+        trunk_msg_type:
+          type: string
+          description: Trunk message type name
+          example: "GRANT"
         opcode:
           type: string
           description: P25 opcode hex value
@@ -2800,11 +2890,27 @@ components:
         time:
           type: string
           format: date-time
+        instance_id:
+          type: string
+
+    TrunkingMessageListResponse:
+      type: object
+      required: [messages, total]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrunkingMessage"
+        total:
+          type: integer
+          description: Total matching messages (for pagination)
 
     ConsoleMessage:
       type: object
       description: Trunk-recorder console log message
       properties:
+        id:
+          type: integer
         instance_id:
           type: string
           example: trunk-recorder
@@ -2817,3 +2923,15 @@ components:
         log_time:
           type: string
           format: date-time
+
+    ConsoleMessageListResponse:
+      type: object
+      required: [messages, total]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConsoleMessage"
+        total:
+          type: integer
+          description: Total matching messages (for pagination)

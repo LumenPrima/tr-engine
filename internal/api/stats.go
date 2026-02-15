@@ -46,8 +46,75 @@ func (h *StatsHandler) GetDecodeRates(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListTrunkingMessages returns paginated trunking messages.
+func (h *StatsHandler) ListTrunkingMessages(w http.ResponseWriter, r *http.Request) {
+	p := ParsePagination(r)
+	filter := database.TrunkingMessageFilter{
+		Limit:  p.Limit,
+		Offset: p.Offset,
+	}
+	if v, ok := QueryInt(r, "system_id"); ok {
+		filter.SystemID = &v
+	}
+	if v, ok := QueryString(r, "opcode"); ok {
+		filter.Opcode = &v
+	}
+	if v, ok := QueryString(r, "opcode_type"); ok {
+		filter.OpcodeType = &v
+	}
+	if t, ok := QueryTime(r, "start_time"); ok {
+		filter.StartTime = &t
+	}
+	if t, ok := QueryTime(r, "end_time"); ok {
+		filter.EndTime = &t
+	}
+
+	messages, total, err := h.db.ListTrunkingMessages(r.Context(), filter)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to list trunking messages")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"messages": messages,
+		"total":    total,
+	})
+}
+
+// ListConsoleMessages returns paginated console log messages.
+func (h *StatsHandler) ListConsoleMessages(w http.ResponseWriter, r *http.Request) {
+	p := ParsePagination(r)
+	filter := database.ConsoleMessageFilter{
+		Limit:  p.Limit,
+		Offset: p.Offset,
+	}
+	if v, ok := QueryString(r, "instance_id"); ok {
+		filter.InstanceID = &v
+	}
+	if v, ok := QueryString(r, "severity"); ok {
+		filter.Severity = &v
+	}
+	if t, ok := QueryTime(r, "start_time"); ok {
+		filter.StartTime = &t
+	}
+	if t, ok := QueryTime(r, "end_time"); ok {
+		filter.EndTime = &t
+	}
+
+	messages, total, err := h.db.ListConsoleMessages(r.Context(), filter)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to list console messages")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"messages": messages,
+		"total":    total,
+	})
+}
+
 // Routes registers stats routes on the given router.
 func (h *StatsHandler) Routes(r chi.Router) {
 	r.Get("/stats", h.GetStats)
 	r.Get("/stats/rates", h.GetDecodeRates)
+	r.Get("/trunking-messages", h.ListTrunkingMessages)
+	r.Get("/console-messages", h.ListConsoleMessages)
 }
