@@ -1119,9 +1119,16 @@ paths:
             event types. Valid values: `call_start`, `call_update`,
             `call_end`, `unit_event`, `recorder_update`, `rate_update`,
             `trunking_message`, `console`.
+
+            Supports compound syntax with `:` to filter on event
+            subtypes. For example, `unit_event:call` matches only unit
+            call events, while plain `unit_event` matches all unit event
+            subtypes (on, off, call, end, join, location, ackresp, data).
+            Compound and plain values can be mixed:
+            `unit_event:call,unit_event:end,call_start`.
           schema:
             type: string
-            example: "call_start,call_end,unit_event"
+            example: "call_start,call_end,unit_event:call"
         - name: emergency_only
           in: query
           description: |
@@ -2691,6 +2698,14 @@ components:
           example: "1707912345000-42"
         event_type:
           $ref: "#/components/schemas/SSEEventType"
+        sub_type:
+          type: string
+          description: |
+            Event subtype for compound filtering. Currently only set on
+            `unit_event` where it contains the unit event type (on, off,
+            call, end, join, location, ackresp, data). Omitted when not
+            applicable.
+          example: "call"
         timestamp:
           type: string
           format: date-time
@@ -2703,6 +2718,17 @@ components:
           type: integer
           description: Site this event belongs to (present on call and recorder events)
           example: 1
+        tgid:
+          type: integer
+          description: |
+            Talkgroup ID for filtering. Present on call and unit events.
+          example: 9178
+        unit_id:
+          type: integer
+          description: |
+            Unit radio ID (RID) for filtering. Present on unit events
+            and call_start (source unit).
+          example: 924003
         payload:
           type: object
           additionalProperties: true
