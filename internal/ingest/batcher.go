@@ -14,6 +14,7 @@ type Batcher[T any] struct {
 	flushFn  func([]T)
 	timer    *time.Timer
 	stopped  bool
+	wg       sync.WaitGroup
 }
 
 // NewBatcher creates a batcher that calls flushFn when maxSize items accumulate
@@ -63,10 +64,9 @@ func (b *Batcher[T]) Flush() {
 	}
 }
 
-// Stop flushes remaining items and prevents future adds.
+// Stop flushes remaining items, waits for in-flight flushes, and prevents future adds.
 func (b *Batcher[T]) Stop() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.stopped = true
 	if b.timer != nil {
 		b.timer.Stop()
@@ -74,6 +74,8 @@ func (b *Batcher[T]) Stop() {
 	if len(b.items) > 0 {
 		b.flushLocked()
 	}
+	b.mu.Unlock()
+	b.wg.Wait()
 }
 
 func (b *Batcher[T]) flushLocked() {
@@ -84,5 +86,9 @@ func (b *Batcher[T]) flushLocked() {
 	items := b.items
 	b.items = nil
 	// Run flush outside lock to avoid deadlock
-	go b.flushFn(items)
+	b.wg.Add(1)
+	go func() {
+		defer b.wg.Done()
+		b.flushFn(items)
+	}()
 }

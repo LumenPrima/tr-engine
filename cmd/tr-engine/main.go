@@ -84,9 +84,10 @@ func main() {
 	// Ingest Pipeline
 	pipelineLog := log.With().Str("component", "ingest").Logger()
 	pipeline := ingest.NewPipeline(ingest.PipelineOptions{
-		DB:       db,
-		AudioDir: cfg.AudioDir,
-		Log:      pipelineLog,
+		DB:               db,
+		AudioDir:         cfg.AudioDir,
+		RawExcludeTopics: cfg.RawExcludeTopics,
+		Log:              pipelineLog,
 	})
 	if err := pipeline.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("failed to start ingest pipeline")

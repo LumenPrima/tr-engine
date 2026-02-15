@@ -25,6 +25,8 @@ type Config struct {
 
 	AuthToken string `env:"AUTH_TOKEN"`
 	LogLevel  string `env:"LOG_LEVEL" envDefault:"info"`
+
+	RawExcludeTopics string `env:"RAW_EXCLUDE_TOPICS"`
 }
 
 // Overrides holds CLI flag values that take priority over env vars.

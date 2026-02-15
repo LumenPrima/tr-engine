@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,6 +31,9 @@ type Pipeline struct {
 	// Event bus for SSE subscribers
 	eventBus *EventBus
 
+	// Raw archival exclusion set (handler names to skip)
+	rawExclude map[string]bool
+
 	// Recorder cache: recorder_id → latest state
 	recorderCache sync.Map
 
@@ -43,20 +47,40 @@ type Pipeline struct {
 }
 
 type PipelineOptions struct {
-	DB       *database.DB
-	AudioDir string
-	Log      zerolog.Logger
+	DB               *database.DB
+	AudioDir         string
+	RawExcludeTopics string
+	Log              zerolog.Logger
 }
 
 func NewPipeline(opts PipelineOptions) *Pipeline {
 	ctx, cancel := context.WithCancel(context.Background())
 	log := opts.Log.With().Str("component", "ingest").Logger()
 
+	// Parse comma-separated handler names into exclusion set
+	rawExclude := make(map[string]bool)
+	if opts.RawExcludeTopics != "" {
+		for _, h := range strings.Split(opts.RawExcludeTopics, ",") {
+			h = strings.TrimSpace(h)
+			if h != "" {
+				rawExclude[h] = true
+			}
+		}
+	}
+	if len(rawExclude) > 0 {
+		names := make([]string, 0, len(rawExclude))
+		for h := range rawExclude {
+			names = append(names, h)
+		}
+		log.Info().Strs("handlers", names).Msg("raw message archival excluded for handlers")
+	}
+
 	p := &Pipeline{
 		db:          opts.DB,
 		identity:    NewIdentityResolver(opts.DB, log),
 		log:         log,
 		audioDir:    opts.AudioDir,
+		rawExclude:  rawExclude,
 		activeCalls: newActiveCallMap(),
 		eventBus:    NewEventBus(4096), // ~60s of events at high rate
 		ctx:         ctx,
@@ -102,12 +126,14 @@ func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 	var env Envelope
 	_ = json.Unmarshal(payload, &env)
 
-	p.rawBatcher.Add(database.RawMessageRow{
-		Topic:      topic,
-		Payload:    payload,
-		ReceivedAt: time.Now(),
-		InstanceID: env.InstanceID,
-	})
+	if !p.rawExclude[route.Handler] {
+		p.rawBatcher.Add(database.RawMessageRow{
+			Topic:      topic,
+			Payload:    payload,
+			ReceivedAt: time.Now(),
+			InstanceID: env.InstanceID,
+		})
+	}
 
 	// Dispatch to handler
 	p.dispatch(route, topic, payload, &env)
