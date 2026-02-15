@@ -159,7 +159,6 @@ func (h *UnitsHandler) ListUnitCalls(w http.ResponseWriter, r *http.Request) {
 		Offset:   p.Offset,
 		SystemID: &cid.SystemID,
 		UnitID:   &cid.EntityID,
-		Sort:     "-start_time",
 	}
 	if t, ok := QueryTime(r, "start_time"); ok {
 		filter.StartTime = &t
