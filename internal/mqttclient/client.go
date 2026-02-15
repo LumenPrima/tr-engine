@@ -1,6 +1,8 @@
 package mqttclient
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -34,9 +36,20 @@ func Connect(opts Options) (*Client, error) {
 		log:    opts.Log,
 	}
 
+	clientID := opts.ClientID
+	if clientID == "" {
+		clientID = "tr-engine"
+	}
+	// Append random suffix to avoid client ID collisions with other instances
+	var suffix [4]byte
+	rand.Read(suffix[:])
+	clientID = clientID + "-" + hex.EncodeToString(suffix[:])
+
+	c.log.Info().Str("client_id", clientID).Msg("connecting with client ID")
+
 	clientOpts := mqtt.NewClientOptions().
 		AddBroker(opts.BrokerURL).
-		SetClientID(opts.ClientID).
+		SetClientID(clientID).
 		SetAutoReconnect(true).
 		SetConnectRetryInterval(5 * time.Second).
 		SetOrderMatters(false).
