@@ -361,7 +361,7 @@
 
   const SSE_TYPES = ['call_start', 'call_update', 'call_end', 'unit_event'];
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const MAX_AGE_SEC = 10800;
+  const MAX_AGE_SEC = 1200;
   const MAX_LANES = 30;
   const EVENT_CAP = 2500;
   const POW_EXP = 0.3;
@@ -472,8 +472,7 @@
   const TIME_LABELS = [
     { sec: 5, label: '5s' }, { sec: 15, label: '15s' }, { sec: 30, label: '30s' },
     { sec: 60, label: '1m' }, { sec: 120, label: '2m' }, { sec: 300, label: '5m' },
-    { sec: 600, label: '10m' }, { sec: 1800, label: '30m' }, { sec: 3600, label: '1h' },
-    { sec: 7200, label: '2h' }, { sec: 10800, label: '3h' },
+    { sec: 600, label: '10m' }, { sec: 1200, label: '20m' },
   ];
 
   function updateTimeMarkers() {
@@ -648,7 +647,10 @@
           ev.shadow = style.shadow;
           ev.detail = detail;
           ev.type = type.replace(/_/g, ' ');
-          if (data.call_id) ev.callId = data.call_id;
+          if (type !== 'unit_event') {
+            const lk = callLinkKeyForEvent(type, data);
+            if (lk) ev.callId = lk;
+          }
           // Update DOM if already created
           const node = domNodes[existing.eventIdx];
           if (node) {
@@ -676,6 +678,49 @@
     }
 
     return false;
+  }
+
+  // ── Call linking ────────────────────────────────────
+  // A talkgroup can only have one active call at a time, so call_end
+  // always closes whatever call_start is currently open on that tgid.
+  // No need to match by call_id (which differs across TR instances).
+  const openCallByTg = new Map();    // tgid → linkKey (current call, start seen)
+  const prevCallByTg = new Map();    // tgid → linkKey (previous call, for late call_end)
+  const earlyEndByTg = new Map();    // tgid → { key, time } (end arrived before start)
+  let linkSeq = 0;
+
+  function callLinkKeyForEvent(type, data) {
+    const tgid = data.tgid;
+    if (!tgid) return null;
+    if (type === 'call_start') {
+      // Check if a call_end already arrived first (handleCallStartFromEnd path)
+      const pending = earlyEndByTg.get(tgid);
+      if (pending && (Date.now() - pending.time) < 15000) {
+        earlyEndByTg.delete(tgid);
+        return pending.key;
+      }
+      earlyEndByTg.delete(tgid);
+      // Normal: save previous open call for late call_end
+      const prev = openCallByTg.get(tgid);
+      if (prev) prevCallByTg.set(tgid, prev);
+      const key = tgid + ':' + (linkSeq++);
+      openCallByTg.set(tgid, key);
+      return key;
+    }
+    if (type === 'call_end') {
+      // Late end for previous call
+      const prev = prevCallByTg.get(tgid);
+      if (prev) { prevCallByTg.delete(tgid); return prev; }
+      // Normal: close the current open call
+      const key = openCallByTg.get(tgid);
+      if (key) { openCallByTg.delete(tgid); return key; }
+      // No open call — end arrived before start
+      const newKey = tgid + ':' + (linkSeq++);
+      earlyEndByTg.set(tgid, { key: newKey, time: Date.now() });
+      return newKey;
+    }
+    // call_update: current open call
+    return openCallByTg.get(tgid) || null;
   }
 
   // ── Add event ───────────────────────────────────────
@@ -727,7 +772,7 @@
       size: 10 + Math.random() * 6,
       detail: detail,
       emergency: !!data.emergency,
-      callId: (type !== 'unit_event' && data.call_id) ? data.call_id : null,
+      callId: (type !== 'unit_event') ? callLinkKeyForEvent(type, data) : null,
     });
     domNodes.push(null); // placeholder, reconcile will create DOM
 
@@ -889,8 +934,14 @@
         opacitySum += op;
       }
 
-      // Active calls: extend line to the now edge
-      if (!hasEnd) minX = rangeStart;
+      // Active calls: extend line to the now edge, but cap at 120s
+      // (if no call_end after 120s, the end event was likely missed)
+      if (!hasEnd) {
+        const newestTime = Math.max(...evts.map(e => e.time));
+        if ((now - newestTime) / 1000 < 120) {
+          minX = rangeStart;
+        }
+      }
 
       let el = callLinkMap.get(callId);
       if (!el) {
