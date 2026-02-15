@@ -142,7 +142,7 @@ The `.env` file is auto-loaded from the current directory on startup (silent if 
 | `--env-file` | — | `.env` | Path to .env file |
 | `--version` | — | — | Print version and exit |
 
-Additional env-only settings: `MQTT_TOPICS`, `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`, `RAW_EXCLUDE_TOPICS` (comma-separated handler names to exclude from raw MQTT archival, e.g. `trunking_message`).
+Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`, `RAW_EXCLUDE_TOPICS` (comma-separated handler names to exclude from raw MQTT archival, e.g. `trunking_message`).
 
 ## Development Environment
 
