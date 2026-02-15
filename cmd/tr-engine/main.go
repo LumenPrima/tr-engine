@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	trengine "github.com/snarg/tr-engine"
 	"github.com/snarg/tr-engine/internal/api"
 	"github.com/snarg/tr-engine/internal/config"
 	"github.com/snarg/tr-engine/internal/database"
@@ -103,13 +104,15 @@ func main() {
 	// HTTP Server
 	httpLog := log.With().Str("component", "http").Logger()
 	srv := api.NewServer(api.ServerOptions{
-		Config:    cfg,
-		DB:        db,
-		MQTT:      mqtt,
-		Live:      pipeline,
-		Version:   version,
-		StartTime: startTime,
-		Log:       httpLog,
+		Config:      cfg,
+		DB:          db,
+		MQTT:        mqtt,
+		Live:        pipeline,
+		WebFiles:    trengine.WebFiles,
+		OpenAPISpec: trengine.OpenAPISpec,
+		Version:     version,
+		StartTime:   startTime,
+		Log:         httpLog,
 	})
 
 	// Start HTTP server in background

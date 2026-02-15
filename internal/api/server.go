@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"time"
 
@@ -18,13 +19,15 @@ type Server struct {
 }
 
 type ServerOptions struct {
-	Config    *config.Config
-	DB        *database.DB
-	MQTT      *mqttclient.Client
-	Live      LiveDataSource
-	Version   string
-	StartTime time.Time
-	Log       zerolog.Logger
+	Config      *config.Config
+	DB          *database.DB
+	MQTT        *mqttclient.Client
+	Live        LiveDataSource
+	WebFiles    fs.FS  // embedded web/ directory
+	OpenAPISpec []byte // embedded openapi.yaml
+	Version     string
+	StartTime   time.Time
+	Log         zerolog.Logger
 }
 
 func NewServer(opts ServerOptions) *Server {
@@ -58,8 +61,15 @@ func NewServer(opts ServerOptions) *Server {
 		})
 	})
 
-	// Serve static files from web/ directory
-	r.Handle("/*", http.FileServer(http.Dir("web")))
+	// Serve embedded OpenAPI spec
+	r.Get("/api/v1/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/yaml")
+		w.Write(opts.OpenAPISpec)
+	})
+
+	// Serve embedded web files
+	webFS, _ := fs.Sub(opts.WebFiles, "web")
+	r.Handle("/*", http.FileServer(http.FS(webFS)))
 
 	srv := &http.Server{
 		Addr:        opts.Config.HTTPAddr,

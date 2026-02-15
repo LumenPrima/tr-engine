@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tr-engine events</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono', 'Consolas', 'Monaco', monospace; background: #0d1117; color: #c9d1d9; font-size: 13px; }
+
+  header { padding: 12px 16px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 15px; font-weight: 600; color: #e6edf3; white-space: nowrap; }
+
+  .status { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-dot.connected { background: #3fb950; }
+  .status-dot.disconnected { background: #f85149; }
+  .status-dot.connecting { background: #d29922; }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 2px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #30363d; transition: background 0.15s; }
+  .filters label:hover { background: #161b22; }
+  .filters input[type="checkbox"] { accent-color: #58a6ff; }
+
+  .stats { margin-left: auto; font-size: 12px; color: #8b949e; white-space: nowrap; }
+
+  #events { padding: 4px 0; overflow-y: auto; height: calc(100vh - 52px); }
+
+  .event { padding: 4px 16px; display: flex; gap: 10px; align-items: baseline; border-bottom: 1px solid #161b22; line-height: 1.5; }
+  .event:hover { background: #161b22; }
+
+  .event-time { color: #8b949e; flex-shrink: 0; width: 85px; }
+  .event-type { flex-shrink: 0; width: 120px; padding: 1px 6px; border-radius: 3px; text-align: center; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .event-detail { color: #c9d1d9; word-break: break-word; }
+  .event-detail .dim { color: #8b949e; }
+  .event-detail .val { color: #58a6ff; }
+  .event-detail .emergency { color: #f85149; font-weight: 700; }
+
+  .type-call_start  { background: #1f6feb33; color: #58a6ff; }
+  .type-call_end    { background: #23883233; color: #3fb950; }
+  .type-call_update { background: #1f6feb22; color: #79c0ff; }
+  .type-unit_event  { background: #8957e533; color: #bc8cff; }
+  .type-recorder_update { background: #d2992233; color: #e3b341; }
+  .type-rate_update { background: #30363d; color: #8b949e; }
+  .type-trunking_message { background: #30363d; color: #8b949e; }
+  .type-console     { background: #30363d; color: #6e7681; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>tr-engine</h1>
+  <div class="status">
+    <div id="status-dot" class="status-dot connecting"></div>
+    <span id="status-text">connecting...</span>
+  </div>
+  <div class="filters">
+    <label><input type="checkbox" value="call_start" checked> call_start</label>
+    <label><input type="checkbox" value="call_end" checked> call_end</label>
+    <label><input type="checkbox" value="unit_event" checked> unit_event</label>
+    <label><input type="checkbox" value="recorder_update" checked> recorder_update</label>
+    <label><input type="checkbox" value="rate_update"> rate_update</label>
+    <label><input type="checkbox" value="trunking_message"> trunking_message</label>
+    <label><input type="checkbox" value="console"> console</label>
+  </div>
+  <div class="stats"><span id="event-count">0</span> events</div>
+</header>
+
+<div id="events"></div>
+
+<script>
+const eventsEl = document.getElementById('events');
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const eventCountEl = document.getElementById('event-count');
+const MAX_EVENTS = 200;
+let eventSource = null;
+let lastEventId = '';
+let totalCount = 0;
+
+const EVENT_TYPES = ['call_start', 'call_end', 'call_update', 'unit_event', 'recorder_update', 'rate_update', 'trunking_message', 'console'];
+
+function getSelectedTypes() {
+  return Array.from(document.querySelectorAll('.filters input:checked')).map(cb => cb.value);
+}
+
+function setStatus(state, text) {
+  statusDot.className = 'status-dot ' + state;
+  statusText.textContent = text;
+}
+
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  return d.toLocaleTimeString();
+}
+
+function formatDetail(type, d) {
+  switch (type) {
+    case 'call_start':
+    case 'call_update':
+      return `<span class="val">${esc(d.tg_alpha_tag || 'TG ' + d.tgid)}</span>` +
+        ` <span class="dim">tgid=</span>${d.tgid}` +
+        ` <span class="dim">freq=</span>${(d.freq / 1e6).toFixed(4)}` +
+        (d.emergency ? ' <span class="emergency">EMERGENCY</span>' : '') +
+        (d.encrypted ? ' <span class="dim">[encrypted]</span>' : '');
+    case 'call_end':
+      return `<span class="val">${esc(d.tg_alpha_tag || 'TG ' + d.tgid)}</span>` +
+        ` <span class="dim">tgid=</span>${d.tgid}` +
+        ` <span class="dim">dur=</span>${d.duration ? d.duration.toFixed(1) + 's' : '?'}` +
+        ` <span class="dim">freq=</span>${(d.freq / 1e6).toFixed(4)}` +
+        (d.emergency ? ' <span class="emergency">EMERGENCY</span>' : '');
+    case 'unit_event':
+      return `<span class="dim">${esc(d.event_type || '?')}</span>` +
+        ` <span class="val">${esc(d.unit_alpha_tag || 'Unit ' + d.unit_id)}</span>` +
+        (d.tgid ? ` <span class="dim">tg=</span>${esc(d.tg_alpha_tag || String(d.tgid))}` : '');
+    case 'recorder_update':
+      return `<span class="dim">rec${d.rec_num}</span>` +
+        ` <span class="val">${esc(d.rec_state || '?')}</span>` +
+        (d.freq ? ` <span class="dim">freq=</span>${(d.freq / 1e6).toFixed(4)}` : '') +
+        (d.tg_alpha_tag ? ` <span class="dim">tg=</span>${esc(d.tg_alpha_tag)}` : '');
+    case 'rate_update':
+      return `<span class="dim">decode_rate=</span><span class="val">${d.decode_rate != null ? d.decode_rate : '?'}</span>` +
+        (d.control_channel ? ` <span class="dim">cc=</span>${(d.control_channel / 1e6).toFixed(4)}` : '');
+    case 'trunking_message':
+      return `<span class="dim">${esc(d.opcode_type || d.trunk_msg_type || '?')}</span>` +
+        (d.opcode_desc ? ` ${esc(d.opcode_desc)}` : '');
+    case 'console':
+      return esc(d.log_msg || JSON.stringify(d));
+    default:
+      return esc(JSON.stringify(d));
+  }
+}
+
+function esc(s) {
+  if (s == null) return '';
+  const div = document.createElement('div');
+  div.textContent = String(s);
+  return div.innerHTML;
+}
+
+function addEvent(type, data) {
+  totalCount++;
+  eventCountEl.textContent = totalCount;
+
+  const row = document.createElement('div');
+  row.className = 'event';
+
+  const now = new Date();
+  const time = formatTime(data.start_time || data.time || data.log_time) || now.toLocaleTimeString();
+
+  row.innerHTML =
+    `<span class="event-time">${time}</span>` +
+    `<span class="event-type type-${type}">${type.replace('_', ' ')}</span>` +
+    `<span class="event-detail">${formatDetail(type, data)}</span>`;
+
+  eventsEl.insertBefore(row, eventsEl.firstChild);
+
+  // Trim excess
+  while (eventsEl.children.length > MAX_EVENTS) {
+    eventsEl.removeChild(eventsEl.lastChild);
+  }
+}
+
+function connect() {
+  if (eventSource) {
+    eventSource.close();
+  }
+
+  const types = getSelectedTypes();
+  let url = '/api/v1/events/stream';
+  if (types.length > 0 && types.length < EVENT_TYPES.length) {
+    url += '?types=' + types.join(',');
+  }
+
+  setStatus('connecting', 'connecting...');
+  eventSource = new EventSource(url);
+
+  eventSource.onopen = () => {
+    setStatus('connected', 'connected');
+  };
+
+  eventSource.onerror = () => {
+    if (eventSource.readyState === EventSource.CLOSED) {
+      setStatus('disconnected', 'disconnected');
+    } else {
+      setStatus('connecting', 'reconnecting...');
+    }
+  };
+
+  // Listen for each event type
+  EVENT_TYPES.forEach(type => {
+    eventSource.addEventListener(type, (e) => {
+      lastEventId = e.lastEventId;
+      try {
+        const data = JSON.parse(e.data);
+        addEvent(type, data);
+      } catch (err) {
+        console.error('parse error', type, err);
+      }
+    });
+  });
+}
+
+// Reconnect on filter change
+document.querySelectorAll('.filters input').forEach(cb => {
+  cb.addEventListener('change', () => connect());
+});
+
+connect();
+</script>
+</body>
+</html>

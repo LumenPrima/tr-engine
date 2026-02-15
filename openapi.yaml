@@ -2857,25 +2857,6 @@ components:
         sent as a separate envelope — these fields are already present in
         the domain objects themselves.
 
-    DecodeRate:
-      type: object
-      description: Decode rate snapshot from a system
-      properties:
-        system_id:
-          type: integer
-          example: 1
-        decode_rate:
-          type: number
-          description: Current decode rate (0.0 - 1.0)
-          example: 0.95
-        control_channel:
-          type: integer
-          description: Control channel frequency in Hz
-          example: 851012500
-        time:
-          type: string
-          format: date-time
-
     TrunkingMessage:
       type: object
       description: P25 control channel trunking message
