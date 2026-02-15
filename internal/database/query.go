@@ -58,6 +58,10 @@ func (db *DB) ExecuteReadOnlyQuery(ctx context.Context, sql string, params []any
 		}
 		resultRows = append(resultRows, values)
 	}
+	// Close rows before checking errors or committing — breaking out of
+	// the Next() loop early leaves the connection in query mode, which
+	// causes "conn busy" on commit.
+	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows: %w", err)
 	}
