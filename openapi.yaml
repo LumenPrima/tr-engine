@@ -2301,6 +2301,21 @@ components:
             mqtt:
               type: string
               enum: [ok, error, disconnected]
+        trunk_recorders:
+          type: array
+          description: Status of connected trunk-recorder instances
+          items:
+            type: object
+            properties:
+              instance_id:
+                type: string
+                example: "trunk-recorder"
+              status:
+                type: string
+                example: "connected"
+              last_seen:
+                type: string
+                format: date-time
 
     # --- Paginated list responses ---
 
