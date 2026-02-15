@@ -22,6 +22,7 @@ type Pipeline struct {
 
 	rawBatcher      *Batcher[database.RawMessageRow]
 	recorderBatcher *Batcher[database.RecorderSnapshotRow]
+	trunkingBatcher *Batcher[database.TrunkingMessageRow]
 
 	// Active call tracking: tr_call_id → db call_id
 	activeCalls *activeCallMap
@@ -31,6 +32,9 @@ type Pipeline struct {
 
 	// Recorder cache: recorder_id → latest state
 	recorderCache sync.Map
+
+	// TR instance status cache: instance_id → trInstanceStatusEntry
+	trInstanceStatus sync.Map
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -61,6 +65,7 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 
 	p.rawBatcher = NewBatcher[database.RawMessageRow](100, 2*time.Second, p.flushRawMessages)
 	p.recorderBatcher = NewBatcher[database.RecorderSnapshotRow](100, 2*time.Second, p.flushRecorderSnapshots)
+	p.trunkingBatcher = NewBatcher[database.TrunkingMessageRow](100, 2*time.Second, p.flushTrunkingMessages)
 
 	return p
 }
@@ -79,6 +84,7 @@ func (p *Pipeline) Stop() {
 	p.log.Info().Int64("total_messages", p.msgCount.Load()).Msg("ingest pipeline stopping")
 	p.rawBatcher.Stop()
 	p.recorderBatcher.Stop()
+	p.trunkingBatcher.Stop()
 	p.cancel()
 }
 
@@ -133,6 +139,10 @@ func (p *Pipeline) dispatch(route *Route, topic string, payload []byte, env *Env
 		err = p.handleRates(payload)
 	case "config":
 		err = p.handleConfig(payload)
+	case "trunking_message":
+		err = p.handleTrunkingMessage(topic, payload)
+	case "console":
+		err = p.handleConsoleLog(payload)
 	case "unit_event":
 		err = p.handleUnitEvent(topic, payload)
 	default:
@@ -158,6 +168,18 @@ func (p *Pipeline) flushRawMessages(rows []database.RawMessageRow) {
 		return
 	}
 	p.log.Debug().Int64("inserted", n).Msg("flushed raw messages")
+}
+
+func (p *Pipeline) flushTrunkingMessages(rows []database.TrunkingMessageRow) {
+	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Second)
+	defer cancel()
+
+	n, err := p.db.InsertTrunkingMessages(ctx, rows)
+	if err != nil {
+		p.log.Error().Err(err).Int("count", len(rows)).Msg("failed to flush trunking messages")
+		return
+	}
+	p.log.Debug().Int64("inserted", n).Msg("flushed trunking messages")
 }
 
 func (p *Pipeline) flushRecorderSnapshots(rows []database.RecorderSnapshotRow) {
@@ -301,6 +323,35 @@ func (p *Pipeline) PublishEvent(e EventData) {
 	if p.eventBus != nil {
 		p.eventBus.Publish(e)
 	}
+}
+
+// trInstanceStatusEntry caches the last-seen status for a TR instance.
+type trInstanceStatusEntry struct {
+	Status   string
+	LastSeen time.Time
+}
+
+// UpdateTRInstanceStatus caches the latest status for a TR instance.
+func (p *Pipeline) UpdateTRInstanceStatus(instanceID, status string, t time.Time) {
+	p.trInstanceStatus.Store(instanceID, trInstanceStatusEntry{
+		Status:   status,
+		LastSeen: t,
+	})
+}
+
+// TRInstanceStatus returns the cached status of all known TR instances.
+func (p *Pipeline) TRInstanceStatus() []api.TRInstanceStatusData {
+	var result []api.TRInstanceStatusData
+	p.trInstanceStatus.Range(func(key, value any) bool {
+		entry := value.(trInstanceStatusEntry)
+		result = append(result, api.TRInstanceStatusData{
+			InstanceID: key.(string),
+			Status:     entry.Status,
+			LastSeen:   entry.LastSeen,
+		})
+		return true
+	})
+	return result
 }
 
 // UpdateRecorderCache stores the latest recorder state in the in-memory cache.

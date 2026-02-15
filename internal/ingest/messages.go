@@ -255,3 +255,34 @@ type SystemMsg struct {
 	Envelope
 	System SystemInfoData `json:"system"`
 }
+
+// TrunkingMessageData is the inner data for a trunking control channel message.
+type TrunkingMessageData struct {
+	SysNum       int    `json:"sys_num"`
+	SysName      string `json:"sys_name"`
+	TrunkMsg     int    `json:"trunk_msg"`
+	TrunkMsgType string `json:"trunk_msg_type"`
+	Opcode       string `json:"opcode"`
+	OpcodeType   string `json:"opcode_type"`
+	OpcodeDesc   string `json:"opcode_desc"`
+	Meta         string `json:"meta"`
+}
+
+// TrunkingMessageMsg wraps a trunking message from trdash/messages/{sys_name}/message.
+type TrunkingMessageMsg struct {
+	Envelope
+	Message TrunkingMessageData `json:"message"`
+}
+
+// ConsoleLogData is the inner data for a trunk-recorder console log message.
+type ConsoleLogData struct {
+	Time     string `json:"time"`     // ISO 8601 timestamp from TR
+	Severity string `json:"severity"` // e.g. "info", "error"
+	LogMsg   string `json:"log_msg"`
+}
+
+// ConsoleLogMsg wraps a console log from trdash/feeds/trunk_recorder/console.
+type ConsoleLogMsg struct {
+	Envelope
+	Console ConsoleLogData `json:"console"`
+}

@@ -28,19 +28,13 @@ func (p *Pipeline) handleStatus(payload []byte) error {
 		}
 	}
 
+	// Cache TR instance status for health endpoint (use wall clock for last_seen)
+	p.UpdateTRInstanceStatus(msg.InstanceID, msg.Status, time.Now())
+
 	p.log.Debug().
 		Str("instance_id", msg.InstanceID).
 		Str("status", msg.Status).
 		Msg("plugin status recorded")
-
-	p.PublishEvent(EventData{
-		Type: "console",
-		Payload: map[string]any{
-			"instance_id": msg.InstanceID,
-			"status":      msg.Status,
-			"time":        ts,
-		},
-	})
 
 	return nil
 }

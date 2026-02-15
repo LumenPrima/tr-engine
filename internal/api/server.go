@@ -36,7 +36,7 @@ func NewServer(opts ServerOptions) *Server {
 	r.Use(Logger(opts.Log))
 
 	// Health endpoint — no auth
-	health := NewHealthHandler(opts.DB, opts.MQTT, opts.Version, opts.StartTime)
+	health := NewHealthHandler(opts.DB, opts.MQTT, opts.Live, opts.Version, opts.StartTime)
 	r.Get("/api/v1/health", health.ServeHTTP)
 
 	// Authenticated routes

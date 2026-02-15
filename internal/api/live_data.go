@@ -11,6 +11,9 @@ type LiveDataSource interface {
 	// LatestRecorders returns the most recent recorder state snapshot.
 	LatestRecorders() []RecorderStateData
 
+	// TRInstanceStatus returns the cached status of all known TR instances.
+	TRInstanceStatus() []TRInstanceStatusData
+
 	// Subscribe returns a channel that receives SSE events matching the filter,
 	// and a cancel function to unsubscribe.
 	Subscribe(filter EventFilter) (<-chan SSEEvent, func())
@@ -59,6 +62,13 @@ type RecorderStateData struct {
 	TgAlphaTag   *string `json:"tg_alpha_tag,omitempty"`
 	UnitID       *int    `json:"unit_id,omitempty"`
 	UnitAlphaTag *string `json:"unit_alpha_tag,omitempty"`
+}
+
+// TRInstanceStatusData represents the cached status of a trunk-recorder instance.
+type TRInstanceStatusData struct {
+	InstanceID string    `json:"instance_id"`
+	Status     string    `json:"status"`
+	LastSeen   time.Time `json:"last_seen"`
 }
 
 // EventFilter specifies which events an SSE subscriber wants to receive.

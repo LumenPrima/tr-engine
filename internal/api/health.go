@@ -10,23 +10,26 @@ import (
 )
 
 type HealthResponse struct {
-	Status        string            `json:"status"`
-	Version       string            `json:"version"`
-	UptimeSeconds int64             `json:"uptime_seconds"`
-	Checks        map[string]string `json:"checks"`
+	Status         string                      `json:"status"`
+	Version        string                      `json:"version"`
+	UptimeSeconds  int64                       `json:"uptime_seconds"`
+	Checks         map[string]string           `json:"checks"`
+	TrunkRecorders []TRInstanceStatusData       `json:"trunk_recorders,omitempty"`
 }
 
 type HealthHandler struct {
 	db        *database.DB
 	mqtt      *mqttclient.Client
+	live      LiveDataSource
 	version   string
 	startTime time.Time
 }
 
-func NewHealthHandler(db *database.DB, mqtt *mqttclient.Client, version string, startTime time.Time) *HealthHandler {
+func NewHealthHandler(db *database.DB, mqtt *mqttclient.Client, live LiveDataSource, version string, startTime time.Time) *HealthHandler {
 	return &HealthHandler{
 		db:        db,
 		mqtt:      mqtt,
+		live:      live,
 		version:   version,
 		startTime: startTime,
 	}
@@ -56,11 +59,18 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// TR instance status
+	var trInstances []TRInstanceStatusData
+	if h.live != nil {
+		trInstances = h.live.TRInstanceStatus()
+	}
+
 	resp := HealthResponse{
-		Status:        status,
-		Version:       h.version,
-		UptimeSeconds: int64(time.Since(h.startTime).Seconds()),
-		Checks:        checks,
+		Status:         status,
+		Version:        h.version,
+		UptimeSeconds:  int64(time.Since(h.startTime).Seconds()),
+		Checks:         checks,
+		TrunkRecorders: trInstances,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
