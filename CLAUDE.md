@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 tr-engine is a backend service that ingests MQTT messages from one or more [trunk-recorder](https://github.com/robotastic/trunk-recorder) instances and serves them via a REST API. It handles radio system monitoring data: calls, talkgroups, units, transcriptions, and recorder state.
 
-Target scale: full Ohio MARCS statewide P25 system (~180+ sites, ~15K talkgroups, ~10K-20K MQTT msgs/sec peak) on a single moderate server. Current dev/test uses 2 counties (Butler/Warren, NACs 340/34D).
+Current dev/test uses 2 counties (Butler/Warren, NACs 340/34D).
 
 ## Technology Stack
 
@@ -16,7 +16,7 @@ Target scale: full Ohio MARCS statewide P25 system (~180+ sites, ~15K talkgroups
 - **Real-time push**: Server-Sent Events (SSE) at `GET /api/v1/events/stream` with server-side filtering (systems, sites, tgids, units, event types). Clients reconnect with `Last-Event-ID` for gapless recovery on filter changes.
 - **API**: REST under `/api/v1`, defined in `openapi.yaml`
 
-Go was chosen over Node.js for multi-core utilization and headroom at high message rates (Node single-thread saturates at ~60-70% capacity at MARCS scale; Go sits at ~5-10%).
+Go was chosen over Node.js for multi-core utilization and headroom at high message rates.
 
 ## Key Files
 

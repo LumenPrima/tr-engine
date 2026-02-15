@@ -2,8 +2,6 @@
 
 Backend service that ingests MQTT messages from [trunk-recorder](https://github.com/robotastic/trunk-recorder) instances and serves them via a REST API. Handles radio system monitoring data: calls, talkgroups, units, transcriptions, and recorder state.
 
-Target scale: full Ohio MARCS statewide P25 system (~180+ sites, ~15K talkgroups, ~10K-20K MQTT msgs/sec peak) on a single moderate server.
-
 ## Tech Stack
 
 - **Go** — chosen for multi-core utilization at high message rates
