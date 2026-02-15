@@ -29,7 +29,7 @@ Go was chosen over Node.js for multi-core utilization and headroom at high messa
 - `internal/config/config.go` — Env-based config (`DATABASE_URL`, `MQTT_BROKER_URL`, `HTTP_ADDR`, `AUTH_TOKEN`, `LOG_LEVEL`, timeouts). Uses `caarlos0/env/v11`.
 - `internal/database/` — pgxpool wrapper (20 max / 4 min conns, 2s health-check ping) plus query files for all tables: systems, sites, talkgroups, units, calls, call_groups, recorders, stats, etc.
 - `internal/mqttclient/client.go` — Paho MQTT client. Auto-reconnect (5s), QoS 0, `atomic.Bool` connection tracking.
-- `internal/ingest/` — Complete MQTT ingestion pipeline. Message routing (`router.go`), identity resolution (`identity.go`), event bus for SSE (`eventbus.go`), batch writers (`batcher.go`), and handlers for all message types (calls, units, recorders, rates, systems, config, audio, status).
+- `internal/ingest/` — Complete MQTT ingestion pipeline. Message routing (`router.go`), identity resolution (`identity.go`), event bus for SSE (`eventbus.go`), batch writers (`batcher.go`), and handlers for all message types (calls, units, recorders, rates, systems, config, audio, status, trunking messages, console logs).
 - `internal/api/server.go` — Chi router + HTTP server lifecycle. All 29 endpoints wired via handler `Routes()` methods.
 - `internal/api/middleware.go` — RequestID, structured request Logger (zerolog/hlog), Recoverer (JSON 500), BearerAuth (passthrough when `AUTH_TOKEN` empty).
 
@@ -129,10 +129,11 @@ A live environment is available for testing:
 **Completed:**
 - `openapi.yaml` — full REST API spec with SSE event stream endpoint (29 endpoints)
 - `schema.sql` — full PostgreSQL 17 DDL (20 tables, partitioning, triggers, helpers)
-- MQTT ingestion pipeline — message routing, identity resolution, batch writes, all handler types (calls, units, recorders, rates, systems, config, audio, status)
+- MQTT ingestion pipeline — message routing, identity resolution, batch writes, all handler types (calls, units, recorders, rates, systems, config, audio, status, trunking messages, console logs)
 - REST API — all 29 endpoints implemented across 9 handler files (systems, talkgroups, units, calls, call_groups, stats, recorders, events/SSE, admin)
 - Database layer — complete CRUD and query builders for all tables
-- SSE event bus — real-time pub/sub with ring buffer replay, `Last-Event-ID` support, and event publishing wired into all ingest handlers (call_start, call_end, unit_event, recorder_update, rate_update, console)
+- SSE event bus — real-time pub/sub with ring buffer replay, `Last-Event-ID` support, and event publishing wired into all ingest handlers (call_start, call_end, unit_event, recorder_update, rate_update, trunking_message, console)
+- Health endpoint — shows database, MQTT, and trunk-recorder instance status (connected/disconnected with last_seen timestamps)
 - Dev tools — `cmd/mqtt-dump` (MQTT traffic inspector), `cmd/dbcheck` (DB analysis)
 
 **Not yet done:**
@@ -159,3 +160,18 @@ All filters are AND-ed. Events carry `SystemID`, `SiteID`, `Tgid`, and `UnitID` 
 - `types=unit_event:call,unit_event:end,call_start` — mix compound and plain
 
 Implementation: `EventData` struct in `eventbus.go` carries `Type`, `SubType`, `SystemID`, `SiteID`, `Tgid`, `UnitID`. All ingest handlers publish via `p.PublishEvent(EventData{...})`. The `matchesFilter()` function in `eventbus.go` handles all filter logic including compound type parsing via `strings.Cut`.
+
+### MQTT Topic → Handler Mapping
+
+| MQTT Topic | Handler | SSE Event | DB Table | Volume |
+|-----------|---------|-----------|----------|--------|
+| `trdash/feeds/call_start` | `handleCallStart` | `call_start` | `calls` | Low |
+| `trdash/feeds/call_end` | `handleCallEnd` | `call_end` | `calls` | Low |
+| `trdash/units/{sys_name}/{event}` | `handleUnitEvent` | `unit_event` | `unit_events` | Medium |
+| `trdash/feeds/recorders` | `handleRecorders` | `recorder_update` | `recorder_snapshots` | Medium |
+| `trdash/feeds/rates` | `handleRates` | `rate_update` | `decode_rates` | Low |
+| `trdash/messages/{sys_name}/message` | `handleTrunkingMessage` | `trunking_message` | `trunking_messages` | Very high (batched) |
+| `trdash/feeds/trunk_recorder/console` | `handleConsoleLog` | `console` | `console_messages` | Low-medium |
+| `trdash/feeds/trunk_recorder/status` | `handleStatus` | _(none)_ | `plugin_statuses` | Very low |
+
+Trunking messages use a `Batcher` for CopyFrom batch inserts (same as raw messages and recorder snapshots). Console logs use simple single-row INSERT. The status handler caches TR instance status in-memory for the `/api/v1/health` endpoint rather than publishing SSE events.
