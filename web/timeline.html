@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tr-engine timeline</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-deep: #05080f;
+      --bg-mid: #0a1020;
+      --surface: #111a2e;
+      --border: #1a2744;
+      --text-primary: #e2e8f4;
+      --text-muted: #5a6b8a;
+      --text-dim: #2e3d5a;
+      --accent-cyan: #00e5ff;
+      --accent-violet: #a855f7;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-emerald: #10b981;
+      --accent-blue: #58a6ff;
+    }
+
+    body {
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      font-family: 'Outfit', sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      padding: 16px 40px;
+      flex-shrink: 0;
+    }
+
+    .header h1 {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .header .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .header .pulse-dot.connected {
+      background: var(--accent-cyan);
+      box-shadow: 0 0 8px var(--accent-cyan), 0 0 20px rgba(0, 229, 255, 0.2);
+    }
+
+    .header .pulse-dot.disconnected {
+      background: var(--accent-rose);
+      box-shadow: 0 0 8px var(--accent-rose);
+      animation: none;
+    }
+
+    .header .pulse-dot.connecting {
+      background: var(--accent-amber);
+      box-shadow: 0 0 8px var(--accent-amber);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    .stats {
+      display: flex;
+      gap: 32px;
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--text-dim);
+      letter-spacing: 0.05em;
+    }
+
+    .stats .stat-value {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .legend {
+      display: flex;
+      gap: 24px;
+      padding: 0 40px;
+      margin-left: 160px;
+      flex-shrink: 0;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+    }
+
+    .legend-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .lane-labels {
+      width: 160px;
+      flex-shrink: 0;
+      overflow: hidden;
+      position: relative;
+      z-index: 4;
+    }
+
+    .lane-label {
+      position: absolute;
+      left: 16px;
+      right: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transform: translateY(-50%);
+      transition: top 0.3s ease;
+    }
+
+    .lane-label .lane-tgid {
+      color: var(--text-dim);
+      font-size: 9px;
+      margin-left: 4px;
+    }
+
+    .timeline-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .timeline-area::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(0, 229, 255, 0.008) 3px,
+        rgba(0, 229, 255, 0.008) 4px
+      );
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .now-zone {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 80px;
+      height: 100%;
+      background: linear-gradient(90deg, rgba(0, 229, 255, 0.06) 0%, transparent 100%);
+      border-left: 2px solid rgba(0, 229, 255, 0.25);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .now-label {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent-cyan);
+      opacity: 0.6;
+    }
+
+    .decay-zone {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 160px;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, var(--bg-deep));
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    #timeline {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* GPU-composited glow via CSS text-shadow instead of SVG feGaussianBlur */
+    .evt-icon {
+      cursor: pointer;
+      transition: font-size 0.15s ease;
+    }
+
+    .time-markers {
+      position: relative;
+      height: 20px;
+      margin-left: 160px;
+      margin-right: 40px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
+      flex-shrink: 0;
+    }
+
+    .time-marker {
+      position: absolute;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    .tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-primary);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      max-width: 320px;
+    }
+
+    .tooltip.visible { opacity: 1; }
+    .tooltip .tt-type { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+    .tooltip .tt-detail { color: var(--text-primary); font-size: 11px; margin-bottom: 2px; }
+    .tooltip .tt-age { color: var(--text-muted); font-size: 10px; }
+
+    .auth-prompt { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 200; align-items: center; justify-content: center; }
+    .auth-prompt.visible { display: flex; }
+    .auth-box { background: #111a2e; border: 1px solid #1a2744; border-radius: 8px; padding: 24px; max-width: 360px; width: 90%; font-family: 'JetBrains Mono', monospace; }
+    .auth-box h2 { font-size: 14px; color: var(--text-primary); margin-bottom: 4px; }
+    .auth-box p { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+    .auth-box input { width: 100%; padding: 8px 10px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit; font-size: 12px; margin-bottom: 12px; }
+    .auth-box input:focus { outline: none; border-color: var(--accent-cyan); }
+    .auth-box button { padding: 6px 16px; background: #1a6b4a; border: none; border-radius: 4px; color: #fff; font-size: 12px; cursor: pointer; font-family: inherit; }
+    .auth-box button:hover { background: #22815a; }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="pulse-dot connecting" id="status-dot"></div>
+  <h1>Event Horizon</h1>
+  <div class="stats">
+    <span>Talkgroups <span class="stat-value" id="stat-tg">0</span></span>
+    <span>Events <span class="stat-value" id="stat-count">0</span></span>
+    <span>Rate <span class="stat-value" id="stat-rate">0</span>/min</span>
+    <span><span class="stat-value" id="stat-fps">0</span>fps</span>
+    <span><span class="stat-value" id="stat-ft">0</span>ms</span>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background: #00e5ff;"></div>call start</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #00c4d6;"></div>call update</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #10b981;"></div>call end</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #a855f7;"></div>unit call</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #c084fc;"></div>unit end</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #38bdf8;"></div>unit on</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #f87171;"></div>unit off</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #fbbf24;"></div>join/loc</div>
+</div>
+
+<div class="main">
+  <div class="lane-labels" id="lane-labels"></div>
+  <div class="timeline-area">
+    <div class="now-zone"><div class="now-label">now</div></div>
+    <div class="decay-zone"></div>
+    <svg id="timeline"></svg>
+  </div>
+</div>
+
+<div class="time-markers" id="time-markers"></div>
+
+<div class="tooltip" id="tooltip">
+  <div class="tt-type" id="tt-type"></div>
+  <div class="tt-detail" id="tt-detail"></div>
+  <div class="tt-age" id="tt-age"></div>
+</div>
+
+<div id="auth-prompt" class="auth-prompt">
+  <div class="auth-box">
+    <h2>Authentication Required</h2>
+    <p>Enter your API token to connect to the event stream.</p>
+    <input id="auth-token" type="password" placeholder="Bearer token" autofocus>
+    <button id="auth-submit">Connect</button>
+  </div>
+</div>
+
+<script>
+  // ── Config ──────────────────────────────────────────
+  const EVENT_STYLES = {
+    call_start:  { icon: '\u25C6', color: '#00e5ff', shadow: '0 0 6px rgba(0,229,255,0.6)' },
+    call_update: { icon: '\u25C7', color: '#00c4d6', shadow: '0 0 6px rgba(0,196,214,0.5)' },
+    call_end:    { icon: '\u25CF', color: '#10b981', shadow: '0 0 6px rgba(16,185,129,0.6)' },
+  };
+
+  // Unit event subtypes — resolved from data.event_type
+  const UNIT_STYLES = {
+    call:     { icon: '\u25B2', color: '#a855f7', shadow: '0 0 6px rgba(168,85,247,0.6)' },
+    end:      { icon: '\u25BD', color: '#c084fc', shadow: '0 0 6px rgba(192,132,252,0.5)' },
+    on:       { icon: '\u25B3', color: '#38bdf8', shadow: '0 0 6px rgba(56,189,248,0.5)' },
+    join:     { icon: '\u25C9', color: '#fbbf24', shadow: '0 0 6px rgba(251,191,36,0.5)' },
+    off:      { icon: '\u25BD', color: '#f87171', shadow: '0 0 6px rgba(248,113,113,0.5)' },
+    location: { icon: '\u25CB', color: '#fbbf24', shadow: '0 0 6px rgba(251,191,36,0.4)' },
+    ackresp:  { icon: '\u25AB', color: '#94a3b8', shadow: '0 0 4px rgba(148,163,184,0.4)' },
+    data:     { icon: '\u25AB', color: '#94a3b8', shadow: '0 0 4px rgba(148,163,184,0.4)' },
+  };
+  const UNIT_DEFAULT = { icon: '\u25B2', color: '#a855f7', shadow: '0 0 6px rgba(168,85,247,0.6)' };
+
+  const SSE_TYPES = ['call_start', 'call_update', 'call_end', 'unit_event'];
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const MAX_AGE_SEC = 10800;
+  const MAX_LANES = 30;
+  const EVENT_CAP = 2500;
+  const POW_EXP = 0.3;
+
+  // ── State ───────────────────────────────────────────
+  const events = [];       // event data objects
+  const domNodes = [];     // parallel array: { g, icon, trail } cached DOM refs
+  let eventCounter = 0;
+  let dirty = false;       // set when enter/exit needed
+  let frameCount = 0;
+  let eventSource = null;
+  let authToken = localStorage.getItem('tr-engine-token') || '';
+  let everConnected = false;
+  let recentTimes = [];
+
+  // Talkgroup lanes
+  const tgLaneMap = new Map();
+  let nextLane = 0;
+  let lanesDirty = false;
+
+  // Layout
+  let width = 0, height = 0;
+
+  // ── DOM refs ────────────────────────────────────────
+  const svgEl = document.getElementById('timeline');
+  const statusDot = document.getElementById('status-dot');
+  const authPrompt = document.getElementById('auth-prompt');
+  const authTokenInput = document.getElementById('auth-token');
+  const authSubmitBtn = document.getElementById('auth-submit');
+  const tooltip = document.getElementById('tooltip');
+  const ttType = document.getElementById('tt-type');
+  const ttDetail = document.getElementById('tt-detail');
+  const ttAge = document.getElementById('tt-age');
+  const laneLabelsEl = document.getElementById('lane-labels');
+  const statCount = document.getElementById('stat-count');
+  const statRate = document.getElementById('stat-rate');
+  const statTg = document.getElementById('stat-tg');
+
+  // ── Power scale (inlined, no D3 needed) ─────────────
+  // screen_x = ((ageSec / maxAge) ^ exponent) * rangeSpan + rangeStart
+  let rangeStart = 40, rangeSpan = 0;
+
+  function xScale(ageSec) {
+    const t = Math.max(0, Math.min(1, (ageSec - 1) / (MAX_AGE_SEC - 1)));
+    return rangeStart + Math.pow(t, POW_EXP) * rangeSpan;
+  }
+
+  // ── Lane geometry ───────────────────────────────────
+  function laneY(lane) {
+    if (nextLane === 0) return height / 2;
+    const padding = 20;
+    const usable = height - padding * 2;
+    const band = Math.min(40, usable / nextLane);
+    const total = band * nextLane;
+    return (height - total) / 2 + lane * band + band / 2;
+  }
+
+  function laneBandwidth() {
+    if (nextLane === 0) return 30;
+    return Math.min(40, (height - 40) / nextLane);
+  }
+
+  function getLane(tgid, label) {
+    if (!tgid) tgid = 0;
+    if (tgLaneMap.has(tgid)) {
+      const entry = tgLaneMap.get(tgid);
+      entry.lastSeen = Date.now();
+      if (label && label !== entry.label) { entry.label = label; lanesDirty = true; }
+      return entry.lane;
+    }
+
+    let lane;
+    if (nextLane < MAX_LANES) {
+      lane = nextLane++;
+    } else {
+      let oldestTg = null, oldestTime = Infinity;
+      for (const [tg, entry] of tgLaneMap) {
+        if (entry.lastSeen < oldestTime) { oldestTime = entry.lastSeen; oldestTg = tg; }
+      }
+      lane = tgLaneMap.get(oldestTg).lane;
+      tgLaneMap.delete(oldestTg);
+    }
+
+    tgLaneMap.set(tgid, { lane, label: label || (tgid ? 'TG ' + tgid : 'Unknown'), lastSeen: Date.now() });
+    lanesDirty = true;
+    return lane;
+  }
+
+  // ── Resize ──────────────────────────────────────────
+  function resize() {
+    const rect = svgEl.parentElement.getBoundingClientRect();
+    width = rect.width;
+    height = rect.height;
+    svgEl.setAttribute('width', width);
+    svgEl.setAttribute('height', height);
+    rangeSpan = width + 60;
+    updateTimeMarkers();
+    updateGrid();
+    updateLaneLabels();
+    drawLaneSeparators();
+  }
+
+  // ── Time markers ────────────────────────────────────
+  const TIME_LABELS = [
+    { sec: 5, label: '5s' }, { sec: 15, label: '15s' }, { sec: 30, label: '30s' },
+    { sec: 60, label: '1m' }, { sec: 120, label: '2m' }, { sec: 300, label: '5m' },
+    { sec: 600, label: '10m' }, { sec: 1800, label: '30m' }, { sec: 3600, label: '1h' },
+    { sec: 7200, label: '2h' }, { sec: 10800, label: '3h' },
+  ];
+
+  function updateTimeMarkers() {
+    const c = document.getElementById('time-markers');
+    c.innerHTML = '';
+    for (const t of TIME_LABELS) {
+      const x = xScale(t.sec);
+      if (x > 20 && x < width - 20) {
+        const el = document.createElement('div');
+        el.className = 'time-marker';
+        el.style.left = x + 'px';
+        el.textContent = t.label;
+        c.appendChild(el);
+      }
+    }
+  }
+
+  // ── Grid lines (static, redrawn on resize) ──────────
+  let gridGroup = null;
+
+  function initGrid() {
+    gridGroup = document.createElementNS(SVG_NS, 'g');
+    for (let i = 0; i < TIME_LABELS.length; i++) {
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('stroke', '#1a2744');
+      line.setAttribute('stroke-width', '0.5');
+      line.setAttribute('stroke-dasharray', '2,6');
+      line.setAttribute('opacity', '0.4');
+      gridGroup.appendChild(line);
+    }
+    svgEl.appendChild(gridGroup);
+  }
+
+  function updateGrid() {
+    if (!gridGroup) return;
+    const lines = gridGroup.children;
+    for (let i = 0; i < TIME_LABELS.length; i++) {
+      const x = xScale(TIME_LABELS[i].sec);
+      lines[i].setAttribute('x1', x);
+      lines[i].setAttribute('x2', x);
+      lines[i].setAttribute('y1', 0);
+      lines[i].setAttribute('y2', height);
+    }
+  }
+
+  // ── Lane separators ─────────────────────────────────
+  let sepGroup = null;
+
+  function drawLaneSeparators() {
+    if (sepGroup) sepGroup.remove();
+    sepGroup = document.createElementNS(SVG_NS, 'g');
+    const bw = laneBandwidth();
+    for (let i = 0; i < nextLane; i++) {
+      const y = laneY(i) - bw / 2;
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('x1', 0);
+      line.setAttribute('x2', width);
+      line.setAttribute('y1', y);
+      line.setAttribute('y2', y);
+      line.setAttribute('stroke', '#1a2744');
+      line.setAttribute('stroke-width', '0.5');
+      line.setAttribute('opacity', '0.3');
+      sepGroup.appendChild(line);
+    }
+    svgEl.appendChild(sepGroup);
+  }
+
+  // ── Lane labels ─────────────────────────────────────
+  function updateLaneLabels() {
+    laneLabelsEl.innerHTML = '';
+    for (const [tgid, entry] of tgLaneMap) {
+      const el = document.createElement('div');
+      el.className = 'lane-label';
+      el.style.top = laneY(entry.lane) + 'px';
+      el.innerHTML = escHTML(entry.label) + (tgid ? `<span class="lane-tgid">${tgid}</span>` : '');
+      laneLabelsEl.appendChild(el);
+    }
+    statTg.textContent = tgLaneMap.size;
+  }
+
+  function escHTML(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ── Age formatting ──────────────────────────────────
+  function formatAge(sec) {
+    if (sec < 60) return `${Math.floor(sec)}s ago`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+    if (sec < 86400) return `${(sec / 3600).toFixed(1)}h ago`;
+    return `${(sec / 86400).toFixed(1)}d ago`;
+  }
+
+  // ── Tooltip detail ──────────────────────────────────
+  function summarize(type, d) {
+    switch (type) {
+      case 'call_start':
+      case 'call_update':
+        return (d.tg_alpha_tag || 'TG ' + d.tgid) +
+          (d.emergency ? ' EMERGENCY' : '') +
+          (d.encrypted ? ' [enc]' : '') +
+          (d.freq ? ' ' + (d.freq / 1e6).toFixed(4) + ' MHz' : '');
+      case 'call_end':
+        return (d.tg_alpha_tag || 'TG ' + d.tgid) +
+          (d.duration ? ' ' + d.duration.toFixed(1) + 's' : '') +
+          (d.freq ? ' ' + (d.freq / 1e6).toFixed(4) + ' MHz' : '');
+      case 'unit_event':
+        return (d.event_type || '?') + ' ' +
+          (d.unit_alpha_tag || 'Unit ' + d.unit_id) +
+          (d.tg_alpha_tag ? ' on ' + d.tg_alpha_tag : '');
+      default:
+        return '';
+    }
+  }
+
+  // ── Add event ───────────────────────────────────────
+  function addEvent(type, data) {
+    let style;
+    if (type === 'unit_event') {
+      const sub = (data.event_type || '').toLowerCase();
+      style = UNIT_STYLES[sub] || UNIT_DEFAULT;
+    } else {
+      style = EVENT_STYLES[type];
+    }
+    if (!style) return;
+
+    const tgid = data.tgid || 0;
+    if (!tgid) return; // skip events with no talkgroup
+
+    const tgLabel = data.tg_alpha_tag || 'TG ' + tgid;
+    const lane = getLane(tgid, tgLabel);
+
+    let time;
+    const ts = data.start_time || data.time || data.log_time;
+    if (ts) { const d = new Date(ts); time = isNaN(d) ? Date.now() : d.getTime(); }
+    else { time = Date.now(); }
+
+    // Display label: "unit call", "unit off", etc. for unit events
+    const displayType = type === 'unit_event' && data.event_type
+      ? 'unit ' + data.event_type
+      : type.replace(/_/g, ' ');
+
+    events.push({
+      id: eventCounter++,
+      time, type: displayType, lane,
+      icon: style.icon,
+      color: style.color,
+      shadow: style.shadow,
+      jitter: (Math.random() - 0.5) * 0.3,
+      size: 10 + Math.random() * 6,
+      detail: summarize(type, data),
+      emergency: !!data.emergency,
+    });
+    domNodes.push(null); // placeholder, reconcile will create DOM
+
+    if (events.length > EVENT_CAP) {
+      const old = domNodes.shift();
+      events.shift();
+      if (old && old.g.parentNode) old.g.parentNode.removeChild(old.g);
+    }
+
+    dirty = true;
+
+    recentTimes.push(Date.now());
+    recentTimes = recentTimes.filter(t => Date.now() - t < 60000);
+    statRate.textContent = recentTimes.length;
+  }
+
+  // ── Phase 1: Reconcile (enter/exit) — runs when dirty ──
+  function reconcile() {
+    const now = Date.now();
+
+    // Remove expired events
+    let i = 0;
+    while (i < events.length) {
+      if ((now - events[i].time) / 1000 >= MAX_AGE_SEC) {
+        const node = domNodes[i];
+        if (node && node.g.parentNode) node.g.parentNode.removeChild(node.g);
+        events.splice(i, 1);
+        domNodes.splice(i, 1);
+      } else {
+        i++;
+      }
+    }
+
+    // Create DOM for new events (domNodes[i] === null)
+    for (let i = 0; i < events.length; i++) {
+      if (domNodes[i]) continue;
+
+      const ev = events[i];
+      const g = document.createElementNS(SVG_NS, 'g');
+
+      const trail = document.createElementNS(SVG_NS, 'line');
+      trail.setAttribute('x1', '0');
+      trail.setAttribute('y1', '0');
+      trail.setAttribute('x2', '-20');
+      trail.setAttribute('y2', '0');
+      trail.setAttribute('stroke', ev.color);
+      trail.setAttribute('stroke-opacity', '0.15');
+      trail.setAttribute('stroke-width', '1');
+      g.appendChild(trail);
+
+      const icon = document.createElementNS(SVG_NS, 'text');
+      icon.setAttribute('text-anchor', 'middle');
+      icon.setAttribute('dominant-baseline', 'central');
+      icon.setAttribute('font-size', ev.size);
+      icon.setAttribute('fill', ev.color);
+      icon.style.textShadow = ev.shadow;
+      icon.classList.add('evt-icon');
+      icon.textContent = ev.icon;
+
+      // Hover events (bound once at creation)
+      const evRef = ev;
+      g.addEventListener('mouseenter', function(e) {
+        icon.setAttribute('font-size', evRef.size * 1.5);
+        const ageSec = (Date.now() - evRef.time) / 1000;
+        ttType.textContent = evRef.type.replace(/_/g, ' ');
+        ttType.style.color = evRef.color;
+        ttDetail.textContent = evRef.detail;
+        ttAge.textContent = formatAge(ageSec);
+        tooltip.classList.add('visible');
+      });
+      g.addEventListener('mousemove', function(e) {
+        tooltip.style.left = (e.clientX + 14) + 'px';
+        tooltip.style.top = (e.clientY - 50) + 'px';
+      });
+      g.addEventListener('mouseleave', function() {
+        icon.setAttribute('font-size', evRef.size);
+        tooltip.classList.remove('visible');
+      });
+
+      g.appendChild(icon);
+      g.setAttribute('opacity', '0');
+      svgEl.appendChild(g);
+
+      // Fade in (one-shot, not per-frame)
+      requestAnimationFrame(() => { g.setAttribute('opacity', '1'); g.style.transition = 'opacity 0.5s ease'; });
+
+      domNodes[i] = { g, icon, trail };
+    }
+
+    statCount.textContent = events.length;
+    dirty = false;
+  }
+
+  // ── Phase 2: Update positions — tight loop, every frame ──
+  function updatePositions() {
+    const now = Date.now();
+    const bw = laneBandwidth();
+
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      const node = domNodes[i];
+      if (!node) continue;
+
+      const ageSec = Math.max(1, (now - ev.time) / 1000);
+      const x = xScale(ageSec);
+      const baseY = laneY(ev.lane);
+      const y = baseY + ev.jitter * bw;
+
+      let opacity = 1;
+      if (ageSec > 1800) opacity = Math.max(0.08, 1 - (ageSec - 1800) / (MAX_AGE_SEC - 1800));
+      if (ev.emergency) opacity = Math.max(opacity, 0.6);
+
+      const trailLen = Math.min(40, ageSec * 0.05);
+
+      node.g.setAttribute('transform', `translate(${x},${y})`);
+      node.g.style.opacity = opacity;
+      node.trail.setAttribute('x2', -trailLen);
+      node.trail.setAttribute('stroke-opacity', Math.min(0.25, ageSec * 0.001));
+    }
+  }
+
+  // ── Animation loop ──────────────────────────────────
+  let prevLaneCount = 0;
+  let frame = 0;
+  let lastFrameTime = performance.now();
+  let ftAccum = 0;
+  let ftSamples = 0;
+  const statFps = document.getElementById('stat-fps');
+  const statFt = document.getElementById('stat-ft');
+
+  function tick(now) {
+    const dt = now - lastFrameTime;
+    lastFrameTime = now;
+    ftAccum += dt;
+    ftSamples++;
+
+    // Reconcile when dirty or every 30 frames; update perf stats
+    if (dirty || ++frame % 30 === 0) {
+      reconcile();
+      const avgFt = ftAccum / ftSamples;
+      statFps.textContent = Math.round(1000 / avgFt);
+      statFt.textContent = avgFt.toFixed(1);
+      ftAccum = 0;
+      ftSamples = 0;
+    }
+
+    // Lane geometry changed
+    if (lanesDirty || nextLane !== prevLaneCount) {
+      updateLaneLabels();
+      drawLaneSeparators();
+      prevLaneCount = nextLane;
+      lanesDirty = false;
+    }
+
+    updatePositions();
+    requestAnimationFrame(tick);
+  }
+
+  // ── SSE Connection ──────────────────────────────────
+  function setStatus(state) { statusDot.className = 'pulse-dot ' + state; }
+  function showAuth() { authPrompt.classList.add('visible'); authTokenInput.value = authToken; authTokenInput.focus(); }
+  function hideAuth() { authPrompt.classList.remove('visible'); }
+
+  function connect() {
+    if (eventSource) eventSource.close();
+
+    const params = new URLSearchParams();
+    params.set('types', SSE_TYPES.join(','));
+    if (authToken) params.set('token', authToken);
+    const url = '/api/v1/events/stream?' + params.toString();
+
+    setStatus('connecting');
+    everConnected = false;
+    eventSource = new EventSource(url);
+
+    eventSource.onopen = () => { setStatus('connected'); hideAuth(); everConnected = true; };
+
+    eventSource.onerror = () => {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        setStatus('disconnected');
+        if (!everConnected) { eventSource.close(); showAuth(); }
+      } else {
+        setStatus('connecting');
+      }
+    };
+
+    SSE_TYPES.forEach(type => {
+      eventSource.addEventListener(type, (e) => {
+        try { addEvent(type, JSON.parse(e.data)); }
+        catch (err) { console.error('parse error', type, err); }
+      });
+    });
+  }
+
+  authSubmitBtn.addEventListener('click', () => {
+    authToken = authTokenInput.value.trim();
+    localStorage.setItem('tr-engine-token', authToken);
+    hideAuth();
+    connect();
+  });
+  authTokenInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') authSubmitBtn.click(); });
+
+  // ── Init ────────────────────────────────────────────
+  initGrid();
+  resize();
+  connect();
+  requestAnimationFrame(tick);
+
+  window.addEventListener('resize', resize);
+</script>
+</body>
+</html>
