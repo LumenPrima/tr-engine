@@ -90,6 +90,8 @@ func main() {
 	pipeline := ingest.NewPipeline(ingest.PipelineOptions{
 		DB:               db,
 		AudioDir:         cfg.AudioDir,
+		RawStore:         cfg.RawStore,
+		RawIncludeTopics: cfg.RawIncludeTopics,
 		RawExcludeTopics: cfg.RawExcludeTopics,
 		Log:              log,
 	})

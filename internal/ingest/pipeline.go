@@ -31,8 +31,10 @@ type Pipeline struct {
 	// Event bus for SSE subscribers
 	eventBus *EventBus
 
-	// Raw archival exclusion set (handler names to skip)
-	rawExclude map[string]bool
+	// Raw archival config
+	rawStore   bool            // false = disable all raw archival
+	rawInclude map[string]bool // if non-empty, allowlist mode (only these handlers)
+	rawExclude map[string]bool // if non-empty, denylist mode (skip these handlers)
 
 	// Recorder cache: recorder_id → latest state
 	recorderCache sync.Map
@@ -50,6 +52,8 @@ type Pipeline struct {
 type PipelineOptions struct {
 	DB               *database.DB
 	AudioDir         string
+	RawStore         bool
+	RawIncludeTopics string
 	RawExcludeTopics string
 	Log              zerolog.Logger
 }
@@ -58,17 +62,20 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 	ctx, cancel := context.WithCancel(context.Background())
 	log := opts.Log.With().Str("component", "ingest").Logger()
 
-	// Parse comma-separated handler names into exclusion set
-	rawExclude := make(map[string]bool)
-	if opts.RawExcludeTopics != "" {
-		for _, h := range strings.Split(opts.RawExcludeTopics, ",") {
-			h = strings.TrimSpace(h)
-			if h != "" {
-				rawExclude[h] = true
-			}
+	// Parse raw archival config
+	rawStore := opts.RawStore
+	rawInclude := parseHandlerSet(opts.RawIncludeTopics)
+	rawExclude := parseHandlerSet(opts.RawExcludeTopics)
+
+	if !rawStore {
+		log.Info().Msg("raw message archival disabled (RAW_STORE=false)")
+	} else if len(rawInclude) > 0 {
+		names := make([]string, 0, len(rawInclude))
+		for h := range rawInclude {
+			names = append(names, h)
 		}
-	}
-	if len(rawExclude) > 0 {
+		log.Info().Strs("handlers", names).Msg("raw message archival allowlist active")
+	} else if len(rawExclude) > 0 {
 		names := make([]string, 0, len(rawExclude))
 		for h := range rawExclude {
 			names = append(names, h)
@@ -81,6 +88,8 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		identity:    NewIdentityResolver(opts.DB, log),
 		log:         log,
 		audioDir:    opts.AudioDir,
+		rawStore:    rawStore,
+		rawInclude:  rawInclude,
 		rawExclude:  rawExclude,
 		activeCalls: newActiveCallMap(),
 		eventBus:    NewEventBus(4096), // ~60s of events at high rate
@@ -150,27 +159,19 @@ func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 	p.msgCount.Add(1)
 
 	route := ParseTopic(topic)
+
+	// Best-effort extract instance_id for archival
+	var env Envelope
+	_ = json.Unmarshal(payload, &env)
+
+	// Archive raw message
 	if route == nil {
+		p.archiveRaw("_unknown", topic, payload, env.InstanceID)
 		p.log.Warn().Str("topic", topic).Msg("unknown topic, skipping")
 		return
 	}
 
-	// Archive raw message (best-effort extract instance_id)
-	var env Envelope
-	_ = json.Unmarshal(payload, &env)
-
-	if !p.rawExclude[route.Handler] {
-		rawPayload := payload
-		if route.Handler == "audio" {
-			rawPayload = stripAudioBase64(payload)
-		}
-		p.rawBatcher.Add(database.RawMessageRow{
-			Topic:      topic,
-			Payload:    rawPayload,
-			ReceivedAt: time.Now(),
-			InstanceID: env.InstanceID,
-		})
-	}
+	p.archiveRaw(route.Handler, topic, payload, env.InstanceID)
 
 	// Dispatch to handler
 	p.dispatch(route, topic, payload, &env)
@@ -261,6 +262,48 @@ func (p *Pipeline) flushRecorderSnapshots(rows []database.RecorderSnapshotRow) {
 		return
 	}
 	p.log.Debug().Int64("inserted", n).Msg("flushed recorder snapshots")
+}
+
+// archiveRaw conditionally stores a message in mqtt_raw_messages based on the
+// raw archival config: RAW_STORE, RAW_INCLUDE_TOPICS, RAW_EXCLUDE_TOPICS.
+// Use handler="_unknown" for unrecognized topics.
+func (p *Pipeline) archiveRaw(handler, topic string, payload []byte, instanceID string) {
+	if !p.rawStore {
+		return
+	}
+	if len(p.rawInclude) > 0 {
+		if !p.rawInclude[handler] {
+			return
+		}
+	} else if p.rawExclude[handler] {
+		return
+	}
+
+	rawPayload := payload
+	if handler == "audio" {
+		rawPayload = stripAudioBase64(payload)
+	}
+	p.rawBatcher.Add(database.RawMessageRow{
+		Topic:      topic,
+		Payload:    rawPayload,
+		ReceivedAt: time.Now(),
+		InstanceID: instanceID,
+	})
+}
+
+// parseHandlerSet splits a comma-separated string into a set of handler names.
+func parseHandlerSet(s string) map[string]bool {
+	m := make(map[string]bool)
+	if s == "" {
+		return m
+	}
+	for _, h := range strings.Split(s, ",") {
+		h = strings.TrimSpace(h)
+		if h != "" {
+			m[h] = true
+		}
+	}
+	return m
 }
 
 // stripAudioBase64 removes the base64 audio data from audio message payloads

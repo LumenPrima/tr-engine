@@ -26,6 +26,8 @@ type Config struct {
 	AuthToken string `env:"AUTH_TOKEN"`
 	LogLevel  string `env:"LOG_LEVEL" envDefault:"info"`
 
+	RawStore         bool   `env:"RAW_STORE" envDefault:"true"`
+	RawIncludeTopics string `env:"RAW_INCLUDE_TOPICS"`
 	RawExcludeTopics string `env:"RAW_EXCLUDE_TOPICS"`
 }
 
