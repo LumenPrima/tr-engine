@@ -35,6 +35,7 @@ func NewServer(opts ServerOptions) *Server {
 
 	// Global middleware
 	r.Use(RequestID)
+	r.Use(CORS)
 	r.Use(Recoverer)
 	r.Use(Logger(opts.Log))
 
