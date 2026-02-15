@@ -65,8 +65,15 @@ func BearerAuth(token string) func(http.Handler) http.Handler {
 				return
 			}
 
-			auth := r.Header.Get("Authorization")
-			if !strings.HasPrefix(auth, "Bearer ") || subtle.ConstantTimeCompare([]byte(auth[7:]), []byte(token)) != 1 {
+			// Check Authorization header first, then ?token= query param as fallback (for EventSource/SSE)
+			provided := ""
+			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				provided = auth[7:]
+			} else if qt := r.URL.Query().Get("token"); qt != "" {
+				provided = qt
+			}
+
+			if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				fmt.Fprintf(w, `{"error":"unauthorized"}`)
