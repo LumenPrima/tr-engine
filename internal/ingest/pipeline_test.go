@@ -144,6 +144,100 @@ func TestStripAudioBase64(t *testing.T) {
 	})
 }
 
+// ── activeCallMap CRUD ───────────────────────────────────────────────
+
+func TestActiveCallMapCRUD(t *testing.T) {
+	t.Run("set_and_get", func(t *testing.T) {
+		m := newActiveCallMap()
+		m.Set("key1", activeCallEntry{CallID: 1, Tgid: 100})
+
+		entry, ok := m.Get("key1")
+		if !ok {
+			t.Fatal("expected key1 to exist")
+		}
+		if entry.CallID != 1 || entry.Tgid != 100 {
+			t.Errorf("got CallID=%d Tgid=%d, want 1, 100", entry.CallID, entry.Tgid)
+		}
+	})
+
+	t.Run("get_missing_returns_false", func(t *testing.T) {
+		m := newActiveCallMap()
+		_, ok := m.Get("nonexistent")
+		if ok {
+			t.Error("expected ok=false for missing key")
+		}
+	})
+
+	t.Run("delete_removes_entry", func(t *testing.T) {
+		m := newActiveCallMap()
+		m.Set("key1", activeCallEntry{CallID: 1})
+		m.Delete("key1")
+
+		_, ok := m.Get("key1")
+		if ok {
+			t.Error("expected key1 to be deleted")
+		}
+	})
+
+	t.Run("delete_nonexistent_is_noop", func(t *testing.T) {
+		m := newActiveCallMap()
+		m.Delete("nonexistent") // should not panic
+	})
+
+	t.Run("len_tracks_count", func(t *testing.T) {
+		m := newActiveCallMap()
+		if m.Len() != 0 {
+			t.Errorf("Len = %d, want 0", m.Len())
+		}
+		m.Set("a", activeCallEntry{CallID: 1})
+		m.Set("b", activeCallEntry{CallID: 2})
+		if m.Len() != 2 {
+			t.Errorf("Len = %d, want 2", m.Len())
+		}
+		m.Delete("a")
+		if m.Len() != 1 {
+			t.Errorf("Len = %d, want 1", m.Len())
+		}
+	})
+
+	t.Run("set_overwrites_existing", func(t *testing.T) {
+		m := newActiveCallMap()
+		m.Set("key1", activeCallEntry{CallID: 1})
+		m.Set("key1", activeCallEntry{CallID: 2})
+
+		entry, _ := m.Get("key1")
+		if entry.CallID != 2 {
+			t.Errorf("CallID = %d, want 2 (overwritten)", entry.CallID)
+		}
+		if m.Len() != 1 {
+			t.Errorf("Len = %d, want 1", m.Len())
+		}
+	})
+
+	t.Run("all_returns_snapshot", func(t *testing.T) {
+		m := newActiveCallMap()
+		m.Set("a", activeCallEntry{CallID: 1, Tgid: 100})
+		m.Set("b", activeCallEntry{CallID: 2, Tgid: 200})
+
+		snapshot := m.All()
+		if len(snapshot) != 2 {
+			t.Fatalf("All returned %d entries, want 2", len(snapshot))
+		}
+		if snapshot["a"].CallID != 1 {
+			t.Errorf("a.CallID = %d, want 1", snapshot["a"].CallID)
+		}
+		if snapshot["b"].CallID != 2 {
+			t.Errorf("b.CallID = %d, want 2", snapshot["b"].CallID)
+		}
+
+		// Verify it's a copy — mutating snapshot doesn't affect original
+		delete(snapshot, "a")
+		if m.Len() != 2 {
+			t.Error("deleting from snapshot should not affect original map")
+		}
+	})
+}
+
 func TestActiveCallMapFindByTgidAndTime(t *testing.T) {
 	base := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
 	tolerance := 5 * time.Second
