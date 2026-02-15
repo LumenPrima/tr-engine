@@ -310,6 +310,36 @@ func (m *activeCallMap) Delete(trCallID string) {
 	m.mu.Unlock()
 }
 
+// FindByTgidAndTime finds an active call matching the given tgid with a start
+// time within tolerance. Returns the map key, entry, and whether found. This
+// handles trunk-recorder shifting start_time by 1-2s between call_start and
+// call_end, which changes the ID since it embeds start_time.
+func (m *activeCallMap) FindByTgidAndTime(tgid int, startTime time.Time, tolerance time.Duration) (string, activeCallEntry, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var bestKey string
+	var bestEntry activeCallEntry
+	bestDiff := tolerance + 1
+
+	for key, entry := range m.calls {
+		if entry.Tgid != tgid {
+			continue
+		}
+		diff := entry.StartTime.Sub(startTime)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff <= tolerance && diff < bestDiff {
+			bestKey = key
+			bestEntry = entry
+			bestDiff = diff
+		}
+	}
+
+	return bestKey, bestEntry, bestDiff <= tolerance
+}
+
 func (m *activeCallMap) Len() int {
 	m.mu.Lock()
 	n := len(m.calls)

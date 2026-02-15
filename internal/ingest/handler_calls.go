@@ -185,6 +185,12 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 
 	// Find active call
 	entry, ok := p.activeCalls.Get(call.ID)
+	matchedKey := call.ID
+	if !ok {
+		// Fuzzy match: TR may adjust start_time by 1-2s between call_start and
+		// call_end, which changes the ID since it embeds start_time.
+		matchedKey, entry, ok = p.activeCalls.FindByTgidAndTime(call.Talkgroup, startTime, 5*time.Second)
+	}
 	if !ok {
 		// Call started before we were running, or duplicate. Try DB lookup.
 		var err error
@@ -200,6 +206,7 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 				return p.handleCallStartFromEnd(ctx, &msg)
 			}
 		}
+		matchedKey = "" // came from DB, nothing to delete from active map
 	}
 
 	stopTime := time.Unix(call.StopTime, 0)
@@ -224,7 +231,9 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 		return fmt.Errorf("update call end: %w", err)
 	}
 
-	p.activeCalls.Delete(call.ID)
+	if matchedKey != "" {
+		p.activeCalls.Delete(matchedKey)
+	}
 
 	// Resolve identity for talkgroup upsert and event publishing
 	identity, idErr := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)

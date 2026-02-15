@@ -603,9 +603,9 @@
     const lane = getLane(tgid, tgLabel);
 
     let time;
-    const ts = data.start_time || data.time || data.log_time;
-    if (ts) { const d = new Date(ts); time = isNaN(d) ? Date.now() : d.getTime(); }
-    else { time = Date.now(); }
+    const ts = (type === 'call_end' ? data.stop_time : null) || data.start_time || data.time || data.log_time;
+    if (ts) { time = typeof ts === 'number' && ts > 1e12 ? ts : typeof ts === 'number' ? ts * 1000 : new Date(ts).getTime(); }
+    if (!time || isNaN(time)) { time = Date.now(); }
 
     // Display label: "unit call", "unit off", etc. for unit events
     const displayType = type === 'unit_event' && data.event_type
