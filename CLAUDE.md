@@ -30,7 +30,9 @@ Go was chosen over Node.js for multi-core utilization and headroom at high messa
 - `internal/database/` — pgxpool wrapper (20 max / 4 min conns, 2s health-check ping) plus query files for all tables: systems, sites, talkgroups, units, calls, call_groups, recorders, stats, etc.
 - `internal/mqttclient/client.go` — Paho MQTT client. Auto-reconnect (5s), QoS 0, `atomic.Bool` connection tracking.
 - `internal/ingest/` — Complete MQTT ingestion pipeline. Message routing (`router.go`), identity resolution (`identity.go`), event bus for SSE (`eventbus.go`), batch writers (`batcher.go`), and handlers for all message types (calls, units, recorders, rates, systems, config, audio, status, trunking messages, console logs).
-- `internal/api/server.go` — Chi router + HTTP server lifecycle. All 29 endpoints wired via handler `Routes()` methods.
+- `internal/api/server.go` — Chi router + HTTP server lifecycle. All 30 endpoints wired via handler `Routes()` methods.
+- `internal/api/query.go` — Ad-hoc read-only SQL query handler (`POST /query`). Read-only transaction, 30s statement timeout, row cap, semicolon rejection.
+- `internal/database/query.go` — `ExecuteReadOnlyQuery()` — runs SQL in a `BEGIN READ ONLY` transaction with `SET LOCAL statement_timeout = '30s'`.
 - `internal/api/middleware.go` — RequestID, structured request Logger (zerolog/hlog), Recoverer (JSON 500), BearerAuth (passthrough when `AUTH_TOKEN` empty).
 
 ## Go Dependencies
@@ -153,10 +155,10 @@ A live environment is available for testing:
 ## Implementation Status
 
 **Completed:**
-- `openapi.yaml` — full REST API spec with SSE event stream endpoint (29 endpoints)
+- `openapi.yaml` — full REST API spec with SSE event stream endpoint (30 endpoints)
 - `schema.sql` — full PostgreSQL 17 DDL (20 tables, partitioning, triggers, helpers)
 - MQTT ingestion pipeline — message routing, identity resolution, batch writes, all handler types (calls, units, recorders, rates, systems, config, audio, status, trunking messages, console logs)
-- REST API — all 29 endpoints implemented across 9 handler files (systems, talkgroups, units, calls, call_groups, stats, recorders, events/SSE, admin)
+- REST API — all 30 endpoints implemented across 10 handler files (systems, talkgroups, units, calls, call_groups, stats, recorders, events/SSE, admin, query)
 - Database layer — complete CRUD and query builders for all tables
 - SSE event bus — real-time pub/sub with ring buffer replay, `Last-Event-ID` support, and event publishing wired into all ingest handlers (call_start, call_end, unit_event, recorder_update, rate_update, trunking_message, console)
 - Health endpoint — shows database, MQTT, and trunk-recorder instance status (connected/disconnected with last_seen timestamps)

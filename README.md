@@ -7,7 +7,7 @@ Backend service that ingests MQTT messages from [trunk-recorder](https://github.
 - **Go** — chosen for multi-core utilization at high message rates
 - **PostgreSQL 17+** — partitioned tables, JSONB, denormalized for read performance
 - **MQTT** — ingests from trunk-recorder instances
-- **REST API** — 31 endpoints under `/api/v1`, defined in `openapi.yaml`
+- **REST API** — 32 endpoints under `/api/v1`, defined in `openapi.yaml`
 - **SSE** — real-time event streaming with server-side filtering
 
 ## Prerequisites
@@ -117,6 +117,7 @@ internal/
     health.go                   Health endpoint with TR instance status
     events.go                   SSE event stream endpoint
     stats.go                    Stats, trunking messages, console logs
+    query.go                    Ad-hoc read-only SQL query endpoint
     *.go                        Systems, talkgroups, units, calls, etc.
 openapi.yaml                    API specification (source of truth)
 schema.sql                      PostgreSQL DDL
@@ -143,6 +144,7 @@ See `openapi.yaml` for full specification. Key endpoints:
 | `GET /events/stream` | Real-time SSE event stream |
 | `GET /stats` | System statistics |
 | `GET /stats/rates` | Decode rate history |
+| `POST /query` | Ad-hoc read-only SQL queries |
 
 ## License
 
