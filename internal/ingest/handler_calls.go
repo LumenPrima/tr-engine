@@ -298,8 +298,6 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 	signal := float32(call.Signal)
 	noise := float32(call.Noise)
 	stopTime := time.Unix(call.StopTime, 0)
-	retryAttempt := int16(call.RetryAttempt)
-
 	row := &database.CallRow{
 		SystemID:      identity.SystemID,
 		SiteID:        &siteID,
@@ -371,7 +369,7 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 			recState, call.RecStateType,
 			callState, call.CallStateType,
 			call.CallFilename,
-			retryAttempt,
+			int16(call.RetryAttempt),
 			float32(call.ProcessCallTime),
 		)
 		if err != nil {
@@ -420,8 +418,6 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		_ = p.db.SetCallGroupID(ctx, callID, startTime, cgID)
 		_ = p.db.SetCallGroupPrimary(ctx, cgID, callID)
 	}
-
-	_ = retryAttempt
 
 	p.log.Debug().
 		Str("tr_call_id", call.ID).
