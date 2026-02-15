@@ -2827,67 +2827,35 @@ components:
 
     SSEEvent:
       type: object
+      additionalProperties: true
       description: |
-        Representation of an SSE event. In the actual stream, each event
-        is formatted as SSE text:
+        Each SSE event is sent as three lines:
         ```
-        id: <event_id>
-        event: <event_type>
-        data: <JSON payload>
+        id: 1707912345000-42
+        event: call_start
+        data: {"call_id": 48531, "system_id": 1, "tgid": 9178, ...}
         ```
-        This schema describes the JSON payload in the `data` field.
-      required: [event_id, event_type, timestamp]
-      properties:
-        event_id:
-          type: string
-          description: |
-            Unique event ID for gap recovery. Format: `{unix_ms}-{seq}`.
-            Pass as `Last-Event-ID` header on reconnect.
-          example: "1707912345000-42"
-        event_type:
-          $ref: "#/components/schemas/SSEEventType"
-        sub_type:
-          type: string
-          description: |
-            Event subtype for compound filtering. Currently only set on
-            `unit_event` where it contains the unit event type (on, off,
-            call, end, join, location, ackresp, data). Omitted when not
-            applicable.
-          example: "call"
-        timestamp:
-          type: string
-          format: date-time
-          description: Server timestamp when the event was emitted
-        system_id:
-          type: integer
-          description: System this event belongs to (present on all except console)
-          example: 1
-        site_id:
-          type: integer
-          description: Site this event belongs to (present on call and recorder events)
-          example: 1
-        tgid:
-          type: integer
-          description: |
-            Talkgroup ID for filtering. Present on call and unit events.
-          example: 9178
-        unit_id:
-          type: integer
-          description: |
-            Unit radio ID (RID) for filtering. Present on unit events
-            and call_start (source unit).
-          example: 924003
-        payload:
-          type: object
-          additionalProperties: true
-          description: |
-            Event-specific payload. Structure depends on `event_type`:
-            - `call_start` / `call_update` / `call_end`: Call object
-            - `unit_event`: UnitEvent object
-            - `recorder_update`: Recorder object
-            - `rate_update`: DecodeRate object
-            - `trunking_message`: TrunkingMessage object
-            - `console`: ConsoleMessage object
+
+        The SSE fields map to the browser's `EventSource` API:
+        - `id` → `event.lastEventId` — unique event ID (`{unix_ms}-{seq}`),
+          pass as `Last-Event-ID` header on reconnect for gapless recovery
+        - `event` → selects the `addEventListener` handler — one of the
+          SSEEventType values (call_start, call_end, unit_event, etc.)
+        - `data` → `event.data` — the JSON payload described below
+
+        The `data` field contains the **domain object directly**, not a
+        wrapper. Its structure depends on the event type:
+        - `call_start` / `call_update` / `call_end`: Call object
+        - `unit_event`: UnitEvent object
+        - `recorder_update`: Recorder object
+        - `rate_update`: DecodeRate object
+        - `trunking_message`: TrunkingMessage object
+        - `console`: ConsoleMessage object
+
+        Server-side filtering metadata (system_id, site_id, tgid, unit_id)
+        is used internally to match events against query params but is not
+        sent as a separate envelope — these fields are already present in
+        the domain objects themselves.
 
     DecodeRate:
       type: object

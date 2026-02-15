@@ -58,6 +58,9 @@ func NewServer(opts ServerOptions) *Server {
 		})
 	})
 
+	// Serve static files from web/ directory
+	r.Handle("/*", http.FileServer(http.Dir("web")))
+
 	srv := &http.Server{
 		Addr:        opts.Config.HTTPAddr,
 		Handler:     r,
