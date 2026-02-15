@@ -106,15 +106,41 @@ The schema creates initial partitions (current month + 3 months ahead). The `cre
 # Build (inject version at build time)
 go build -ldflags "-X main.version=0.1.0" -o tr-engine.exe ./cmd/tr-engine
 
-# Run (requires PostgreSQL + MQTT broker)
-DATABASE_URL="postgres://user:pass@localhost:5432/trengine?sslmode=disable" \
-MQTT_BROKER_URL="tcp://localhost:1883" \
-LOG_LEVEL="debug" \
+# Run — auto-loads .env from current directory
 ./tr-engine.exe
+
+# Override settings via CLI flags
+./tr-engine.exe --listen :9090 --log-level debug
+
+# Use a different .env file
+./tr-engine.exe --env-file /path/to/production.env
+
+# Print version
+./tr-engine.exe --version
 
 # Test health
 curl http://localhost:8080/api/v1/health
 ```
+
+### Configuration
+
+Configuration is loaded in priority order: **CLI flags > environment variables > .env file > defaults**.
+
+The `.env` file is auto-loaded from the current directory on startup (silent if missing). See `sample.env` for all available fields with descriptions.
+
+**CLI flags:**
+
+| Flag | Env Var | Default | Description |
+|------|---------|---------|-------------|
+| `--listen` | `HTTP_ADDR` | `:8080` | HTTP listen address |
+| `--log-level` | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
+| `--database-url` | `DATABASE_URL` | _(required)_ | PostgreSQL connection URL |
+| `--mqtt-url` | `MQTT_BROKER_URL` | _(required)_ | MQTT broker URL |
+| `--audio-dir` | `AUDIO_DIR` | `./audio` | Audio file directory |
+| `--env-file` | — | `.env` | Path to .env file |
+| `--version` | — | — | Print version and exit |
+
+Additional env-only settings: `MQTT_TOPICS`, `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`.
 
 ## Development Environment
 
@@ -122,7 +148,7 @@ A live environment is available for testing:
 
 - **PostgreSQL**: Deployed instance with real data from ingest testing. Connection details in `.env`.
 - **MQTT broker**: Live production server connected to a real trunk-recorder instance. Credentials in `.env`.
-- **Config**: Copy `.env` to project root (already gitignored). All env vars are loaded automatically.
+- **Config**: Copy `sample.env` to `.env` and fill in credentials. The `.env` file is gitignored and auto-loaded on startup.
 
 ## Implementation Status
 
