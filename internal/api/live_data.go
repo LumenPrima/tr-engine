@@ -75,8 +75,11 @@ type EventFilter struct {
 type SSEEvent struct {
 	ID        string `json:"event_id"`
 	Type      string `json:"event_type"`
+	SubType   string `json:"sub_type,omitempty"`
 	Timestamp string `json:"timestamp"`
 	SystemID  int    `json:"system_id,omitempty"`
 	SiteID    int    `json:"site_id,omitempty"`
+	Tgid      int    `json:"tgid,omitempty"`
+	UnitID    int    `json:"unit_id,omitempty"`
 	Data      []byte `json:"-"` // pre-serialized JSON payload
 }

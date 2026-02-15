@@ -131,5 +131,23 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		return fmt.Errorf("insert unit event: %w", err)
 	}
 
+	p.PublishEvent(EventData{
+		Type:     "unit_event",
+		SubType:  eventType,
+		SystemID: identity.SystemID,
+		SiteID:   identity.SiteID,
+		Tgid:     data.Talkgroup,
+		UnitID:   data.Unit,
+		Payload: map[string]any{
+			"event_type":     eventType,
+			"system_id":      identity.SystemID,
+			"unit_id":        data.Unit,
+			"unit_alpha_tag": data.UnitAlphaTag,
+			"tgid":           data.Talkgroup,
+			"tg_alpha_tag":   data.TalkgroupAlphaTag,
+			"time":           ts,
+		},
+	})
+
 	return nil
 }

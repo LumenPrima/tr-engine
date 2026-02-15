@@ -39,5 +39,28 @@ func (p *Pipeline) handleRates(payload []byte) error {
 	defer cancel()
 
 	_, err := p.db.InsertDecodeRates(ctx, rows)
-	return err
+	if err != nil {
+		return err
+	}
+
+	for _, row := range rows {
+		systemID := 0
+		if row.SystemID != nil {
+			systemID = *row.SystemID
+		}
+		p.PublishEvent(EventData{
+			Type:     "rate_update",
+			SystemID: systemID,
+			Payload: map[string]any{
+				"system_id":             systemID,
+				"sys_name":             row.SysName,
+				"decode_rate":          row.DecodeRate,
+				"decode_rate_interval": row.DecodeRateInterval,
+				"control_channel":      row.ControlChannel,
+				"time":                 row.Time,
+			},
+		})
+	}
+
+	return nil
 }

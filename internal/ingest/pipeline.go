@@ -297,9 +297,9 @@ func (p *Pipeline) ReplaySince(lastEventID string, filter api.EventFilter) []api
 }
 
 // PublishEvent is a convenience method to publish an event through the event bus.
-func (p *Pipeline) PublishEvent(eventType string, systemID, siteID int, payload any) {
+func (p *Pipeline) PublishEvent(e EventData) {
 	if p.eventBus != nil {
-		p.eventBus.Publish(eventType, systemID, siteID, payload)
+		p.eventBus.Publish(e)
 	}
 }
 

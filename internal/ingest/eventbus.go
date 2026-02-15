@@ -84,9 +84,20 @@ func (eb *EventBus) ReplaySince(lastEventID string, filter api.EventFilter) []ap
 	return events
 }
 
+// EventData holds all fields needed to publish an SSE event.
+type EventData struct {
+	Type     string
+	SubType  string
+	SystemID int
+	SiteID   int
+	Tgid     int
+	UnitID   int
+	Payload  any
+}
+
 // Publish sends an event to all matching subscribers and adds it to the ring buffer.
-func (eb *EventBus) Publish(eventType string, systemID, siteID int, payload any) {
-	data, err := json.Marshal(payload)
+func (eb *EventBus) Publish(e EventData) {
+	data, err := json.Marshal(e.Payload)
 	if err != nil {
 		return
 	}
@@ -94,10 +105,13 @@ func (eb *EventBus) Publish(eventType string, systemID, siteID int, payload any)
 	seq := eb.seq.Add(1)
 	event := api.SSEEvent{
 		ID:        fmt.Sprintf("%d-%d", time.Now().UnixMilli(), seq),
-		Type:      eventType,
+		Type:      e.Type,
+		SubType:   e.SubType,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		SystemID:  systemID,
-		SiteID:    siteID,
+		SystemID:  e.SystemID,
+		SiteID:    e.SiteID,
+		Tgid:      e.Tgid,
+		UnitID:    e.UnitID,
 		Data:      data,
 	}
 
@@ -125,9 +139,18 @@ func matchesFilter(e api.SSEEvent, f api.EventFilter) bool {
 	if len(f.Types) > 0 {
 		match := false
 		for _, t := range f.Types {
-			if strings.TrimSpace(t) == e.Type {
-				match = true
-				break
+			t = strings.TrimSpace(t)
+			if base, sub, ok := strings.Cut(t, ":"); ok {
+				// Compound filter: "unit_event:call" matches type + subtype
+				if base == e.Type && sub == e.SubType {
+					match = true
+					break
+				}
+			} else {
+				if t == e.Type {
+					match = true
+					break
+				}
 			}
 		}
 		if !match {
@@ -150,6 +173,30 @@ func matchesFilter(e api.SSEEvent, f api.EventFilter) bool {
 		match := false
 		for _, s := range f.Sites {
 			if s == e.SiteID {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	if len(f.Tgids) > 0 && e.Tgid != 0 {
+		match := false
+		for _, tg := range f.Tgids {
+			if tg == e.Tgid {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	if len(f.Units) > 0 && e.UnitID != 0 {
+		match := false
+		for _, u := range f.Units {
+			if u == e.UnitID {
 				match = true
 				break
 			}

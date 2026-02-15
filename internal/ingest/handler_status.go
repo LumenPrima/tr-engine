@@ -33,5 +33,14 @@ func (p *Pipeline) handleStatus(payload []byte) error {
 		Str("status", msg.Status).
 		Msg("plugin status recorded")
 
+	p.PublishEvent(EventData{
+		Type: "console",
+		Payload: map[string]any{
+			"instance_id": msg.InstanceID,
+			"status":      msg.Status,
+			"time":        ts,
+		},
+	})
+
 	return nil
 }

@@ -143,6 +143,31 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		Str("sys_name", call.SysName).
 		Msg("call started")
 
+	p.PublishEvent(EventData{
+		Type:     "call_start",
+		SystemID: identity.SystemID,
+		SiteID:   siteID,
+		Tgid:     call.Talkgroup,
+		UnitID:   call.Unit,
+		Payload: map[string]any{
+			"call_id":        callID,
+			"system_id":      identity.SystemID,
+			"tgid":           call.Talkgroup,
+			"tg_alpha_tag":   call.TalkgroupAlphaTag,
+			"tg_tag":         call.TalkgroupTag,
+			"tg_group":       call.TalkgroupGroup,
+			"tg_description": call.TalkgroupDescription,
+			"freq":           freq,
+			"start_time":     startTime,
+			"emergency":      call.Emergency,
+			"encrypted":      call.Encrypted,
+			"analog":         call.Analog,
+			"conventional":   call.Conventional,
+			"phase2_tdma":    call.Phase2TDMA,
+			"audio_type":     call.AudioType,
+		},
+	})
+
 	return nil
 }
 
@@ -201,14 +226,12 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 
 	p.activeCalls.Delete(call.ID)
 
-	// Upsert talkgroup with latest data
-	if call.Talkgroup > 0 {
-		identity, err := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)
-		if err == nil {
-			_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
-				call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription,
-			)
-		}
+	// Resolve identity for talkgroup upsert and event publishing
+	identity, idErr := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)
+	if idErr == nil && call.Talkgroup > 0 {
+		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
+			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription,
+		)
 	}
 
 	p.log.Debug().
@@ -217,7 +240,28 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 		Float64("duration", call.Length).
 		Msg("call ended")
 
-	_ = startTime // used for logging context if needed
+	if idErr == nil {
+		p.PublishEvent(EventData{
+			Type:     "call_end",
+			SystemID: identity.SystemID,
+			SiteID:   identity.SiteID,
+			Tgid:     call.Talkgroup,
+			Payload: map[string]any{
+				"call_id":       entry.CallID,
+				"system_id":     identity.SystemID,
+				"tgid":          call.Talkgroup,
+				"tg_alpha_tag":  call.TalkgroupAlphaTag,
+				"freq":          int64(call.Freq),
+				"start_time":    startTime,
+				"stop_time":     stopTime,
+				"duration":      call.Length,
+				"emergency":     call.Emergency,
+				"encrypted":     call.Encrypted,
+				"call_filename": call.CallFilename,
+			},
+		})
+	}
+
 	return nil
 }
 
@@ -328,6 +372,27 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 			Str("tr_call_id", call.ID).
 			Int64("call_id", existingID).
 			Msg("call_end matched audio-created call")
+
+		p.PublishEvent(EventData{
+			Type:     "call_end",
+			SystemID: identity.SystemID,
+			SiteID:   identity.SiteID,
+			Tgid:     call.Talkgroup,
+			Payload: map[string]any{
+				"call_id":       existingID,
+				"system_id":     identity.SystemID,
+				"tgid":          call.Talkgroup,
+				"tg_alpha_tag":  call.TalkgroupAlphaTag,
+				"freq":          freq,
+				"start_time":    startTime,
+				"stop_time":     stopTime,
+				"duration":      call.Length,
+				"emergency":     call.Emergency,
+				"encrypted":     call.Encrypted,
+				"call_filename": call.CallFilename,
+			},
+		})
+
 		return nil
 	}
 
@@ -353,6 +418,26 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		Str("tr_call_id", call.ID).
 		Int64("call_id", callID).
 		Msg("call inserted from call_end (missed call_start)")
+
+	p.PublishEvent(EventData{
+		Type:     "call_end",
+		SystemID: identity.SystemID,
+		SiteID:   identity.SiteID,
+		Tgid:     call.Talkgroup,
+		Payload: map[string]any{
+			"call_id":       callID,
+			"system_id":     identity.SystemID,
+			"tgid":          call.Talkgroup,
+			"tg_alpha_tag":  call.TalkgroupAlphaTag,
+			"freq":          freq,
+			"start_time":    startTime,
+			"stop_time":     stopTime,
+			"duration":      call.Length,
+			"emergency":     call.Emergency,
+			"encrypted":     call.Encrypted,
+			"call_filename": call.CallFilename,
+		},
+	})
 
 	return nil
 }
