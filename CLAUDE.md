@@ -22,13 +22,16 @@ Go was chosen over Node.js for multi-core utilization and headroom at high messa
 
 - `openapi.yaml` — Complete REST API specification (OpenAPI 3.0.3), including SSE event stream endpoint. This is the **source of truth** for API contracts.
 - `schema.sql` — PostgreSQL 17 DDL. All tables, indexes, triggers, partitioning, and helper functions. Run with `psql -f schema.sql`.
-- `cmd/tr-engine/main.go` — Entry point. Startup order: config → logger → database → MQTT → HTTP server. Graceful shutdown via SIGINT/SIGTERM with 10s timeout. Version injected via `-ldflags`.
+- `.env` — Local environment config (gitignored). Contains `DATABASE_URL`, `MQTT_BROKER_URL`, credentials, and `HTTP_ADDR`.
+- `cmd/tr-engine/main.go` — Entry point. Startup order: config → logger → database → MQTT → pipeline → HTTP server. Graceful shutdown via SIGINT/SIGTERM with 10s timeout. Version injected via `-ldflags`.
+- `cmd/mqtt-dump/` — Dev tool to capture and display live MQTT traffic.
+- `cmd/dbcheck/` — DB inspection tool (table counts, call group analysis, cleanup).
 - `internal/config/config.go` — Env-based config (`DATABASE_URL`, `MQTT_BROKER_URL`, `HTTP_ADDR`, `AUTH_TOKEN`, `LOG_LEVEL`, timeouts). Uses `caarlos0/env/v11`.
-- `internal/database/database.go` — pgxpool wrapper. 20 max / 4 min conns, 2s health-check ping.
-- `internal/mqttclient/client.go` — Paho MQTT client. Auto-reconnect (5s), QoS 0, `atomic.Bool` connection tracking. Stub message handler logs topic + payload size.
-- `internal/api/server.go` — Chi router + HTTP server lifecycle. Health route outside auth group; future routes inside auth group.
+- `internal/database/` — pgxpool wrapper (20 max / 4 min conns, 2s health-check ping) plus query files for all tables: systems, sites, talkgroups, units, calls, call_groups, recorders, stats, etc.
+- `internal/mqttclient/client.go` — Paho MQTT client. Auto-reconnect (5s), QoS 0, `atomic.Bool` connection tracking.
+- `internal/ingest/` — Complete MQTT ingestion pipeline. Message routing (`router.go`), identity resolution (`identity.go`), event bus for SSE (`eventbus.go`), batch writers (`batcher.go`), and handlers for all message types (calls, units, recorders, rates, systems, config, audio, status).
+- `internal/api/server.go` — Chi router + HTTP server lifecycle. All 29 endpoints wired via handler `Routes()` methods.
 - `internal/api/middleware.go` — RequestID, structured request Logger (zerolog/hlog), Recoverer (JSON 500), BearerAuth (passthrough when `AUTH_TOKEN` empty).
-- `internal/api/health.go` — `GET /api/v1/health`. Checks DB (ping) and MQTT (connected). Returns `healthy`/`degraded`/`unhealthy` per OpenAPI `HealthResponse` schema.
 
 ## Go Dependencies
 
@@ -113,18 +116,27 @@ LOG_LEVEL="debug" \
 curl http://localhost:8080/api/v1/health
 ```
 
+## Development Environment
+
+A live environment is available for testing:
+
+- **PostgreSQL**: Deployed instance with real data from ingest testing. Connection details in `.env`.
+- **MQTT broker**: Live production server connected to a real trunk-recorder instance. Credentials in `.env`.
+- **Config**: Copy `.env` to project root (already gitignored). All env vars are loaded automatically.
+
 ## Implementation Status
 
 **Completed:**
-- `openapi.yaml` — full REST API spec with SSE event stream endpoint
+- `openapi.yaml` — full REST API spec with SSE event stream endpoint (29 endpoints)
 - `schema.sql` — full PostgreSQL 17 DDL (20 tables, partitioning, triggers, helpers)
-- Project scaffolding — Go module, config, DB pool, MQTT client, HTTP server with middleware, `GET /api/v1/health`, graceful shutdown
+- MQTT ingestion pipeline — message routing, identity resolution, batch writes, all handler types (calls, units, recorders, rates, systems, config, audio, status)
+- REST API — all 29 endpoints implemented across 9 handler files (systems, talkgroups, units, calls, call_groups, stats, recorders, events/SSE, admin)
+- Database layer — complete CRUD and query builders for all tables
+- SSE event bus — real-time pub/sub with ring buffer replay and `Last-Event-ID` support
+- Dev tools — `cmd/mqtt-dump` (MQTT traffic inspector), `cmd/dbcheck` (DB analysis)
 
-**Next: MQTT ingestion pipeline**
-- Parse incoming trunk-recorder MQTT messages (calls, talkgroups, units, recorders, etc.)
-- Identity resolution: system/site matching from MQTT fields
-- Database writes: insert/upsert into calls, talkgroups, units, unit_events, recorder_snapshots, etc.
-- Raw MQTT archival to `mqtt_raw_messages`
+**Not yet done:**
+- Test coverage — no `*_test.go` files exist anywhere in the codebase
 
 ## Real-Time Event Streaming (SSE)
 
