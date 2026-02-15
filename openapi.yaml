@@ -1248,6 +1248,61 @@ paths:
   # ----------------------------------------------------------
   # Admin
   # ----------------------------------------------------------
+  /query:
+    post:
+      operationId: executeQuery
+      summary: Execute a read-only SQL query
+      description: |
+        Executes an ad-hoc read-only SQL query against the database and
+        returns the results. Useful for analytical queries that don't map
+        to predefined endpoints.
+
+        **Safety measures:**
+        - Query runs inside a `READ ONLY` transaction — INSERT, UPDATE,
+          DELETE, DROP, and all other write operations are rejected by
+          PostgreSQL.
+        - A 30-second statement timeout prevents runaway queries.
+        - Results are capped at `limit` rows (default 1000, max 10000).
+        - Semicolons are rejected to prevent multi-statement injection.
+
+        Use `$1`, `$2`, etc. as parameter placeholders with the `params`
+        array for safe value interpolation.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryRequest"
+            examples:
+              simple:
+                summary: Count all units
+                value:
+                  sql: "SELECT count(*) FROM units"
+              parameterized:
+                summary: Units on a specific talkgroup
+                value:
+                  sql: "SELECT DISTINCT unit_id FROM calls WHERE tgid = $1"
+                  params: [9178]
+                  limit: 500
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResponse"
+        "400":
+          description: Invalid query (parse error, write attempt, timeout, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /admin/systems/merge:
     post:
       operationId: mergeSystems
@@ -2935,3 +2990,45 @@ components:
         total:
           type: integer
           description: Total matching messages (for pagination)
+
+    QueryRequest:
+      type: object
+      required: [sql]
+      properties:
+        sql:
+          type: string
+          description: SQL query to execute. Must be a single statement (no semicolons). Use $1, $2, etc. for parameter placeholders.
+          example: "SELECT tgid, alpha_tag FROM talkgroups WHERE system_id = $1"
+        params:
+          type: array
+          items: {}
+          description: Parameter values for $1, $2, etc. placeholders in the SQL query.
+          example: [1]
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          default: 1000
+          description: Maximum number of rows to return.
+
+    QueryResponse:
+      type: object
+      required: [columns, rows, row_count]
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+          description: Column names from the query result.
+          example: ["tgid", "alpha_tag"]
+        rows:
+          type: array
+          items:
+            type: array
+            items: {}
+          description: Result rows, each an array of values matching the columns order.
+          example: [[9178, "09 DISP"], [9112, "09 LAW1"]]
+        row_count:
+          type: integer
+          description: Number of rows returned.
+          example: 2

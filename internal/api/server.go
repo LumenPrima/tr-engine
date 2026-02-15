@@ -54,6 +54,7 @@ func NewServer(opts ServerOptions) *Server {
 			NewRecordersHandler(opts.Live).Routes(r)
 			NewEventsHandler(opts.Live).Routes(r)
 			NewAdminHandler(opts.DB).Routes(r)
+			NewQueryHandler(opts.DB).Routes(r)
 		})
 	})
 
