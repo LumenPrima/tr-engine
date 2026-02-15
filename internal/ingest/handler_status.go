@@ -12,7 +12,10 @@ func (p *Pipeline) handleStatus(payload []byte) error {
 		return err
 	}
 
-	ts := time.Unix(msg.Timestamp, 0)
+	ts := time.Now()
+	if msg.Timestamp > 0 {
+		ts = time.Unix(msg.Timestamp, 0)
+	}
 
 	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
 	defer cancel()

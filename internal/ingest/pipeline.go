@@ -160,9 +160,13 @@ func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 	_ = json.Unmarshal(payload, &env)
 
 	if !p.rawExclude[route.Handler] {
+		rawPayload := payload
+		if route.Handler == "audio" {
+			rawPayload = stripAudioBase64(payload)
+		}
 		p.rawBatcher.Add(database.RawMessageRow{
 			Topic:      topic,
-			Payload:    payload,
+			Payload:    rawPayload,
 			ReceivedAt: time.Now(),
 			InstanceID: env.InstanceID,
 		})
@@ -257,6 +261,36 @@ func (p *Pipeline) flushRecorderSnapshots(rows []database.RecorderSnapshotRow) {
 		return
 	}
 	p.log.Debug().Int64("inserted", n).Msg("flushed recorder snapshots")
+}
+
+// stripAudioBase64 removes the base64 audio data from audio message payloads
+// before storing in mqtt_raw_messages. The audio is already saved to disk by
+// the audio handler, so keeping it in the DB is pure waste (~60KB per message).
+func stripAudioBase64(payload []byte) []byte {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &obj); err != nil {
+		return payload
+	}
+	callRaw, ok := obj["call"]
+	if !ok {
+		return payload
+	}
+	var call map[string]json.RawMessage
+	if err := json.Unmarshal(callRaw, &call); err != nil {
+		return payload
+	}
+	delete(call, "audio_m4a_base64")
+	delete(call, "audio_wav_base64")
+	callBytes, err := json.Marshal(call)
+	if err != nil {
+		return payload
+	}
+	obj["call"] = callBytes
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return payload
+	}
+	return out
 }
 
 // activeCallMap tracks in-flight calls: tr_call_id → call metadata for API display.
