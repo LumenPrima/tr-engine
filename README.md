@@ -71,6 +71,9 @@ The `.env` file is auto-loaded from the current directory on startup (silent if 
 | `AUTH_TOKEN` | No | | Bearer token for API auth (disabled if empty) |
 | `AUDIO_DIR` | No | `./audio` | Audio file storage directory |
 | `LOG_LEVEL` | No | `info` | Log level (`debug`, `info`, `warn`, `error`) |
+| `RAW_STORE` | No | `true` | Master switch to disable all raw MQTT archival |
+| `RAW_INCLUDE_TOPICS` | No | | Allowlist of handler names for raw archival (supports `_unknown`; overrides exclude) |
+| `RAW_EXCLUDE_TOPICS` | No | | Denylist of handler names to exclude from raw archival |
 
 ## Data Model
 
