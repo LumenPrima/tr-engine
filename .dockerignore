@@ -1,0 +1,12 @@
+.git
+.github
+.claude
+.playwright-mcp
+.env
+audio
+*.exe
+*.png
+docs
+mqtt-samples.txt
+cmd/mqtt-dump
+cmd/dbcheck
