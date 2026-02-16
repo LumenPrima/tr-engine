@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type CallRow struct {
@@ -203,6 +205,73 @@ func (db *DB) UpdateCallSrcFreq(ctx context.Context, callID int64, startTime tim
 		WHERE call_id = $1 AND start_time = $2
 	`, callID, startTime, srcList, freqList, unitIDs)
 	return err
+}
+
+type CallFrequencyRow struct {
+	CallID        int64
+	CallStartTime time.Time
+	Freq          int64
+	Time          *time.Time
+	Pos           *float32
+	Len           *float32
+	ErrorCount    *int
+	SpikeCount    *int
+}
+
+// InsertCallFrequencies batch-inserts call frequency records.
+func (db *DB) InsertCallFrequencies(ctx context.Context, rows []CallFrequencyRow) (int64, error) {
+	copyRows := make([][]any, len(rows))
+	for i, r := range rows {
+		copyRows[i] = []any{
+			r.CallID, r.CallStartTime, r.Freq,
+			r.Time, r.Pos, r.Len,
+			r.ErrorCount, r.SpikeCount,
+		}
+	}
+
+	return db.Pool.CopyFrom(ctx,
+		pgx.Identifier{"call_frequencies"},
+		[]string{
+			"call_id", "call_start_time", "freq",
+			"time", "pos", "len",
+			"error_count", "spike_count",
+		},
+		pgx.CopyFromRows(copyRows),
+	)
+}
+
+type CallTransmissionRow struct {
+	CallID        int64
+	CallStartTime time.Time
+	Src           int
+	Time          *time.Time
+	Pos           *float32
+	Duration      *float32
+	Emergency     int16
+	SignalSystem  string
+	Tag           string
+}
+
+// InsertCallTransmissions batch-inserts call transmission records.
+func (db *DB) InsertCallTransmissions(ctx context.Context, rows []CallTransmissionRow) (int64, error) {
+	copyRows := make([][]any, len(rows))
+	for i, r := range rows {
+		copyRows[i] = []any{
+			r.CallID, r.CallStartTime, r.Src,
+			r.Time, r.Pos, r.Duration, r.Emergency,
+			r.SignalSystem, r.Tag,
+		}
+	}
+
+	return db.Pool.CopyFrom(ctx,
+		pgx.Identifier{"call_transmissions"},
+		[]string{
+			"call_id", "call_start_time", "src",
+			"time", "pos", "duration", "emergency",
+			"signal_system", "tag",
+		},
+		pgx.CopyFromRows(copyRows),
+	)
 }
 
 // InsertActiveCallCheckpoint stores a snapshot of active calls for crash recovery.

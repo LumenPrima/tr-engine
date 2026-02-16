@@ -45,7 +45,7 @@ func main() {
 	// Default: table counts
 	tables := []string{
 		"instances", "systems", "sites", "talkgroups", "units",
-		"calls", "call_groups",
+		"calls", "call_groups", "call_frequencies", "call_transmissions",
 		"unit_events", "recorder_snapshots", "decode_rates",
 		"mqtt_raw_messages", "plugin_statuses", "call_active_checkpoints",
 	}

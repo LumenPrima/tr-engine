@@ -144,6 +144,60 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 		if err := p.db.UpdateCallSrcFreq(ctx, callID, callStartTime, srcListJSON, freqListJSON, unitIDs); err != nil {
 			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update call src/freq data")
 		}
+
+		// Also insert into relational tables for ad-hoc queries
+		if len(meta.FreqList) > 0 {
+			freqRows := make([]database.CallFrequencyRow, 0, len(meta.FreqList))
+			for _, f := range meta.FreqList {
+				ft := time.Unix(f.Time, 0)
+				pos := float32(f.Pos)
+				length := float32(f.Len)
+				ec := f.ErrorCount
+				sc := f.SpikeCount
+				freqRows = append(freqRows, database.CallFrequencyRow{
+					CallID:        callID,
+					CallStartTime: callStartTime,
+					Freq:          int64(f.Freq),
+					Time:          &ft,
+					Pos:           &pos,
+					Len:           &length,
+					ErrorCount:    &ec,
+					SpikeCount:    &sc,
+				})
+			}
+			if _, err := p.db.InsertCallFrequencies(ctx, freqRows); err != nil {
+				p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert call frequencies")
+			}
+		}
+		if len(meta.SrcList) > 0 {
+			txRows := make([]database.CallTransmissionRow, 0, len(meta.SrcList))
+			for i, s := range meta.SrcList {
+				st := time.Unix(s.Time, 0)
+				pos := float32(s.Pos)
+				var dur *float32
+				if i+1 < len(meta.SrcList) {
+					d := float32(meta.SrcList[i+1].Pos - s.Pos)
+					dur = &d
+				} else if meta.CallLength > 0 {
+					d := float32(float64(meta.CallLength) - s.Pos)
+					dur = &d
+				}
+				txRows = append(txRows, database.CallTransmissionRow{
+					CallID:        callID,
+					CallStartTime: callStartTime,
+					Src:           s.Src,
+					Time:          &st,
+					Pos:           &pos,
+					Duration:      dur,
+					Emergency:     int16(s.Emergency),
+					SignalSystem:  s.SignalSystem,
+					Tag:           s.Tag,
+				})
+			}
+			if _, err := p.db.InsertCallTransmissions(ctx, txRows); err != nil {
+				p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert call transmissions")
+			}
+		}
 	}
 
 	p.log.Debug().

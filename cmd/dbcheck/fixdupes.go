@@ -122,7 +122,7 @@ func fixDuplicateCalls(ctx context.Context, pool *pgxpool.Pool, dryRun bool) {
 		}
 
 		// Reassign child rows from the duplicate to the kept call
-		for _, child := range []string{"transcriptions"} {
+		for _, child := range []string{"call_frequencies", "call_transmissions", "transcriptions"} {
 			_, err = tx.Exec(ctx,
 				fmt.Sprintf("UPDATE %s SET call_id = $1, call_start_time = $2 WHERE call_id = $3 AND call_start_time = $4", child),
 				p.keepID, p.keepStart, p.deleteID, p.deleteStart,

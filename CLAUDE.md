@@ -78,8 +78,8 @@ Conventional systems are 1:1 with sites.
 
 - **Store everything** — even fields that seem irrelevant now. `metadata_json` JSONB catch-all on calls and unit_events captures unmapped MQTT fields.
 - **Denormalize for reads** — `calls` carries `system_name`, `site_short_name`, `tg_alpha_tag`, etc. copied at write time. Avoids JOINs on the hottest query paths.
-- **Monthly partitioning** on high-volume tables: `calls`, `unit_events`, `trunking_messages`. Weekly for `mqtt_raw_messages`.
-- **Embedded JSONB** — `calls.src_list` and `calls.freq_list` store transmission/frequency data inline (matching MQTT srcList/freqList). `calls.unit_ids` is a denormalized `int[]` with GIN index for fast unit filtering.
+- **Monthly partitioning** on high-volume tables: `calls`, `call_frequencies`, `call_transmissions`, `unit_events`, `trunking_messages`. Weekly for `mqtt_raw_messages`.
+- **Dual-write transmission/frequency data** — `calls.src_list` and `calls.freq_list` JSONB columns for API reads (no JOINs). `call_transmissions` and `call_frequencies` relational tables for ad-hoc SQL queries. `calls.unit_ids` is a denormalized `int[]` with GIN index for fast unit filtering.
 - **Call groups** deduplicate recordings: `(system_id, tgid, start_time)` groups duplicate recordings from multiple sites.
 - **State tables** (`recorder_snapshots`, `decode_rates`) are append-only with decimation (1/min after 1 week, 1/hour after 1 month). Latest state = `ORDER BY time DESC LIMIT 1`.
 - **Audio on filesystem**, not in DB. `calls.audio_file_path` stores relative path.
@@ -88,7 +88,7 @@ Conventional systems are 1:1 with sites.
 
 | Category | Tables | Retention |
 |----------|--------|-----------|
-| Permanent | calls, unit_events, transcriptions, talkgroups, units, trunking_messages | Forever (partitioned) |
+| Permanent | calls, call_frequencies, call_transmissions, unit_events, transcriptions, talkgroups, units, trunking_messages | Forever (partitioned) |
 | Decimated state | recorder_snapshots, decode_rates | Full 1 week → 1/min 1 month → 1/hour |
 | Crash recovery | call_active_checkpoints | 7 days |
 | Raw archive | mqtt_raw_messages | 7 days |
