@@ -6,6 +6,11 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 
 > **Note:** This is a ground-up rewrite of the original tr-engine, now archived at [LumenPrima/tr-engine-v0](https://github.com/LumenPrima/tr-engine-v0). The database schema is not compatible — there is no migration path from v0. If you're coming from v0, see the **[migration guide](docs/migrating-from-v0.md)**. If you're starting fresh, you're in the right place.
 
+> **Warning:** This project is almost entirely AI-written (Claude Code pair programming). It works, but it may also eat your computer or your pets. Specifically:
+> - **Do not expose directly to the internet.** There is no meaningful authentication and the security posture has not been audited. If you need external access, put it behind a reverse proxy (Caddy, nginx, etc.) with its own auth layer.
+> - **Denial-of-service vectors exist.** The ad-hoc SQL query endpoint, SSE streaming, and unbounded list endpoints could all be abused. This is a monitoring tool for your LAN, not a public service.
+> - **Installation instructions have not been thoroughly vetted** and may cause random fires. Test in a disposable environment first.
+
 ## Tech Stack
 
 - **Go** — multi-core utilization at high message rates
@@ -13,7 +18,7 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 - **MQTT** — ingests from trunk-recorder via the [MQTT Status plugin](https://github.com/TrunkRecorder/trunk-recorder-mqtt-status)
 - **REST API** — 36 endpoints under `/api/v1`, defined in `openapi.yaml`
 - **SSE** — real-time event streaming with server-side filtering
-- **Web UI** — IRC-style live radio monitor at `/irc-radio-live.html`
+- **Web UI** — built-in dashboards demonstrating API and SSE capabilities
 
 ## Getting Started
 
@@ -135,14 +140,18 @@ All under `/api/v1`. See `openapi.yaml` for the full specification.
 
 ## Web UI
 
-tr-engine includes an IRC-style live radio monitor. Open `http://localhost:8080/irc-radio-live.html` after starting the server.
+tr-engine ships with several built-in dashboards at `http://localhost:8080`. The index page auto-discovers all pages and links to them.
 
-- Talkgroups map to IRC channels, units map to nicks
-- Live call activity shown as voice messages with audio playback
-- Unit affiliations shown as JOIN/PART events
-- Active transmissions shown as typing indicators
-- Emergency calls highlighted
-- IRC commands: `/join`, `/list`, `/who`, `/whois`, `/stats`
+| Page | Description |
+|------|-------------|
+| **Event Horizon** | Logarithmic timeline — events drift from now into the past |
+| **Live Events** | Real-time SSE event stream with type filtering |
+| **Unit Tracker** | Live unit status grid with state colors and group filters |
+| **IRC Radio Live** | IRC-style monitor — talkgroups as channels, units as nicks, audio playback |
+| **Signal Flow** | Stream graph of talkgroup activity over time (D3.js) |
+| **API Docs** | Interactive Swagger UI for the REST API |
+
+Pages are plain HTML with no build step. Add new pages by dropping an `.html` file in `web/` with a `<meta name="card-title">` tag — see [CLAUDE.md](CLAUDE.md#web-frontend-page-registration) for the spec.
 
 ## Storage Estimates
 

@@ -199,6 +199,14 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 </html>
 ```
 
+## Documentation (docs/)
+
+- `docs/getting-started.md` — Build from source (bare metal setup)
+- `docs/docker.md` — Docker Compose all-in-one (bundled PostgreSQL + Mosquitto + tr-engine)
+- `docs/docker-external-mqtt.md` — Docker Compose with an existing external MQTT broker
+- `docs/binary-releases.md` — Pre-built binary download
+- `docs/migrating-from-v0.md` — Migration guide from tr-engine-v0
+
 ## Implementation Status
 
 **Completed:**
