@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signal Flow â€" Stream Graph</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-deep: #05080f;
+      --bg-mid: #0a1020;
+      --surface: #111a2e;
+      --border: #1a2744;
+      --text-primary: #e2e8f4;
+      --text-muted: #5a6b8a;
+      --text-dim: #2e3d5a;
+      --accent-cyan: #00e5ff;
+      --accent-violet: #a855f7;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-emerald: #10b981;
+    }
+
+    body {
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      font-family: 'Outfit', sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.018'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    .container { width: 100%; max-width: 1400px; padding: 0 40px; }
+
+    .header {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .header h1 {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .header .pulse-dot {
+      width: 7px; height: 7px;
+      background: var(--accent-cyan);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+      box-shadow: 0 0 8px var(--accent-cyan), 0 0 20px rgba(0,229,255,0.2);
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.7)} }
+
+    .stats {
+      display: flex;
+      gap: 28px;
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--text-dim);
+      letter-spacing: 0.05em;
+    }
+    .stats .stat-value { color: var(--text-muted); font-weight: 500; }
+
+    /* ── Metric Selector ─────────────────────── */
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .metric-bar-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-right: 8px;
+    }
+    .metric-btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: var(--text-dim);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      white-space: nowrap;
+    }
+    .metric-btn:hover {
+      color: var(--text-muted);
+      border-color: var(--text-dim);
+    }
+    .metric-btn.active {
+      color: var(--accent-cyan);
+      border-color: rgba(0, 229, 255, 0.35);
+      background: rgba(0, 229, 255, 0.06);
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.08);
+    }
+    .metric-desc {
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.02em;
+      opacity: 0.7;
+    }
+
+    /* ── Layout Toggle ───────────────────────── */
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .controls-separator {
+      width: 1px;
+      height: 18px;
+      background: var(--border);
+      margin: 0 10px;
+    }
+    .layout-btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: var(--text-dim);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      white-space: nowrap;
+    }
+    .layout-btn:hover {
+      color: var(--text-muted);
+      border-color: var(--text-dim);
+    }
+    .layout-btn.active {
+      color: var(--accent-violet);
+      border-color: rgba(168, 85, 247, 0.35);
+      background: rgba(168, 85, 247, 0.06);
+      box-shadow: 0 0 12px rgba(168, 85, 247, 0.08);
+    }
+
+    /* ── Graph ────────────────────────────────── */
+    .graph-wrapper {
+      position: relative;
+      width: 100%;
+      height: 460px;
+      background: linear-gradient(180deg, rgba(10,16,32,0.3) 0%, rgba(5,8,15,0.6) 50%, rgba(10,16,32,0.3) 100%);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .graph-wrapper::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,229,255,0.006) 3px, rgba(0,229,255,0.006) 4px);
+      pointer-events: none;
+      z-index: 5;
+    }
+    .graph-wrapper::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 1;
+      border-radius: 12px;
+    }
+
+    .now-zone {
+      position: absolute;
+      right: 0; top: 0;
+      width: 100px; height: 100%;
+      background: linear-gradient(270deg, rgba(0,229,255,0.05) 0%, transparent 100%);
+      border-right: 2px solid rgba(0,229,255,0.2);
+      pointer-events: none;
+      z-index: 2;
+    }
+    .now-label {
+      position: absolute;
+      right: 12px; top: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent-cyan);
+      opacity: 0.6;
+    }
+    .decay-zone {
+      position: absolute;
+      left: 0; top: 0;
+      width: 160px; height: 100%;
+      background: linear-gradient(90deg, var(--bg-deep), transparent);
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    #graph { width: 100%; height: 100%; position: relative; z-index: 2; }
+
+    .stream-path {
+      transition: opacity 0.3s ease, filter 0.3s ease;
+      cursor: pointer;
+    }
+    .stream-path.dimmed { opacity: 0.06 !important; }
+    .stream-path.highlighted { filter: drop-shadow(0 0 8px var(--stream-color)); }
+
+    .time-markers {
+      display: flex;
+      margin-top: 10px;
+      position: relative;
+      height: 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
+    }
+    .time-marker {
+      position: absolute;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px 18px;
+      margin-top: 16px;
+      max-width: 100%;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: color 0.2s ease;
+      white-space: nowrap;
+    }
+    .legend-item:hover { color: var(--text-muted); }
+    .legend-item.active { color: var(--text-primary); }
+    .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+    .tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: rgba(17, 26, 46, 0.95);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-primary);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      min-width: 190px;
+    }
+    .tooltip.visible { opacity: 1; }
+    .tooltip .tt-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+    .tooltip .tt-group { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+    .tooltip .tt-stats { display: grid; grid-template-columns: auto auto; gap: 2px 12px; font-size: 10px; }
+    .tooltip .tt-label { color: var(--text-dim); }
+    .tooltip .tt-val { color: var(--text-muted); text-align: right; }
+    .tooltip .tt-roster-label, .tooltip .tt-roster-val { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
+    .tooltip .tt-roster-val { color: var(--accent-cyan); opacity: 0.8; }
+
+    .crosshair-line { stroke: rgba(0,229,255,0.15); stroke-width: 1; stroke-dasharray: 3,5; pointer-events: none; }
+    .crosshair-time { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: var(--text-dim); pointer-events: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="pulse-dot"></div>
+    <h1>Signal Flow</h1>
+    <div class="stats">
+      <span>Channels <span class="stat-value" id="stat-channels">0</span></span>
+      <span>Current <span class="stat-value" id="stat-total">0</span></span>
+      <span>Peak <span class="stat-value" id="stat-peak">0</span></span>
+      <span>Affiliated <span class="stat-value" id="stat-affiliated">0</span></span>
+      <span>Window <span class="stat-value">3h</span></span>
+    </div>
+  </div>
+
+  <div class="controls-row">
+    <span class="metric-bar-label">Metric</span>
+    <button class="metric-btn active" data-metric="calls">Call Rate</button>
+    <button class="metric-btn" data-metric="airtime">Airtime</button>
+    <button class="metric-btn" data-metric="units">Active Units</button>
+    <button class="metric-btn" data-metric="roster">Roster</button>
+    <button class="metric-btn" data-metric="affiliations">Affiliations</button>
+    <div class="controls-separator"></div>
+    <span class="metric-bar-label">Layout</span>
+    <button class="layout-btn active" data-layout="volume">Volume</button>
+    <button class="layout-btn" data-layout="proportion">Proportion</button>
+    <button class="layout-btn" data-layout="stacked">Stacked</button>
+    <span class="metric-desc" id="metric-desc">calls per minute per talkgroup</span>
+  </div>
+
+  <div class="graph-wrapper">
+    <div class="now-zone"><div class="now-label">now</div></div>
+    <div class="decay-zone"></div>
+    <svg id="graph"></svg>
+  </div>
+  <div class="time-markers" id="time-markers"></div>
+  <div class="legend" id="legend"></div>
+</div>
+
+<div class="tooltip" id="tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-group" id="tt-group"></div>
+  <div class="tt-stats">
+    <span class="tt-label">Current</span><span class="tt-val" id="tt-current"></span>
+    <span class="tt-label">1h avg</span><span class="tt-val" id="tt-avg"></span>
+    <span class="tt-label">Peak</span><span class="tt-val" id="tt-peak"></span>
+    <span class="tt-label">% of total</span><span class="tt-val" id="tt-pct"></span>
+    <span class="tt-label tt-roster-label" id="tt-roster-label">Roster</span><span class="tt-val tt-roster-val" id="tt-roster"></span>
+  </div>
+</div>
+
+<script type="module">
+import { init as initData, destroy as destroyData, BUCKET_SEC, WINDOW_SEC } from './signal-flow-data.js';
+
+// ═══════════════════════════════════════════════════════════════
+// METRIC DEFINITIONS
+// ═══════════════════════════════════════════════════════════════
+const METRICS = {
+  calls:        { label: 'Call Rate',     unit: '/min',   desc: 'calls per minute per talkgroup' },
+  airtime:      { label: 'Airtime',       unit: 's/min',  desc: 'seconds of audio per minute per talkgroup' },
+  units:        { label: 'Active Units',  unit: ' units', desc: 'unique transmitting radios per talkgroup' },
+  roster:       { label: 'Roster',        unit: ' units', desc: 'affiliated radios per talkgroup — who\'s listening' },
+  affiliations: { label: 'Affiliations',  unit: '/min',   desc: 'talkgroup join events per minute — leading indicator' },
+};
+
+let activeMetric = 'calls';
+let activeLayout = 'volume';
+
+const LAYOUT_DESCS = {
+  volume: 'organic flow — stream width = absolute value',
+  proportion: 'normalized — stream width = % of total, constant river width',
+  stacked: 'zero-baseline — shows total volume + composition',
+};
+
+// ═══════════════════════════════════════════════════════════════
+// COLOR PALETTE — 15 distinct colors for talkgroup assignment
+// ═══════════════════════════════════════════════════════════════
+const COLOR_PALETTE = [
+  '#00e5ff', // cyan
+  '#f43f5e', // rose
+  '#a855f7', // violet
+  '#f59e0b', // amber
+  '#10b981', // emerald
+  '#38bdf8', // sky
+  '#fb923c', // orange
+  '#818cf8', // indigo
+  '#c084fc', // purple
+  '#34d399', // green
+  '#fbbf24', // yellow
+  '#f87171', // red
+  '#22d3ee', // teal
+  '#e879f9', // fuchsia
+  '#64748b', // slate
+];
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let timeSeries = [];
+let keys = [];
+let colorMap = {};
+let nameMap = {};
+let groupMap = {};
+let talkgroupMap = null;
+let highlightedKey = null;
+
+// ═══════════════════════════════════════════════════════════════
+// DOM & SCALES
+// ═══════════════════════════════════════════════════════════════
+const svgEl = document.getElementById('graph');
+const svg = d3.select(svgEl);
+const tooltipEl = document.getElementById('tooltip');
+const ttName = document.getElementById('tt-name');
+const ttGroup = document.getElementById('tt-group');
+const ttCurrent = document.getElementById('tt-current');
+const ttAvg = document.getElementById('tt-avg');
+const ttPeak = document.getElementById('tt-peak');
+const ttPct = document.getElementById('tt-pct');
+const statChannels = document.getElementById('stat-channels');
+const statTotal = document.getElementById('stat-total');
+const statPeakEl = document.getElementById('stat-peak');
+const statAffiliated = document.getElementById('stat-affiliated');
+const metricDesc = document.getElementById('metric-desc');
+const ttRoster = document.getElementById('tt-roster');
+const ttRosterLabel = document.getElementById('tt-roster-label');
+
+let width, height, margin;
+const xScale = d3.scaleLinear();
+const yScale = d3.scaleLinear();
+
+// D3 stack — keys set dynamically when talkgroups load
+const stack = d3.stack()
+  .offset(d3.stackOffsetWiggle)
+  .order(d3.stackOrderInsideOut);
+
+const area = d3.area()
+  .curve(d3.curveBasis)
+  .x((d, i) => xScale(i))
+  .y0(d => yScale(d[0]))
+  .y1(d => yScale(d[1]));
+
+// SVG layers
+const defsEl = svg.append('defs');
+const gridGroup = svg.append('g');
+const streamGroup = svg.append('g');
+const crosshairGroup = svg.append('g').style('display', 'none');
+const crosshairLine = crosshairGroup.append('line').attr('class', 'crosshair-line');
+const crosshairLabel = crosshairGroup.append('text').attr('class', 'crosshair-time');
+
+// Time grid
+const TIME_LABELS = [
+  { sec: 300, label: '5m' }, { sec: 600, label: '10m' },
+  { sec: 1800, label: '30m' }, { sec: 3600, label: '1h' },
+  { sec: 7200, label: '2h' }, { sec: 10800, label: '3h' },
+];
+
+// ═══════════════════════════════════════════════════════════════
+// TALKGROUP SETUP — called once when adapter delivers metadata
+// ═══════════════════════════════════════════════════════════════
+function setupTalkgroups(talkgroups) {
+  keys = talkgroups.map(tg => String(tg.tgid));
+  colorMap = {};
+  nameMap = {};
+  groupMap = {};
+
+  talkgroups.forEach((tg, i) => {
+    const key = String(tg.tgid);
+    const color = COLOR_PALETTE[i % COLOR_PALETTE.length];
+    colorMap[key] = color;
+    nameMap[key] = tg.alpha_tag || `TG ${tg.tgid}`;
+    groupMap[key] = tg.group || tg.tag || '';
+    tg.color = color;
+  });
+
+  // Update D3 stack keys
+  stack.keys(keys);
+
+  // Generate SVG gradients
+  defsEl.selectAll('linearGradient').remove();
+  keys.forEach(key => {
+    const color = colorMap[key];
+    const grad = defsEl.append('linearGradient')
+      .attr('id', `grad-${key}`)
+      .attr('x1', '0%').attr('y1', '0%').attr('x2', '0%').attr('y2', '100%');
+    const c = d3.color(color);
+    grad.append('stop').attr('offset', '0%').attr('stop-color', c.brighter(0.3).formatHex()).attr('stop-opacity', 0.75);
+    grad.append('stop').attr('offset', '50%').attr('stop-color', color).attr('stop-opacity', 0.55);
+    grad.append('stop').attr('offset', '100%').attr('stop-color', c.darker(0.3).formatHex()).attr('stop-opacity', 0.75);
+  });
+
+  buildLegend();
+  statChannels.textContent = keys.length;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LAYOUT
+// ═══════════════════════════════════════════════════════════════
+function resize() {
+  const rect = svgEl.parentElement.getBoundingClientRect();
+  width = rect.width; height = rect.height;
+  margin = { top: 20, right: 20, bottom: 20, left: 20 };
+  svgEl.setAttribute('width', width);
+  svgEl.setAttribute('height', height);
+  xScale.range([margin.left, width - margin.right]);
+  yScale.range([height - margin.bottom, margin.top]);
+  render();
+  updateTimeMarkers();
+}
+
+function updateTimeMarkers() {
+  const c = document.getElementById('time-markers');
+  c.innerHTML = '';
+  if (!width) return;
+  for (const t of TIME_LABELS) {
+    const idx = timeSeries.length - 1 - Math.round(t.sec / BUCKET_SEC);
+    if (idx < 0) continue;
+    const x = xScale(idx);
+    if (x > margin.left + 20 && x < width - margin.right - 20) {
+      const el = document.createElement('div');
+      el.className = 'time-marker';
+      el.style.left = x + 'px';
+      el.textContent = t.label + ' ago';
+      c.appendChild(el);
+    }
+  }
+}
+
+function updateGrid() {
+  gridGroup.selectAll('line').remove();
+  for (const t of TIME_LABELS) {
+    const idx = timeSeries.length - 1 - Math.round(t.sec / BUCKET_SEC);
+    if (idx < 0) continue;
+    const x = xScale(idx);
+    if (x > margin.left && x < width - margin.right) {
+      gridGroup.append('line')
+        .attr('x1', x).attr('x2', x)
+        .attr('y1', margin.top).attr('y2', height - margin.bottom)
+        .attr('stroke', '#1a2744').attr('stroke-width', 0.5)
+        .attr('stroke-dasharray', '2,6').attr('opacity', 0.4);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════
+function getStackData() {
+  return timeSeries.map(b => {
+    const row = { time: b.time };
+    for (const k of keys) row[k] = (b[activeMetric] && b[activeMetric][k]) || 0;
+    return row;
+  });
+}
+
+function render() {
+  if (!width || !timeSeries.length || !keys.length) return;
+
+  // Set stack offset based on layout mode
+  if (activeLayout === 'proportion') {
+    stack.offset(d3.stackOffsetExpand).order(d3.stackOrderInsideOut);
+  } else if (activeLayout === 'stacked') {
+    stack.offset(d3.stackOffsetNone).order(d3.stackOrderInsideOut);
+  } else {
+    stack.offset(d3.stackOffsetWiggle).order(d3.stackOrderInsideOut);
+  }
+
+  const data = getStackData();
+  stack.value((d, key) => d[key] || 0);
+  xScale.domain([0, data.length - 1]);
+  const stacked = stack(data);
+
+  if (activeLayout === 'proportion') {
+    // stackOffsetExpand normalizes to 0-1
+    yScale.domain([0, 1]);
+  } else {
+    let yMin = Infinity, yMax = -Infinity;
+    for (const layer of stacked) {
+      for (const pt of layer) {
+        if (pt[0] < yMin) yMin = pt[0];
+        if (pt[1] > yMax) yMax = pt[1];
+      }
+    }
+    const yPad = (yMax - yMin) * 0.08;
+    yScale.domain([yMin - yPad, yMax + yPad]);
+  }
+
+  const paths = streamGroup.selectAll('.stream-path').data(stacked, d => d.key);
+
+  paths.enter()
+    .append('path')
+    .attr('class', 'stream-path')
+    .style('--stream-color', d => colorMap[d.key])
+    .attr('fill', d => `url(#grad-${d.key})`)
+    .attr('stroke', d => colorMap[d.key])
+    .attr('stroke-width', 0.5)
+    .attr('stroke-opacity', 0.3)
+    .attr('d', area)
+    .on('mouseenter', function(ev, d) { highlightStream(d.key); showTooltip(d.key, ev); })
+    .on('mousemove', function(ev) { moveTooltip(ev); updateCrosshair(ev); })
+    .on('mouseleave', function() { unhighlightAll(); hideTooltip(); hideCrosshair(); });
+
+  paths.transition().duration(600).ease(d3.easeCubicOut).attr('d', area);
+  paths.exit().remove();
+
+  updateGrid();
+  updateTimeMarkers();
+  updateStats();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INTERACTION
+// ═══════════════════════════════════════════════════════════════
+function highlightStream(key) {
+  highlightedKey = key;
+  streamGroup.selectAll('.stream-path')
+    .classed('dimmed', d => d.key !== key)
+    .classed('highlighted', d => d.key === key);
+  document.querySelectorAll('.legend-item').forEach(el => el.classList.toggle('active', el.dataset.key === key));
+}
+
+function unhighlightAll() {
+  highlightedKey = null;
+  streamGroup.selectAll('.stream-path').classed('dimmed', false).classed('highlighted', false);
+  document.querySelectorAll('.legend-item').forEach(el => el.classList.remove('active'));
+}
+
+function fmtVal(v) {
+  const m = METRICS[activeMetric];
+  return ((activeMetric === 'units' || activeMetric === 'roster') ? Math.round(v) : v.toFixed(1)) + m.unit;
+}
+
+function showTooltip(key, event) {
+  const color = colorMap[key];
+  if (!color) return;
+
+  ttName.textContent = nameMap[key] || key;
+  ttName.style.color = color;
+  ttGroup.textContent = groupMap[key] || '';
+  ttGroup.style.color = color;
+
+  const recent = timeSeries[timeSeries.length - 1];
+  const cur = recent ? (recent[activeMetric][key] || 0) : 0;
+
+  // Always show raw value + proportion context
+  const totalNow = recent ? keys.reduce((s, k) => s + ((recent[activeMetric][k]) || 0), 0) : 0;
+  const pctNow = totalNow > 0 ? (cur / totalNow * 100).toFixed(1) : '0.0';
+
+  if (activeLayout === 'proportion') {
+    ttCurrent.textContent = pctNow + '% (' + fmtVal(cur) + ')';
+  } else {
+    ttCurrent.textContent = fmtVal(cur);
+  }
+
+  const hr = timeSeries.slice(-120);
+  const avg = hr.reduce((s, b) => s + ((b[activeMetric][key]) || 0), 0) / hr.length;
+  if (activeLayout === 'proportion') {
+    const avgTotal = hr.reduce((s, b) => keys.reduce((ss, k) => ss + ((b[activeMetric][k]) || 0), 0), 0) / hr.length;
+    const avgPct = avgTotal > 0 ? (avg / avgTotal * 100).toFixed(1) : '0.0';
+    ttAvg.textContent = avgPct + '% (' + fmtVal(avg) + ')';
+  } else {
+    ttAvg.textContent = fmtVal(avg);
+  }
+
+  const peak = Math.max(...timeSeries.map(b => (b[activeMetric][key]) || 0));
+  ttPeak.textContent = fmtVal(peak);
+
+  ttPct.textContent = totalNow > 0 ? pctNow + '%' : '0%';
+
+  // Roster context — show for all metrics except roster itself
+  if (activeMetric !== 'roster' && recent && recent.roster) {
+    const rosterNow = recent.roster[key] || 0;
+    const unitsNow = recent.units ? (recent.units[key] || 0) : 0;
+    ttRosterLabel.style.display = '';
+    ttRoster.style.display = '';
+    ttRoster.textContent = Math.round(rosterNow) + ' affiliated'
+      + (activeMetric !== 'units' ? ' · ' + Math.round(unitsNow) + ' transmitting' : '');
+  } else {
+    ttRosterLabel.style.display = 'none';
+    ttRoster.style.display = 'none';
+  }
+
+  tooltipEl.classList.add('visible');
+  moveTooltip(event);
+}
+
+function moveTooltip(ev) {
+  let x = ev.clientX + 16, y = ev.clientY - 60;
+  if (x + 210 > window.innerWidth) x = ev.clientX - 210 - 16;
+  if (y < 10) y = 10;
+  tooltipEl.style.left = x + 'px'; tooltipEl.style.top = y + 'px';
+}
+function hideTooltip() { tooltipEl.classList.remove('visible'); }
+
+function updateCrosshair(ev) {
+  const rect = svgEl.getBoundingClientRect();
+  const mx = ev.clientX - rect.left;
+  crosshairGroup.style('display', null);
+  crosshairLine.attr('x1', mx).attr('x2', mx).attr('y1', margin.top).attr('y2', height - margin.bottom);
+  const idx = Math.round(xScale.invert(mx));
+  const secs = (timeSeries.length - 1 - idx) * BUCKET_SEC;
+  const label = secs <= 0 ? 'now' : secs < 60 ? secs + 's ago' : secs < 3600 ? Math.floor(secs / 60) + 'm ago' : (secs / 3600).toFixed(1) + 'h ago';
+  crosshairLabel.attr('x', mx).attr('y', height - margin.bottom + 14).text(label);
+}
+function hideCrosshair() { crosshairGroup.style('display', 'none'); }
+
+// ═══════════════════════════════════════════════════════════════
+// STATS
+// ═══════════════════════════════════════════════════════════════
+function updateStats() {
+  const recent = timeSeries[timeSeries.length - 1];
+  if (recent) {
+    const total = keys.reduce((s, k) => s + ((recent[activeMetric][k]) || 0), 0);
+    statTotal.textContent = activeLayout === 'proportion'
+      ? '100%'
+      : ((activeMetric === 'units' || activeMetric === 'roster') ? Math.round(total) : total.toFixed(0));
+
+    // Affiliated count — always from roster metric regardless of active metric
+    if (recent.roster) {
+      const totalAffiliated = keys.reduce((s, k) => s + (recent.roster[k] || 0), 0);
+      statAffiliated.textContent = Math.round(totalAffiliated);
+    }
+  }
+  let peak = 0;
+  for (const b of timeSeries) {
+    const t = keys.reduce((s, k) => s + ((b[activeMetric][k]) || 0), 0);
+    if (t > peak) peak = t;
+  }
+  statPeakEl.textContent = activeLayout === 'proportion'
+    ? '100%'
+    : ((activeMetric === 'units' || activeMetric === 'roster') ? Math.round(peak) : peak.toFixed(0));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// METRIC SELECTOR
+// ═══════════════════════════════════════════════════════════════
+function updateDesc() {
+  metricDesc.textContent = METRICS[activeMetric].desc + ' · ' + LAYOUT_DESCS[activeLayout];
+}
+
+document.querySelectorAll('.metric-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeMetric = btn.dataset.metric;
+    document.querySelectorAll('.metric-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updateDesc();
+    streamGroup.selectAll('.stream-path').remove();
+    render();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// LAYOUT SELECTOR
+// ═══════════════════════════════════════════════════════════════
+document.querySelectorAll('.layout-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeLayout = btn.dataset.layout;
+    document.querySelectorAll('.layout-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updateDesc();
+    streamGroup.selectAll('.stream-path').remove();
+    render();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// LEGEND
+// ═══════════════════════════════════════════════════════════════
+function buildLegend() {
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  for (const key of keys) {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.dataset.key = key;
+    const dot = document.createElement('div');
+    dot.className = 'legend-dot';
+    dot.style.background = colorMap[key];
+    item.appendChild(dot);
+    item.appendChild(document.createTextNode(nameMap[key] || key));
+    item.addEventListener('mouseenter', () => highlightStream(key));
+    item.addEventListener('mouseleave', () => unhighlightAll());
+    legend.appendChild(item);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT — connect to real data via signal-flow-data adapter
+// ═══════════════════════════════════════════════════════════════
+const params = new URLSearchParams(window.location.search);
+const systemId = parseInt(params.get('system'), 10);
+const apiBase = params.get('api') || '/api/v1';
+
+if (!systemId) {
+  document.querySelector('.header h1').textContent = 'Signal Flow — no system selected';
+  metricDesc.textContent = 'Add ?system=1 to the URL to connect to a system';
+} else {
+  updateDesc();
+  resize();
+  window.addEventListener('resize', resize);
+
+  initData({
+    apiBase,
+    systemId,
+    onTalkgroups: (talkgroups) => {
+      setupTalkgroups(talkgroups);
+    },
+    onUpdate: (series, updatedKeys, updatedMap) => {
+      timeSeries = series;
+      talkgroupMap = updatedMap;
+      render();
+    },
+  }).catch(err => {
+    console.error('[signal-flow] Init failed:', err);
+    metricDesc.textContent = 'Connection failed: ' + err.message;
+  });
+}
+</script>
+</body>
+</html>
