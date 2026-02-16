@@ -106,8 +106,8 @@ The schema creates initial partitions (current month + 3 months ahead). The `cre
 ## Building & Running
 
 ```bash
-# Build (inject version at build time)
-go build -ldflags "-X main.version=0.1.0" -o tr-engine.exe ./cmd/tr-engine
+# Build (injects version, commit hash, and build timestamp via ldflags)
+bash build.sh
 
 # Run — auto-loads .env from current directory
 ./tr-engine.exe

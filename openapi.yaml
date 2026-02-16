@@ -2147,6 +2147,7 @@ components:
           description: |
             Source/transmission list from trunk-recorder's srcList.
             Each entry is a unit transmission segment within the call.
+            Also available via GET /calls/{id}/transmissions.
           items:
             $ref: "#/components/schemas/CallTransmission"
         freq_list:
@@ -2154,6 +2155,7 @@ components:
           description: |
             Frequency list from trunk-recorder's freqList.
             Each entry is a frequency segment within the call.
+            Also available via GET /calls/{id}/frequencies.
           items:
             $ref: "#/components/schemas/CallFrequency"
         unit_ids:
@@ -2300,6 +2302,10 @@ components:
           type: number
           description: Position in audio file in seconds
           example: 0.0
+        duration:
+          type: number
+          description: Duration of this transmission segment in seconds (computed from gap to next transmission or end of call)
+          example: 3.5
         emergency:
           type: integer
           description: "Emergency flag (0=normal, 1=emergency)"

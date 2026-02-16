@@ -18,7 +18,13 @@ import (
 	"github.com/snarg/tr-engine/internal/mqttclient"
 )
 
-var version = "dev"
+// version, commit, and buildTime are injected at build time via ldflags.
+// See Makefile or build script for usage.
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildTime = "unknown"
+)
 
 func main() {
 	// CLI flags
@@ -34,7 +40,7 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Println(version)
+		fmt.Printf("%s (commit=%s, built=%s)\n", version, commit, buildTime)
 		os.Exit(0)
 	}
 
@@ -55,6 +61,8 @@ func main() {
 	log := zerolog.New(os.Stdout).With().Timestamp().Logger().Level(level)
 	log.Info().
 		Str("version", version).
+		Str("commit", commit).
+		Str("built", buildTime).
 		Str("log_level", level.String()).
 		Msg("tr-engine starting")
 
