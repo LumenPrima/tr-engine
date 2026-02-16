@@ -64,7 +64,6 @@ jobs:
           ARCHIVE_DIR="tr-engine-${{ matrix.suffix }}"
           mkdir -p "${ARCHIVE_DIR}"
           cp tr-engine${EXT} schema.sql sample.env "${ARCHIVE_DIR}/"
-          cp -r web "${ARCHIVE_DIR}/"
 
           if [ "${{ matrix.goos }}" = "windows" ]; then
             zip -r "${ARCHIVE_DIR}.zip" "${ARCHIVE_DIR}"

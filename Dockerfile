@@ -20,7 +20,6 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /tr-engine /usr/local/bin/tr-engine
 COPY schema.sql /opt/tr-engine/schema.sql
 COPY sample.env /opt/tr-engine/sample.env
-COPY web /opt/tr-engine/web
 
 WORKDIR /opt/tr-engine
 

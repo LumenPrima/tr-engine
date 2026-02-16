@@ -33,6 +33,9 @@ services:
       AUDIO_DIR: /data/audio
     volumes:
       - tr-engine-audio:/data/audio
+      # Optional: mount a local web/ directory to override embedded UI files
+      # without rebuilding. Changes take effect on next browser request.
+      # - ./web:/opt/tr-engine/web
     depends_on:
       postgres:
         condition: service_healthy

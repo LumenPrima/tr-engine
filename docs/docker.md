@@ -91,6 +91,17 @@ environment:
 
 Then restart: `docker compose up -d`
 
+### Custom web UI files
+
+The web UI is embedded in the binary, but you can override it by mounting a local directory:
+
+```yaml
+volumes:
+  - ./web:/opt/tr-engine/web
+```
+
+When a `web/` directory exists on disk, tr-engine serves from it instead of the embedded files. Changes take effect on the next browser request — no restart needed. This is useful for iterating on the UI without rebuilding the Docker image.
+
 ## Upgrading
 
 ```bash

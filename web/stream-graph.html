@@ -963,9 +963,47 @@ const params = new URLSearchParams(window.location.search);
 const systemId = parseInt(params.get('system'), 10);
 const apiBase = params.get('api') || '/api/v1';
 
+async function showSystemPicker() {
+  document.querySelector('.controls-row').style.display = 'none';
+  document.querySelector('.graph-wrapper').style.display = 'none';
+  document.getElementById('time-markers').style.display = 'none';
+
+  const pickerEl = document.createElement('div');
+  pickerEl.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:24px;margin-top:60px;width:100%';
+  pickerEl.innerHTML = '<div style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase">Select a system</div><div id="system-list" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center"></div>';
+  document.querySelector('.container').appendChild(pickerEl);
+
+  try {
+    const resp = await fetch(apiBase + '/systems');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const systems = data.systems || [];
+    const listEl = document.getElementById('system-list');
+
+    if (!systems.length) {
+      listEl.innerHTML = '<div style="font-size:13px;color:var(--text-dim)">No systems found. Data will appear once trunk-recorder connects.</div>';
+      return;
+    }
+
+    systems.forEach(sys => {
+      const card = document.createElement('a');
+      const siteCount = (sys.sites || []).length;
+      const siteLabel = siteCount === 1 ? '1 site' : siteCount + ' sites';
+      card.href = '?system=' + sys.system_id;
+      card.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:16px 24px;background:var(--surface);border:1px solid var(--border);border-radius:10px;cursor:pointer;text-decoration:none;transition:all 0.2s ease;min-width:180px';
+      card.innerHTML = '<div style="font-family:Outfit,sans-serif;font-size:15px;font-weight:600;color:var(--text-primary)">' + (sys.name || 'System ' + sys.system_id) + '</div>'
+        + '<div style="font-family:JetBrains Mono,monospace;font-size:10px;color:var(--text-dim);letter-spacing:0.06em">' + (sys.system_type || '').toUpperCase() + ' · ' + siteLabel + '</div>';
+      card.addEventListener('mouseenter', () => { card.style.borderColor = 'rgba(0,229,255,0.4)'; card.style.boxShadow = '0 0 16px rgba(0,229,255,0.1)'; });
+      card.addEventListener('mouseleave', () => { card.style.borderColor = 'var(--border)'; card.style.boxShadow = 'none'; });
+      listEl.appendChild(card);
+    });
+  } catch (err) {
+    document.getElementById('system-list').innerHTML = '<div style="font-size:13px;color:var(--accent-rose)">Failed to load systems: ' + err.message + '</div>';
+  }
+}
+
 if (!systemId) {
-  document.querySelector('.header h1').textContent = 'Signal Flow — no system selected';
-  metricDesc.textContent = 'Add ?system=1 to the URL to connect to a system';
+  showSystemPicker();
 } else {
   updateDesc();
   resize();
