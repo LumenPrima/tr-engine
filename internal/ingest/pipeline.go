@@ -28,6 +28,9 @@ type Pipeline struct {
 	// Active call tracking: tr_call_id → db call_id
 	activeCalls *activeCallMap
 
+	// Unit affiliation tracking: (system_id, unit_id) → current talkgroup
+	affiliations *affiliationMap
+
 	// Event bus for SSE subscribers
 	eventBus *EventBus
 
@@ -91,7 +94,8 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		rawStore:    rawStore,
 		rawInclude:  rawInclude,
 		rawExclude:  rawExclude,
-		activeCalls: newActiveCallMap(),
+		activeCalls:  newActiveCallMap(),
+		affiliations: newAffiliationMap(),
 		eventBus:    NewEventBus(4096), // ~60s of events at high rate
 		ctx:         ctx,
 		cancel:      cancel,
@@ -108,6 +112,9 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 func (p *Pipeline) Start(ctx context.Context) error {
 	if err := p.identity.LoadCache(ctx); err != nil {
 		return err
+	}
+	if err := p.backfillAffiliations(ctx); err != nil {
+		p.log.Warn().Err(err).Msg("affiliation backfill failed, continuing with empty map")
 	}
 	go p.statsLoop()
 	go p.maintenanceLoop()
@@ -537,6 +544,88 @@ func (m *activeCallMap) All() map[string]activeCallEntry {
 	return result
 }
 
+// affiliationEntry tracks a unit's current talkgroup affiliation.
+type affiliationEntry struct {
+	SystemID        int
+	SystemName      string
+	Sysid           string
+	UnitID          int
+	UnitAlphaTag    string
+	Tgid            int
+	TgAlphaTag      string
+	TgDescription   string
+	TgTag           string
+	TgGroup         string
+	PreviousTgid    *int
+	AffiliatedSince time.Time
+	LastEventTime   time.Time
+	Status          string // "affiliated" or "off"
+}
+
+type affiliationKey struct {
+	SystemID int
+	UnitID   int
+}
+
+type affiliationMap struct {
+	mu    sync.Mutex
+	items map[affiliationKey]*affiliationEntry
+}
+
+func newAffiliationMap() *affiliationMap {
+	return &affiliationMap{items: make(map[affiliationKey]*affiliationEntry)}
+}
+
+// Update sets or overwrites an affiliation entry (used for "join" events).
+func (m *affiliationMap) Update(key affiliationKey, entry *affiliationEntry) {
+	m.mu.Lock()
+	m.items[key] = entry
+	m.mu.Unlock()
+}
+
+// MarkOff marks a unit as disconnected without removing it from the map.
+func (m *affiliationMap) MarkOff(key affiliationKey, t time.Time) {
+	m.mu.Lock()
+	if e, ok := m.items[key]; ok {
+		e.Status = "off"
+		e.LastEventTime = t
+	}
+	m.mu.Unlock()
+}
+
+// UpdateActivity updates the LastEventTime for an existing entry.
+func (m *affiliationMap) UpdateActivity(key affiliationKey, t time.Time) {
+	m.mu.Lock()
+	if e, ok := m.items[key]; ok {
+		e.LastEventTime = t
+	}
+	m.mu.Unlock()
+}
+
+// Get returns a copy of the entry if it exists.
+func (m *affiliationMap) Get(key affiliationKey) (*affiliationEntry, bool) {
+	m.mu.Lock()
+	e, ok := m.items[key]
+	if ok {
+		copy := *e
+		m.mu.Unlock()
+		return &copy, true
+	}
+	m.mu.Unlock()
+	return nil, false
+}
+
+// All returns a snapshot of all affiliation entries.
+func (m *affiliationMap) All() []affiliationEntry {
+	m.mu.Lock()
+	result := make([]affiliationEntry, 0, len(m.items))
+	for _, e := range m.items {
+		result = append(result, *e)
+	}
+	m.mu.Unlock()
+	return result
+}
+
 // ----- LiveDataSource interface implementation -----
 
 // ActiveCalls returns currently in-progress calls.
@@ -625,6 +714,69 @@ func (p *Pipeline) TRInstanceStatus() []api.TRInstanceStatusData {
 		})
 		return true
 	})
+	return result
+}
+
+// backfillAffiliations loads recent join events from the DB to populate the affiliation map on startup.
+func (p *Pipeline) backfillAffiliations(ctx context.Context) error {
+	start := time.Now()
+
+	rows, err := p.db.LoadRecentAffiliations(ctx)
+	if err != nil {
+		return fmt.Errorf("load recent affiliations: %w", err)
+	}
+
+	talkgroups := make(map[int]struct{})
+	for _, r := range rows {
+		key := affiliationKey{SystemID: r.SystemID, UnitID: r.UnitRID}
+		p.affiliations.Update(key, &affiliationEntry{
+			SystemID:        r.SystemID,
+			SystemName:      r.SystemName,
+			Sysid:           r.Sysid,
+			UnitID:          r.UnitRID,
+			UnitAlphaTag:    r.UnitAlphaTag,
+			Tgid:            r.Tgid,
+			TgAlphaTag:      r.TgAlphaTag,
+			TgDescription:   r.TgDescription,
+			TgTag:           r.TgTag,
+			TgGroup:         r.TgGroup,
+			AffiliatedSince: r.Time,
+			LastEventTime:   r.Time,
+			Status:          "affiliated",
+		})
+		talkgroups[r.Tgid] = struct{}{}
+	}
+
+	p.log.Info().
+		Int("units", len(rows)).
+		Int("talkgroups", len(talkgroups)).
+		Dur("elapsed_ms", time.Since(start)).
+		Msg("affiliation map backfilled from DB")
+	return nil
+}
+
+// UnitAffiliations returns the current talkgroup affiliation state for all tracked units.
+func (p *Pipeline) UnitAffiliations() []api.UnitAffiliationData {
+	entries := p.affiliations.All()
+	result := make([]api.UnitAffiliationData, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, api.UnitAffiliationData{
+			SystemID:        e.SystemID,
+			SystemName:      e.SystemName,
+			Sysid:           e.Sysid,
+			UnitID:          e.UnitID,
+			UnitAlphaTag:    e.UnitAlphaTag,
+			Tgid:            e.Tgid,
+			TgAlphaTag:      e.TgAlphaTag,
+			TgDescription:   e.TgDescription,
+			TgTag:           e.TgTag,
+			TgGroup:         e.TgGroup,
+			PreviousTgid:    e.PreviousTgid,
+			AffiliatedSince: e.AffiliatedSince,
+			LastEventTime:   e.LastEventTime,
+			Status:          e.Status,
+		})
+	}
 	return result
 }
 

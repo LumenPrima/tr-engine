@@ -149,5 +149,37 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		},
 	})
 
+	// Update affiliation map
+	affKey := affiliationKey{SystemID: identity.SystemID, UnitID: data.Unit}
+	switch eventType {
+	case "join":
+		if data.Talkgroup > 0 {
+			var prevTgid *int
+			if existing, ok := p.affiliations.Get(affKey); ok && existing.Tgid != data.Talkgroup {
+				prevTgid = &existing.Tgid
+			}
+			p.affiliations.Update(affKey, &affiliationEntry{
+				SystemID:        identity.SystemID,
+				SystemName:      identity.SystemName,
+				Sysid:           identity.Sysid,
+				UnitID:          data.Unit,
+				UnitAlphaTag:    data.UnitAlphaTag,
+				Tgid:            data.Talkgroup,
+				TgAlphaTag:      data.TalkgroupAlphaTag,
+				TgDescription:   data.TalkgroupDescription,
+				TgTag:           data.TalkgroupTag,
+				TgGroup:         data.TalkgroupGroup,
+				PreviousTgid:    prevTgid,
+				AffiliatedSince: ts,
+				LastEventTime:   ts,
+				Status:          "affiliated",
+			})
+		}
+	case "off":
+		p.affiliations.MarkOff(affKey, ts)
+	default:
+		p.affiliations.UpdateActivity(affKey, ts)
+	}
+
 	return nil
 }

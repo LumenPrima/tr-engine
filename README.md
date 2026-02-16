@@ -5,15 +5,15 @@ Backend service that ingests MQTT messages from [trunk-recorder](https://github.
 ## Tech Stack
 
 - **Go** — chosen for multi-core utilization at high message rates
-- **PostgreSQL 17+** — partitioned tables, JSONB, denormalized for read performance
+- **PostgreSQL 18** — partitioned tables, JSONB, denormalized for read performance
 - **MQTT** — ingests from trunk-recorder instances
-- **REST API** — 32 endpoints under `/api/v1`, defined in `openapi.yaml`
+- **REST API** — 34 endpoints under `/api/v1`, defined in `openapi.yaml`
 - **SSE** — real-time event streaming with server-side filtering
 
 ## Prerequisites
 
 - Go 1.23+
-- PostgreSQL 17+
+- PostgreSQL 18
 - MQTT broker (e.g., Mosquitto)
 
 ## Quick Start
@@ -140,6 +140,8 @@ See `openapi.yaml` for full specification. Key endpoints:
 | `GET /calls` | List call recordings (paginated, filterable) |
 | `GET /calls/active` | Currently in-progress calls |
 | `GET /calls/{id}/audio` | Stream call audio |
+| `GET /unit-events` | System-wide unit event queries (DB-backed) |
+| `GET /unit-affiliations` | Live talkgroup affiliation state (in-memory) |
 | `GET /call-groups` | Deduplicated call groups |
 | `GET /recorders` | Recorder hardware state |
 | `GET /trunking-messages` | P25 control channel messages |
@@ -151,7 +153,7 @@ See `openapi.yaml` for full specification. Key endpoints:
 
 ## Storage Estimates
 
-Observed with 2 moderately busy counties (Butler/Warren, OH) and 1 trunk-recorder instance:
+Observed with 2 moderately busy counties and 1 trunk-recorder instance:
 
 | Category | Estimated Annual Usage |
 |----------|----------------------|

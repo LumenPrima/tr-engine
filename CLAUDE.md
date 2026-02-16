@@ -11,7 +11,7 @@ Current dev/test uses 2 counties (Butler/Warren, NACs 340/34D).
 ## Technology Stack
 
 - **Language**: Go
-- **Database**: PostgreSQL 17+
+- **Database**: PostgreSQL 18 (we have changed spec to v 18, make sure all references are updated)
 - **MQTT**: ingests from trunk-recorder instances
 - **Real-time push**: Server-Sent Events (SSE) at `GET /api/v1/events/stream` with server-side filtering (systems, sites, tgids, units, event types). Clients reconnect with `Last-Event-ID` for gapless recovery on filter changes.
 - **API**: REST under `/api/v1`, defined in `openapi.yaml`
@@ -21,7 +21,7 @@ Go was chosen over Node.js for multi-core utilization and headroom at high messa
 ## Key Files
 
 - `openapi.yaml` — Complete REST API specification (OpenAPI 3.0.3), including SSE event stream endpoint. This is the **source of truth** for API contracts.
-- `schema.sql` — PostgreSQL 17 DDL. All tables, indexes, triggers, partitioning, and helper functions. Run with `psql -f schema.sql`.
+- `schema.sql` — PostgreSQL 18 DDL. All tables, indexes, triggers, partitioning, and helper functions. Run with `psql -f schema.sql`.
 - `.env` — Local environment config (gitignored). Contains `DATABASE_URL`, `MQTT_BROKER_URL`, credentials, and `HTTP_ADDR`.
 - `cmd/tr-engine/main.go` — Entry point. Startup order: config → logger → database → MQTT → pipeline → HTTP server. Graceful shutdown via SIGINT/SIGTERM with 10s timeout. Version injected via `-ldflags`.
 - `cmd/mqtt-dump/` — Dev tool to capture and display live MQTT traffic.
@@ -155,17 +155,17 @@ A live environment is available for testing:
 ## Implementation Status
 
 **Completed:**
-- `openapi.yaml` — full REST API spec with SSE event stream endpoint (30 endpoints)
-- `schema.sql` — full PostgreSQL 17 DDL (20 tables, partitioning, triggers, helpers)
+- `openapi.yaml` — full REST API spec with SSE event stream endpoint (32 endpoints)
+- `schema.sql` — full PostgreSQL 18 DDL (20 tables, partitioning, triggers, helpers)
 - MQTT ingestion pipeline — message routing, identity resolution, batch writes, all handler types (calls, units, recorders, rates, systems, config, audio, status, trunking messages, console logs)
-- REST API — all 30 endpoints implemented across 10 handler files (systems, talkgroups, units, calls, call_groups, stats, recorders, events/SSE, admin, query)
+- REST API — all 32 endpoints implemented across 12 handler files (systems, talkgroups, units, calls, call_groups, stats, recorders, events/SSE, unit-events, affiliations, admin, query)
 - Database layer — complete CRUD and query builders for all tables
 - SSE event bus — real-time pub/sub with ring buffer replay, `Last-Event-ID` support, and event publishing wired into all ingest handlers (call_start, call_end, unit_event, recorder_update, rate_update, trunking_message, console)
 - Health endpoint — shows database, MQTT, and trunk-recorder instance status (connected/disconnected with last_seen timestamps)
 - Dev tools — `cmd/mqtt-dump` (MQTT traffic inspector), `cmd/dbcheck` (DB analysis)
 
 **Not yet done:**
-- Test coverage — no `*_test.go` files exist anywhere in the codebase
+- Test coverage for new unit-events and affiliations endpoints
 
 ## Real-Time Event Streaming (SSE)
 

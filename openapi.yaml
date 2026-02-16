@@ -674,6 +674,143 @@ paths:
           $ref: "#/components/responses/InternalError"
 
   # ----------------------------------------------------------
+  # Unit Events (system-wide)
+  # ----------------------------------------------------------
+  /unit-events:
+    get:
+      operationId: listUnitEventsGlobal
+      summary: List unit events (system-wide)
+      description: |
+        Returns unit events across an entire system with JOINs for display
+        names. Supports multi-type filtering and optional emergency filter.
+        Default lookback is 1 hour; max time range is 24 hours.
+      tags: [units]
+      parameters:
+        - name: system_id
+          in: query
+          description: Filter by internal system ID (required if sysid not provided)
+          schema:
+            type: integer
+        - name: sysid
+          in: query
+          description: Filter by P25 sysid hex (required if system_id not provided)
+          schema:
+            type: string
+        - name: unit_id
+          in: query
+          description: Filter by unit radio ID
+          schema:
+            type: integer
+        - name: type
+          in: query
+          description: |
+            Comma-separated event types to include (e.g. `join,on,off`).
+            If omitted, all event types are returned.
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - name: emergency
+          in: query
+          description: Filter by emergency flag
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/startTime"
+        - $ref: "#/components/parameters/endTime"
+        - name: sort
+          in: query
+          description: |
+            Sort field with optional `-` prefix for descending.
+            Allowed: `time`, `unit_rid`, `tgid`, `event_type`. Default: `-time`.
+          schema:
+            type: string
+            default: "-time"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitEventListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Unit Affiliations (live in-memory state)
+  # ----------------------------------------------------------
+  /unit-affiliations:
+    get:
+      operationId: listUnitAffiliations
+      summary: List live talkgroup affiliations
+      description: |
+        Returns current talkgroup affiliation state for units, derived from
+        live MQTT `join` and `off` events. The map starts empty on boot and
+        populates from live traffic.
+
+        Each entry shows which talkgroup a unit is currently affiliated with,
+        when the affiliation started, and the unit's status (`affiliated` or `off`).
+      tags: [units]
+      parameters:
+        - name: system_id
+          in: query
+          description: Filter by internal system ID (required if sysid not provided)
+          schema:
+            type: integer
+        - name: sysid
+          in: query
+          description: Filter by P25 sysid hex (required if system_id not provided)
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID
+          schema:
+            type: integer
+        - name: unit_id
+          in: query
+          description: Filter by unit radio ID
+          schema:
+            type: integer
+        - name: status
+          in: query
+          description: Filter by status (`affiliated` or `off`)
+          schema:
+            type: string
+            enum: [affiliated, "off"]
+        - name: stale_threshold
+          in: query
+          description: |
+            Exclude entries whose last event is older than this many seconds.
+          schema:
+            type: integer
+        - name: active_within
+          in: query
+          description: |
+            Only include entries active within this many seconds.
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AffiliationListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
   # Calls
   # ----------------------------------------------------------
   /calls:
@@ -2537,6 +2674,77 @@ components:
         offset:
           type: integer
           example: 0
+
+    Affiliation:
+      type: object
+      required: [system_id, unit_id, tgid, affiliated_since, last_event_time, status]
+      properties:
+        system_id:
+          type: integer
+        system_name:
+          type: string
+        sysid:
+          type: string
+        unit_id:
+          type: integer
+        unit_alpha_tag:
+          type: string
+        tgid:
+          type: integer
+        tg_alpha_tag:
+          type: string
+        tg_description:
+          type: string
+        tg_tag:
+          type: string
+        tg_group:
+          type: string
+        previous_tgid:
+          type: integer
+          nullable: true
+          description: Previous talkgroup before this affiliation (null if first seen)
+        affiliated_since:
+          type: string
+          format: date-time
+          description: When the current talkgroup affiliation started
+        last_event_time:
+          type: string
+          format: date-time
+          description: Most recent event time for this unit
+        status:
+          type: string
+          enum: [affiliated, "off"]
+          description: |
+            `affiliated` = unit is actively affiliated with the talkgroup.
+            `off` = unit sent an off/deregistration event.
+
+    AffiliationListResponse:
+      type: object
+      required: [affiliations, total, limit, offset, summary]
+      properties:
+        affiliations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Affiliation"
+        total:
+          type: integer
+          description: Total matching affiliations (before pagination)
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+        summary:
+          type: object
+          properties:
+            talkgroup_counts:
+              type: object
+              additionalProperties:
+                type: integer
+              description: |
+                Map of tgid → count of affiliated (non-off) units on that
+                talkgroup. Computed over the full filtered set before pagination.
 
     CallListResponse:
       type: object

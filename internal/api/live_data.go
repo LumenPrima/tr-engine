@@ -14,6 +14,9 @@ type LiveDataSource interface {
 	// TRInstanceStatus returns the cached status of all known TR instances.
 	TRInstanceStatus() []TRInstanceStatusData
 
+	// UnitAffiliations returns current talkgroup affiliation state for all tracked units.
+	UnitAffiliations() []UnitAffiliationData
+
 	// Subscribe returns a channel that receives SSE events matching the filter,
 	// and a cancel function to unsubscribe.
 	Subscribe(filter EventFilter) (<-chan SSEEvent, func())
@@ -69,6 +72,24 @@ type TRInstanceStatusData struct {
 	InstanceID string    `json:"instance_id"`
 	Status     string    `json:"status"`
 	LastSeen   time.Time `json:"last_seen"`
+}
+
+// UnitAffiliationData represents a unit's current talkgroup affiliation.
+type UnitAffiliationData struct {
+	SystemID        int       `json:"system_id"`
+	SystemName      string    `json:"system_name,omitempty"`
+	Sysid           string    `json:"sysid,omitempty"`
+	UnitID          int       `json:"unit_id"`
+	UnitAlphaTag    string    `json:"unit_alpha_tag,omitempty"`
+	Tgid            int       `json:"tgid"`
+	TgAlphaTag      string    `json:"tg_alpha_tag,omitempty"`
+	TgDescription   string    `json:"tg_description,omitempty"`
+	TgTag           string    `json:"tg_tag,omitempty"`
+	TgGroup         string    `json:"tg_group,omitempty"`
+	PreviousTgid    *int      `json:"previous_tgid,omitempty"`
+	AffiliatedSince time.Time `json:"affiliated_since"`
+	LastEventTime   time.Time `json:"last_event_time"`
+	Status          string    `json:"status"` // "affiliated" or "off"
 }
 
 // EventFilter specifies which events an SSE subscriber wants to receive.
