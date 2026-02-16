@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: trengine
+      POSTGRES_PASSWORD: trengine
+      POSTGRES_DB: trengine
+    volumes:
+      - tr-engine-db:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trengine"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  tr-engine:
+    build: .
+    image: ghcr.io/lumenprima/tr-engine:latest
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://trengine:trengine@postgres:5432/trengine?sslmode=disable
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+      MQTT_TOPICS: "trdash/#"
+      AUDIO_DIR: /data/audio
+    volumes:
+      - tr-engine-audio:/data/audio
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+volumes:
+  tr-engine-db:
+  tr-engine-audio:
