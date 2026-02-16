@@ -149,6 +149,18 @@ See `openapi.yaml` for full specification. Key endpoints:
 | `GET /stats/rates` | Decode rate history |
 | `POST /query` | Ad-hoc read-only SQL queries |
 
+## Storage Estimates
+
+Observed with 2 moderately busy counties (Butler/Warren, OH) and 1 trunk-recorder instance:
+
+| Category | Estimated Annual Usage |
+|----------|----------------------|
+| Database (permanent tables) | ~22 GB/year |
+| Database (state + logs overhead) | ~3 GB steady-state |
+| Audio files (M4A) | ~140 GB/year |
+
+Partition maintenance (creation, decimation, purging) runs automatically on startup and every 24 hours.
+
 ## License
 
 Private.
