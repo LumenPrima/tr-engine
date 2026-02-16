@@ -22,28 +22,19 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 
 ## Getting Started
 
-- **[Build from source](docs/getting-started.md)** — set up trunk-recorder, MQTT, PostgreSQL, and tr-engine from scratch
 - **[Docker Compose](docs/docker.md)** — single `docker compose up` with PostgreSQL, MQTT, and tr-engine
 - **[Docker with existing MQTT](docs/docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
-- **Binary releases** — coming soon
+- **[Build from source](docs/getting-started.md)** — roll your own: compile from source, bring your own PostgreSQL and MQTT
+- **[Binary releases](docs/binary-releases.md)** — download a pre-built binary, just add PostgreSQL and MQTT
 
 ### Quick Start
 
 ```bash
-# Load the database schema
-psql -U trengine -d trengine -f schema.sql
-
-# Build
-bash build.sh
-
-# Configure
-cp sample.env .env
-# Edit .env: set DATABASE_URL and MQTT_BROKER_URL
-
-# Run
-./tr-engine
-
-# Verify
+mkdir tr-engine && cd tr-engine
+curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker-compose.yml
+curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sql
+mkdir -p docker && curl -so docker/mosquitto.conf https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker/mosquitto.conf
+docker compose up -d
 curl http://localhost:8080/api/v1/health
 ```
 

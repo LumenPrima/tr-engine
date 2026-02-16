@@ -64,10 +64,10 @@ DATABASE_URL=postgres://trengine:your_password_here@localhost:5432/trengine?sslm
 MQTT_BROKER_URL=tcp://localhost:1883
 ```
 
-Make sure `MQTT_TOPICS` matches your trunk-recorder plugin's topic prefix. If your TR config uses `"topic": "trdash/feeds"`, then:
+Make sure `MQTT_TOPICS` matches your trunk-recorder plugin's topic prefix. If your TR config uses `"topic": "trengine/feeds"`, then:
 
 ```env
-MQTT_TOPICS=trdash/#
+MQTT_TOPICS=trengine/#
 ```
 
 See `sample.env` for all available options (HTTP port, auth token, log level, audio directory, raw archival settings).

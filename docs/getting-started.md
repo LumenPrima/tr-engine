@@ -130,9 +130,8 @@ Add the plugin to your trunk-recorder `config.json`:
       "name": "MQTT Status",
       "library": "libmqtt_status_plugin.so",
       "broker": "tcp://localhost:1883",
-      "topic": "trdash/feeds",
-      "unit_topic": "trdash/units",
-      "message_topic": "trdash/messages",
+      "topic": "trengine/feeds",
+      "unit_topic": "trengine/units",
       "console_logs": true,
       "instanceId": "my-site"
     }
@@ -145,19 +144,20 @@ Add the plugin to your trunk-recorder `config.json`:
 | `broker` | Yes | MQTT broker URL (`tcp://host:1883` or `ssl://host:8883`) |
 | `topic` | Yes | Base topic for call/recorder/system events |
 | `unit_topic` | No | Topic prefix for unit events (on/off/call/join). Recommended. |
-| `message_topic` | No | Topic prefix for trunking messages. Very high volume. |
+| `message_topic` | No | Topic prefix for trunking messages. **Very high volume** — omit unless you specifically need trunking message data. |
 | `console_logs` | No | Publish TR console output over MQTT (default: false) |
 | `mqtt_audio` | No | Send audio as base64 in MQTT messages (default: false) |
 | `instanceId` | No | Identifier for this TR instance (default: `trunk-recorder`) |
 | `username` | No | MQTT broker credentials |
 | `password` | No | MQTT broker credentials |
 
+**The topic prefix is yours to choose.** The values above use `trengine/feeds` and `trengine/units`, but you can use any prefix — `myradio/feeds`, `robotastic/feeds`, etc. tr-engine routes messages based on the trailing segments (`call_start`, `on`, `message`, etc.), not the prefix. Just make sure `MQTT_TOPICS` in your tr-engine config matches with a `/#` wildcard (e.g. `MQTT_TOPICS=trengine/#`).
+
 **Topic structure produced:**
 
 With the config above, the plugin publishes to:
-- `trdash/feeds/call_start`, `trdash/feeds/call_end`, `trdash/feeds/recorders`, `trdash/feeds/rates`, etc.
-- `trdash/units/{sys_name}/on`, `trdash/units/{sys_name}/call`, `trdash/units/{sys_name}/join`, etc.
-- `trdash/messages/{sys_name}/message`
+- `{topic}/call_start`, `{topic}/call_end`, `{topic}/recorders`, `{topic}/rates`, etc.
+- `{unit_topic}/{sys_name}/on`, `{unit_topic}/{sys_name}/call`, `{unit_topic}/{sys_name}/join`, etc.
 
 ### Multiple trunk-recorder instances
 
@@ -192,7 +192,7 @@ DATABASE_URL=postgres://trengine:your_password_here@localhost:5432/trengine?sslm
 MQTT_BROKER_URL=tcp://localhost:1883
 
 # Match your TR plugin's topic prefix + wildcard
-MQTT_TOPICS=trdash/#
+MQTT_TOPICS=trengine/#
 
 # Optional
 HTTP_ADDR=:8080
@@ -200,7 +200,7 @@ LOG_LEVEL=info
 AUDIO_DIR=./audio
 ```
 
-The `MQTT_TOPICS` value should match your trunk-recorder plugin's topic prefix with a `/#` wildcard. If your plugin uses `topic: "trdash/feeds"`, `unit_topic: "trdash/units"`, and `message_topic: "trdash/messages"`, then `MQTT_TOPICS=trdash/#` covers everything.
+`MQTT_TOPICS` must match the topic prefixes from your TR plugin config. If all your TR topics share a common root (e.g. `topic: "trengine/feeds"`, `unit_topic: "trengine/units"`), a single wildcard like `trengine/#` covers everything. If they differ, comma-separate them: `MQTT_TOPICS=prefix1/#,prefix2/#`.
 
 ### Run
 

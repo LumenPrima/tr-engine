@@ -11,7 +11,7 @@ import (
 )
 
 func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
-	// Extract event type from topic: trdash/units/{sys_name}/{event_type}
+	// Extract event type from topic: {prefix}/units/{sys_name}/{event_type}
 	parts := strings.Split(topic, "/")
 	if len(parts) != 4 {
 		return fmt.Errorf("invalid unit event topic: %s", topic)

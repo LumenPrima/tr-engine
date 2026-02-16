@@ -10,75 +10,68 @@ type Route struct {
 
 // ParseTopic maps an MQTT topic string to a Route.
 //
-// Feed topics:
+// Routing is based entirely on the trailing segments of the topic — the prefix
+// is ignored. This means any topic prefix configured in the TR MQTT plugin works
+// as long as MQTT_TOPICS is set to match.
 //
-//	trdash/feeds/trunk_recorder/status  → status
-//	trdash/feeds/trunk_recorder/console → console
-//	trdash/feeds/systems                → systems
-//	trdash/feeds/system                 → system
-//	trdash/feeds/calls_active           → calls_active
-//	trdash/feeds/call_start             → call_start
-//	trdash/feeds/call_end               → call_end
-//	trdash/feeds/audio                  → audio
-//	trdash/feeds/recorders              → recorders
-//	trdash/feeds/recorder               → recorder
-//	trdash/feeds/rates                  → rates
+// Feed topics ({topic}/...):
 //
-// Trunking message topics:
+//	.../trunk_recorder/status  → status
+//	.../trunk_recorder/console → console
+//	.../systems                → systems
+//	.../system                 → system
+//	.../calls_active           → calls_active
+//	.../call_start             → call_start
+//	.../call_end               → call_end
+//	.../audio                  → audio
+//	.../recorders              → recorders
+//	.../recorder               → recorder
+//	.../rates                  → rates
+//	.../config                 → config
 //
-//	trdash/messages/{sys_name}/message → trunking_message
+// Trunking message topics ({message_topic}/...):
 //
-// Unit event topics:
+//	.../{sys_name}/message → trunking_message
 //
-//	trdash/units/{sys_name}/{event_type} → unit_event (event_type extracted from payload)
+// Unit event topics ({unit_topic}/...):
+//
+//	.../{sys_name}/{event_type} → unit_event
 func ParseTopic(topic string) *Route {
 	parts := strings.Split(topic, "/")
+	n := len(parts)
+	if n < 2 {
+		return nil
+	}
 
-	if len(parts) >= 3 && parts[0] == "trdash" {
-		switch parts[1] {
-		case "feeds":
-			feed := strings.Join(parts[2:], "/")
-			switch feed {
-			case "trunk_recorder/status":
-				return &Route{Handler: "status"}
-			case "trunk_recorder/console":
-				return &Route{Handler: "console"}
-			case "systems":
-				return &Route{Handler: "systems"}
-			case "system":
-				return &Route{Handler: "system"}
-			case "calls_active":
-				return &Route{Handler: "calls_active"}
-			case "call_start":
-				return &Route{Handler: "call_start"}
-			case "call_end":
-				return &Route{Handler: "call_end"}
-			case "audio":
-				return &Route{Handler: "audio"}
-			case "recorders":
-				return &Route{Handler: "recorders"}
-			case "recorder":
-				return &Route{Handler: "recorder"}
-			case "rates":
-				return &Route{Handler: "rates"}
-			case "config":
-				return &Route{Handler: "config"}
-			}
-		case "messages":
-			// trdash/messages/{sys_name}/message
-			if len(parts) == 4 && parts[3] == "message" {
-				return &Route{
-					Handler: "trunking_message",
-					SysName: parts[2],
-				}
-			}
-		case "units":
-			if len(parts) == 4 {
-				return &Route{
-					Handler: "unit_event",
-					SysName: parts[2],
-				}
-			}
+	last := parts[n-1]
+
+	// Two-segment matches: trunk_recorder/status, trunk_recorder/console
+	if n >= 2 && parts[n-2] == "trunk_recorder" {
+		switch last {
+		case "status":
+			return &Route{Handler: "status"}
+		case "console":
+			return &Route{Handler: "console"}
+		}
+	}
+
+	// Single-segment feed handlers
+	switch last {
+	case "systems", "system", "calls_active", "call_start", "call_end",
+		"audio", "recorders", "recorder", "rates", "config":
+		return &Route{Handler: last}
+	}
+
+	// Trunking messages: .../{sys_name}/message
+	if last == "message" && n >= 2 {
+		return &Route{Handler: "trunking_message", SysName: parts[n-2]}
+	}
+
+	// Unit events: .../{sys_name}/{event_type}
+	switch last {
+	case "on", "off", "call", "end", "join", "location", "ackresp", "data":
+		if n >= 2 {
+			return &Route{Handler: "unit_event", SysName: parts[n-2]}
 		}
 	}
 

@@ -9,37 +9,47 @@ func TestParseTopic(t *testing.T) {
 		want    *Route
 		wantNil bool
 	}{
-		// Feed handlers
-		{name: "status", topic: "trdash/feeds/trunk_recorder/status", want: &Route{Handler: "status"}},
-		{name: "console", topic: "trdash/feeds/trunk_recorder/console", want: &Route{Handler: "console"}},
-		{name: "systems", topic: "trdash/feeds/systems", want: &Route{Handler: "systems"}},
-		{name: "system", topic: "trdash/feeds/system", want: &Route{Handler: "system"}},
-		{name: "calls_active", topic: "trdash/feeds/calls_active", want: &Route{Handler: "calls_active"}},
-		{name: "call_start", topic: "trdash/feeds/call_start", want: &Route{Handler: "call_start"}},
-		{name: "call_end", topic: "trdash/feeds/call_end", want: &Route{Handler: "call_end"}},
-		{name: "audio", topic: "trdash/feeds/audio", want: &Route{Handler: "audio"}},
-		{name: "recorders", topic: "trdash/feeds/recorders", want: &Route{Handler: "recorders"}},
-		{name: "recorder", topic: "trdash/feeds/recorder", want: &Route{Handler: "recorder"}},
-		{name: "rates", topic: "trdash/feeds/rates", want: &Route{Handler: "rates"}},
-		{name: "config", topic: "trdash/feeds/config", want: &Route{Handler: "config"}},
+		// Feed handlers — any prefix works
+		{name: "status", topic: "trengine/feeds/trunk_recorder/status", want: &Route{Handler: "status"}},
+		{name: "console", topic: "trengine/feeds/trunk_recorder/console", want: &Route{Handler: "console"}},
+		{name: "systems", topic: "trengine/feeds/systems", want: &Route{Handler: "systems"}},
+		{name: "system", topic: "trengine/feeds/system", want: &Route{Handler: "system"}},
+		{name: "calls_active", topic: "trengine/feeds/calls_active", want: &Route{Handler: "calls_active"}},
+		{name: "call_start", topic: "trengine/feeds/call_start", want: &Route{Handler: "call_start"}},
+		{name: "call_end", topic: "trengine/feeds/call_end", want: &Route{Handler: "call_end"}},
+		{name: "audio", topic: "trengine/feeds/audio", want: &Route{Handler: "audio"}},
+		{name: "recorders", topic: "trengine/feeds/recorders", want: &Route{Handler: "recorders"}},
+		{name: "recorder", topic: "trengine/feeds/recorder", want: &Route{Handler: "recorder"}},
+		{name: "rates", topic: "trengine/feeds/rates", want: &Route{Handler: "rates"}},
+		{name: "config", topic: "trengine/feeds/config", want: &Route{Handler: "config"}},
 
 		// Trunking messages with SysName extraction
-		{name: "trunking_butco", topic: "trdash/messages/butco/message", want: &Route{Handler: "trunking_message", SysName: "butco"}},
-		{name: "trunking_warco", topic: "trdash/messages/warco/message", want: &Route{Handler: "trunking_message", SysName: "warco"}},
+		{name: "trunking_butco", topic: "trengine/messages/butco/message", want: &Route{Handler: "trunking_message", SysName: "butco"}},
+		{name: "trunking_warco", topic: "trengine/messages/warco/message", want: &Route{Handler: "trunking_message", SysName: "warco"}},
 
 		// Unit events with SysName extraction
-		{name: "unit_on", topic: "trdash/units/butco/on", want: &Route{Handler: "unit_event", SysName: "butco"}},
-		{name: "unit_call", topic: "trdash/units/warco/call", want: &Route{Handler: "unit_event", SysName: "warco"}},
-		{name: "unit_location", topic: "trdash/units/butco/location", want: &Route{Handler: "unit_event", SysName: "butco"}},
+		{name: "unit_on", topic: "trengine/units/butco/on", want: &Route{Handler: "unit_event", SysName: "butco"}},
+		{name: "unit_call", topic: "trengine/units/warco/call", want: &Route{Handler: "unit_event", SysName: "warco"}},
+		{name: "unit_location", topic: "trengine/units/butco/location", want: &Route{Handler: "unit_event", SysName: "butco"}},
+		{name: "unit_off", topic: "trengine/units/butco/off", want: &Route{Handler: "unit_event", SysName: "butco"}},
+		{name: "unit_end", topic: "trengine/units/butco/end", want: &Route{Handler: "unit_event", SysName: "butco"}},
+		{name: "unit_join", topic: "trengine/units/butco/join", want: &Route{Handler: "unit_event", SysName: "butco"}},
+		{name: "unit_ackresp", topic: "trengine/units/butco/ackresp", want: &Route{Handler: "unit_event", SysName: "butco"}},
+		{name: "unit_data", topic: "trengine/units/butco/data", want: &Route{Handler: "unit_event", SysName: "butco"}},
+
+		// Custom prefixes — router only cares about trailing segments
+		{name: "custom_prefix_feed", topic: "myradio/whatever/call_start", want: &Route{Handler: "call_start"}},
+		{name: "custom_prefix_units", topic: "myradio/site1/on", want: &Route{Handler: "unit_event", SysName: "site1"}},
+		{name: "custom_prefix_messages", topic: "myradio/site1/message", want: &Route{Handler: "trunking_message", SysName: "site1"}},
+		{name: "custom_prefix_console", topic: "robotastic/feeds/trunk_recorder/console", want: &Route{Handler: "console"}},
+		{name: "deep_prefix", topic: "org/dept/radio/rates", want: &Route{Handler: "rates"}},
+		{name: "no_middle_segment", topic: "flat/call_end", want: &Route{Handler: "call_end"}},
 
 		// Nil cases
 		{name: "empty_string", topic: "", wantNil: true},
-		{name: "unknown_feed", topic: "trdash/feeds/unknown_handler", wantNil: true},
-		{name: "wrong_prefix", topic: "other/feeds/call_start", wantNil: true},
-		{name: "wrong_segment1", topic: "trdash/bogus/call_start", wantNil: true},
-		{name: "too_few_parts", topic: "trdash/feeds", wantNil: true},
-		{name: "messages_wrong_suffix", topic: "trdash/messages/butco/wrong", wantNil: true},
-		{name: "units_too_many_parts", topic: "trdash/units/butco/on/extra", wantNil: true},
+		{name: "single_segment", topic: "call_start", wantNil: true},
+		{name: "unknown_suffix", topic: "trengine/feeds/unknown_handler", wantNil: true},
+		{name: "unknown_unit_event", topic: "trengine/units/butco/bogus", wantNil: true},
 	}
 
 	for _, tt := range tests {

@@ -246,16 +246,18 @@ Implementation: `EventData` struct in `eventbus.go` carries `Type`, `SubType`, `
 
 ### MQTT Topic → Handler Mapping
 
+The router (`router.go`) is prefix-agnostic — it matches on trailing segments only. Any topic prefix works as long as `MQTT_TOPICS` is set to subscribe to it. The `{topic}`, `{unit_topic}`, and `{message_topic}` below refer to the TR plugin's config fields.
+
 | MQTT Topic | Handler | SSE Event | DB Table | Volume |
 |-----------|---------|-----------|----------|--------|
-| `trdash/feeds/call_start` | `handleCallStart` | `call_start` | `calls` | Low |
-| `trdash/feeds/call_end` | `handleCallEnd` | `call_end` | `calls` | Low |
-| `trdash/units/{sys_name}/{event}` | `handleUnitEvent` | `unit_event` | `unit_events` | Medium |
-| `trdash/feeds/recorders` | `handleRecorders` | `recorder_update` | `recorder_snapshots` | Medium |
-| `trdash/feeds/rates` | `handleRates` | `rate_update` | `decode_rates` | Low |
-| `trdash/messages/{sys_name}/message` | `handleTrunkingMessage` | `trunking_message` | `trunking_messages` | Very high (batched) |
-| `trdash/feeds/trunk_recorder/console` | `handleConsoleLog` | `console` | `console_messages` | Low-medium |
-| `trdash/feeds/trunk_recorder/status` | `handleStatus` | _(none)_ | `plugin_statuses` | Very low |
+| `{topic}/call_start` | `handleCallStart` | `call_start` | `calls` | Low |
+| `{topic}/call_end` | `handleCallEnd` | `call_end` | `calls` | Low |
+| `{unit_topic}/{sys_name}/{event}` | `handleUnitEvent` | `unit_event` | `unit_events` | Medium |
+| `{topic}/recorders` | `handleRecorders` | `recorder_update` | `recorder_snapshots` | Medium |
+| `{topic}/rates` | `handleRates` | `rate_update` | `decode_rates` | Low |
+| `{message_topic}/{sys_name}/message` | `handleTrunkingMessage` | `trunking_message` | `trunking_messages` | Very high (batched) |
+| `{topic}/trunk_recorder/console` | `handleConsoleLog` | `console` | `console_messages` | Low-medium |
+| `{topic}/trunk_recorder/status` | `handleStatus` | _(none)_ | `plugin_statuses` | Very low |
 
 Trunking messages use a `Batcher` for CopyFrom batch inserts (same as raw messages and recorder snapshots). Console logs use simple single-row INSERT. The status handler caches TR instance status in-memory for the `/api/v1/health` endpoint rather than publishing SSE events.
 

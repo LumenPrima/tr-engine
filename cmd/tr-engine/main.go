@@ -120,7 +120,7 @@ func main() {
 		Live:        pipeline,
 		WebFiles:    trengine.WebFiles,
 		OpenAPISpec: trengine.OpenAPISpec,
-		Version:     version,
+		Version:     fmt.Sprintf("%s (commit=%s, built=%s)", version, commit, buildTime),
 		StartTime:   startTime,
 		Log:         httpLog,
 	})

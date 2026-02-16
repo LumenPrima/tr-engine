@@ -11,6 +11,7 @@
   .container { max-width: 480px; width: 100%; padding: 32px; }
 
   h1 { font-size: 24px; font-weight: 600; color: #e6edf3; margin-bottom: 4px; }
+  #version { font-size: 13px; font-weight: 400; color: #8b949e; }
   .subtitle { font-size: 14px; color: #8b949e; margin-bottom: 32px; }
 
   .cards { display: flex; flex-direction: column; gap: 12px; }
@@ -29,17 +30,30 @@
 <body>
 
 <div class="container">
-  <h1>tr-engine</h1>
+  <h1>tr-engine <span id="version"></span></h1>
   <p class="subtitle">trunk-recorder backend</p>
 
   <div class="cards" id="cards"></div>
 
   <div class="health">
+    <div id="build"></div>
     <a href="/api/v1/health">/api/v1/health</a>
   </div>
 </div>
 
 <script>
+fetch('/api/v1/health')
+  .then(r => r.json())
+  .then(data => {
+    if (data.version) {
+      // Extract short version (everything before the first space)
+      const parts = data.version.split(' ');
+      document.getElementById('version').textContent = parts[0];
+      document.getElementById('build').textContent = data.version;
+    }
+  })
+  .catch(() => {});
+
 fetch('/api/v1/pages')
   .then(r => r.json())
   .then(pages => {

@@ -12,15 +12,27 @@ Run tr-engine with a single command. Docker Compose handles PostgreSQL, the MQTT
 - Docker and Docker Compose
 - A running trunk-recorder instance with the [MQTT Status plugin](https://github.com/TrunkRecorder/trunk-recorder-mqtt-status)
 
-## 1. Start
+## 1. Grab the files
 
 ```bash
-git clone https://github.com/LumenPrima/tr-engine.git
-cd tr-engine
+mkdir tr-engine && cd tr-engine
+curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker-compose.yml
+curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sql
+mkdir -p docker && curl -so docker/mosquitto.conf https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker/mosquitto.conf
+```
+
+Three files — that's all you need:
+- `docker-compose.yml` — orchestrates PostgreSQL, Mosquitto, and tr-engine
+- `schema.sql` — database schema, auto-loaded on first run
+- `docker/mosquitto.conf` — minimal Mosquitto config (anonymous access on port 1883)
+
+## 2. Start
+
+```bash
 docker compose up -d
 ```
 
-That's it. On first run:
+On first run:
 - PostgreSQL starts and auto-loads `schema.sql`
 - Mosquitto starts on port **1883**
 - tr-engine connects to both and starts listening
@@ -31,7 +43,7 @@ Verify it's running:
 curl http://localhost:8080/api/v1/health
 ```
 
-## 2. Point trunk-recorder at the broker
+## 3. Point trunk-recorder at the broker
 
 In your trunk-recorder `config.json`, set the MQTT plugin's broker to your Docker host:
 
@@ -42,9 +54,8 @@ In your trunk-recorder `config.json`, set the MQTT plugin's broker to your Docke
       "name": "MQTT Status",
       "library": "libmqtt_status_plugin.so",
       "broker": "tcp://YOUR_DOCKER_HOST:1883",
-      "topic": "trdash/feeds",
-      "unit_topic": "trdash/units",
-      "message_topic": "trdash/messages",
+      "topic": "trengine/feeds",
+      "unit_topic": "trengine/units",
       "console_logs": true
     }
   ]
@@ -53,11 +64,13 @@ In your trunk-recorder `config.json`, set the MQTT plugin's broker to your Docke
 
 Replace `YOUR_DOCKER_HOST` with the IP or hostname of the machine running Docker. If trunk-recorder runs on the same machine, use `localhost`.
 
+**The topic prefix is yours to choose.** tr-engine routes messages based on the trailing segments (e.g. `call_start`, `on`, `message`), not the prefix. Use any prefix you like — `trengine`, `myradio`, `robotastic` — as long as `MQTT_TOPICS` in `docker-compose.yml` matches with a `/#` wildcard. The default compose file uses `trengine/#` which matches the example above.
+
 Once trunk-recorder connects, systems and talkgroups will auto-populate within seconds.
 
-## 3. Access
+## 4. Access
 
-- **Web UI:** http://localhost:8080/irc-radio-live.html
+- **Web UI:** http://localhost:8080
 - **API:** http://localhost:8080/api/v1/health
 - **API docs:** http://localhost:8080/docs.html
 
@@ -84,7 +97,7 @@ Override tr-engine settings by editing the `environment` section in `docker-comp
 environment:
   DATABASE_URL: postgres://trengine:trengine@postgres:5432/trengine?sslmode=disable
   MQTT_BROKER_URL: tcp://mosquitto:1883
-  MQTT_TOPICS: "trdash/#"
+  MQTT_TOPICS: "trengine/#"
   AUDIO_DIR: /data/audio
   LOG_LEVEL: debug        # add any env var from sample.env
   AUTH_TOKEN: my-secret   # enable API authentication
@@ -120,9 +133,7 @@ Run from the directory containing your `docker-compose.yml`. Changes take effect
 ## Upgrading
 
 ```bash
-cd tr-engine
-git pull
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
 
 The database volume persists — your data is safe. If a release includes schema migrations, they'll be noted in the release notes.

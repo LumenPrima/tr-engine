@@ -53,7 +53,7 @@ services:
       MQTT_BROKER_URL: tcp://192.168.1.50:1883
       MQTT_USERNAME:
       MQTT_PASSWORD:
-      MQTT_TOPICS: "trdash/#"
+      MQTT_TOPICS: "trengine/#"
       AUDIO_DIR: /data/audio
       LOG_LEVEL: info
     volumes:
@@ -72,7 +72,7 @@ services:
 | `MQTT_BROKER_URL` | Your broker's address — e.g. `tcp://192.168.1.50:1883` |
 | `MQTT_USERNAME` | Broker credentials (leave empty for anonymous) |
 | `MQTT_PASSWORD` | Broker credentials (leave empty for anonymous) |
-| `MQTT_TOPICS` | Match your TR plugin's topic prefix with `/#` (default `trdash/#`) |
+| `MQTT_TOPICS` | Must match your TR plugin's topic prefix with `/#`. If your TR plugin uses `topic: "myradio/feeds"`, set this to `myradio/#` |
 
 ### Broker on the Docker host
 

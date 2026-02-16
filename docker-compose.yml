@@ -31,7 +31,7 @@ services:
       MQTT_BROKER_URL: tcp://mosquitto:1883
       MQTT_USERNAME:
       MQTT_PASSWORD:
-      MQTT_TOPICS: "trdash/#"
+      MQTT_TOPICS: "trengine/#"
       AUDIO_DIR: /data/audio
     volumes:
       - tr-engine-audio:/data/audio

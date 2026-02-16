@@ -268,7 +268,7 @@ type TrunkingMessageData struct {
 	Meta         string `json:"meta"`
 }
 
-// TrunkingMessageMsg wraps a trunking message from trdash/messages/{sys_name}/message.
+// TrunkingMessageMsg wraps a trunking message from trengine/messages/{sys_name}/message.
 type TrunkingMessageMsg struct {
 	Envelope
 	Message TrunkingMessageData `json:"message"`
@@ -281,7 +281,7 @@ type ConsoleLogData struct {
 	LogMsg   string `json:"log_msg"`
 }
 
-// ConsoleLogMsg wraps a console log from trdash/feeds/trunk_recorder/console.
+// ConsoleLogMsg wraps a console log from trengine/feeds/trunk_recorder/console.
 type ConsoleLogMsg struct {
 	Envelope
 	Console ConsoleLogData `json:"console"`
