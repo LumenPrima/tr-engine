@@ -64,6 +64,26 @@
       text-transform: uppercase;
       color: var(--text-muted);
     }
+    #system-select {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-primary);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+    #system-select:hover, #system-select:focus {
+      border-color: rgba(0, 229, 255, 0.4);
+    }
+    #system-select option {
+      background: var(--bg-mid);
+      color: var(--text-primary);
+    }
     .header .pulse-dot {
       width: 7px; height: 7px;
       background: var(--accent-cyan);
@@ -354,6 +374,7 @@
   <div class="header">
     <div class="pulse-dot"></div>
     <h1>Signal Flow</h1>
+    <select id="system-select"></select>
     <div class="stats">
       <span>Channels <span class="stat-value" id="stat-channels">0</span></span>
       <span>Current <span class="stat-value" id="stat-total">0</span></span>
@@ -811,7 +832,7 @@ async function fetchBucketDetail(idx, tgKey, cacheKey) {
   // Fetch calls via REST API — src_list is embedded in the response.
   try {
     const params = new URLSearchParams({
-      system_id: systemId,
+      system_id: activeSystemId,
       tgid: tgKey,
       start_time: startISO,
       end_time: endISO,
@@ -957,61 +978,30 @@ function buildLegend() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// INIT — connect to real data via signal-flow-data adapter
+// INIT — fetch systems, populate dropdown, auto-start first
 // ═══════════════════════════════════════════════════════════════
 const params = new URLSearchParams(window.location.search);
-const systemId = parseInt(params.get('system'), 10);
 const apiBase = params.get('api') || '/api/v1';
+const selectEl = document.getElementById('system-select');
+let activeSystemId = null;
 
-async function showSystemPicker() {
-  document.querySelector('.controls-row').style.display = 'none';
-  document.querySelector('.graph-wrapper').style.display = 'none';
-  document.getElementById('time-markers').style.display = 'none';
-
-  const pickerEl = document.createElement('div');
-  pickerEl.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:24px;margin-top:60px;width:100%';
-  pickerEl.innerHTML = '<div style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase">Select a system</div><div id="system-list" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center"></div>';
-  document.querySelector('.container').appendChild(pickerEl);
-
-  try {
-    const resp = await fetch(apiBase + '/systems');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    const systems = data.systems || [];
-    const listEl = document.getElementById('system-list');
-
-    if (!systems.length) {
-      listEl.innerHTML = '<div style="font-size:13px;color:var(--text-dim)">No systems found. Data will appear once trunk-recorder connects.</div>';
-      return;
-    }
-
-    systems.forEach(sys => {
-      const card = document.createElement('a');
-      const siteCount = (sys.sites || []).length;
-      const siteLabel = siteCount === 1 ? '1 site' : siteCount + ' sites';
-      card.href = '?system=' + sys.system_id;
-      card.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:16px 24px;background:var(--surface);border:1px solid var(--border);border-radius:10px;cursor:pointer;text-decoration:none;transition:all 0.2s ease;min-width:180px';
-      card.innerHTML = '<div style="font-family:Outfit,sans-serif;font-size:15px;font-weight:600;color:var(--text-primary)">' + (sys.name || 'System ' + sys.system_id) + '</div>'
-        + '<div style="font-family:JetBrains Mono,monospace;font-size:10px;color:var(--text-dim);letter-spacing:0.06em">' + (sys.system_type || '').toUpperCase() + ' · ' + siteLabel + '</div>';
-      card.addEventListener('mouseenter', () => { card.style.borderColor = 'rgba(0,229,255,0.4)'; card.style.boxShadow = '0 0 16px rgba(0,229,255,0.1)'; });
-      card.addEventListener('mouseleave', () => { card.style.borderColor = 'var(--border)'; card.style.boxShadow = 'none'; });
-      listEl.appendChild(card);
-    });
-  } catch (err) {
-    document.getElementById('system-list').innerHTML = '<div style="font-size:13px;color:var(--accent-rose)">Failed to load systems: ' + err.message + '</div>';
+function startSystem(sysId) {
+  // Tear down previous
+  if (activeSystemId !== null) {
+    destroyData();
+    streamGroup.selectAll('.stream-path').remove();
+    timeSeries = [];
+    keys = [];
+    detailCache.clear();
   }
-}
 
-if (!systemId) {
-  showSystemPicker();
-} else {
+  activeSystemId = sysId;
   updateDesc();
   resize();
-  window.addEventListener('resize', resize);
 
   initData({
     apiBase,
-    systemId,
+    systemId: sysId,
     onTalkgroups: (talkgroups) => {
       setupTalkgroups(talkgroups);
     },
@@ -1025,6 +1015,50 @@ if (!systemId) {
     metricDesc.textContent = 'Connection failed: ' + err.message;
   });
 }
+
+selectEl.addEventListener('change', () => {
+  const sysId = parseInt(selectEl.value, 10);
+  if (sysId && sysId !== activeSystemId) {
+    // Update URL without reload
+    const url = new URL(window.location);
+    url.searchParams.set('system', sysId);
+    history.replaceState(null, '', url);
+    startSystem(sysId);
+  }
+});
+
+(async function boot() {
+  try {
+    const resp = await fetch(apiBase + '/systems');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const systems = data.systems || [];
+
+    if (!systems.length) {
+      selectEl.innerHTML = '<option>No systems found</option>';
+      selectEl.disabled = true;
+      return;
+    }
+
+    systems.forEach(sys => {
+      const opt = document.createElement('option');
+      opt.value = sys.system_id;
+      opt.textContent = sys.name || ('System ' + sys.system_id);
+      selectEl.appendChild(opt);
+    });
+
+    // Use ?system= param if valid, otherwise first system
+    const requested = parseInt(params.get('system'), 10);
+    const initial = systems.find(s => s.system_id === requested) ? requested : systems[0].system_id;
+    selectEl.value = initial;
+
+    window.addEventListener('resize', resize);
+    startSystem(initial);
+  } catch (err) {
+    console.error('[signal-flow] Boot failed:', err);
+    metricDesc.textContent = 'Failed to load systems: ' + err.message;
+  }
+})();
 </script>
 </body>
 </html>
