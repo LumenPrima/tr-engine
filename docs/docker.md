@@ -102,6 +102,20 @@ volumes:
 
 When a `web/` directory exists on disk, tr-engine serves from it instead of the embedded files. Changes take effect on the next browser request — no restart needed. This is useful for iterating on the UI without rebuilding the Docker image.
 
+To pull the latest web UI files from GitHub without rebuilding:
+
+**Linux/Mac:**
+```bash
+mkdir -p web && cd web && curl -s https://api.github.com/repos/LumenPrima/tr-engine/contents/web | python3 -c "import json,sys,urllib.request; [urllib.request.urlretrieve(f['download_url'],f['name']) for f in json.load(sys.stdin) if f['type']=='file']"
+```
+
+**Windows (PowerShell):**
+```powershell
+mkdir -Force web; (irm https://api.github.com/repos/LumenPrima/tr-engine/contents/web) | ? type -eq file | % { iwr $_.download_url -Out "web/$($_.name)" }
+```
+
+Run from the directory containing your `docker-compose.yml`. Changes take effect on the next browser refresh — no restart needed.
+
 ## Upgrading
 
 ```bash
