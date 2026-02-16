@@ -19,6 +19,7 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 
 - **[Build from source](docs/getting-started.md)** — set up trunk-recorder, MQTT, PostgreSQL, and tr-engine from scratch
 - **[Docker Compose](docs/docker.md)** — single `docker compose up` with PostgreSQL, MQTT, and tr-engine
+- **[Docker with existing MQTT](docs/docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
 - **Binary releases** — coming soon
 
 ### Quick Start

@@ -5,6 +5,7 @@ Download a pre-built binary and get running in minutes. You still need PostgreSQ
 > **Other installation methods:**
 > - **[Build from source](./getting-started.md)** — compile everything yourself from scratch
 > - **[Docker Compose](./docker.md)** — single `docker compose up` with everything pre-configured
+> - **[Docker with existing MQTT](./docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
 
 ## Prerequisites
 

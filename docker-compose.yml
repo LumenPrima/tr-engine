@@ -29,6 +29,8 @@ services:
     environment:
       DATABASE_URL: postgres://trengine:trengine@postgres:5432/trengine?sslmode=disable
       MQTT_BROKER_URL: tcp://mosquitto:1883
+      MQTT_USERNAME:
+      MQTT_PASSWORD:
       MQTT_TOPICS: "trdash/#"
       AUDIO_DIR: /data/audio
     volumes:

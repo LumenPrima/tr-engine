@@ -4,6 +4,7 @@ This guide walks through setting up tr-engine from scratch on bare metal: instal
 
 > **Other installation methods:**
 > - **[Docker Compose](./docker.md)** — single `docker compose up` with everything pre-configured
+> - **[Docker with existing MQTT](./docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
 > - **[Binary releases](./binary-releases.md)** — download a pre-built binary, just add PostgreSQL and MQTT
 
 ## Architecture
