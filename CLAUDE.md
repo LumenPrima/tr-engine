@@ -324,6 +324,8 @@ ssh root@tr-dashboard 'cd /data/tr-engine/v1/web && curl -s https://api.github.c
 └── v1/
     ├── docker-compose.yml     # PostgreSQL + tr-engine (no Mosquitto)
     ├── schema.sql             # v1 schema (loaded on first DB init)
+    ├── pgdata/                # PostgreSQL data (bind-mounted into container)
+    ├── audio/                 # Call audio files (bind-mounted into container)
     └── web/                   # Bind-mounted into container, overrides embedded UI
         ├── index.html
         ├── irc-radio-live.html
@@ -334,6 +336,8 @@ ssh root@tr-dashboard 'cd /data/tr-engine/v1/web && curl -s https://api.github.c
         ├── timeline.html
         └── docs.html
 ```
+
+All persistent data (pgdata, audio, web) is bind-mounted from the RAID into the containers — nothing stored on the 32GB root filesystem.
 
 ### Caddy Config
 
