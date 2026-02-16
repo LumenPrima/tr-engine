@@ -12,18 +12,18 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --bg: #0a0a12;
-  --bg-panel: #0e0e1a;
-  --bg-input: #08080f;
-  --bg-highlight: #141425;
-  --bg-hover: #12121f;
-  --border: #1a1a2e;
-  --border-light: #252540;
-  --text: #c8c8d4;
-  --text-dim: #5a5a72;
-  --text-muted: #3a3a50;
-  --text-bright: #e8e8f0;
-  --white: #f0f0f8;
+  --bg: #000000;
+  --bg-panel: #0a0a0a;
+  --bg-input: #000000;
+  --bg-highlight: #1a1a1a;
+  --bg-hover: #151515;
+  --border: #444444;
+  --border-light: #555555;
+  --text: #f0f0f0;
+  --text-dim: #bbbbbb;
+  --text-muted: #999999;
+  --text-bright: #ffffff;
+  --white: #ffffff;
   --nick-cyan: #5ce0d8;
   --nick-green: #78c06a;
   --nick-orange: #d4944a;
@@ -34,20 +34,20 @@
   --nick-teal: #4aafa0;
   --nick-pink: #d080a0;
   --nick-lime: #90c050;
-  --join: #3a7a3a;
-  --part: #6a4040;
+  --join: #55cc55;
+  --part: #cc5555;
   --action: #7a5aa0;
-  --notice: #5a6a8a;
+  --notice: #aabbdd;
   --emergency: #e03030;
   --emergency-bg: rgba(224, 48, 48, 0.08);
   --encrypted-bg: rgba(200, 160, 40, 0.06);
-  --chan-active: #e8e8f0;
-  --chan-inactive: #4a4a60;
+  --chan-active: #ffffff;
+  --chan-inactive: #bbbbbb;
   --chan-highlight: #d4944a;
   --status-connected: #4a8a4a;
   --status-disconnected: #8a4a4a;
   --status-connecting: #8a8a4a;
-  --timestamp: #3a3a52;
+  --timestamp: #888888;
 }
 
 html, body { height: 100%; overflow: hidden; }
@@ -56,7 +56,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: 'IBM Plex Mono', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.45;
   display: flex;
   flex-direction: column;
@@ -70,7 +70,7 @@ body {
   display: flex;
   align-items: center;
   padding: 0 12px;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--text-dim);
   gap: 8px;
   flex-shrink: 0;
@@ -85,8 +85,8 @@ body {
 
 /* ── Channel tree (left panel) ── */
 .channel-tree {
-  width: 200px;
-  min-width: 200px;
+  width: 240px;
+  min-width: 240px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   display: flex;
@@ -102,7 +102,7 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .tree-header-text {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -113,7 +113,7 @@ body {
   border: 1px solid var(--border-light);
   color: var(--text-dim);
   font-family: inherit;
-  font-size: 9px;
+  font-size: 12px;
   padding: 1px 6px;
   border-radius: 3px;
   cursor: pointer;
@@ -122,7 +122,7 @@ body {
 .read-all-btn:hover { color: var(--nick-cyan); border-color: var(--nick-cyan); }
 .tree-more {
   padding: 2px 12px 2px 20px;
-  font-size: 10px;
+  font-size: 13px;
   font-style: italic;
   color: var(--text-muted);
   cursor: pointer;
@@ -141,23 +141,21 @@ body {
 .tree-section { padding: 4px 0; }
 .tree-section-label {
   padding: 3px 12px;
-  font-size: 10px;
+  font-size: 13px;
   color: var(--text-muted);
   letter-spacing: 0.06em;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
+.tree-section-label .nb { white-space: nowrap; }
 .tree-section-label:hover { color: var(--text-dim); }
-.tree-section-label::before { content: '▾ '; font-size: 8px; }
+.tree-section-label::before { content: '▾ '; font-size: 11px; }
 .tree-section-label.collapsed::before { content: '▸ '; }
 
 .channel-item {
   padding: 2px 12px 2px 20px;
   cursor: pointer;
   color: var(--chan-inactive);
-  font-size: 11px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -170,7 +168,7 @@ body {
 .channel-item .chan-prefix { color: var(--text-muted); }
 .channel-item .chan-label { overflow: hidden; text-overflow: ellipsis; }
 .channel-item .unread {
-  margin-left: auto; font-size: 9px; color: var(--bg);
+  margin-left: auto; font-size: 12px; color: var(--bg);
   background: var(--chan-highlight); border-radius: 3px;
   padding: 0 4px; min-width: 14px; text-align: center; font-weight: 600;
   flex-shrink: 0;
@@ -179,7 +177,7 @@ body {
 .tree-status {
   padding: 8px 12px;
   border-top: 1px solid var(--border);
-  font-size: 10px;
+  font-size: 13px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -205,10 +203,10 @@ body {
   gap: 10px;
   flex-shrink: 0;
 }
-.channel-bar .chan-name { font-weight: 600; font-size: 13px; color: var(--white); }
-.channel-bar .chan-topic { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.channel-bar .chan-mode { font-size: 10px; color: var(--text-muted); }
-.channel-bar .chan-count { font-size: 10px; color: var(--text-dim); margin-left: auto; white-space: nowrap; }
+.channel-bar .chan-name { font-weight: 600; font-size: 16px; color: var(--white); }
+.channel-bar .chan-topic { font-size: 14px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.channel-bar .chan-mode { font-size: 13px; color: var(--text-muted); }
+.channel-bar .chan-count { font-size: 13px; color: var(--text-dim); margin-left: auto; white-space: nowrap; }
 
 /* ── Messages ── */
 .messages {
@@ -230,10 +228,10 @@ body {
   align-items: baseline;
 }
 .msg:hover { background: var(--bg-hover); }
-.msg .ts { color: var(--timestamp); font-size: 11px; min-width: 82px; flex-shrink: 0; user-select: none; }
+.msg .ts { color: var(--timestamp); font-size: 14px; min-width: 82px; flex-shrink: 0; user-select: none; }
 .date-separator {
   text-align: center;
-  font-size: 10px;
+  font-size: 13px;
   color: var(--text-muted);
   padding: 6px 14px 4px;
   position: relative;
@@ -260,7 +258,7 @@ body {
 .msg.system .nick { min-width: 0; max-width: none; padding-right: 0; }
 .msg.system .nick::before, .msg.system .nick::after { display: none; }
 .msg.system .prefix { color: var(--text-muted); margin-right: 0; }
-.msg.system .body { font-size: 12px; }
+.msg.system .body { font-size: 15px; }
 
 .msg.join .body { color: var(--join); }
 .msg.part .body, .msg.quit .body { color: var(--part); }
@@ -294,7 +292,7 @@ body {
 .typing-bar {
   min-height: 20px;
   padding: 2px 14px;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--text-muted);
   border-top: 1px solid var(--border);
   background: var(--bg);
@@ -320,7 +318,7 @@ body {
   background: none;
   border: 1px solid var(--border-light);
   color: var(--nick-cyan);
-  font-size: 11px;
+  font-size: 14px;
   width: 26px;
   height: 22px;
   border-radius: 3px;
@@ -333,19 +331,19 @@ body {
   transition: border-color 0.15s, color 0.15s;
 }
 .player-btn:hover { border-color: var(--nick-cyan); color: var(--white); }
-.player-btn.player-close { color: var(--text-dim); font-size: 10px; width: 22px; }
+.player-btn.player-close { color: var(--text-dim); font-size: 13px; width: 22px; }
 .player-btn.player-close:hover { color: var(--nick-red); border-color: var(--nick-red); }
 .player-info {
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 11px;
+  font-size: 14px;
   min-width: 0;
   flex-shrink: 0;
 }
 .player-nick { color: var(--nick-cyan); font-weight: 500; }
 .player-chan { color: var(--text-muted); }
-.player-time { color: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.player-time { color: var(--text-dim); font-size: 13px; font-variant-numeric: tabular-nums; }
 .player-progress {
   flex: 1;
   height: 4px;
@@ -365,7 +363,7 @@ body {
 .player-progress:hover .player-progress-fill { background: var(--white); }
 
 /* ── Voice message links ── */
-.voice-play { color: var(--nick-cyan); font-size: 12px; margin-right: 2px; }
+.voice-play { color: var(--nick-cyan); font-size: 15px; margin-right: 2px; }
 .voice-dur { color: var(--text); }
 .voice-listen {
   color: var(--text-dim);
@@ -390,7 +388,7 @@ body {
 .input-prompt {
   padding: 0 4px 0 14px;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: 15px;
   user-select: none;
   white-space: nowrap;
 }
@@ -401,7 +399,7 @@ body {
   outline: none;
   color: var(--text-bright);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 16px;
   padding: 8px 8px;
   caret-color: var(--nick-cyan);
 }
@@ -420,7 +418,7 @@ body {
 }
 .nicklist-header {
   padding: 8px 10px;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -429,7 +427,7 @@ body {
 }
 .nicklist-section-label {
   padding: 4px 10px 2px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -445,25 +443,25 @@ body {
 
 .nick-item {
   padding: 1px 10px;
-  font-size: 11px;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: default;
 }
 .nick-item:hover { background: var(--bg-hover); }
-.nick-item .nick-prefix { color: var(--text-muted); font-size: 10px; margin-right: 2px; }
+.nick-item .nick-prefix { color: var(--text-muted); font-size: 13px; margin-right: 2px; }
 .nick-item.op { color: var(--nick-cyan); }
 .nick-item.voice { color: var(--nick-green); }
 .nick-item.regular { color: var(--text-dim); }
 .nick-item.offline { opacity: 0.35; }
-.nick-item.talked::after { content: '●'; color: var(--nick-green); font-size: 7px; margin-left: 4px; vertical-align: middle; }
+.nick-item.talked::after { content: '●'; color: var(--nick-green); font-size: 10px; margin-left: 4px; vertical-align: middle; }
 
 /* ── Nick tooltip ── */
 .nick-tooltip {
   display: none; position: fixed; z-index: 100;
   background: #1a1a2e; border: 1px solid var(--border-light); border-radius: 4px;
-  padding: 6px 10px; font-size: 11px; line-height: 1.5;
+  padding: 6px 10px; font-size: 14px; line-height: 1.5;
   color: var(--text-dim); pointer-events: none;
   max-width: 260px; white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
@@ -471,7 +469,7 @@ body {
 .nick-tooltip .tt-nick { color: var(--nick-cyan); font-weight: 600; }
 .nick-tooltip .tt-label { color: var(--text-muted); }
 .nick-tooltip .tt-online { color: var(--nick-green); }
-.nick-tooltip .tt-offline { color: #666; }
+.nick-tooltip .tt-offline { color: #888; }
 .msg .nick { cursor: default; }
 .nick-item { cursor: default; }
 
@@ -483,7 +481,7 @@ body {
   display: flex;
   align-items: center;
   padding: 0 12px;
-  font-size: 10px;
+  font-size: 13px;
   color: var(--text-muted);
   gap: 16px;
   flex-shrink: 0;
@@ -493,6 +491,76 @@ body {
 .statusbar .status-highlight { color: var(--nick-orange); }
 .statusbar .status-ok { color: var(--status-connected); }
 .statusbar .status-err { color: var(--status-disconnected); }
+.statusbar .nerd-btn {
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  line-height: 16px;
+  margin-left: auto;
+  transition: color 0.15s, border-color 0.15s;
+}
+.statusbar .nerd-btn:hover { color: var(--nick-cyan); border-color: var(--nick-cyan); }
+html.nerd .statusbar .nerd-btn { color: var(--nick-magenta); border-color: var(--nick-magenta); }
+
+/* ── Hipster nerd cool mode — low-contrast, tiny text ── */
+html.nerd {
+  --bg: #0a0a12;
+  --bg-panel: #0e0e1a;
+  --bg-input: #08080f;
+  --bg-highlight: #141425;
+  --bg-hover: #12121f;
+  --border: #1a1a2e;
+  --border-light: #2e2e4a;
+  --text: #c8c8d4;
+  --text-dim: #7a7a96;
+  --text-muted: #555570;
+  --text-bright: #e8e8f0;
+  --white: #f0f0f8;
+  --chan-active: #e8e8f0;
+  --chan-inactive: #80809a;
+  --timestamp: #3a3a52;
+  --notice: #5a6a8a;
+  --join: #3a7a3a;
+  --part: #6a4040;
+}
+html.nerd body { font-size: 13px; }
+html.nerd .titlebar { font-size: 11px; }
+html.nerd .tree-header-text { font-size: 10px; }
+html.nerd .read-all-btn { font-size: 9px; }
+html.nerd .tree-more { font-size: 10px; }
+html.nerd .tree-section-label { font-size: 10px; }
+html.nerd .tree-section-label::before { font-size: 8px; }
+html.nerd .channel-item { font-size: 11px; }
+html.nerd .channel-item .unread { font-size: 9px; }
+html.nerd .tree-status { font-size: 10px; }
+html.nerd .channel-bar .chan-name { font-size: 13px; }
+html.nerd .channel-bar .chan-topic { font-size: 11px; }
+html.nerd .channel-bar .chan-mode { font-size: 10px; }
+html.nerd .channel-bar .chan-count { font-size: 10px; }
+html.nerd .msg .ts { font-size: 11px; }
+html.nerd .date-separator { font-size: 10px; }
+html.nerd .msg.system .body { font-size: 12px; }
+html.nerd .typing-bar { font-size: 11px; }
+html.nerd .player-btn { font-size: 11px; }
+html.nerd .player-btn.player-close { font-size: 10px; }
+html.nerd .player-info { font-size: 11px; }
+html.nerd .player-time { font-size: 10px; }
+html.nerd .voice-play { font-size: 12px; }
+html.nerd .input-prompt { font-size: 12px; }
+html.nerd .input-field { font-size: 13px; }
+html.nerd .nicklist-header { font-size: 10px; }
+html.nerd .nicklist-section-label { font-size: 9px; }
+html.nerd .nick-item { font-size: 11px; }
+html.nerd .nick-item .nick-prefix { font-size: 10px; }
+html.nerd .nick-item.talked::after { font-size: 7px; }
+html.nerd .nick-tooltip { font-size: 11px; }
+html.nerd .statusbar { font-size: 10px; }
+html.nerd .statusbar .nerd-btn { font-size: 9px; }
 </style>
 </head>
 <body>
@@ -563,6 +631,7 @@ body {
   <span>Events: <span class="status-highlight" id="status-rate">0</span>/min</span>
   <span class="sep">│</span>
   <span id="status-time"></span>
+  <button class="nerd-btn" id="nerd-btn" title="Toggle hipster nerd cool mode">nerd</button>
 </div>
 <div class="nick-tooltip" id="nick-tooltip"></div>
 
@@ -1116,6 +1185,13 @@ function clearTyping(channel) {
 // CHANNEL TREE
 // ══════════════════════════════════════════════════════════════
 
+function groupLabelHtml(name) {
+  // Split into county prefix and category; only allow line-break between them
+  const m = name.match(/^(.*?\(\d+\))\s(.+)$/);
+  if (m) return `<span class="nb">${esc(m[1])}</span> <wbr><span class="nb">${esc(m[2])}</span>`;
+  return esc(name);
+}
+
 function createChannelItem(ch) {
   const el = document.createElement('div');
   const unread = channelUnread.get(ch) || 0;
@@ -1183,17 +1259,40 @@ function renderTree() {
     label.className = 'tree-section-label';
 
     if (allInactive && !isExpanded) {
-      // All channels inactive and group not expanded — show collapsed with count
-      label.classList.add('collapsed');
-      label.textContent = `${groupName} (${chans.length})`;
-      label.addEventListener('click', () => {
-        groupCollapsed.set(groupName, true);
-        renderTree();
-      });
-      section.appendChild(label);
+      if (chans.length <= 3) {
+        // Small inactive group — show all channels directly
+        label.innerHTML = groupLabelHtml(groupName);
+        label.addEventListener('click', () => {
+          groupCollapsed.set(groupName, false);
+          renderTree();
+        });
+        section.appendChild(label);
+        for (const ch of chans) {
+          section.appendChild(createChannelItem(ch));
+        }
+      } else {
+        // Large inactive group — collapse with "N more..."
+        label.classList.add('collapsed');
+        label.innerHTML = groupLabelHtml(groupName);
+        label.addEventListener('click', () => {
+          groupCollapsed.set(groupName, true);
+          renderTree();
+        });
+        section.appendChild(label);
+
+        const more = document.createElement('div');
+        more.className = 'tree-more';
+        more.textContent = `${chans.length} more...`;
+        more.addEventListener('click', (e) => {
+          e.stopPropagation();
+          groupCollapsed.set(groupName, true);
+          renderTree();
+        });
+        section.appendChild(more);
+      }
     } else if (isExpanded) {
       // Fully expanded — show all channels
-      label.textContent = groupName;
+      label.innerHTML = groupLabelHtml(groupName);
       label.addEventListener('click', () => {
         groupCollapsed.set(groupName, false);
         renderTree();
@@ -1205,7 +1304,7 @@ function renderTree() {
       }
     } else {
       // Mixed: show active channels + "N more..." expander for inactive
-      label.textContent = groupName;
+      label.innerHTML = groupLabelHtml(groupName);
       label.addEventListener('click', () => {
         groupCollapsed.set(groupName, true);
         renderTree();
@@ -1216,7 +1315,11 @@ function renderTree() {
         section.appendChild(createChannelItem(ch));
       }
 
-      if (inactiveChans.length > 0) {
+      if (inactiveChans.length > 0 && inactiveChans.length <= 3) {
+        for (const ch of inactiveChans) {
+          section.appendChild(createChannelItem(ch));
+        }
+      } else if (inactiveChans.length > 3) {
         const more = document.createElement('div');
         more.className = 'tree-more';
         more.textContent = `${inactiveChans.length} more...`;
@@ -2199,6 +2302,14 @@ function handleCommand(cmd) {
       break;
     }
 
+    case '/nerd': {
+      const enabled = document.documentElement.classList.toggle('nerd');
+      localStorage.setItem('nerd_mode', enabled ? '1' : '0');
+      addMsg(activeChannel, { ts: ts(), kind: 'notice',
+        text: `Hipster nerd cool mode ${enabled ? 'enabled ✨' : 'disabled'}` });
+      break;
+    }
+
     case '/help':
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '— Commands —' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /j, /join #channel  — Switch to channel (fuzzy match)' });
@@ -2213,6 +2324,7 @@ function handleCommand(cmd) {
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /reconnect          — Reconnect SSE stream' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /clear              — Clear scrollback' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /api                — Show API base URL' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /nerd               — Toggle hipster nerd cool mode (small text, low contrast)' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '— End of /help —' });
       break;
 
@@ -2386,6 +2498,15 @@ function markAllRead() {
 }
 
 document.getElementById('read-all-btn').addEventListener('click', markAllRead);
+
+// ── Nerd mode: restore from localStorage ──
+if (localStorage.getItem('nerd_mode') === '1') {
+  document.documentElement.classList.add('nerd');
+}
+document.getElementById('nerd-btn').addEventListener('click', () => {
+  const enabled = document.documentElement.classList.toggle('nerd');
+  localStorage.setItem('nerd_mode', enabled ? '1' : '0');
+});
 
 
 // ══════════════════════════════════════════════════════════════
