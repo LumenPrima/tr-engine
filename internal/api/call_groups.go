@@ -17,7 +17,11 @@ func NewCallGroupsHandler(db *database.DB) *CallGroupsHandler {
 
 // ListCallGroups returns deduplicated call groups.
 func (h *CallGroupsHandler) ListCallGroups(w http.ResponseWriter, r *http.Request) {
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	filter := database.CallGroupFilter{
 		Limit:  p.Limit,

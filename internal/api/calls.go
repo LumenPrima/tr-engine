@@ -31,7 +31,11 @@ var callSortFields = map[string]string{
 
 // ListCalls returns calls with comprehensive filters.
 func (h *CallsHandler) ListCalls(w http.ResponseWriter, r *http.Request) {
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	sort := ParseSort(r, "-start_time", callSortFields)
 
 	filter := database.CallFilter{

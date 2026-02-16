@@ -29,13 +29,9 @@ func (h *AffiliationsHandler) ListAffiliations(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Require system_id or sysid
+	// Optional system filters
 	systemID, hasSystemID := QueryInt(r, "system_id")
 	sysid, hasSysid := QueryString(r, "sysid")
-	if !hasSystemID && !hasSysid {
-		WriteError(w, http.StatusBadRequest, "system_id or sysid is required")
-		return
-	}
 
 	all := h.live.UnitAffiliations()
 
@@ -98,7 +94,11 @@ func (h *AffiliationsHandler) ListAffiliations(w http.ResponseWriter, r *http.Re
 	total := len(filtered)
 
 	// Apply pagination
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	start := p.Offset
 	if start > len(filtered) {
 		start = len(filtered)

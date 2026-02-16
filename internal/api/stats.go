@@ -48,7 +48,11 @@ func (h *StatsHandler) GetDecodeRates(w http.ResponseWriter, r *http.Request) {
 
 // ListTrunkingMessages returns paginated trunking messages.
 func (h *StatsHandler) ListTrunkingMessages(w http.ResponseWriter, r *http.Request) {
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	filter := database.TrunkingMessageFilter{
 		Limit:  p.Limit,
 		Offset: p.Offset,
@@ -82,7 +86,11 @@ func (h *StatsHandler) ListTrunkingMessages(w http.ResponseWriter, r *http.Reque
 
 // ListConsoleMessages returns paginated console log messages.
 func (h *StatsHandler) ListConsoleMessages(w http.ResponseWriter, r *http.Request) {
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	filter := database.ConsoleMessageFilter{
 		Limit:  p.Limit,
 		Offset: p.Offset,

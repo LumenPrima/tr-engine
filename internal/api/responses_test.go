@@ -15,31 +15,64 @@ import (
 // ── ParsePagination ──────────────────────────────────────────────────
 
 func TestParsePagination(t *testing.T) {
-	tests := []struct {
-		name       string
-		query      string
-		wantLimit  int
-		wantOffset int
-	}{
-		{"defaults", "", 50, 0},
-		{"valid_custom", "limit=25&offset=10", 25, 10},
-		{"limit_over_1000_clamps", "limit=2000", 50, 0},
-		{"limit_zero_clamps", "limit=0", 50, 0},
-		{"negative_offset_clamps", "offset=-5", 50, 0},
-		{"non_numeric_ignored", "limit=abc&offset=xyz", 50, 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/?"+tt.query, nil)
-			p := ParsePagination(req)
-			if p.Limit != tt.wantLimit {
-				t.Errorf("Limit = %d, want %d", p.Limit, tt.wantLimit)
-			}
-			if p.Offset != tt.wantOffset {
-				t.Errorf("Offset = %d, want %d", p.Offset, tt.wantOffset)
-			}
-		})
-	}
+	t.Run("defaults", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/", nil)
+		p, err := ParsePagination(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p.Limit != 50 || p.Offset != 0 {
+			t.Errorf("got (%d, %d), want (50, 0)", p.Limit, p.Offset)
+		}
+	})
+	t.Run("valid_custom", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?limit=25&offset=10", nil)
+		p, err := ParsePagination(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p.Limit != 25 || p.Offset != 10 {
+			t.Errorf("got (%d, %d), want (25, 10)", p.Limit, p.Offset)
+		}
+	})
+	t.Run("large_limit_allowed", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?limit=5000", nil)
+		p, err := ParsePagination(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p.Limit != 5000 {
+			t.Errorf("Limit = %d, want 5000", p.Limit)
+		}
+	})
+	t.Run("limit_zero_errors", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?limit=0", nil)
+		_, err := ParsePagination(req)
+		if err == nil {
+			t.Error("expected error for limit=0")
+		}
+	})
+	t.Run("negative_offset_errors", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?offset=-5", nil)
+		_, err := ParsePagination(req)
+		if err == nil {
+			t.Error("expected error for offset=-5")
+		}
+	})
+	t.Run("non_numeric_limit_errors", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?limit=abc", nil)
+		_, err := ParsePagination(req)
+		if err == nil {
+			t.Error("expected error for limit=abc")
+		}
+	})
+	t.Run("non_numeric_offset_errors", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?offset=xyz", nil)
+		_, err := ParsePagination(req)
+		if err == nil {
+			t.Error("expected error for offset=xyz")
+		}
+	})
 }
 
 // ── ParseSort ────────────────────────────────────────────────────────

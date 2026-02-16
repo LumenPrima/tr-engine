@@ -41,19 +41,30 @@ type Pagination struct {
 }
 
 // ParsePagination extracts limit and offset from query params with defaults.
-func ParsePagination(r *http.Request) Pagination {
+// Returns an error if values are present but invalid.
+func ParsePagination(r *http.Request) (Pagination, error) {
 	p := Pagination{Limit: 50, Offset: 0}
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 1000 {
-			p.Limit = n
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return p, fmt.Errorf("invalid limit %q: must be an integer", v)
 		}
+		if n < 1 {
+			return p, fmt.Errorf("invalid limit %d: must be >= 1", n)
+		}
+		p.Limit = n
 	}
 	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			p.Offset = n
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return p, fmt.Errorf("invalid offset %q: must be an integer", v)
 		}
+		if n < 0 {
+			return p, fmt.Errorf("invalid offset %d: must be >= 0", n)
+		}
+		p.Offset = n
 	}
-	return p
+	return p, nil
 }
 
 // SortParam holds a parsed sort parameter.

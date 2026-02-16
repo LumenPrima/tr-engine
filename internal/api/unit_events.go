@@ -34,7 +34,11 @@ func (h *UnitEventsHandler) ListUnitEventsGlobal(w http.ResponseWriter, r *http.
 		return
 	}
 
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	sort := ParseSort(r, "-time", unitEventSortFields)
 
 	filter := database.GlobalUnitEventFilter{

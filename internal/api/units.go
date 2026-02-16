@@ -24,7 +24,11 @@ var unitSortFields = map[string]string{
 
 // ListUnits returns radio units with optional filters.
 func (h *UnitsHandler) ListUnits(w http.ResponseWriter, r *http.Request) {
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	sort := ParseSort(r, "unit_id", unitSortFields)
 
 	filter := database.UnitFilter{
@@ -153,7 +157,11 @@ func (h *UnitsHandler) ListUnitCalls(w http.ResponseWriter, r *http.Request) {
 		cid.SystemID = matches[0].SystemID
 	}
 
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	filter := database.CallFilter{
 		Limit:    p.Limit,
 		Offset:   p.Offset,
@@ -201,7 +209,11 @@ func (h *UnitsHandler) ListUnitEvents(w http.ResponseWriter, r *http.Request) {
 		cid.SystemID = matches[0].SystemID
 	}
 
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	filter := database.UnitEventFilter{
 		SystemID: cid.SystemID,
 		UnitID:   cid.EntityID,

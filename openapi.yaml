@@ -688,12 +688,12 @@ paths:
       parameters:
         - name: system_id
           in: query
-          description: Filter by internal system ID (required if sysid not provided)
+          description: Filter by internal system ID
           schema:
             type: integer
         - name: sysid
           in: query
-          description: Filter by P25 sysid hex (required if system_id not provided)
+          description: Filter by P25 sysid hex
           schema:
             type: string
         - name: unit_id
@@ -760,12 +760,12 @@ paths:
       parameters:
         - name: system_id
           in: query
-          description: Filter by internal system ID (required if sysid not provided)
+          description: Filter by internal system ID
           schema:
             type: integer
         - name: sysid
           in: query
-          description: Filter by P25 sysid hex (required if system_id not provided)
+          description: Filter by P25 sysid hex
           schema:
             type: string
         - name: tgid

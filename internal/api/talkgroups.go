@@ -27,7 +27,11 @@ var talkgroupSortFields = map[string]string{
 
 // ListTalkgroups returns talkgroups with embedded stats.
 func (h *TalkgroupsHandler) ListTalkgroups(w http.ResponseWriter, r *http.Request) {
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	sort := ParseSort(r, "alpha_tag", talkgroupSortFields)
 
 	filter := database.TalkgroupFilter{
@@ -159,7 +163,11 @@ func (h *TalkgroupsHandler) ListTalkgroupCalls(w http.ResponseWriter, r *http.Re
 		cid.SystemID = matches[0].SystemID
 	}
 
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	filter := database.CallFilter{
 		Limit:    p.Limit,
 		Offset:   p.Offset,
@@ -207,7 +215,11 @@ func (h *TalkgroupsHandler) ListTalkgroupUnits(w http.ResponseWriter, r *http.Re
 		cid.SystemID = matches[0].SystemID
 	}
 
-	p := ParsePagination(r)
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	window := 60
 	if v, ok := QueryInt(r, "window"); ok && v >= 1 && v <= 1440 {
 		window = v
