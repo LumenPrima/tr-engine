@@ -50,57 +50,80 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 	}
 
 	freq := int64(call.Freq)
-	duration := float32(call.Length)
-	callNum := call.CallNum
 	callState := int16(call.CallState)
 	monState := int16(call.MonState)
 	recState := int16(call.RecState)
-	recNum := int16(call.RecNum)
-	srcNum := int16(call.SrcNum)
-	tdmaSlot := int16(call.TDMASlot)
 	siteID := identity.SiteID
 
-	row := &database.CallRow{
-		SystemID:      identity.SystemID,
-		SiteID:        &siteID,
-		Tgid:          call.Talkgroup,
-		TrCallID:      call.ID,
-		CallNum:       &callNum,
-		StartTime:     startTime,
-		Duration:      &duration,
-		Freq:          &freq,
-		AudioType:     call.AudioType,
-		Phase2TDMA:    call.Phase2TDMA,
-		TDMASlot:      &tdmaSlot,
-		Analog:        call.Analog,
-		Conventional:  call.Conventional,
-		Encrypted:     call.Encrypted,
-		Emergency:     call.Emergency,
-		CallState:     &callState,
-		CallStateType: call.CallStateType,
-		MonState:      &monState,
-		MonStateType:  call.MonStateType,
-		RecState:      &recState,
-		RecStateType:  call.RecStateType,
-		RecNum:        &recNum,
-		SrcNum:        &srcNum,
-		SystemName:    call.SysName,
-		SiteShortName: call.SysName,
-		TgAlphaTag:    call.TalkgroupAlphaTag,
-		TgDescription: call.TalkgroupDescription,
-		TgTag:         call.TalkgroupTag,
-		TgGroup:       call.TalkgroupGroup,
-		InstanceID:    msg.InstanceID,
-	}
+	// Check if the audio handler already created this call (audio can arrive before call_start).
+	// If so, enrich the existing record instead of creating a duplicate.
+	var callID int64
+	existingID, existingST, findErr := p.db.FindCallForAudio(ctx, identity.SystemID, call.Talkgroup, startTime)
+	if findErr == nil {
+		callID = existingID
+		startTime = existingST
+		if err := p.db.UpdateCallStartFields(ctx, callID, startTime,
+			call.ID, call.CallNum, msg.InstanceID,
+			callState, call.CallStateType,
+			monState, call.MonStateType,
+			recState, call.RecStateType,
+		); err != nil {
+			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update audio-created call with call_start fields")
+		}
+		p.log.Debug().
+			Str("tr_call_id", call.ID).
+			Int64("call_id", callID).
+			Msg("call_start matched audio-created call")
+	} else {
+		duration := float32(call.Length)
+		callNum := call.CallNum
+		recNum := int16(call.RecNum)
+		srcNum := int16(call.SrcNum)
+		tdmaSlot := int16(call.TDMASlot)
 
-	if call.StopTime > 0 {
-		st := time.Unix(call.StopTime, 0)
-		row.StopTime = &st
-	}
+		row := &database.CallRow{
+			SystemID:      identity.SystemID,
+			SiteID:        &siteID,
+			Tgid:          call.Talkgroup,
+			TrCallID:      call.ID,
+			CallNum:       &callNum,
+			StartTime:     startTime,
+			Duration:      &duration,
+			Freq:          &freq,
+			AudioType:     call.AudioType,
+			Phase2TDMA:    call.Phase2TDMA,
+			TDMASlot:      &tdmaSlot,
+			Analog:        call.Analog,
+			Conventional:  call.Conventional,
+			Encrypted:     call.Encrypted,
+			Emergency:     call.Emergency,
+			CallState:     &callState,
+			CallStateType: call.CallStateType,
+			MonState:      &monState,
+			MonStateType:  call.MonStateType,
+			RecState:      &recState,
+			RecStateType:  call.RecStateType,
+			RecNum:        &recNum,
+			SrcNum:        &srcNum,
+			SystemName:    call.SysName,
+			SiteShortName: call.SysName,
+			TgAlphaTag:    call.TalkgroupAlphaTag,
+			TgDescription: call.TalkgroupDescription,
+			TgTag:         call.TalkgroupTag,
+			TgGroup:       call.TalkgroupGroup,
+			InstanceID:    msg.InstanceID,
+		}
 
-	callID, err := p.db.InsertCall(ctx, row)
-	if err != nil {
-		return fmt.Errorf("insert call: %w", err)
+		if call.StopTime > 0 {
+			st := time.Unix(call.StopTime, 0)
+			row.StopTime = &st
+		}
+
+		var insertErr error
+		callID, insertErr = p.db.InsertCall(ctx, row)
+		if insertErr != nil {
+			return fmt.Errorf("insert call: %w", insertErr)
+		}
 	}
 
 	p.activeCalls.Set(call.ID, activeCallEntry{

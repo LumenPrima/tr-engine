@@ -1742,16 +1742,33 @@ function playCall(callId, nick, channel, msgEl) {
   playerBar.classList.add('active');
   playerPlayBtn.textContent = '⏳';
 
-  // Load audio
-  audioEl.src = `${API_BASE}/calls/${callId}/audio`;
-  audioEl.load();
-  audioEl.play().then(() => {
-    playerPlayBtn.textContent = '⏸';
-    updatePlayerProgress();
-  }).catch(err => {
+  // Load audio — check availability first
+  const audioUrl = `${API_BASE}/calls/${callId}/audio`;
+  fetch(audioUrl, { method: 'HEAD' }).then(resp => {
+    if (!resp.ok) {
+      playerPlayBtn.textContent = '▶';
+      playerTimeEl.textContent = 'no audio';
+      setTimeout(() => {
+        if (currentCallId === callId) {
+          playerBar.classList.remove('active');
+          currentCallId = null;
+        }
+      }, 2000);
+      return;
+    }
+    audioEl.src = audioUrl;
+    audioEl.load();
+    audioEl.play().then(() => {
+      playerPlayBtn.textContent = '⏸';
+      updatePlayerProgress();
+    }).catch(err => {
+      playerPlayBtn.textContent = '▶';
+      playerTimeEl.textContent = 'error';
+      console.error('Playback error:', err);
+    });
+  }).catch(() => {
     playerPlayBtn.textContent = '▶';
-    playerTimeEl.textContent = 'error';
-    console.error('Playback error:', err);
+    playerTimeEl.textContent = 'no audio';
   });
 }
 

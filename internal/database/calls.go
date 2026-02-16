@@ -149,6 +149,36 @@ func (db *DB) UpdateCallElapsed(ctx context.Context, callID int64, startTime tim
 	return err
 }
 
+// UpdateCallStartFields enriches an audio-created call with fields from call_start.
+// This prevents duplicate calls when audio MQTT messages arrive before call_start.
+func (db *DB) UpdateCallStartFields(ctx context.Context, callID int64, startTime time.Time,
+	trCallID string, callNum int, instanceID string,
+	callState int16, callStateType string,
+	monState int16, monStateType string,
+	recState int16, recStateType string,
+) error {
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE calls SET
+			tr_call_id = $3,
+			call_num = $4,
+			instance_id = $5,
+			call_state = $6,
+			call_state_type = $7,
+			mon_state = $8,
+			mon_state_type = $9,
+			rec_state = $10,
+			rec_state_type = $11
+		WHERE call_id = $1 AND start_time = $2
+	`,
+		callID, startTime,
+		trCallID, callNum, instanceID,
+		callState, callStateType,
+		monState, monStateType,
+		recState, recStateType,
+	)
+	return err
+}
+
 // UpdateCallAudio updates a call with audio file path and size.
 func (db *DB) UpdateCallAudio(ctx context.Context, callID int64, startTime time.Time, audioPath string, audioSize int) error {
 	_, err := db.Pool.Exec(ctx, `
@@ -334,8 +364,8 @@ func (db *DB) FindCallForAudio(ctx context.Context, systemID, tgid int, startTim
 	err := db.Pool.QueryRow(ctx, `
 		SELECT call_id, start_time FROM calls
 		WHERE system_id = $1 AND tgid = $2
-			AND start_time BETWEEN $3 - interval '5 seconds' AND $3 + interval '5 seconds'
-		ORDER BY ABS(EXTRACT(EPOCH FROM (start_time - $3)))
+			AND start_time BETWEEN $3::timestamptz - interval '5 seconds' AND $3::timestamptz + interval '5 seconds'
+		ORDER BY ABS(EXTRACT(EPOCH FROM (start_time - $3::timestamptz)))
 		LIMIT 1
 	`, systemID, tgid, startTime).Scan(&callID, &st)
 	return callID, st, err
