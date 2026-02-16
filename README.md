@@ -4,7 +4,7 @@ Backend service that ingests MQTT messages from [trunk-recorder](https://github.
 
 Zero configuration for radio systems — tr-engine discovers systems, sites, talkgroups, and units automatically from the MQTT feed. Point it at a broker, give it a database, and it figures out the rest.
 
-> **Note:** This is a complete rewrite (Go) of the original Node.js prototype, now archived at [LumenPrima/tr-engine-v0](https://github.com/LumenPrima/tr-engine-v0). The database schema is not compatible — there is no migration path from v0. If you're starting fresh, you're in the right place.
+> **Note:** This is a ground-up rewrite of the original tr-engine, now archived at [LumenPrima/tr-engine-v0](https://github.com/LumenPrima/tr-engine-v0). The database schema is not compatible — there is no migration path from v0. If you're starting fresh, you're in the right place.
 
 ## Tech Stack
 
