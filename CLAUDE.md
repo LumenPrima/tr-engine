@@ -251,6 +251,102 @@ Implementation: `EventData` struct in `eventbus.go` carries `Type`, `SubType`, `
 
 Trunking messages use a `Batcher` for CopyFrom batch inserts (same as raw messages and recorder snapshots). Console logs use simple single-row INSERT. The status handler caches TR instance status in-memory for the `/api/v1/health` endpoint rather than publishing SSE events.
 
+## Deployed Instance
+
+A live v1 instance runs on `tr-dashboard` alongside the existing v0.
+
+### Access
+
+| Service | URL | Port |
+|---------|-----|------|
+| v1 (this repo) | `https://tr-engine.luxprimatech.com` | 8000 on host |
+| v0 (legacy) | `https://tr-dashboard.luxprimatech.com` | 8080 on host |
+| v0 API direct | `https://tr-api.luxprimatech.com` | 8080 on host |
+
+### Architecture on tr-dashboard
+
+- **v0** runs natively at `/data/tr-engine` with embedded PostgreSQL and embedded MQTT broker (port 1883)
+- **v1** runs via Docker Compose at `/data/tr-engine/v1` with its own PostgreSQL container
+- v1 connects to v0's embedded MQTT broker via `host.docker.internal:1883` — both ingest the same feed
+- **Caddy** reverse proxies all three domains, with Cloudflare in front (SSL: Full at domain level)
+- MQTT credentials: `trunk-recorder` / `yJw4eWqiPvqYoSUcFGBP`
+
+### SSH
+
+```bash
+ssh root@tr-dashboard
+```
+
+### Docker Compose (v1)
+
+```bash
+# Location
+cd /data/tr-engine/v1
+
+# Status
+docker compose ps
+docker compose logs tr-engine --tail 20
+
+# Restart
+docker compose up -d
+
+# Upgrade to new image
+docker compose pull && docker compose up -d
+```
+
+### Updating Web Files (No Rebuild)
+
+Web files are embedded in the Go binary via `go:embed`, but the Docker deployment bind-mounts `./web:/opt/tr-engine/web` which overrides the embedded files. When a `web/` directory exists on disk, tr-engine serves from it instead — changes take effect on the next browser request with no restart.
+
+**Push local changes to deployed instance:**
+```bash
+scp web/*.html web/*.js root@tr-dashboard:/data/tr-engine/v1/web/
+```
+
+**Push a single file:**
+```bash
+scp web/stream-graph.html root@tr-dashboard:/data/tr-engine/v1/web/
+```
+
+**Pull latest from GitHub on the server:**
+```bash
+ssh root@tr-dashboard 'cd /data/tr-engine/v1/web && curl -s https://api.github.com/repos/LumenPrima/tr-engine/contents/web | python3 -c "import json,sys,urllib.request; [urllib.request.urlretrieve(f[\"download_url\"],f[\"name\"]) for f in json.load(sys.stdin) if f[\"type\"]==\"file\"]"'
+```
+
+### File Layout on tr-dashboard
+
+```
+/data/tr-engine/              # 3.6TB RAID mount
+├── config.yaml               # v0 config
+├── postgres/                  # v0 embedded PostgreSQL data
+├── audio/                     # v0 audio files
+├── mqtt/                      # v0 embedded Mosquitto data
+└── v1/
+    ├── docker-compose.yml     # PostgreSQL + tr-engine (no Mosquitto)
+    ├── schema.sql             # v1 schema (loaded on first DB init)
+    └── web/                   # Bind-mounted into container, overrides embedded UI
+        ├── index.html
+        ├── irc-radio-live.html
+        ├── stream-graph.html
+        ├── signal-flow-data.js
+        ├── units.html
+        ├── events.html
+        ├── timeline.html
+        └── docs.html
+```
+
+### Caddy Config
+
+Located at `/etc/caddy/Caddyfile`. To add/modify:
+
+```bash
+ssh root@tr-dashboard "vi /etc/caddy/Caddyfile"
+# After editing:
+ssh root@tr-dashboard "caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy"
+```
+
+DNS is managed via Cloudflare (proxied). SSL mode is set globally to Full — no per-domain page rules needed.
+
 ## Known trunk-recorder Issues (Potential Upstream Bug Reports)
 
 ### unit_event:end lags call_end by 3-4 seconds
