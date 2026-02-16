@@ -255,6 +255,34 @@ func (p *Pipeline) runMaintenance() {
 		log.Info().Str("partition", name).Msg("dropped old weekly partition")
 	}
 
+	// 6. Purge stale RECORDING calls (call_start with no call_end or audio after 1 hour)
+	stalePurged, err := p.db.PurgeStaleCalls(ctx, 1*time.Hour)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to purge stale calls")
+	} else if stalePurged > 0 {
+		log.Info().Int64("deleted", stalePurged).Msg("purged stale RECORDING calls")
+	}
+
+	// 7. Clean up orphaned call_groups (no calls reference them)
+	orphansPurged, err := p.db.PurgeOrphanCallGroups(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to purge orphan call_groups")
+	} else if orphansPurged > 0 {
+		log.Info().Int64("deleted", orphansPurged).Msg("purged orphan call_groups")
+	}
+
+	// 8. Expire stale entries from in-memory active calls map (calls older than 1 hour)
+	staleMapEntries := 0
+	for trCallID, entry := range p.activeCalls.All() {
+		if time.Since(entry.StartTime) > 1*time.Hour {
+			p.activeCalls.Delete(trCallID)
+			staleMapEntries++
+		}
+	}
+	if staleMapEntries > 0 {
+		log.Info().Int("expired", staleMapEntries).Msg("expired stale active calls from memory")
+	}
+
 	log.Info().Dur("elapsed_ms", time.Since(start)).Msg("partition maintenance complete")
 }
 

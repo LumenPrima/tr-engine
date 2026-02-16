@@ -283,6 +283,35 @@ func (db *DB) InsertActiveCallCheckpoint(ctx context.Context, instanceID string,
 	return err
 }
 
+// PurgeStaleCalls deletes RECORDING calls older than maxAge that never received
+// audio or a call_end. These are orphaned call_start records. Returns the number deleted.
+func (db *DB) PurgeStaleCalls(ctx context.Context, maxAge time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-maxAge)
+	tag, err := db.Pool.Exec(ctx, `
+		DELETE FROM calls
+		WHERE rec_state_type = 'RECORDING'
+			AND audio_file_path IS NULL
+			AND (stop_time IS NULL OR duration IS NULL OR duration = 0)
+			AND start_time < $1
+	`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// PurgeOrphanCallGroups deletes call_groups with no remaining calls. Returns count deleted.
+func (db *DB) PurgeOrphanCallGroups(ctx context.Context) (int64, error) {
+	tag, err := db.Pool.Exec(ctx, `
+		DELETE FROM call_groups cg
+		WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.call_group_id = cg.id)
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // FindCallByTrCallID finds a call by its trunk-recorder call ID.
 func (db *DB) FindCallByTrCallID(ctx context.Context, trCallID string) (int64, time.Time, error) {
 	var callID int64
