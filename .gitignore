@@ -17,3 +17,20 @@
 
 # Environment
 .env
+
+# Runtime data
+audio/
+
+# Claude Code
+.claude/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Dev scratch files
+mqtt-samples.txt
+*.png
+
+# Dev utilities
+cmd/mqtt-dump/
+cmd/dbcheck/

@@ -1,0 +1,1847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tr-engine IRC</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Iosevka:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0a0a12;
+  --bg-panel: #0e0e1a;
+  --bg-input: #08080f;
+  --bg-highlight: #141425;
+  --bg-hover: #12121f;
+  --border: #1a1a2e;
+  --border-light: #252540;
+  --text: #c8c8d4;
+  --text-dim: #5a5a72;
+  --text-muted: #3a3a50;
+  --text-bright: #e8e8f0;
+  --white: #f0f0f8;
+  --nick-cyan: #5ce0d8;
+  --nick-green: #78c06a;
+  --nick-orange: #d4944a;
+  --nick-magenta: #c06abc;
+  --nick-yellow: #c4b44e;
+  --nick-blue: #5a9ec0;
+  --nick-red: #c65454;
+  --nick-teal: #4aafa0;
+  --nick-pink: #d080a0;
+  --nick-lime: #90c050;
+  --join: #3a7a3a;
+  --part: #6a4040;
+  --action: #7a5aa0;
+  --notice: #5a6a8a;
+  --emergency: #e03030;
+  --emergency-bg: rgba(224, 48, 48, 0.08);
+  --encrypted-bg: rgba(200, 160, 40, 0.06);
+  --chan-active: #e8e8f0;
+  --chan-inactive: #4a4a60;
+  --chan-highlight: #d4944a;
+  --status-connected: #4a8a4a;
+  --status-disconnected: #8a4a4a;
+  --status-connecting: #8a8a4a;
+  --timestamp: #3a3a52;
+}
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Top bar ── */
+.titlebar {
+  height: 28px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  gap: 8px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.titlebar .server { color: var(--nick-cyan); font-weight: 500; }
+.titlebar .topic { color: var(--text-muted); margin-left: 8px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar .lag { color: var(--status-connecting); margin-left: auto; }
+
+/* ── Main layout ── */
+.main { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Channel tree (left panel) ── */
+.channel-tree {
+  width: 200px;
+  min-width: 200px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+.tree-header {
+  padding: 10px 12px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.tree-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.tree-scroll::-webkit-scrollbar { width: 6px; }
+.tree-scroll::-webkit-scrollbar-track { background: transparent; }
+.tree-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.tree-section { padding: 4px 0; }
+.tree-section-label {
+  padding: 3px 12px;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-section-label:hover { color: var(--text-dim); }
+.tree-section-label::before { content: '▾ '; font-size: 8px; }
+.tree-section-label.collapsed::before { content: '▸ '; }
+
+.channel-item {
+  padding: 2px 12px 2px 20px;
+  cursor: pointer;
+  color: var(--chan-inactive);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.channel-item:hover { background: var(--bg-hover); color: var(--text); }
+.channel-item.active { color: var(--chan-active); background: var(--bg-highlight); font-weight: 500; }
+.channel-item.has-activity { color: var(--chan-highlight); }
+.channel-item .chan-prefix { color: var(--text-muted); }
+.channel-item .chan-label { overflow: hidden; text-overflow: ellipsis; }
+.channel-item .unread {
+  margin-left: auto; font-size: 9px; color: var(--bg);
+  background: var(--chan-highlight); border-radius: 3px;
+  padding: 0 4px; min-width: 14px; text-align: center; font-weight: 600;
+  flex-shrink: 0;
+}
+
+.tree-status {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.tree-status .dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; margin-right: 4px; vertical-align: middle;
+}
+.tree-status .dot.connected { background: var(--status-connected); }
+.tree-status .dot.disconnected { background: var(--status-disconnected); }
+.tree-status .dot.connecting { background: var(--status-connecting); animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+
+/* ── Chat area ── */
+.chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+.channel-bar {
+  height: 32px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.channel-bar .chan-name { font-weight: 600; font-size: 13px; color: var(--white); }
+.channel-bar .chan-topic { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.channel-bar .chan-mode { font-size: 10px; color: var(--text-muted); }
+.channel-bar .chan-count { font-size: 10px; color: var(--text-dim); margin-left: auto; white-space: nowrap; }
+
+/* ── Messages ── */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+.messages::-webkit-scrollbar { width: 8px; }
+.messages::-webkit-scrollbar-track { background: transparent; }
+.messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.messages::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+.msg {
+  padding: 1px 14px;
+  display: flex;
+  gap: 0;
+  min-height: 19px;
+  align-items: baseline;
+}
+.msg:hover { background: var(--bg-hover); }
+.msg .ts { color: var(--timestamp); font-size: 11px; min-width: 58px; flex-shrink: 0; user-select: none; }
+.msg .nick {
+  font-weight: 500; min-width: 130px; max-width: 130px; text-align: right;
+  padding-right: 8px; flex-shrink: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.msg .nick::before { content: '<'; color: var(--text-muted); }
+.msg .nick::after { content: '>'; color: var(--text-muted); }
+.msg .body { flex: 1; word-break: break-word; min-width: 0; }
+
+.msg.system .nick { min-width: 0; max-width: none; padding-right: 0; }
+.msg.system .nick::before, .msg.system .nick::after { display: none; }
+.msg.system .prefix { color: var(--text-muted); margin-right: 0; }
+.msg.system .body { font-size: 12px; }
+
+.msg.join .body { color: var(--join); }
+.msg.part .body, .msg.quit .body { color: var(--part); }
+.msg.mode .body { color: var(--notice); }
+.msg.action .body { color: var(--action); font-style: italic; }
+.msg.notice .body { color: var(--notice); }
+.msg.topic .body { color: var(--notice); }
+
+.msg.emergency { background: var(--emergency-bg); }
+.msg.emergency .body { color: var(--emergency); font-weight: 600; }
+.msg.emergency .nick { color: var(--emergency) !important; }
+
+.msg.encrypted { background: var(--encrypted-bg); }
+.msg.encrypted .body { color: var(--nick-yellow); font-style: italic; }
+
+/* ── Typing bar ── */
+.typing-bar {
+  min-height: 20px;
+  padding: 2px 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.typing-bar .typing-nick { color: var(--nick-cyan); }
+
+/* ── Audio player bar ── */
+.player-bar {
+  display: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  padding: 4px 14px;
+}
+.player-bar.active { display: block; }
+.player-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.player-btn {
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--nick-cyan);
+  font-size: 11px;
+  width: 26px;
+  height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: inherit;
+  transition: border-color 0.15s, color 0.15s;
+}
+.player-btn:hover { border-color: var(--nick-cyan); color: var(--white); }
+.player-btn.player-close { color: var(--text-dim); font-size: 10px; width: 22px; }
+.player-btn.player-close:hover { color: var(--nick-red); border-color: var(--nick-red); }
+.player-info {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+.player-nick { color: var(--nick-cyan); font-weight: 500; }
+.player-chan { color: var(--text-muted); }
+.player-time { color: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.player-progress {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+  min-width: 60px;
+}
+.player-progress-fill {
+  height: 100%;
+  background: var(--nick-cyan);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.1s linear;
+}
+.player-progress:hover .player-progress-fill { background: var(--white); }
+
+/* ── Voice message links ── */
+.voice-play { color: var(--nick-cyan); font-size: 12px; margin-right: 2px; }
+.voice-dur { color: var(--text); }
+.voice-listen {
+  color: var(--text-dim);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--text-muted);
+  margin-left: 4px;
+  transition: color 0.15s;
+}
+.voice-listen:hover { color: var(--nick-cyan); border-bottom-color: var(--nick-cyan); }
+.msg.now-playing { background: rgba(92, 224, 216, 0.04); }
+.msg.now-playing .voice-listen { color: var(--nick-cyan); border-bottom-color: var(--nick-cyan); }
+
+/* ── Input ── */
+.input-area {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  background: var(--bg-input);
+  flex-shrink: 0;
+}
+.input-prompt {
+  padding: 0 4px 0 14px;
+  color: var(--text-dim);
+  font-size: 12px;
+  user-select: none;
+  white-space: nowrap;
+}
+.input-field {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-bright);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 8px;
+  caret-color: var(--nick-cyan);
+}
+.input-field::placeholder { color: var(--text-muted); }
+
+/* ── Nicklist ── */
+.nicklist {
+  width: 164px;
+  min-width: 164px;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+.nicklist-header {
+  padding: 8px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.nicklist-section-label {
+  padding: 4px 10px 2px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.nicklist-entries {
+  overflow-y: auto;
+  flex: 1;
+}
+.nicklist-entries::-webkit-scrollbar { width: 6px; }
+.nicklist-entries::-webkit-scrollbar-track { background: transparent; }
+.nicklist-entries::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.nick-item {
+  padding: 1px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+.nick-item:hover { background: var(--bg-hover); }
+.nick-item .nick-prefix { color: var(--text-muted); font-size: 10px; margin-right: 2px; }
+.nick-item.op { color: var(--nick-cyan); }
+.nick-item.voice { color: var(--nick-green); }
+.nick-item.regular { color: var(--text-dim); }
+
+/* ── Status bar ── */
+.statusbar {
+  height: 22px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 10px;
+  color: var(--text-muted);
+  gap: 16px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.statusbar .sep { color: var(--border-light); }
+.statusbar .status-highlight { color: var(--nick-orange); }
+.statusbar .status-ok { color: var(--status-connected); }
+.statusbar .status-err { color: var(--status-disconnected); }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <span class="server">tr-engine</span>
+  <span>—</span>
+  <span id="titlebar-chan">*status</span>
+  <span class="topic" id="titlebar-topic">Connecting...</span>
+  <span class="lag" id="titlebar-lag"></span>
+</div>
+
+<div class="main">
+  <div class="channel-tree">
+    <div class="tree-header">tr-engine</div>
+    <div class="tree-scroll" id="tree-scroll"></div>
+    <div class="tree-status" id="tree-status">
+      <span class="dot connecting"></span>Connecting...
+    </div>
+  </div>
+
+  <div class="chat-area">
+    <div class="channel-bar">
+      <span class="chan-name" id="chan-name">*status</span>
+      <span class="chan-mode" id="chan-mode"></span>
+      <span class="chan-topic" id="chan-topic">Connecting to tr-engine...</span>
+      <span class="chan-count" id="chan-count"></span>
+    </div>
+    <div class="messages" id="messages"></div>
+    <div class="typing-bar" id="typing-bar"></div>
+    <div class="player-bar" id="player-bar">
+      <div class="player-inner">
+        <button class="player-btn" id="player-play" title="Play/Pause">▶</button>
+        <div class="player-info">
+          <span class="player-nick" id="player-nick"></span>
+          <span class="player-chan" id="player-chan"></span>
+          <span class="player-time" id="player-time">0:00 / 0:00</span>
+        </div>
+        <div class="player-progress" id="player-progress">
+          <div class="player-progress-fill" id="player-progress-fill"></div>
+        </div>
+        <button class="player-btn player-close" id="player-close" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="input-area">
+      <div class="input-prompt" id="input-prompt">[*status]</div>
+      <input class="input-field" id="input-field" type="text" placeholder="Type /help for commands" spellcheck="false" autocomplete="off">
+    </div>
+  </div>
+
+  <div class="nicklist">
+    <div class="nicklist-header" id="nicklist-header">Users</div>
+    <div class="nicklist-entries" id="nicklist-entries"></div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span class="status-ok" id="status-dot">●</span>
+  <span id="status-server">tr-engine</span>
+  <span class="sep">│</span>
+  <span id="status-channels">0 channels</span>
+  <span class="sep">│</span>
+  <span id="status-users">0 users</span>
+  <span class="sep">│</span>
+  <span>Events: <span class="status-highlight" id="status-rate">0</span>/min</span>
+  <span class="sep">│</span>
+  <span id="status-time"></span>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// CONFIG — set your tr-engine base URL
+// Override via query param: ?api=http://localhost:3000/api/v1
+// ══════════════════════════════════════════════════════════════
+const params = new URLSearchParams(location.search);
+const API_BASE = (params.get('api') || '/api/v1').replace(/\/+$/, '');
+
+const MAX_MESSAGES = 500;        // per channel scrollback
+const NICK_WIDTH = 130;          // px
+const TYPING_DURATION = 3000;    // ms
+
+// ── Nick color palette ──
+const NICK_COLORS = [
+  'var(--nick-cyan)', 'var(--nick-green)', 'var(--nick-orange)',
+  'var(--nick-magenta)', 'var(--nick-yellow)', 'var(--nick-blue)',
+  'var(--nick-red)', 'var(--nick-teal)', 'var(--nick-pink)', 'var(--nick-lime)',
+];
+function nickColor(nick) {
+  let h = 0;
+  for (let i = 0; i < nick.length; i++) h = ((h << 5) - h + nick.charCodeAt(i)) | 0;
+  return NICK_COLORS[Math.abs(h) % NICK_COLORS.length];
+}
+
+// ══════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════
+
+// Channel registry: keyed by IRC-style name (#alpha-tag)
+// { chanName: { tgid, system_id, alpha_tag, description, tag, group, mode, users: Map<unit_id, {nick, prefix, role}>, messages: [] } }
+const channels = new Map();
+const channelUnread = new Map();
+
+// Reverse lookups
+const tgidToChannel = new Map();   // `${system_id}:${tgid}` → chanName
+const unitNickCache = new Map();   // `${system_id}:${unit_id}` → alpha_tag
+
+// Active channel
+let activeChannel = '*status';
+
+// Status channel for server messages
+const STATUS_CHANNEL = '*status';
+
+// Connection state
+let sseConnection = null;
+let connectionState = 'disconnected'; // connecting, connected, disconnected
+let reconnectTimer = null;
+let lastEventId = null;
+let eventRate = [];
+
+// Typing state: Map<chanName, { nick, timeout }>
+const typingState = new Map();
+
+// Active calls tracker: Map<call_id, { tgid, system_id, units, start }>
+const activeCalls = new Map();
+
+// ── DOM refs ──
+const messagesEl = document.getElementById('messages');
+const typingBar = document.getElementById('typing-bar');
+const inputField = document.getElementById('input-field');
+const chanNameEl = document.getElementById('chan-name');
+const chanTopicEl = document.getElementById('chan-topic');
+const chanModeEl = document.getElementById('chan-mode');
+const chanCountEl = document.getElementById('chan-count');
+const nicklistHeader = document.getElementById('nicklist-header');
+const nicklistEntries = document.getElementById('nicklist-entries');
+const titlebarChan = document.getElementById('titlebar-chan');
+const titlebarTopic = document.getElementById('titlebar-topic');
+const titlebarLag = document.getElementById('titlebar-lag');
+const treeScroll = document.getElementById('tree-scroll');
+const treeStatus = document.getElementById('tree-status');
+const statusDot = document.getElementById('status-dot');
+const statusServer = document.getElementById('status-server');
+const statusChannelsEl = document.getElementById('status-channels');
+const statusUsersEl = document.getElementById('status-users');
+const statusRate = document.getElementById('status-rate');
+const statusTime = document.getElementById('status-time');
+const inputPrompt = document.getElementById('input-prompt');
+
+
+// ══════════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════════
+
+function ts(date) {
+  const d = date || new Date();
+  return d.toTimeString().slice(0, 5);
+}
+
+function tsLong(date) {
+  const d = date || new Date();
+  return d.toTimeString().slice(0, 8);
+}
+
+/** Convert a talkgroup alpha_tag to an IRC channel name */
+function toChannelName(alphaTag) {
+  if (!alphaTag) return '#unknown';
+  // Replace spaces and special chars with hyphens, collapse runs
+  let name = alphaTag.replace(/[\s\/\\]+/g, '-').replace(/[^a-zA-Z0-9\-_.]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return '#' + (name || 'unknown');
+}
+
+/** Sanitize a unit alpha_tag into an IRC nick */
+function toNick(alphaTag, unitId) {
+  if (alphaTag && alphaTag.trim()) {
+    return alphaTag.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\[\]{}|]/g, '');
+  }
+  return 'unit-' + unitId;
+}
+
+/** Determine user role from talkgroup tag */
+function roleForTag(tgTag) {
+  if (!tgTag) return 'regular';
+  const t = tgTag.toLowerCase();
+  if (t.includes('dispatch')) return 'op';
+  return 'regular';
+}
+
+/** Format frequency in MHz */
+function fmtFreq(hz) {
+  if (!hz) return '';
+  return (hz / 1e6).toFixed(4) + ' MHz';
+}
+
+/** Format duration */
+function fmtDuration(sec) {
+  if (!sec && sec !== 0) return '';
+  if (sec < 60) return sec.toFixed(1) + 's';
+  return Math.floor(sec / 60) + 'm' + Math.floor(sec % 60) + 's';
+}
+
+/** Composite key for tgid lookup */
+function tgKey(systemId, tgid) { return `${systemId}:${tgid}`; }
+function unitKey(systemId, unitId) { return `${systemId}:${unitId}`; }
+
+
+// ══════════════════════════════════════════════════════════════
+// CHANNEL MANAGEMENT
+// ══════════════════════════════════════════════════════════════
+
+function initStatusChannel() {
+  channels.set(STATUS_CHANNEL, {
+    tgid: null, system_id: null,
+    alpha_tag: 'status', description: 'Server messages',
+    tag: '', group: 'System', mode: '',
+    users: new Map(), messages: [],
+  });
+  channelUnread.set(STATUS_CHANNEL, 0);
+}
+
+function ensureChannel(tg) {
+  const key = tgKey(tg.system_id, tg.tgid);
+  if (tgidToChannel.has(key)) return tgidToChannel.get(key);
+
+  const chanName = toChannelName(tg.alpha_tag || tg.tg_alpha_tag);
+
+  // Handle collisions — append tgid if needed
+  let finalName = chanName;
+  if (channels.has(finalName)) {
+    const existing = channels.get(finalName);
+    if (existing.tgid !== tg.tgid || existing.system_id !== tg.system_id) {
+      finalName = chanName + '-' + tg.tgid;
+    }
+  }
+
+  if (!channels.has(finalName)) {
+    channels.set(finalName, {
+      tgid: tg.tgid,
+      system_id: tg.system_id,
+      alpha_tag: tg.alpha_tag || tg.tg_alpha_tag || `TG ${tg.tgid}`,
+      description: tg.description || tg.tg_description || '',
+      tag: tg.tag || tg.tg_tag || '',
+      group: tg.group || tg.tg_group || 'Ungrouped',
+      mode: '+nt',
+      users: new Map(),
+      messages: [],
+    });
+    channelUnread.set(finalName, 0);
+  }
+
+  tgidToChannel.set(key, finalName);
+  return finalName;
+}
+
+function resolveChannel(systemId, tgid) {
+  return tgidToChannel.get(tgKey(systemId, tgid));
+}
+
+function resolveNick(systemId, unitId, alphaTag) {
+  const key = unitKey(systemId, unitId);
+  if (alphaTag && alphaTag.trim()) {
+    const nick = toNick(alphaTag, unitId);
+    unitNickCache.set(key, nick);
+    return nick;
+  }
+  if (unitNickCache.has(key)) return unitNickCache.get(key);
+  const fallback = toNick(null, unitId);
+  unitNickCache.set(key, fallback);
+  return fallback;
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// MESSAGE RENDERING
+// ══════════════════════════════════════════════════════════════
+
+function addMsg(channel, msg) {
+  const state = channels.get(channel);
+  if (!state) return;
+
+  state.messages.push(msg);
+  if (state.messages.length > MAX_MESSAGES) {
+    state.messages.shift();
+    if (channel === activeChannel) messagesEl.firstChild?.remove();
+  }
+
+  if (channel === activeChannel) {
+    appendMsgDOM(msg);
+    // Auto-scroll if near bottom
+    const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+    if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  } else {
+    channelUnread.set(channel, (channelUnread.get(channel) || 0) + 1);
+    renderTree();
+  }
+
+  eventRate.push(Date.now());
+}
+
+function appendMsgDOM(m) {
+  const div = document.createElement('div');
+  let classes = 'msg';
+  if (m.kind) classes += ` ${m.kind}`;
+  if (m.emergency) classes += ' emergency';
+  if (m.encrypted) classes += ' encrypted';
+  div.className = classes;
+
+  const isSystem = ['join', 'part', 'quit', 'mode', 'topic', 'notice'].includes(m.kind);
+  const isAction = m.kind === 'action';
+
+  if (isSystem) {
+    div.innerHTML = `<span class="ts">${esc(m.ts)}</span><span class="prefix">***</span><span class="body"> ${esc(m.text)}</span>`;
+    div.classList.add('system');
+  } else if (isAction) {
+    div.innerHTML = `<span class="ts">${esc(m.ts)}</span><span class="prefix">*</span><span class="body"> ${esc(m.nick)} ${esc(m.text)}</span>`;
+    div.classList.add('system');
+  } else {
+    const color = nickColor(m.nick || '');
+    const nickHtml = `<span class="ts">${esc(m.ts)}</span><span class="nick" style="color:${color}">${esc(m.nick || '???')}</span>`;
+
+    // Voice message with audio link
+    if (m.callId) {
+      const dur = m.duration || '';
+      const body = document.createElement('span');
+      body.className = 'body';
+
+      const play = document.createElement('span');
+      play.className = 'voice-play';
+      play.textContent = '▶';
+      body.appendChild(play);
+
+      if (dur) {
+        const durSpan = document.createElement('span');
+        durSpan.className = 'voice-dur';
+        durSpan.textContent = ' ' + dur + ' ';
+        body.appendChild(durSpan);
+      }
+
+      const listen = document.createElement('a');
+      listen.className = 'voice-listen';
+      listen.textContent = 'listen';
+      listen.href = '#';
+      listen.dataset.callId = m.callId;
+      listen.dataset.nick = m.nick || '';
+      listen.dataset.channel = m.channel || '';
+      listen.dataset.dur = dur;
+      listen.addEventListener('click', (e) => {
+        e.preventDefault();
+        playCall(m.callId, m.nick, m.channel, div);
+      });
+      body.appendChild(listen);
+
+      div.innerHTML = nickHtml;
+      div.appendChild(body);
+    } else {
+      div.innerHTML = nickHtml + `<span class="body">${esc(m.text)}</span>`;
+    }
+  }
+
+  messagesEl.appendChild(div);
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function serverMsg(text) {
+  addMsg(STATUS_CHANNEL, { ts: ts(), kind: 'notice', text });
+}
+
+function serverMsgTo(channel, text) {
+  addMsg(channel, { ts: ts(), kind: 'notice', text });
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// TYPING INDICATOR
+// ══════════════════════════════════════════════════════════════
+
+function showTyping(channel, nick) {
+  const existing = typingState.get(channel);
+  if (existing) clearTimeout(existing.timeout);
+
+  const timeout = setTimeout(() => {
+    typingState.delete(channel);
+    if (channel === activeChannel) typingBar.innerHTML = '';
+  }, TYPING_DURATION);
+
+  typingState.set(channel, { nick, timeout });
+  if (channel === activeChannel) {
+    typingBar.innerHTML = `<span class="typing-nick">${esc(nick)}</span> is typing...`;
+  }
+}
+
+function clearTyping(channel) {
+  const existing = typingState.get(channel);
+  if (existing) {
+    clearTimeout(existing.timeout);
+    typingState.delete(channel);
+    if (channel === activeChannel) typingBar.innerHTML = '';
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// CHANNEL TREE
+// ══════════════════════════════════════════════════════════════
+
+function renderTree() {
+  // Group channels by group field
+  const groups = new Map();
+  for (const [name, ch] of channels) {
+    if (name === STATUS_CHANNEL) continue;
+    const g = ch.group || 'Ungrouped';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(name);
+  }
+
+  treeScroll.innerHTML = '';
+
+  // Status channel first
+  const sysSection = document.createElement('div');
+  sysSection.className = 'tree-section';
+  const sysLabel = document.createElement('div');
+  sysLabel.className = 'tree-section-label';
+  sysLabel.textContent = 'System';
+  sysSection.appendChild(sysLabel);
+
+  const statusItem = document.createElement('div');
+  statusItem.className = 'channel-item' + (activeChannel === STATUS_CHANNEL ? ' active' : '');
+  statusItem.innerHTML = `<span class="chan-prefix">*</span><span class="chan-label">status</span>`;
+  if (channelUnread.get(STATUS_CHANNEL) > 0 && activeChannel !== STATUS_CHANNEL) {
+    statusItem.classList.add('has-activity');
+  }
+  statusItem.addEventListener('click', () => switchChannel(STATUS_CHANNEL));
+  sysSection.appendChild(statusItem);
+  treeScroll.appendChild(sysSection);
+
+  // Sort groups alphabetically
+  const sortedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  for (const [groupName, chans] of sortedGroups) {
+    const section = document.createElement('div');
+    section.className = 'tree-section';
+
+    const label = document.createElement('div');
+    label.className = 'tree-section-label';
+    label.textContent = groupName;
+    section.appendChild(label);
+
+    // Sort channels within group
+    chans.sort();
+
+    for (const ch of chans) {
+      const el = document.createElement('div');
+      const unread = channelUnread.get(ch) || 0;
+      el.className = 'channel-item' + (ch === activeChannel ? ' active' : '') + (unread > 0 && ch !== activeChannel ? ' has-activity' : '');
+      el.innerHTML = `<span class="chan-prefix">#</span><span class="chan-label">${esc(ch.slice(1))}</span>`;
+      if (unread > 0 && ch !== activeChannel) {
+        el.innerHTML += `<span class="unread">${unread > 99 ? '99+' : unread}</span>`;
+      }
+      el.addEventListener('click', () => switchChannel(ch));
+      section.appendChild(el);
+    }
+
+    treeScroll.appendChild(section);
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// NICKLIST
+// ══════════════════════════════════════════════════════════════
+
+function renderNicklist() {
+  const state = channels.get(activeChannel);
+  if (!state) {
+    nicklistHeader.textContent = 'Users';
+    nicklistEntries.innerHTML = '';
+    return;
+  }
+
+  const users = [...state.users.values()];
+  const ops = users.filter(u => u.role === 'op').sort((a, b) => a.nick.localeCompare(b.nick));
+  const voiced = users.filter(u => u.role === 'voice').sort((a, b) => a.nick.localeCompare(b.nick));
+  const regular = users.filter(u => u.role === 'regular').sort((a, b) => a.nick.localeCompare(b.nick));
+
+  nicklistHeader.textContent = `Users (${users.length})`;
+  nicklistEntries.innerHTML = '';
+
+  function addSection(label, list, cls, prefix) {
+    if (list.length === 0) return;
+    const lbl = document.createElement('div');
+    lbl.className = 'nicklist-section-label';
+    lbl.textContent = `${label} (${list.length})`;
+    nicklistEntries.appendChild(lbl);
+    for (const u of list) {
+      const el = document.createElement('div');
+      el.className = `nick-item ${cls}`;
+      el.innerHTML = `<span class="nick-prefix">${prefix}</span>${esc(u.nick)}`;
+      nicklistEntries.appendChild(el);
+    }
+  }
+
+  addSection('Ops', ops, 'op', '@');
+  addSection('Voiced', voiced, 'voice', '+');
+  addSection('Users', regular, 'regular', ' ');
+
+  chanCountEl.textContent = `${users.length} users`;
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// CHANNEL SWITCHING
+// ══════════════════════════════════════════════════════════════
+
+function switchChannel(ch) {
+  if (!channels.has(ch)) return;
+  activeChannel = ch;
+  channelUnread.set(ch, 0);
+
+  const state = channels.get(ch);
+  const displayName = ch;
+  const topic = state.description || state.tag || '';
+
+  chanNameEl.textContent = displayName;
+  chanTopicEl.textContent = topic;
+  chanModeEl.textContent = state.mode ? `[${state.mode}]` : '';
+  titlebarChan.textContent = displayName;
+  titlebarTopic.textContent = topic;
+  inputPrompt.textContent = `[${displayName}]`;
+
+  // Render messages
+  messagesEl.innerHTML = '';
+  for (const m of state.messages) appendMsgDOM(m);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  // Typing
+  const t = typingState.get(ch);
+  if (t) typingBar.innerHTML = `<span class="typing-nick">${esc(t.nick)}</span> is typing...`;
+  else typingBar.innerHTML = '';
+
+  renderTree();
+  renderNicklist();
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// API FETCHING — Bootstrap channels & nicklists
+// ══════════════════════════════════════════════════════════════
+
+async function fetchJSON(path) {
+  const res = await fetch(API_BASE + path);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText} from ${path}`);
+  return res.json();
+}
+
+async function bootstrapChannels() {
+  serverMsg(`Fetching channel list from ${API_BASE}/talkgroups...`);
+  try {
+    const data = await fetchJSON('/talkgroups?limit=1000&sort=alpha_tag');
+    const tgs = data.talkgroups || [];
+    serverMsg(`Received ${tgs.length} talkgroups`);
+
+    for (const tg of tgs) {
+      const chanName = ensureChannel(tg);
+      // Initial join message
+      channels.get(chanName).messages.push({
+        ts: ts(), kind: 'notice',
+        text: `Now talking on ${chanName}`,
+      });
+      channels.get(chanName).messages.push({
+        ts: ts(), kind: 'topic',
+        text: `Topic for ${chanName}: ${tg.description || tg.alpha_tag} [${tg.tag || ''}]`,
+      });
+      if (tg.mode) {
+        channels.get(chanName).messages.push({
+          ts: ts(), kind: 'mode',
+          text: `${chanName} mode: ${tg.mode}`,
+        });
+      }
+    }
+
+    serverMsg(`Joined ${channels.size - 1} channels`);
+    renderTree();
+
+    // Auto-switch to first real channel
+    const firstChan = [...channels.keys()].find(k => k !== STATUS_CHANNEL);
+    if (firstChan) switchChannel(firstChan);
+  } catch (err) {
+    serverMsg(`ERROR fetching talkgroups: ${err.message}`);
+  }
+}
+
+async function bootstrapAffiliations() {
+  serverMsg('Fetching user affiliations...');
+  try {
+    const data = await fetchJSON('/unit-affiliations?limit=5000&status=affiliated');
+    const affs = data.affiliations || [];
+    serverMsg(`Received ${affs.length} affiliations`);
+
+    let userCount = 0;
+    for (const aff of affs) {
+      const chanName = resolveChannel(aff.system_id, aff.tgid);
+      if (!chanName) continue;
+
+      const ch = channels.get(chanName);
+      if (!ch) continue;
+
+      const nick = resolveNick(aff.system_id, aff.unit_id, aff.unit_alpha_tag);
+      const tag = ch.tag || '';
+      const role = roleForTag(tag);
+      const prefix = role === 'op' ? '@' : '';
+
+      if (!ch.users.has(aff.unit_id)) {
+        ch.users.set(aff.unit_id, { nick, prefix, role, unitId: aff.unit_id, systemId: aff.system_id });
+        userCount++;
+      }
+    }
+
+    serverMsg(`${userCount} users loaded across channels`);
+    renderNicklist();
+    renderTree();
+  } catch (err) {
+    serverMsg(`ERROR fetching affiliations: ${err.message}`);
+  }
+}
+
+async function bootstrapRecentCalls() {
+  serverMsg('Fetching recent activity...');
+  try {
+    const data = await fetchJSON('/calls?sort=-stop_time&deduplicate=true&limit=50');
+    const calls = data.calls || [];
+
+    // Replay recent calls as message history (oldest first)
+    const sorted = [...calls].reverse();
+    for (const call of sorted) {
+      const chanName = resolveChannel(call.system_id, call.tgid);
+      if (!chanName) continue;
+      const ch = channels.get(chanName);
+      if (!ch) continue;
+
+      const systemId = call.system_id;
+      const srcList = call.src_list || [];
+      const isEmergency = call.emergency || false;
+
+      if (call.encrypted) {
+        // Encrypted: show single line
+        const units = call.units || [];
+        const srcNick = units.length > 0
+          ? resolveNick(systemId, units[0].unit_id, units[0].alpha_tag)
+          : (call.tg_alpha_tag || `TG ${call.tgid}`);
+        const callTime = call.start_time ? new Date(call.start_time) : new Date();
+        const dur = call.duration ? fmtDuration(call.duration) : '';
+
+        ch.messages.push({
+          ts: ts(callTime), nick: srcNick, encrypted: true,
+          text: `[encrypted${dur ? ', ' + dur : ''}]`,
+        });
+        continue;
+      }
+
+      if (srcList.length > 0) {
+        // Per-transmission messages sorted by position
+        const txSorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
+
+        for (const tx of txSorted) {
+          const nick = resolveNick(systemId, tx.src, tx.tag);
+          const txTime = tx.time ? new Date(tx.time * 1000) : (call.start_time ? new Date(call.start_time) : new Date());
+          const dur = tx.duration ? fmtDuration(tx.duration) : '';
+          const txEmergency = tx.emergency === 1;
+
+          // Ensure unit in nicklist
+          ensureUserInChannel(ch, chanName, systemId, tx.src, tx.tag);
+
+          ch.messages.push({
+            ts: ts(txTime),
+            nick,
+            callId: call.call_id,
+            duration: dur,
+            channel: chanName,
+            emergency: isEmergency || txEmergency,
+          });
+        }
+      } else {
+        // Fallback: no src_list
+        const units = call.units || [];
+        const srcNick = units.length > 0
+          ? resolveNick(systemId, units[0].unit_id, units[0].alpha_tag)
+          : (call.tg_alpha_tag || `TG ${call.tgid}`);
+        const callTime = call.start_time ? new Date(call.start_time) : new Date();
+        const dur = call.duration ? fmtDuration(call.duration) : '';
+
+        ch.messages.push({
+          ts: ts(callTime), nick: srcNick,
+          callId: call.call_id,
+          duration: dur,
+          channel: chanName,
+          emergency: isEmergency,
+        });
+      }
+    }
+
+    serverMsg(`Loaded ${calls.length} recent calls as history`);
+
+    // Re-render if we're on a channel that got backfill
+    if (activeChannel !== STATUS_CHANNEL) {
+      messagesEl.innerHTML = '';
+      const state = channels.get(activeChannel);
+      if (state) {
+        for (const m of state.messages) appendMsgDOM(m);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    }
+  } catch (err) {
+    serverMsg(`ERROR fetching recent calls: ${err.message}`);
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// SSE — Real-time event stream
+// ══════════════════════════════════════════════════════════════
+
+function connectSSE() {
+  if (sseConnection) {
+    sseConnection.close();
+    sseConnection = null;
+  }
+
+  setConnectionState('connecting');
+
+  const url = `${API_BASE}/events/stream`;
+  serverMsg(`Connecting to ${url}...`);
+
+  const es = new EventSource(url);
+  sseConnection = es;
+
+  es.onopen = () => {
+    setConnectionState('connected');
+    serverMsg('Connected to event stream');
+  };
+
+  es.onerror = () => {
+    if (connectionState === 'connected') {
+      serverMsg('Connection lost, reconnecting...');
+    }
+    setConnectionState('disconnected');
+    // EventSource auto-reconnects
+  };
+
+  // ── Call events ──
+  es.addEventListener('call_start', (e) => {
+    lastEventId = e.lastEventId;
+    const call = JSON.parse(e.data);
+    handleCallStart(call);
+  });
+
+  es.addEventListener('call_update', (e) => {
+    lastEventId = e.lastEventId;
+    const call = JSON.parse(e.data);
+    handleCallUpdate(call);
+  });
+
+  es.addEventListener('call_end', (e) => {
+    lastEventId = e.lastEventId;
+    const call = JSON.parse(e.data);
+    handleCallEnd(call);
+  });
+
+  // ── Unit events ──
+  es.addEventListener('unit_event', (e) => {
+    lastEventId = e.lastEventId;
+    const evt = JSON.parse(e.data);
+    handleUnitEvent(evt);
+  });
+
+  // ── Recorder updates (optional, show as server notices) ──
+  es.addEventListener('recorder_update', (e) => {
+    // Silent — could log to *status if desired
+  });
+
+  es.addEventListener('rate_update', (e) => {
+    lastEventId = e.lastEventId;
+    const data = JSON.parse(e.data);
+    if (data.decode_rate !== undefined) {
+      const pct = (data.decode_rate * 100).toFixed(1);
+      titlebarLag.textContent = `decode: ${pct}%`;
+    }
+  });
+}
+
+function setConnectionState(state) {
+  connectionState = state;
+  const dot = treeStatus.querySelector('.dot');
+
+  if (state === 'connected') {
+    treeStatus.innerHTML = '<span class="dot connected"></span>Connected';
+    statusDot.className = 'status-ok';
+    statusDot.textContent = '●';
+  } else if (state === 'connecting') {
+    treeStatus.innerHTML = '<span class="dot connecting"></span>Connecting...';
+    statusDot.className = 'status-err';
+    statusDot.textContent = '○';
+  } else {
+    treeStatus.innerHTML = '<span class="dot disconnected"></span>Disconnected';
+    statusDot.className = 'status-err';
+    statusDot.textContent = '●';
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// EVENT HANDLERS — Map SSE events to IRC actions
+// ══════════════════════════════════════════════════════════════
+
+function handleCallStart(call) {
+  // Ensure channel exists
+  const chanName = ensureChannel({
+    system_id: call.system_id, tgid: call.tgid,
+    alpha_tag: call.tg_alpha_tag, description: call.tg_description,
+    tag: call.tg_tag, group: call.tg_group,
+  });
+
+  const ch = channels.get(chanName);
+  if (!ch) return;
+
+  // Identify first speaker from src_list (preferred) or units fallback
+  const srcList = call.src_list || [];
+  const units = call.units || [];
+  let srcNick = null;
+
+  if (srcList.length > 0) {
+    srcNick = resolveNick(call.system_id, srcList[0].src, srcList[0].tag);
+    ensureUserInChannel(ch, chanName, call.system_id, srcList[0].src, srcList[0].tag);
+  } else if (units.length > 0) {
+    srcNick = resolveNick(call.system_id, units[0].unit_id, units[0].alpha_tag);
+    ensureUserInChannel(ch, chanName, call.system_id, units[0].unit_id, units[0].alpha_tag);
+  }
+
+  // Track active call — store src count so call_update can detect new transmissions
+  activeCalls.set(call.call_id, {
+    tgid: call.tgid, system_id: call.system_id,
+    chanName, start: Date.now(),
+    srcCount: srcList.length,
+  });
+
+  // Show typing indicator for primary speaker
+  if (srcNick) showTyping(chanName, srcNick);
+
+  // Emergency handling
+  if (call.emergency) {
+    addMsg(chanName, {
+      ts: ts(), kind: 'notice', emergency: true,
+      text: `*** EMERGENCY *** ${srcNick || 'unknown'} — emergency call on ${chanName}`,
+    });
+  }
+
+  // Encrypted call — show immediately since we won't get transcript content
+  if (call.encrypted) {
+    const dur = srcList.length > 0 && srcList[0].duration ? fmtDuration(srcList[0].duration) : '';
+    addMsg(chanName, {
+      ts: ts(), nick: srcNick || chanName, encrypted: true,
+      text: `[encrypted${dur ? ', ' + dur : ''}]`,
+    });
+    clearTyping(chanName);
+  }
+
+  renderTree();
+}
+
+/** Ensure a unit is in a channel's nicklist */
+function ensureUserInChannel(ch, chanName, systemId, unitId, alphaTag) {
+  if (ch.users.has(unitId)) return;
+  const nick = resolveNick(systemId, unitId, alphaTag);
+  const role = roleForTag(ch.tag);
+  ch.users.set(unitId, { nick, prefix: role === 'op' ? '@' : '', role, unitId, systemId });
+  if (chanName === activeChannel) renderNicklist();
+}
+
+function handleCallUpdate(call) {
+  const tracked = activeCalls.get(call.call_id);
+  if (!tracked) return;
+
+  const chanName = tracked.chanName;
+  const ch = channels.get(chanName);
+  if (!ch) return;
+
+  const srcList = call.src_list || [];
+  const systemId = call.system_id || tracked.system_id;
+
+  // Detect new transmissions added since last update
+  if (srcList.length > tracked.srcCount) {
+    // New key-ups since we last saw this call
+    for (let i = tracked.srcCount; i < srcList.length; i++) {
+      const tx = srcList[i];
+      const nick = resolveNick(systemId, tx.src, tx.tag);
+      ensureUserInChannel(ch, chanName, systemId, tx.src, tx.tag);
+      showTyping(chanName, nick);
+    }
+    tracked.srcCount = srcList.length;
+  } else if (srcList.length > 0) {
+    // No new transmissions, but refresh typing for latest speaker
+    const last = srcList[srcList.length - 1];
+    showTyping(chanName, resolveNick(systemId, last.src, last.tag));
+  }
+
+  // Also pick up any new units from the units array
+  const units = call.units || [];
+  for (const u of units) {
+    ensureUserInChannel(ch, chanName, systemId, u.unit_id, u.alpha_tag);
+  }
+}
+
+function handleCallEnd(call) {
+  const tracked = activeCalls.get(call.call_id);
+  activeCalls.delete(call.call_id);
+
+  const chanName = tracked
+    ? tracked.chanName
+    : resolveChannel(call.system_id, call.tgid);
+  if (!chanName) return;
+
+  clearTyping(chanName);
+
+  const ch = channels.get(chanName);
+  if (!ch) return;
+
+  const systemId = call.system_id;
+  const srcList = call.src_list || [];
+  const isEmergency = call.emergency || false;
+
+  if (call.encrypted) {
+    // Already showed encrypted notice on call_start
+    return;
+  }
+
+  if (srcList.length > 0) {
+    // ── Per-transmission messages from src_list ──
+    // Sort by position in audio (chronological within the call)
+    const sorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
+
+    for (const tx of sorted) {
+      const nick = resolveNick(systemId, tx.src, tx.tag);
+      ensureUserInChannel(ch, chanName, systemId, tx.src, tx.tag);
+
+      // Timestamp: use the transmission's own unix time if available
+      const txTime = tx.time ? new Date(tx.time * 1000) : new Date();
+      const dur = tx.duration ? fmtDuration(tx.duration) : '';
+      const txEmergency = tx.emergency === 1;
+
+      addMsg(chanName, {
+        ts: ts(txTime),
+        nick,
+        callId: call.call_id,
+        duration: dur,
+        channel: chanName,
+        emergency: isEmergency || txEmergency,
+      });
+    }
+  } else {
+    // ── Fallback: no src_list, use units array ──
+    const units = call.units || [];
+    const srcNick = units.length > 0
+      ? resolveNick(systemId, units[0].unit_id, units[0].alpha_tag)
+      : (call.tg_alpha_tag || `TG ${call.tgid}`);
+
+    const dur = call.duration ? fmtDuration(call.duration) : '';
+
+    addMsg(chanName, {
+      ts: ts(), nick: srcNick,
+      callId: call.call_id,
+      duration: dur,
+      channel: chanName,
+      emergency: isEmergency,
+    });
+  }
+}
+
+function handleUnitEvent(evt) {
+  const systemId = evt.system_id;
+  const unitId = evt.unit_rid;
+  const nick = resolveNick(systemId, unitId, evt.unit_alpha_tag);
+  const tgid = evt.tgid;
+
+  // Resolve or create channel
+  let chanName = tgid ? resolveChannel(systemId, tgid) : null;
+  if (!chanName && tgid) {
+    chanName = ensureChannel({
+      system_id: systemId, tgid,
+      alpha_tag: evt.tg_alpha_tag, description: evt.tg_description,
+      tag: '', group: 'Ungrouped',
+    });
+    renderTree();
+  }
+
+  switch (evt.event_type) {
+    case 'join': {
+      // Talkgroup affiliation → IRC JOIN
+      if (!chanName) break;
+      const ch = channels.get(chanName);
+      if (!ch) break;
+
+      if (!ch.users.has(unitId)) {
+        const role = roleForTag(ch.tag);
+        ch.users.set(unitId, { nick, prefix: role === 'op' ? '@' : '', role, unitId, systemId });
+
+        addMsg(chanName, {
+          ts: ts(), kind: 'join',
+          text: `${nick} has joined ${chanName}${ch.tag ? ' [' + ch.tag + ']' : ''}`,
+        });
+        if (chanName === activeChannel) renderNicklist();
+      }
+      break;
+    }
+
+    case 'off': {
+      // Unit deregistration → IRC QUIT (remove from all channels)
+      let found = false;
+      for (const [chName, ch] of channels) {
+        if (ch.users.has(unitId)) {
+          ch.users.delete(unitId);
+          addMsg(chName, {
+            ts: ts(), kind: 'quit',
+            text: `${nick} has quit (Quit)`,
+          });
+          found = true;
+          if (chName === activeChannel) renderNicklist();
+        }
+      }
+      if (!found) {
+        // Log to status
+        serverMsg(`${nick} has disconnected`);
+      }
+      break;
+    }
+
+    case 'on': {
+      // Unit registration → IRC connect notice
+      serverMsg(`${nick} has connected to the network`);
+      break;
+    }
+
+    case 'call': {
+      // Channel grant / voice call — show typing
+      if (chanName) {
+        showTyping(chanName, nick);
+        // Ensure user in channel
+        const ch = channels.get(chanName);
+        if (ch && !ch.users.has(unitId)) {
+          const role = roleForTag(ch.tag);
+          ch.users.set(unitId, { nick, prefix: role === 'op' ? '@' : '', role, unitId, systemId });
+          if (chanName === activeChannel) renderNicklist();
+        }
+      }
+      break;
+    }
+
+    case 'end': {
+      // Per-unit end of transmission
+      if (chanName) clearTyping(chanName);
+      break;
+    }
+
+    case 'location': {
+      // Silent — could show as CTCP or notice
+      break;
+    }
+
+    case 'ackresp':
+    case 'data':
+    case 'ans_req': {
+      // Data/signaling — silent
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// INPUT HANDLING — IRC commands
+// ══════════════════════════════════════════════════════════════
+
+inputField.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const val = inputField.value.trim();
+  inputField.value = '';
+  if (!val) return;
+
+  if (val.startsWith('/')) {
+    handleCommand(val);
+  } else {
+    // Read-only: can't send messages to radio channels
+    addMsg(activeChannel, { ts: ts(), kind: 'notice', text: 'This client is read-only (Layer 1). Messages cannot be sent.' });
+  }
+});
+
+function handleCommand(cmd) {
+  const parts = cmd.split(/\s+/);
+  const c = parts[0].toLowerCase();
+
+  switch (c) {
+    case '/j':
+    case '/join': {
+      const target = parts[1];
+      if (!target) { addMsg(activeChannel, { ts: ts(), kind: 'notice', text: 'Usage: /join #channel' }); break; }
+      const ch = target.startsWith('#') ? target : '#' + target;
+      // Fuzzy match: find channel that starts with or contains the input
+      let match = null;
+      for (const name of channels.keys()) {
+        if (name === ch) { match = name; break; }
+      }
+      if (!match) {
+        // Partial match
+        const lower = ch.toLowerCase();
+        for (const name of channels.keys()) {
+          if (name.toLowerCase().includes(lower.slice(1))) { match = name; break; }
+        }
+      }
+      if (match) {
+        switchChannel(match);
+      } else {
+        addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `No such channel: ${ch}` });
+      }
+      break;
+    }
+
+    case '/part':
+    case '/leave': {
+      switchChannel(STATUS_CHANNEL);
+      break;
+    }
+
+    case '/list':
+    case '/channels': {
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '— Channel list —' });
+      for (const [name, ch] of channels) {
+        if (name === STATUS_CHANNEL) continue;
+        addMsg(activeChannel, {
+          ts: ts(), kind: 'notice',
+          text: `  ${name}  (${ch.users.size} users) — ${ch.description || ch.alpha_tag}`,
+        });
+      }
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `— End of /list — ${channels.size - 1} channels` });
+      break;
+    }
+
+    case '/who':
+    case '/names': {
+      const target = parts[1] || activeChannel;
+      let ch = channels.get(target);
+      if (!ch) {
+        // Fuzzy
+        for (const [name, c] of channels) {
+          if (name.toLowerCase().includes(target.toLowerCase())) { ch = c; break; }
+        }
+      }
+      if (!ch) { addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `No such channel: ${target}` }); break; }
+      const nicks = [...ch.users.values()].map(u => `${u.prefix}${u.nick}`).join(' ');
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `[${target}] ${nicks || '(empty)'}` });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `— End of /NAMES — ${ch.users.size} total` });
+      break;
+    }
+
+    case '/topic': {
+      const ch = channels.get(activeChannel);
+      if (ch) {
+        addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `Topic for ${activeChannel}: ${ch.description || ch.alpha_tag}` });
+      }
+      break;
+    }
+
+    case '/whois': {
+      const target = parts[1];
+      if (!target) { addMsg(activeChannel, { ts: ts(), kind: 'notice', text: 'Usage: /whois <nick>' }); break; }
+      const lower = target.toLowerCase();
+      const onChans = [];
+      for (const [name, ch] of channels) {
+        for (const u of ch.users.values()) {
+          if (u.nick.toLowerCase() === lower) { onChans.push(name); break; }
+        }
+      }
+      if (onChans.length > 0) {
+        addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `[${target}] is on channels: ${onChans.join(' ')}` });
+        addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `[${target}] connected via tr-engine` });
+        addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `— End of /WHOIS —` });
+      } else {
+        addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `No such nick: ${target}` });
+      }
+      break;
+    }
+
+    case '/clear':
+      if (channels.has(activeChannel)) {
+        channels.get(activeChannel).messages = [];
+        messagesEl.innerHTML = '';
+      }
+      break;
+
+    case '/reconnect':
+      connectSSE();
+      break;
+
+    case '/api':
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `API base: ${API_BASE}` });
+      break;
+
+    case '/stats': {
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '— Stats —' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `  Channels: ${channels.size - 1}` });
+      let totalU = 0;
+      const uniqueNicks = new Set();
+      for (const ch of channels.values()) {
+        for (const u of ch.users.values()) uniqueNicks.add(u.nick);
+        totalU += ch.users.size;
+      }
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `  Unique users: ${uniqueNicks.size}` });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `  Total affiliations: ${totalU}` });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `  Active calls: ${activeCalls.size}` });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `  Connection: ${connectionState}` });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '— End of /stats —' });
+      break;
+    }
+
+    case '/help':
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '— Commands —' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /j, /join #channel  — Switch to channel (fuzzy match)' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /part               — Switch to *status' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /list               — List all channels' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /who, /names        — List users in channel' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /whois <nick>       — User info' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /topic              — Show channel topic' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /stats              — Connection & channel stats' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /reconnect          — Reconnect SSE stream' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /clear              — Clear scrollback' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /api                — Show API base URL' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '— End of /help —' });
+      break;
+
+    default:
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: `Unknown command: ${c}` });
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// STATUS BAR
+// ══════════════════════════════════════════════════════════════
+
+function updateStatusBar() {
+  statusTime.textContent = tsLong();
+  statusChannelsEl.textContent = `${channels.size - 1} channels`;
+
+  const now = Date.now();
+  eventRate = eventRate.filter(t => now - t < 60000);
+  statusRate.textContent = eventRate.length;
+
+  const uniqueNicks = new Set();
+  for (const ch of channels.values()) {
+    for (const u of ch.users.values()) uniqueNicks.add(u.nick);
+  }
+  statusUsersEl.textContent = `${uniqueNicks.size} users`;
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// AUDIO PLAYER
+// ══════════════════════════════════════════════════════════════
+
+const playerBar = document.getElementById('player-bar');
+const playerPlayBtn = document.getElementById('player-play');
+const playerNickEl = document.getElementById('player-nick');
+const playerChanEl = document.getElementById('player-chan');
+const playerTimeEl = document.getElementById('player-time');
+const playerProgress = document.getElementById('player-progress');
+const playerProgressFill = document.getElementById('player-progress-fill');
+const playerCloseBtn = document.getElementById('player-close');
+
+const audioEl = new Audio();
+audioEl.preload = 'auto';
+let currentPlayingMsgEl = null;
+let currentCallId = null;
+let playerRaf = null;
+
+function fmtAudioTime(sec) {
+  if (!sec || !isFinite(sec)) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function playCall(callId, nick, channel, msgEl) {
+  // If clicking the same call that's playing, toggle pause
+  if (currentCallId === callId && !audioEl.paused) {
+    audioEl.pause();
+    playerPlayBtn.textContent = '▶';
+    return;
+  }
+  if (currentCallId === callId && audioEl.paused) {
+    audioEl.play();
+    playerPlayBtn.textContent = '⏸';
+    return;
+  }
+
+  // New call — load and play
+  currentCallId = callId;
+
+  // Clear previous highlight
+  if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
+  currentPlayingMsgEl = msgEl;
+  if (msgEl) msgEl.classList.add('now-playing');
+
+  // Update player bar
+  playerNickEl.textContent = nick || '?';
+  playerNickEl.style.color = nickColor(nick || '');
+  playerChanEl.textContent = channel || '';
+  playerTimeEl.textContent = '0:00 / --:--';
+  playerProgressFill.style.width = '0%';
+  playerBar.classList.add('active');
+  playerPlayBtn.textContent = '⏳';
+
+  // Load audio
+  audioEl.src = `${API_BASE}/calls/${callId}/audio`;
+  audioEl.load();
+  audioEl.play().then(() => {
+    playerPlayBtn.textContent = '⏸';
+    updatePlayerProgress();
+  }).catch(err => {
+    playerPlayBtn.textContent = '▶';
+    playerTimeEl.textContent = 'error';
+    console.error('Playback error:', err);
+  });
+}
+
+function updatePlayerProgress() {
+  if (playerRaf) cancelAnimationFrame(playerRaf);
+
+  function tick() {
+    if (!audioEl.paused && audioEl.duration) {
+      const pct = (audioEl.currentTime / audioEl.duration) * 100;
+      playerProgressFill.style.width = pct + '%';
+      playerTimeEl.textContent = `${fmtAudioTime(audioEl.currentTime)} / ${fmtAudioTime(audioEl.duration)}`;
+    }
+    if (!audioEl.paused) playerRaf = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+// Play/pause button
+playerPlayBtn.addEventListener('click', () => {
+  if (!audioEl.src) return;
+  if (audioEl.paused) {
+    audioEl.play();
+    playerPlayBtn.textContent = '⏸';
+    updatePlayerProgress();
+  } else {
+    audioEl.pause();
+    playerPlayBtn.textContent = '▶';
+  }
+});
+
+// Close player
+playerCloseBtn.addEventListener('click', () => {
+  audioEl.pause();
+  audioEl.src = '';
+  currentCallId = null;
+  if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
+  currentPlayingMsgEl = null;
+  playerBar.classList.remove('active');
+  if (playerRaf) cancelAnimationFrame(playerRaf);
+});
+
+// Seek on progress bar click
+playerProgress.addEventListener('click', (e) => {
+  if (!audioEl.duration) return;
+  const rect = playerProgress.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  audioEl.currentTime = pct * audioEl.duration;
+  playerProgressFill.style.width = (pct * 100) + '%';
+});
+
+// Audio ended
+audioEl.addEventListener('ended', () => {
+  playerPlayBtn.textContent = '▶';
+  playerProgressFill.style.width = '100%';
+  if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
+  currentPlayingMsgEl = null;
+  currentCallId = null;
+});
+
+// Duration loaded
+audioEl.addEventListener('loadedmetadata', () => {
+  playerTimeEl.textContent = `0:00 / ${fmtAudioTime(audioEl.duration)}`;
+});
+
+
+// ══════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════
+
+async function init() {
+  initStatusChannel();
+  switchChannel(STATUS_CHANNEL);
+  renderTree();
+
+  serverMsg(`tr-engine IRC client — Layer 1 (read-only)`);
+  serverMsg(`API: ${API_BASE}`);
+  serverMsg('');
+
+  // Bootstrap: channels → affiliations → recent calls → SSE
+  await bootstrapChannels();
+  await bootstrapAffiliations();
+  await bootstrapRecentCalls();
+
+  // Connect SSE for live events
+  connectSSE();
+
+  // Status bar ticker
+  setInterval(updateStatusBar, 1000);
+  updateStatusBar();
+}
+
+init();
+inputField.focus();
+</script>
+</body>
+</html>
