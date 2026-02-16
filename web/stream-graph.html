@@ -301,6 +301,49 @@
 
     .crosshair-line { stroke: rgba(0,229,255,0.15); stroke-width: 1; stroke-dasharray: 3,5; pointer-events: none; }
     .crosshair-time { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: var(--text-dim); pointer-events: none; }
+
+    /* ── Bucket Detail ───────────────────────── */
+    .tt-detail {
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+      padding-top: 6px;
+      max-height: 170px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .tt-detail-header {
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+    .tt-detail-loading {
+      font-size: 9px;
+      color: var(--text-dim);
+      font-style: italic;
+    }
+    .tt-detail-empty {
+      font-size: 9px;
+      color: var(--text-dim);
+      opacity: 0.6;
+    }
+    .tt-call-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 2px 0;
+      font-size: 9px;
+      color: var(--text-muted);
+      border-bottom: 1px solid rgba(26, 39, 68, 0.4);
+    }
+    .tt-call-row:last-child { border-bottom: none; }
+    .tt-call-row.emergency { color: var(--accent-rose); }
+    .tt-call-time { flex-shrink: 0; width: 56px; }
+    .tt-call-dur { flex-shrink: 0; width: 36px; text-align: right; }
+    .tt-call-units { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tt-call-emg { color: var(--accent-rose); font-weight: 600; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -351,6 +394,7 @@
     <span class="tt-label">% of total</span><span class="tt-val" id="tt-pct"></span>
     <span class="tt-label tt-roster-label" id="tt-roster-label">Roster</span><span class="tt-val tt-roster-val" id="tt-roster"></span>
   </div>
+  <div class="tt-detail" id="tt-detail" style="display:none"></div>
 </div>
 
 <script type="module">
@@ -599,9 +643,9 @@ function render() {
     .attr('stroke-width', 0.5)
     .attr('stroke-opacity', 0.3)
     .attr('d', area)
-    .on('mouseenter', function(ev, d) { highlightStream(d.key); showTooltip(d.key, ev); })
-    .on('mousemove', function(ev) { moveTooltip(ev); updateCrosshair(ev); })
-    .on('mouseleave', function() { unhighlightAll(); hideTooltip(); hideCrosshair(); });
+    .on('mouseenter', function(ev, d) { highlightStream(d.key); showTooltip(d.key, ev); scheduleDetailFetch(ev, d.key); })
+    .on('mousemove', function(ev, d) { moveTooltip(ev); updateCrosshair(ev); scheduleDetailFetch(ev, d.key); })
+    .on('mouseleave', function() { unhighlightAll(); hideTooltip(); hideCrosshair(); clearDetail(); });
 
   paths.transition().duration(600).ease(d3.easeCubicOut).attr('d', area);
   paths.exit().remove();
@@ -708,6 +752,127 @@ function updateCrosshair(ev) {
 function hideCrosshair() { crosshairGroup.style('display', 'none'); }
 
 // ═══════════════════════════════════════════════════════════════
+// BUCKET DETAIL — on-demand fetch of calls for hovered bucket
+// ═══════════════════════════════════════════════════════════════
+const ttDetail = document.getElementById('tt-detail');
+const detailCache = new Map();
+let detailTimer = null;
+let detailLastKey = null;
+let detailAbort = null;
+
+function getBucketIdx(ev) {
+  const rect = svgEl.getBoundingClientRect();
+  const mx = ev.clientX - rect.left;
+  return Math.round(xScale.invert(mx));
+}
+
+function scheduleDetailFetch(ev, tgKey) {
+  const idx = getBucketIdx(ev);
+  const cacheKey = `${idx}:${tgKey}`;
+
+  // Already showing this bucket's detail
+  if (cacheKey === detailLastKey) return;
+
+  clearTimeout(detailTimer);
+  detailTimer = setTimeout(() => {
+    detailLastKey = cacheKey;
+
+    // Check cache
+    if (detailCache.has(cacheKey)) {
+      renderDetail(detailCache.get(cacheKey));
+      return;
+    }
+
+    // Fetch
+    fetchBucketDetail(idx, tgKey, cacheKey);
+  }, 300);
+}
+
+async function fetchBucketDetail(idx, tgKey, cacheKey) {
+  // Show loading
+  ttDetail.style.display = '';
+  ttDetail.innerHTML = '<div class="tt-detail-loading">loading...</div>';
+
+  // Abort any in-flight request
+  if (detailAbort) detailAbort.abort();
+  detailAbort = new AbortController();
+
+  const bucket = timeSeries[idx];
+  if (!bucket) return;
+
+  const startMs = bucket.time;
+  const endMs = startMs + BUCKET_SEC * 1000;
+  const startISO = new Date(startMs).toISOString();
+  const endISO = new Date(endMs).toISOString();
+
+  // Fetch calls via REST API — src_list is embedded in the response.
+  try {
+    const params = new URLSearchParams({
+      system_id: systemId,
+      tgid: tgKey,
+      start_time: startISO,
+      end_time: endISO,
+      limit: '15',
+    });
+    const resp = await fetch(`${apiBase}/calls?${params}`, {
+      signal: detailAbort.signal,
+    });
+    if (!resp.ok) throw new Error(resp.status);
+    const data = await resp.json();
+
+    // Extract unit display strings from embedded src_list
+    const calls = (data.calls || []).map(c => ({
+      start_time: c.start_time,
+      duration: c.duration,
+      emergency: c.emergency,
+      units: (c.src_list || []).map(s => s.tag || String(s.src)),
+    }));
+
+    detailCache.set(cacheKey, calls);
+
+    // Only render if still hovering the same bucket
+    if (detailLastKey === cacheKey) {
+      renderDetail(calls);
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    ttDetail.innerHTML = '<div class="tt-detail-empty">fetch failed</div>';
+  }
+}
+
+function renderDetail(calls) {
+  ttDetail.style.display = '';
+  if (!calls.length) {
+    ttDetail.innerHTML = '<div class="tt-detail-empty">no calls in this window</div>';
+    return;
+  }
+
+  let html = `<div class="tt-detail-header">${calls.length} call${calls.length !== 1 ? 's' : ''} in bucket</div>`;
+  for (const c of calls) {
+    const t = new Date(c.start_time);
+    const time = t.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dur = c.duration != null ? Math.round(c.duration) + 's' : '?';
+    const unitStr = c.units.length ? c.units.join(', ') : '';
+    const isEmg = c.emergency;
+    html += `<div class="tt-call-row${isEmg ? ' emergency' : ''}">`;
+    html += `<span class="tt-call-time">${time}</span>`;
+    html += `<span class="tt-call-dur">${dur}</span>`;
+    if (unitStr) html += `<span class="tt-call-units">${unitStr}</span>`;
+    if (isEmg) html += `<span class="tt-call-emg">EMG</span>`;
+    html += `</div>`;
+  }
+  ttDetail.innerHTML = html;
+}
+
+function clearDetail() {
+  clearTimeout(detailTimer);
+  if (detailAbort) detailAbort.abort();
+  detailLastKey = null;
+  ttDetail.style.display = 'none';
+  ttDetail.innerHTML = '';
+}
+
+// ═══════════════════════════════════════════════════════════════
 // STATS
 // ═══════════════════════════════════════════════════════════════
 function updateStats() {
@@ -747,6 +912,7 @@ document.querySelectorAll('.metric-btn').forEach(btn => {
     document.querySelectorAll('.metric-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     updateDesc();
+    detailCache.clear();
     streamGroup.selectAll('.stream-path').remove();
     render();
   });

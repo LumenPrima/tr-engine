@@ -52,8 +52,7 @@ func (db *DB) GetStats(ctx context.Context) (*StatsResponse, error) {
 			(SELECT count(*) FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour'),
 			(SELECT count(*) FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '24 hours'),
 			(SELECT count(DISTINCT tgid) FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour'),
-			(SELECT count(DISTINCT ct.src) FROM call_transmissions ct
-				JOIN calls c ON c.call_id = ct.call_id AND c.start_time = ct.call_start_time
+			(SELECT count(DISTINCT u) FROM calls c, unnest(c.unit_ids) AS u
 				WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour')
 		FROM systems s
 		WHERE s.deleted_at IS NULL

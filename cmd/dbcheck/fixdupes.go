@@ -8,11 +8,11 @@ import (
 )
 
 func fixDuplicateCalls(ctx context.Context, pool *pgxpool.Pool, dryRun bool) {
-	// Find pairs: a duration=0 row paired with a duration>0 row on same
-	// system+tgid within 2s. Covers both patterns:
-	//   1. RECORDING (has tr_call_id) + COMPLETED (empty tr_call_id) — old dupes
-	//   2. Two rows both with tr_call_ids that differ by 1s — call ID shift dupes
-	// Keep the row with duration>0 (it has the completed data).
+	// Find pairs: a no-audio row paired with a has-audio row on same
+	// system+tgid within 5s. Covers:
+	//   1. call_end created a row, then audio handler created another (most common)
+	//   2. RECORDING + COMPLETED dupes from call ID shift
+	// Keep the row with audio (it has src_list/freq_list and the audio file).
 	const findPairs = `
 		WITH pairs AS (
 			SELECT DISTINCT ON (r.call_id)
@@ -23,10 +23,10 @@ func fixDuplicateCalls(ctx context.Context, pool *pgxpool.Pool, dryRun bool) {
 			FROM calls r
 			JOIN calls c ON r.tgid = c.tgid
 				AND r.system_id = c.system_id
-				AND ABS(EXTRACT(EPOCH FROM (r.start_time - c.start_time))) <= 2
+				AND ABS(EXTRACT(EPOCH FROM (r.start_time - c.start_time))) <= 5
 				AND r.call_id != c.call_id
-			WHERE (r.duration IS NULL OR r.duration = 0)
-				AND c.duration > 0
+			WHERE r.audio_file_path IS NULL
+				AND c.audio_file_path IS NOT NULL
 			ORDER BY r.call_id, ABS(EXTRACT(EPOCH FROM (r.start_time - c.start_time)))
 		)
 		SELECT keep_id, keep_start, delete_id, delete_start FROM pairs
@@ -122,7 +122,7 @@ func fixDuplicateCalls(ctx context.Context, pool *pgxpool.Pool, dryRun bool) {
 		}
 
 		// Reassign child rows from the duplicate to the kept call
-		for _, child := range []string{"call_frequencies", "call_transmissions", "transcriptions"} {
+		for _, child := range []string{"transcriptions"} {
 			_, err = tx.Exec(ctx,
 				fmt.Sprintf("UPDATE %s SET call_id = $1, call_start_time = $2 WHERE call_id = $3 AND call_start_time = $4", child),
 				p.keepID, p.keepStart, p.deleteID, p.deleteStart,
@@ -135,6 +135,23 @@ func fixDuplicateCalls(ctx context.Context, pool *pgxpool.Pool, dryRun bool) {
 			}
 		}
 		if err != nil {
+			continue
+		}
+
+		// COALESCE src_list/freq_list/unit_ids from deleted row onto kept row
+		_, err = tx.Exec(ctx, `
+			UPDATE calls keep SET
+				src_list  = COALESCE(keep.src_list, del.src_list),
+				freq_list = COALESCE(keep.freq_list, del.freq_list),
+				unit_ids  = COALESCE(keep.unit_ids, del.unit_ids)
+			FROM calls del
+			WHERE keep.call_id = $1 AND keep.start_time = $2
+			  AND del.call_id = $3 AND del.start_time = $4
+		`, p.keepID, p.keepStart, p.deleteID, p.deleteStart)
+		if err != nil {
+			tx.Rollback(ctx)
+			fmt.Printf("  Error merging src/freq data for call_id=%d: %v\n", p.deleteID, err)
+			errors++
 			continue
 		}
 

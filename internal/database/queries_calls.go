@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -93,9 +94,12 @@ type CallAPI struct {
 	Encrypted     bool      `json:"encrypted"`
 	Analog        bool      `json:"analog"`
 	Conventional  bool      `json:"conventional"`
-	Phase2TDMA    bool      `json:"phase2_tdma"`
-	TDMASlot      *int16    `json:"tdma_slot,omitempty"`
-	PatchedTgids  []int32   `json:"patched_tgids,omitempty"`
+	Phase2TDMA    bool              `json:"phase2_tdma"`
+	TDMASlot      *int16            `json:"tdma_slot,omitempty"`
+	PatchedTgids  []int32           `json:"patched_tgids,omitempty"`
+	SrcList       json.RawMessage   `json:"src_list,omitempty"`
+	FreqList      json.RawMessage   `json:"freq_list,omitempty"`
+	UnitIDs       []int32           `json:"unit_ids,omitempty"`
 }
 
 // ListCalls returns calls matching the filter with a total count.
@@ -125,7 +129,7 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 		qb.Add("c.tgid = %s", *filter.Tgid)
 	}
 	if filter.UnitID != nil {
-		qb.Add(fmt.Sprintf("EXISTS (SELECT 1 FROM call_transmissions ct WHERE ct.call_id = c.call_id AND ct.call_start_time = c.start_time AND ct.src = %%s)"), *filter.UnitID)
+		qb.Add("c.unit_ids @> ARRAY[%s]::int[]", *filter.UnitID)
 	}
 	if filter.Emergency != nil {
 		qb.Add("c.emergency = %s", *filter.Emergency)
@@ -168,7 +172,8 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			COALESCE(c.emergency, false), COALESCE(c.encrypted, false),
 			COALESCE(c.analog, false), COALESCE(c.conventional, false),
 			COALESCE(c.phase2_tdma, false), c.tdma_slot,
-			c.patched_tgids
+			c.patched_tgids,
+			c.src_list, c.freq_list, c.unit_ids
 		%s %s
 		ORDER BY %s
 		LIMIT %d OFFSET %d
@@ -195,6 +200,7 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			&c.Emergency, &c.Encrypted, &c.Analog, &c.Conventional,
 			&c.Phase2TDMA, &c.TDMASlot,
 			&c.PatchedTgids,
+			&c.SrcList, &c.FreqList, &c.UnitIDs,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -226,7 +232,8 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 			COALESCE(c.emergency, false), COALESCE(c.encrypted, false),
 			COALESCE(c.analog, false), COALESCE(c.conventional, false),
 			COALESCE(c.phase2_tdma, false), c.tdma_slot,
-			c.patched_tgids
+			c.patched_tgids,
+			c.src_list, c.freq_list, c.unit_ids
 		FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		WHERE c.call_id = $1
@@ -243,6 +250,7 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 		&c.Emergency, &c.Encrypted, &c.Analog, &c.Conventional,
 		&c.Phase2TDMA, &c.TDMASlot,
 		&c.PatchedTgids,
+		&c.SrcList, &c.FreqList, &c.UnitIDs,
 	)
 	if err != nil {
 		return nil, err
@@ -280,32 +288,26 @@ type CallFrequencyAPI struct {
 	SpikeCount *int     `json:"spike_count,omitempty"`
 }
 
-// GetCallFrequencies returns frequency entries for a call.
+// GetCallFrequencies returns frequency entries for a call by reading the freq_list JSONB column.
 func (db *DB) GetCallFrequencies(ctx context.Context, callID int64) ([]CallFrequencyAPI, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT cf.freq, extract(epoch from cf.time)::bigint, cf.pos, cf.len,
-			cf.error_count, cf.spike_count
-		FROM call_frequencies cf
-		WHERE cf.call_id = $1
-		ORDER BY cf.pos
-	`, callID)
+	var raw json.RawMessage
+	err := db.Pool.QueryRow(ctx, `
+		SELECT freq_list FROM calls WHERE call_id = $1 ORDER BY start_time DESC LIMIT 1
+	`, callID).Scan(&raw)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
+	if len(raw) == 0 || string(raw) == "null" {
+		return []CallFrequencyAPI{}, nil
+	}
 	var freqs []CallFrequencyAPI
-	for rows.Next() {
-		var f CallFrequencyAPI
-		if err := rows.Scan(&f.Freq, &f.Time, &f.Pos, &f.Len, &f.ErrorCount, &f.SpikeCount); err != nil {
-			return nil, err
-		}
-		freqs = append(freqs, f)
+	if err := json.Unmarshal(raw, &freqs); err != nil {
+		return nil, err
 	}
 	if freqs == nil {
 		freqs = []CallFrequencyAPI{}
 	}
-	return freqs, rows.Err()
+	return freqs, nil
 }
 
 // CallTransmissionAPI represents a transmission entry for API responses.
@@ -319,32 +321,26 @@ type CallTransmissionAPI struct {
 	SignalSystem string   `json:"signal_system,omitempty"`
 }
 
-// GetCallTransmissions returns transmission entries for a call.
+// GetCallTransmissions returns transmission entries for a call by reading the src_list JSONB column.
 func (db *DB) GetCallTransmissions(ctx context.Context, callID int64) ([]CallTransmissionAPI, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT ct.src, COALESCE(ct.tag, ''), extract(epoch from ct.time)::bigint,
-			ct.pos, ct.duration, COALESCE(ct.emergency, 0), COALESCE(ct.signal_system, '')
-		FROM call_transmissions ct
-		WHERE ct.call_id = $1
-		ORDER BY ct.pos
-	`, callID)
+	var raw json.RawMessage
+	err := db.Pool.QueryRow(ctx, `
+		SELECT src_list FROM calls WHERE call_id = $1 ORDER BY start_time DESC LIMIT 1
+	`, callID).Scan(&raw)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
+	if len(raw) == 0 || string(raw) == "null" {
+		return []CallTransmissionAPI{}, nil
+	}
 	var txs []CallTransmissionAPI
-	for rows.Next() {
-		var t CallTransmissionAPI
-		if err := rows.Scan(&t.Src, &t.Tag, &t.Time, &t.Pos, &t.Duration, &t.Emergency, &t.SignalSystem); err != nil {
-			return nil, err
-		}
-		txs = append(txs, t)
+	if err := json.Unmarshal(raw, &txs); err != nil {
+		return nil, err
 	}
 	if txs == nil {
 		txs = []CallTransmissionAPI{}
 	}
-	return txs, rows.Err()
+	return txs, nil
 }
 
 // CallGroupFilter specifies filters for listing call groups.
@@ -471,7 +467,8 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			COALESCE(c.emergency, false), COALESCE(c.encrypted, false),
 			COALESCE(c.analog, false), COALESCE(c.conventional, false),
 			COALESCE(c.phase2_tdma, false), c.tdma_slot,
-			c.patched_tgids
+			c.patched_tgids,
+			c.src_list, c.freq_list, c.unit_ids
 		FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		WHERE c.call_group_id = $1
@@ -497,6 +494,7 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			&c.Emergency, &c.Encrypted, &c.Analog, &c.Conventional,
 			&c.Phase2TDMA, &c.TDMASlot,
 			&c.PatchedTgids,
+			&c.SrcList, &c.FreqList, &c.UnitIDs,
 		); err != nil {
 			return nil, nil, err
 		}

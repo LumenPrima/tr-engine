@@ -2141,6 +2141,27 @@ components:
           items:
             type: integer
 
+        # Transmission and frequency data (JSONB columns)
+        src_list:
+          type: array
+          description: |
+            Source/transmission list from trunk-recorder's srcList.
+            Each entry is a unit transmission segment within the call.
+          items:
+            $ref: "#/components/schemas/CallTransmission"
+        freq_list:
+          type: array
+          description: |
+            Frequency list from trunk-recorder's freqList.
+            Each entry is a frequency segment within the call.
+          items:
+            $ref: "#/components/schemas/CallFrequency"
+        unit_ids:
+          type: array
+          description: Denormalized array of distinct unit radio IDs (src values) from src_list. GIN-indexed for fast unit filtering.
+          items:
+            type: integer
+
         # Units on this call (embedded)
         units:
           type: array

@@ -189,7 +189,7 @@ func (p *Pipeline) runMaintenance() {
 	defer cancel()
 
 	// 1. Create monthly partitions 3 months ahead
-	monthlyTables := []string{"calls", "call_frequencies", "call_transmissions", "unit_events", "trunking_messages"}
+	monthlyTables := []string{"calls", "unit_events", "trunking_messages"}
 	for _, table := range monthlyTables {
 		partDate := beginningOfMonth(time.Now()).AddDate(0, 3, 0)
 		result, err := p.db.CreateMonthlyPartition(ctx, table, partDate)

@@ -261,6 +261,9 @@ CREATE TABLE calls (
                                        CHECK (transcription_status IN ('none', 'auto', 'reviewed', 'verified', 'excluded')),
     transcription_text    text,
     transcription_word_count int,
+    src_list              jsonb,
+    freq_list             jsonb,
+    unit_ids              int[],
     metadata_json         jsonb,
     instance_id           text,
     created_at            timestamptz  NOT NULL DEFAULT now(),
@@ -283,6 +286,7 @@ CREATE INDEX idx_calls_transcription_status ON calls (transcription_status, star
 CREATE INDEX idx_calls_freq             ON calls (freq);
 CREATE INDEX idx_calls_duration         ON calls (duration);
 CREATE INDEX idx_calls_instance         ON calls (instance_id);
+CREATE INDEX idx_calls_unit_ids         ON calls USING gin (unit_ids);
 
 CREATE TRIGGER trg_calls_updated_at
     BEFORE UPDATE ON calls
@@ -296,50 +300,6 @@ CREATE TRIGGER trg_calls_updated_at
 -- so we leave it as a soft reference.
 COMMENT ON COLUMN call_groups.primary_call_id IS
     'Best-quality call_id for this group. Soft FK — not enforced by constraint since it references a partitioned table without the partition key.';
-
--- ============================================================
--- 8. call_frequencies (PARTITIONED BY RANGE on call_start_time, monthly)
--- ============================================================
-
-CREATE TABLE call_frequencies (
-    id               bigserial,
-    call_id          bigint       NOT NULL,
-    call_start_time  timestamptz  NOT NULL,
-    freq             bigint       NOT NULL,
-    "time"           timestamptz,
-    pos              real,
-    len              real,
-    error_count      int,
-    spike_count      int,
-
-    PRIMARY KEY (id, call_start_time),
-    FOREIGN KEY (call_id, call_start_time) REFERENCES calls (call_id, start_time)
-) PARTITION BY RANGE (call_start_time);
-
-CREATE INDEX idx_call_frequencies_call ON call_frequencies (call_id, call_start_time);
-
--- ============================================================
--- 9. call_transmissions (PARTITIONED BY RANGE on call_start_time, monthly)
--- ============================================================
-
-CREATE TABLE call_transmissions (
-    id               bigserial,
-    call_id          bigint       NOT NULL,
-    call_start_time  timestamptz  NOT NULL,
-    src              int          NOT NULL,
-    "time"           timestamptz,
-    pos              real,
-    duration         real,
-    emergency        smallint     DEFAULT 0,
-    signal_system    text,
-    tag              text,
-
-    PRIMARY KEY (id, call_start_time),
-    FOREIGN KEY (call_id, call_start_time) REFERENCES calls (call_id, start_time)
-) PARTITION BY RANGE (call_start_time);
-
-CREATE INDEX idx_call_transmissions_call ON call_transmissions (call_id, call_start_time);
-CREATE INDEX idx_call_transmissions_src  ON call_transmissions (src, call_start_time DESC);
 
 -- ============================================================
 -- 10. unit_events (PARTITIONED BY RANGE on time, monthly)
@@ -767,8 +727,6 @@ DECLARE
     partition_date date;
     monthly_tables text[] := ARRAY[
         'calls',
-        'call_frequencies',
-        'call_transmissions',
         'unit_events',
         'trunking_messages'
     ];
@@ -823,7 +781,7 @@ COMMENT ON TABLE decode_rates IS
  *     DO $body$
  *     DECLARE
  *         tbl text;
- *         monthly_tables text[] := ARRAY['calls','call_frequencies','call_transmissions','unit_events','trunking_messages'];
+ *         monthly_tables text[] := ARRAY['calls','unit_events','trunking_messages'];
  *     BEGIN
  *         FOREACH tbl IN ARRAY monthly_tables LOOP
  *             PERFORM create_monthly_partition(tbl, (date_trunc('month', current_date) + interval '3 months')::date);

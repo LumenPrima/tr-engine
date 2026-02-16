@@ -79,9 +79,8 @@ func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]Tal
 			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days'
 		) ts ON true
 		LEFT JOIN LATERAL (
-			SELECT count(DISTINCT ct.src) AS unit_count
-			FROM call_transmissions ct
-			JOIN calls c ON c.call_id = ct.call_id AND c.start_time = ct.call_start_time
+			SELECT count(DISTINCT u) AS unit_count
+			FROM calls c, unnest(c.unit_ids) AS u
 			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days'
 		) us ON true
 	`
@@ -160,8 +159,7 @@ func (db *DB) GetTalkgroupByComposite(ctx context.Context, systemID, tgid int) (
 			(SELECT count(*) FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days'),
 			(SELECT count(*) FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '1 hour'),
 			(SELECT count(*) FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '24 hours'),
-			(SELECT count(DISTINCT ct.src) FROM call_transmissions ct
-				JOIN calls c ON c.call_id = ct.call_id AND c.start_time = ct.call_start_time
+			(SELECT count(DISTINCT u) FROM calls c, unnest(c.unit_ids) AS u
 				WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days')
 		FROM talkgroups t
 		JOIN systems s ON s.system_id = t.system_id
@@ -253,9 +251,8 @@ func (db *DB) ListTalkgroupUnits(ctx context.Context, systemID, tgid, windowMinu
 
 	var total int
 	err := db.Pool.QueryRow(ctx, `
-		SELECT count(DISTINCT ct.src)
-		FROM call_transmissions ct
-		JOIN calls c ON c.call_id = ct.call_id AND c.start_time = ct.call_start_time
+		SELECT count(DISTINCT u)
+		FROM calls c, unnest(c.unit_ids) AS u
 		WHERE c.system_id = $1 AND c.tgid = $2 AND c.start_time > now() - $3::interval
 	`, systemID, tgid, window).Scan(&total)
 	if err != nil {
@@ -270,9 +267,8 @@ func (db *DB) ListTalkgroupUnits(ctx context.Context, systemID, tgid, windowMinu
 		FROM units u
 		JOIN systems s ON s.system_id = u.system_id
 		WHERE u.system_id = $1 AND u.unit_id IN (
-			SELECT DISTINCT ct.src
-			FROM call_transmissions ct
-			JOIN calls c ON c.call_id = ct.call_id AND c.start_time = ct.call_start_time
+			SELECT DISTINCT uid
+			FROM calls c, unnest(c.unit_ids) AS uid
 			WHERE c.system_id = $1 AND c.tgid = $2 AND c.start_time > now() - $3::interval
 		)
 		ORDER BY u.unit_id

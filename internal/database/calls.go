@@ -2,9 +2,8 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
 type CallRow struct {
@@ -38,6 +37,9 @@ type CallRow struct {
 	RecNum         *int16
 	SrcNum         *int16
 	PatchedTgids   []int32
+	SrcList        json.RawMessage
+	FreqList       json.RawMessage
+	UnitIDs        []int32
 	SystemName     string
 	SiteShortName  string
 	TgAlphaTag     string
@@ -60,6 +62,7 @@ func (db *DB) InsertCall(ctx context.Context, c *CallRow) (int64, error) {
 			call_state, call_state_type, mon_state, mon_state_type,
 			rec_state, rec_state_type, rec_num, src_num,
 			patched_tgids,
+			src_list, freq_list, unit_ids,
 			system_name, site_short_name,
 			tg_alpha_tag, tg_description, tg_tag, tg_group,
 			instance_id
@@ -72,9 +75,10 @@ func (db *DB) InsertCall(ctx context.Context, c *CallRow) (int64, error) {
 			$22, $23, $24, $25,
 			$26, $27, $28, $29,
 			$30,
-			$31, $32,
-			$33, $34, $35, $36,
-			$37
+			$31, $32, $33,
+			$34, $35,
+			$36, $37, $38, $39,
+			$40
 		) RETURNING call_id
 	`,
 		c.SystemID, c.SiteID, c.Tgid, c.TrCallID, c.CallNum,
@@ -85,6 +89,7 @@ func (db *DB) InsertCall(ctx context.Context, c *CallRow) (int64, error) {
 		c.CallState, c.CallStateType, c.MonState, c.MonStateType,
 		c.RecState, c.RecStateType, c.RecNum, c.SrcNum,
 		c.PatchedTgids,
+		c.SrcList, c.FreqList, c.UnitIDs,
 		c.SystemName, c.SiteShortName,
 		c.TgAlphaTag, c.TgDescription, c.TgTag, c.TgGroup,
 		c.InstanceID,
@@ -187,71 +192,17 @@ func (db *DB) SetCallGroupPrimary(ctx context.Context, callGroupID int, callID i
 	return err
 }
 
-type CallFrequencyRow struct {
-	CallID        int64
-	CallStartTime time.Time
-	Freq          int64
-	Time          *time.Time
-	Pos           *float32
-	Len           *float32
-	ErrorCount    *int
-	SpikeCount    *int
-}
-
-// InsertCallFrequencies batch-inserts call frequency records.
-func (db *DB) InsertCallFrequencies(ctx context.Context, rows []CallFrequencyRow) (int64, error) {
-	copyRows := make([][]any, len(rows))
-	for i, r := range rows {
-		copyRows[i] = []any{
-			r.CallID, r.CallStartTime, r.Freq,
-			r.Time, r.Pos, r.Len,
-			r.ErrorCount, r.SpikeCount,
-		}
-	}
-
-	return db.Pool.CopyFrom(ctx,
-		pgx.Identifier{"call_frequencies"},
-		[]string{
-			"call_id", "call_start_time", "freq",
-			"time", "pos", "len",
-			"error_count", "spike_count",
-		},
-		pgx.CopyFromRows(copyRows),
-	)
-}
-
-type CallTransmissionRow struct {
-	CallID        int64
-	CallStartTime time.Time
-	Src           int
-	Time          *time.Time
-	Pos           *float32
-	Duration      *float32
-	Emergency     int16
-	SignalSystem  string
-	Tag           string
-}
-
-// InsertCallTransmissions batch-inserts call transmission records.
-func (db *DB) InsertCallTransmissions(ctx context.Context, rows []CallTransmissionRow) (int64, error) {
-	copyRows := make([][]any, len(rows))
-	for i, r := range rows {
-		copyRows[i] = []any{
-			r.CallID, r.CallStartTime, r.Src,
-			r.Time, r.Pos, r.Duration, r.Emergency,
-			r.SignalSystem, r.Tag,
-		}
-	}
-
-	return db.Pool.CopyFrom(ctx,
-		pgx.Identifier{"call_transmissions"},
-		[]string{
-			"call_id", "call_start_time", "src",
-			"time", "pos", "duration", "emergency",
-			"signal_system", "tag",
-		},
-		pgx.CopyFromRows(copyRows),
-	)
+// UpdateCallSrcFreq updates a call with srcList, freqList, and unit_ids JSONB columns.
+func (db *DB) UpdateCallSrcFreq(ctx context.Context, callID int64, startTime time.Time,
+	srcList json.RawMessage, freqList json.RawMessage, unitIDs []int32) error {
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE calls SET
+			src_list = $3,
+			freq_list = $4,
+			unit_ids = $5
+		WHERE call_id = $1 AND start_time = $2
+	`, callID, startTime, srcList, freqList, unitIDs)
+	return err
 }
 
 // InsertActiveCallCheckpoint stores a snapshot of active calls for crash recovery.
@@ -277,13 +228,16 @@ func (db *DB) FindCallByTrCallID(ctx context.Context, trCallID string) (int64, t
 }
 
 // FindCallForAudio finds a call matching the audio metadata.
+// Uses fuzzy start_time matching (±5s) to handle trunk-recorder shifting
+// start_time by 1-2s between call_start/call_end and audio messages.
 func (db *DB) FindCallForAudio(ctx context.Context, systemID, tgid int, startTime time.Time) (int64, time.Time, error) {
 	var callID int64
 	var st time.Time
 	err := db.Pool.QueryRow(ctx, `
 		SELECT call_id, start_time FROM calls
-		WHERE system_id = $1 AND tgid = $2 AND start_time = $3
-		ORDER BY start_time DESC
+		WHERE system_id = $1 AND tgid = $2
+			AND start_time BETWEEN $3 - interval '5 seconds' AND $3 + interval '5 seconds'
+		ORDER BY ABS(EXTRACT(EPOCH FROM (start_time - $3)))
 		LIMIT 1
 	`, systemID, tgid, startTime).Scan(&callID, &st)
 	return callID, st, err

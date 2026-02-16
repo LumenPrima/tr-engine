@@ -72,60 +72,77 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 		}
 	}
 
-	// Insert call frequencies
-	if callID > 0 && len(meta.FreqList) > 0 {
-		freqRows := make([]database.CallFrequencyRow, 0, len(meta.FreqList))
-		for _, f := range meta.FreqList {
-			ft := time.Unix(f.Time, 0)
-			pos := float32(f.Pos)
-			length := float32(f.Len)
-			ec := f.ErrorCount
-			sc := f.SpikeCount
-			freqRows = append(freqRows, database.CallFrequencyRow{
-				CallID:        callID,
-				CallStartTime: callStartTime,
-				Freq:          int64(f.Freq),
-				Time:          &ft,
-				Pos:           &pos,
-				Len:           &length,
-				ErrorCount:    &ec,
-				SpikeCount:    &sc,
-			})
-		}
-		if _, err := p.db.InsertCallFrequencies(ctx, freqRows); err != nil {
-			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert call frequencies")
-		}
-	}
-
-	// Insert call transmissions
-	if callID > 0 && len(meta.SrcList) > 0 {
-		txRows := make([]database.CallTransmissionRow, 0, len(meta.SrcList))
-		for i, s := range meta.SrcList {
-			st := time.Unix(s.Time, 0)
-			pos := float32(s.Pos)
-			// Duration = next transmission's pos - this pos; last = call length - pos
-			var dur *float32
-			if i+1 < len(meta.SrcList) {
-				d := float32(meta.SrcList[i+1].Pos - s.Pos)
-				dur = &d
-			} else if meta.CallLength > 0 {
-				d := float32(float64(meta.CallLength) - s.Pos)
-				dur = &d
+	// Build srcList/freqList JSON and update call
+	if callID > 0 && (len(meta.SrcList) > 0 || len(meta.FreqList) > 0) {
+		// Build freqList JSON
+		var freqListJSON json.RawMessage
+		if len(meta.FreqList) > 0 {
+			type freqEntry struct {
+				Freq       int64   `json:"freq"`
+				Time       int64   `json:"time"`
+				Pos        float64 `json:"pos"`
+				Len        float64 `json:"len"`
+				ErrorCount int     `json:"error_count"`
+				SpikeCount int     `json:"spike_count"`
 			}
-			txRows = append(txRows, database.CallTransmissionRow{
-				CallID:        callID,
-				CallStartTime: callStartTime,
-				Src:           s.Src,
-				Time:          &st,
-				Pos:           &pos,
-				Duration:      dur,
-				Emergency:     int16(s.Emergency),
-				SignalSystem:  s.SignalSystem,
-				Tag:           s.Tag,
-			})
+			entries := make([]freqEntry, len(meta.FreqList))
+			for i, f := range meta.FreqList {
+				entries[i] = freqEntry{
+					Freq:       int64(f.Freq),
+					Time:       f.Time,
+					Pos:        f.Pos,
+					Len:        f.Len,
+					ErrorCount: f.ErrorCount,
+					SpikeCount: f.SpikeCount,
+				}
+			}
+			freqListJSON, _ = json.Marshal(entries)
 		}
-		if _, err := p.db.InsertCallTransmissions(ctx, txRows); err != nil {
-			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert call transmissions")
+
+		// Build srcList JSON with computed duration
+		var srcListJSON json.RawMessage
+		unitSet := make(map[int32]struct{})
+		if len(meta.SrcList) > 0 {
+			type srcEntry struct {
+				Src          int     `json:"src"`
+				Tag          string  `json:"tag,omitempty"`
+				Time         int64   `json:"time"`
+				Pos          float64 `json:"pos"`
+				Duration     float64 `json:"duration,omitempty"`
+				Emergency    int     `json:"emergency"`
+				SignalSystem string  `json:"signal_system,omitempty"`
+			}
+			entries := make([]srcEntry, len(meta.SrcList))
+			for i, s := range meta.SrcList {
+				// Duration = next transmission's pos - this pos; last = call length - pos
+				var dur float64
+				if i+1 < len(meta.SrcList) {
+					dur = meta.SrcList[i+1].Pos - s.Pos
+				} else if meta.CallLength > 0 {
+					dur = float64(meta.CallLength) - s.Pos
+				}
+				entries[i] = srcEntry{
+					Src:          s.Src,
+					Tag:          s.Tag,
+					Time:         s.Time,
+					Pos:          s.Pos,
+					Duration:     dur,
+					Emergency:    s.Emergency,
+					SignalSystem: s.SignalSystem,
+				}
+				unitSet[int32(s.Src)] = struct{}{}
+			}
+			srcListJSON, _ = json.Marshal(entries)
+		}
+
+		// Extract distinct unit IDs
+		unitIDs := make([]int32, 0, len(unitSet))
+		for uid := range unitSet {
+			unitIDs = append(unitIDs, uid)
+		}
+
+		if err := p.db.UpdateCallSrcFreq(ctx, callID, callStartTime, srcListJSON, freqListJSON, unitIDs); err != nil {
+			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update call src/freq data")
 		}
 	}
 

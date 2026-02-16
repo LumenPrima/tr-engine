@@ -231,19 +231,14 @@ async function backfill(apiBase, systemId, start, end) {
     ORDER BY 1`;
 
   // ── Active Units ─────────────────────────────────────────
-  // Joins call_transmissions via (call_id, call_start_time) composite FK.
-  // call_transmissions is partitioned on call_start_time, which aligns
-  // with calls.start_time — the join stays within matching partitions.
-  // Counts DISTINCT src (unit RID) per bucket per talkgroup.
+  // Counts DISTINCT unit IDs per bucket per talkgroup using
+  // the unit_ids int[] column on calls (GIN-indexed).
   const unitsSQL = `
     SELECT
       extract(epoch FROM date_bin('${interval}', c.start_time, '2000-01-01'::timestamptz))::bigint AS bucket_epoch,
       c.tgid,
-      count(DISTINCT ct.src)::int AS val
-    FROM calls c
-    JOIN call_transmissions ct
-      ON ct.call_id = c.call_id
-     AND ct.call_start_time = c.start_time
+      count(DISTINCT u)::int AS val
+    FROM calls c, unnest(c.unit_ids) AS u
     WHERE c.system_id = $1
       AND c.start_time >= $2::timestamptz
       AND c.start_time <  $3::timestamptz
