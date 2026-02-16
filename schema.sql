@@ -694,8 +694,8 @@ $$ LANGUAGE plpgsql;
 -- Helper: decimate_state_table()
 --
 -- Decimation policy for state tables (recorder_snapshots, decode_rates):
---   - Rows older than 24h: keep 1 per minute (delete others)
---   - Rows older than 7d:  keep 1 per hour (delete others)
+--   - Rows older than 1 week:  keep 1 per minute (delete others)
+--   - Rows older than 1 month: keep 1 per hour (delete others)
 --
 -- Usage:
 --   SELECT decimate_state_table('recorder_snapshots', 'time');
@@ -706,12 +706,12 @@ CREATE OR REPLACE FUNCTION decimate_state_table(
     target_table text,
     time_column  text
 )
-RETURNS TABLE(deleted_24h bigint, deleted_7d bigint) AS $$
+RETURNS TABLE(deleted_1w bigint, deleted_1m bigint) AS $$
 DECLARE
-    cnt_24h bigint := 0;
-    cnt_7d  bigint := 0;
+    cnt_1w bigint := 0;
+    cnt_1m bigint := 0;
 BEGIN
-    -- Phase 1: For rows 24h-7d old, keep 1 per minute
+    -- Phase 1: For rows 1 week to 1 month old, keep 1 per minute
     EXECUTE format($q$
         WITH numbered AS (
             SELECT id,
@@ -720,8 +720,8 @@ BEGIN
                        ORDER BY %I
                    ) AS rn
             FROM %I
-            WHERE %I < now() - interval '24 hours'
-              AND %I >= now() - interval '7 days'
+            WHERE %I < now() - interval '7 days'
+              AND %I >= now() - interval '1 month'
         )
         DELETE FROM %I WHERE id IN (
             SELECT id FROM numbered WHERE rn > 1
@@ -729,9 +729,9 @@ BEGIN
     $q$, time_column, time_column, target_table,
          time_column, time_column, target_table);
 
-    GET DIAGNOSTICS cnt_24h = ROW_COUNT;
+    GET DIAGNOSTICS cnt_1w = ROW_COUNT;
 
-    -- Phase 2: For rows >7d old, keep 1 per hour
+    -- Phase 2: For rows >1 month old, keep 1 per hour
     EXECUTE format($q$
         WITH numbered AS (
             SELECT id,
@@ -740,7 +740,7 @@ BEGIN
                        ORDER BY %I
                    ) AS rn
             FROM %I
-            WHERE %I < now() - interval '7 days'
+            WHERE %I < now() - interval '1 month'
         )
         DELETE FROM %I WHERE id IN (
             SELECT id FROM numbered WHERE rn > 1
@@ -748,9 +748,9 @@ BEGIN
     $q$, time_column, time_column, target_table,
          time_column, target_table);
 
-    GET DIAGNOSTICS cnt_7d = ROW_COUNT;
+    GET DIAGNOSTICS cnt_1m = ROW_COUNT;
 
-    RETURN QUERY SELECT cnt_24h, cnt_7d;
+    RETURN QUERY SELECT cnt_1w, cnt_1m;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -801,7 +801,7 @@ COMMENT ON TABLE mqtt_raw_messages IS
     'Raw MQTT archive. Retention: 7 days. Drop weekly partitions older than 7d.';
 
 COMMENT ON TABLE call_active_checkpoints IS
-    'Crash recovery snapshots. Retention: 24h. Purge: DELETE WHERE snapshot_time < now() - interval ''24 hours''.';
+    'Crash recovery snapshots. Retention: 7 days. Purge: DELETE WHERE snapshot_time < now() - interval ''7 days''.';
 
 COMMENT ON TABLE console_messages IS
     'TR console log. Retention: 30 days. Purge: DELETE WHERE log_time < now() - interval ''30 days''.';
@@ -810,10 +810,10 @@ COMMENT ON TABLE plugin_statuses IS
     'Plugin status log. Retention: 30 days. Purge: DELETE WHERE time < now() - interval ''30 days''.';
 
 COMMENT ON TABLE recorder_snapshots IS
-    'Recorder state snapshots. Decimation: 1/min after 24h, 1/hour after 7d. Run: SELECT decimate_state_table(''recorder_snapshots'', ''time'').';
+    'Recorder state snapshots. Decimation: 1/min after 1 week, 1/hour after 1 month. Run: SELECT decimate_state_table(''recorder_snapshots'', ''time'').';
 
 COMMENT ON TABLE decode_rates IS
-    'Decode rate snapshots. Decimation: 1/min after 24h, 1/hour after 7d. Run: SELECT decimate_state_table(''decode_rates'', ''time'').';
+    'Decode rate snapshots. Decimation: 1/min after 1 week, 1/hour after 1 month. Run: SELECT decimate_state_table(''decode_rates'', ''time'').';
 
 /*
  * Recommended pg_cron schedule:
@@ -841,9 +841,9 @@ COMMENT ON TABLE decode_rates IS
  * -- Purge raw MQTT (daily at 02:00 — drop weekly partitions older than 7d)
  * -- Implementation depends on naming convention; see create_weekly_partition().
  *
- * -- Purge active checkpoints (hourly)
- * SELECT cron.schedule('purge-checkpoints', '0 * * * *', $$
- *     DELETE FROM call_active_checkpoints WHERE snapshot_time < now() - interval '24 hours';
+ * -- Purge active checkpoints (daily at 02:30)
+ * SELECT cron.schedule('purge-checkpoints', '30 2 * * *', $$
+ *     DELETE FROM call_active_checkpoints WHERE snapshot_time < now() - interval '7 days';
  * $$);
  *
  * -- Purge console/plugin logs (daily at 03:00)

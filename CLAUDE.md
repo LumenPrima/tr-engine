@@ -80,7 +80,7 @@ Conventional systems are 1:1 with sites.
 - **Denormalize for reads** — `calls` carries `system_name`, `site_short_name`, `tg_alpha_tag`, etc. copied at write time. Avoids JOINs on the hottest query paths.
 - **Monthly partitioning** on high-volume tables: `calls`, `call_frequencies`, `call_transmissions`, `unit_events`, `trunking_messages`. Weekly for `mqtt_raw_messages`.
 - **Call groups** deduplicate recordings: `(system_id, tgid, start_time)` groups duplicate recordings from multiple sites.
-- **State tables** (`recorder_snapshots`, `decode_rates`) are append-only with decimation (1/min after 24h, 1/hour after 7d). Latest state = `ORDER BY time DESC LIMIT 1`.
+- **State tables** (`recorder_snapshots`, `decode_rates`) are append-only with decimation (1/min after 1 week, 1/hour after 1 month). Latest state = `ORDER BY time DESC LIMIT 1`.
 - **Audio on filesystem**, not in DB. `calls.audio_file_path` stores relative path.
 
 ### Retention Policy
@@ -88,8 +88,8 @@ Conventional systems are 1:1 with sites.
 | Category | Tables | Retention |
 |----------|--------|-----------|
 | Permanent | calls, unit_events, call_frequencies, call_transmissions, transcriptions, talkgroups, units, trunking_messages | Forever (partitioned) |
-| Decimated state | recorder_snapshots, decode_rates | Full 24h → 1/min 7d → 1/hour |
-| Crash recovery | call_active_checkpoints | 24 hours |
+| Decimated state | recorder_snapshots, decode_rates | Full 1 week → 1/min 1 month → 1/hour |
+| Crash recovery | call_active_checkpoints | 7 days |
 | Raw archive | mqtt_raw_messages | 7 days |
 | Logs | console_messages, plugin_statuses | 30 days |
 | Audit | system_merge_log, instance_configs | Forever (low volume) |

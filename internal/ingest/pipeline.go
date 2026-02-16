@@ -104,12 +104,13 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 	return p
 }
 
-// Start loads the identity cache and begins periodic stats logging.
+// Start loads the identity cache and begins periodic stats logging and maintenance.
 func (p *Pipeline) Start(ctx context.Context) error {
 	if err := p.identity.LoadCache(ctx); err != nil {
 		return err
 	}
 	go p.statsLoop()
+	go p.maintenanceLoop()
 	p.log.Info().Msg("ingest pipeline started")
 	return nil
 }
@@ -152,6 +153,107 @@ func (p *Pipeline) statsLoop() {
 			evt.Msg("stats")
 		}
 	}
+}
+
+// maintenanceLoop runs partition creation, decimation, and purging on a daily schedule.
+// It runs once immediately on startup to ensure partitions exist, then every 24 hours.
+func (p *Pipeline) maintenanceLoop() {
+	p.runMaintenance()
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			p.runMaintenance()
+		}
+	}
+}
+
+func (p *Pipeline) runMaintenance() {
+	log := p.log.With().Str("task", "maintenance").Logger()
+	start := time.Now()
+	log.Info().Msg("partition maintenance starting")
+
+	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Minute)
+	defer cancel()
+
+	// 1. Create monthly partitions 3 months ahead
+	monthlyTables := []string{"calls", "call_frequencies", "call_transmissions", "unit_events", "trunking_messages"}
+	for _, table := range monthlyTables {
+		partDate := beginningOfMonth(time.Now()).AddDate(0, 3, 0)
+		result, err := p.db.CreateMonthlyPartition(ctx, table, partDate)
+		if err != nil {
+			log.Warn().Err(err).Str("table", table).Msg("failed to create monthly partition")
+		} else {
+			log.Debug().Str("result", result).Str("table", table).Msg("monthly partition")
+		}
+	}
+
+	// 2. Create weekly partitions 3 weeks ahead
+	for weekOffset := 0; weekOffset <= 3; weekOffset++ {
+		weekDate := time.Now().AddDate(0, 0, weekOffset*7)
+		result, err := p.db.CreateWeeklyPartition(ctx, "mqtt_raw_messages", weekDate)
+		if err != nil {
+			log.Warn().Err(err).Int("week_offset", weekOffset).Msg("failed to create weekly partition")
+		} else {
+			log.Debug().Str("result", result).Msg("weekly partition")
+		}
+	}
+
+	// 3. Decimate state tables
+	for _, spec := range []struct{ table, col string }{
+		{"recorder_snapshots", "time"},
+		{"decode_rates", "time"},
+	} {
+		result, err := p.db.DecimateStateTable(ctx, spec.table, spec.col)
+		if err != nil {
+			log.Warn().Err(err).Str("table", spec.table).Msg("decimation failed")
+		} else if result.Deleted1w > 0 || result.Deleted1m > 0 {
+			log.Info().
+				Str("table", spec.table).
+				Int64("deleted_1w", result.Deleted1w).
+				Int64("deleted_1m", result.Deleted1m).
+				Msg("decimation complete")
+		}
+	}
+
+	// 4. Purge expired data
+	for _, spec := range []struct {
+		table     string
+		col       string
+		retention time.Duration
+	}{
+		{"console_messages", "log_time", 30 * 24 * time.Hour},
+		{"plugin_statuses", "time", 30 * 24 * time.Hour},
+		{"call_active_checkpoints", "snapshot_time", 7 * 24 * time.Hour},
+	} {
+		n, err := p.db.PurgeOlderThan(ctx, spec.table, spec.col, spec.retention)
+		if err != nil {
+			log.Warn().Err(err).Str("table", spec.table).Msg("purge failed")
+		} else if n > 0 {
+			log.Info().Str("table", spec.table).Int64("deleted", n).Msg("purged old rows")
+		}
+	}
+
+	// 5. Drop old weekly partitions (raw MQTT, 7-day retention)
+	dropped, err := p.db.DropOldWeeklyPartitions(ctx, "mqtt_raw_messages", 7*24*time.Hour)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to drop old weekly partitions")
+	}
+	for _, name := range dropped {
+		log.Info().Str("partition", name).Msg("dropped old weekly partition")
+	}
+
+	log.Info().Dur("elapsed_ms", time.Since(start)).Msg("partition maintenance complete")
+}
+
+// beginningOfMonth returns the first day of the month for the given time.
+func beginningOfMonth(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())
 }
 
 // HandleMessage is the entry point called by the MQTT client for each message.
