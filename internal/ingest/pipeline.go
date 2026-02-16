@@ -727,8 +727,14 @@ func (p *Pipeline) backfillAffiliations(ctx context.Context) error {
 	}
 
 	talkgroups := make(map[int]struct{})
+	var offCount int
 	for _, r := range rows {
 		key := affiliationKey{SystemID: r.SystemID, UnitID: r.UnitRID}
+		status := "affiliated"
+		if r.WentOff {
+			status = "off"
+			offCount++
+		}
 		p.affiliations.Update(key, &affiliationEntry{
 			SystemID:        r.SystemID,
 			SystemName:      r.SystemName,
@@ -742,13 +748,15 @@ func (p *Pipeline) backfillAffiliations(ctx context.Context) error {
 			TgGroup:         r.TgGroup,
 			AffiliatedSince: r.Time,
 			LastEventTime:   r.Time,
-			Status:          "affiliated",
+			Status:          status,
 		})
 		talkgroups[r.Tgid] = struct{}{}
 	}
 
 	p.log.Info().
 		Int("units", len(rows)).
+		Int("affiliated", len(rows)-offCount).
+		Int("off", offCount).
 		Int("talkgroups", len(talkgroups)).
 		Dur("elapsed_ms", time.Since(start)).
 		Msg("affiliation map backfilled from DB")

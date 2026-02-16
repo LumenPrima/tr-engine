@@ -177,6 +177,35 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		}
 	case "off":
 		p.affiliations.MarkOff(affKey, ts)
+	case "call", "end", "location":
+		// These events carry the tgid the unit is currently on. If it differs
+		// from the current affiliation, treat it as an implicit re-affiliation
+		// (the join may have happened on a site we don't monitor).
+		if data.Talkgroup > 0 {
+			if existing, ok := p.affiliations.Get(affKey); ok && existing.Tgid != data.Talkgroup {
+				prevTgid := existing.Tgid
+				p.affiliations.Update(affKey, &affiliationEntry{
+					SystemID:        identity.SystemID,
+					SystemName:      identity.SystemName,
+					Sysid:           identity.Sysid,
+					UnitID:          data.Unit,
+					UnitAlphaTag:    data.UnitAlphaTag,
+					Tgid:            data.Talkgroup,
+					TgAlphaTag:      data.TalkgroupAlphaTag,
+					TgDescription:   data.TalkgroupDescription,
+					TgTag:           data.TalkgroupTag,
+					TgGroup:         data.TalkgroupGroup,
+					PreviousTgid:    &prevTgid,
+					AffiliatedSince: ts,
+					LastEventTime:   ts,
+					Status:          "affiliated",
+				})
+			} else {
+				p.affiliations.UpdateActivity(affKey, ts)
+			}
+		} else {
+			p.affiliations.UpdateActivity(affKey, ts)
+		}
 	default:
 		p.affiliations.UpdateActivity(affKey, ts)
 	}

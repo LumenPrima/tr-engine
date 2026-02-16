@@ -261,29 +261,46 @@ type AffiliationBackfillRow struct {
 	SystemName    string
 	Sysid         string
 	Time          time.Time
+	WentOff       bool // true if an "off" event occurred after this join
 }
 
 // LoadRecentAffiliations returns the most recent "join" event per (system_id, unit_rid)
-// from the last 24 hours, with display names from JOINed tables.
+// from the last 24 hours, with display names from JOINed tables. Also checks whether
+// the unit subsequently went OFF or had location events on a different tgid (WentOff flag).
 func (db *DB) LoadRecentAffiliations(ctx context.Context) ([]AffiliationBackfillRow, error) {
 	rows, err := db.Pool.Query(ctx, `
-		SELECT DISTINCT ON (ue.system_id, ue.unit_rid)
-			ue.system_id, ue.unit_rid, ue.tgid,
-			COALESCE(u.alpha_tag, ue.unit_alpha_tag, ''),
-			COALESCE(tg.alpha_tag, ue.tg_alpha_tag, ''),
-			COALESCE(tg.description, ''),
-			COALESCE(tg.tag, ''),
-			COALESCE(tg."group", ''),
-			COALESCE(s.name, ''), COALESCE(s.sysid, ''),
-			ue."time"
-		FROM unit_events ue
-		JOIN systems s ON s.system_id = ue.system_id
-		LEFT JOIN units u ON u.system_id = ue.system_id AND u.unit_id = ue.unit_rid
-		LEFT JOIN talkgroups tg ON tg.system_id = ue.system_id AND tg.tgid = ue.tgid
-		WHERE ue.event_type = 'join'
-		  AND ue."time" > now() - interval '24 hours'
-		  AND ue.tgid IS NOT NULL
-		ORDER BY ue.system_id, ue.unit_rid, ue."time" DESC
+		WITH latest_joins AS (
+			SELECT DISTINCT ON (ue.system_id, ue.unit_rid)
+				ue.system_id, ue.unit_rid, ue.tgid,
+				COALESCE(u.alpha_tag, ue.unit_alpha_tag, ''),
+				COALESCE(tg.alpha_tag, ue.tg_alpha_tag, ''),
+				COALESCE(tg.description, ''),
+				COALESCE(tg.tag, ''),
+				COALESCE(tg."group", ''),
+				COALESCE(s.name, ''), COALESCE(s.sysid, ''),
+				ue."time"
+			FROM unit_events ue
+			JOIN systems s ON s.system_id = ue.system_id
+			LEFT JOIN units u ON u.system_id = ue.system_id AND u.unit_id = ue.unit_rid
+			LEFT JOIN talkgroups tg ON tg.system_id = ue.system_id AND tg.tgid = ue.tgid
+			WHERE ue.event_type = 'join'
+			  AND ue."time" > now() - interval '24 hours'
+			  AND ue.tgid IS NOT NULL
+			ORDER BY ue.system_id, ue.unit_rid, ue."time" DESC
+		)
+		SELECT lj.*, EXISTS(
+			SELECT 1 FROM unit_events ev
+			WHERE ev.system_id = lj.system_id
+			  AND ev.unit_rid = lj.unit_rid
+			  AND ev."time" > lj."time"
+			  AND ev."time" > now() - interval '24 hours'
+			  AND (
+			    ev.event_type = 'off'
+			    OR (ev.event_type IN ('call', 'end', 'location')
+			        AND ev.tgid IS NOT NULL AND ev.tgid != lj.tgid)
+			  )
+		) AS went_off
+		FROM latest_joins lj
 	`)
 	if err != nil {
 		return nil, err
@@ -299,6 +316,7 @@ func (db *DB) LoadRecentAffiliations(ctx context.Context) ([]AffiliationBackfill
 			&r.TgDescription, &r.TgTag, &r.TgGroup,
 			&r.SystemName, &r.Sysid,
 			&r.Time,
+			&r.WentOff,
 		); err != nil {
 			return nil, err
 		}
