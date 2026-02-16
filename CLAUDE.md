@@ -153,6 +153,52 @@ A live environment is available for testing:
 - **MQTT broker**: Live production server connected to a real trunk-recorder instance. Credentials in `.env`.
 - **Config**: Copy `sample.env` to `.env` and fill in credentials. The `.env` file is gitignored and auto-loaded on startup.
 
+## Web Frontend (Page Registration)
+
+HTML pages in `web/` are auto-discovered and listed on the index page via meta tags. No code changes needed — drop an `.html` file in `web/` with the right tags.
+
+**Required meta tag** (without this, the page is invisible to the index):
+```html
+<meta name="card-title" content="My Page Title">
+```
+
+**Optional meta tags:**
+```html
+<meta name="card-description" content="Short description shown below the title">
+<meta name="card-order" content="5">
+```
+
+- **card-description** — Gray subtitle text on the card. Omit for title-only.
+- **card-order** — Integer sort key, lower = first. Defaults to 0. Current values: 1 (Event Horizon), 2 (Live Events), 3 (Unit Tracker), 10 (API Docs).
+
+**Constraints:**
+1. File must be `.html` in the root of `web/` — subdirectories are not scanned.
+2. Meta tags must appear in the first 2048 bytes of the file.
+3. Attributes must use double quotes in exact order: `name="card-title" content="..."`.
+
+**How it works:**
+- `GET /api/v1/pages` (`internal/api/pages.go`) scans `web/*.html`, extracts meta tags, returns sorted JSON.
+- `index.html` fetches that endpoint on load and renders a card per page.
+- Dev mode (local `web/` directory on disk): new files picked up on next refresh, no rebuild.
+- Production: files embedded via `//go:embed web/*` in `embed.go`, rebuild required.
+
+**Minimal template:**
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="card-title" content="My Dashboard">
+<meta name="card-description" content="One-line description">
+<meta name="card-order" content="4">
+<title>My Dashboard — tr-engine</title>
+</head>
+<body>
+  <!-- page content -->
+</body>
+</html>
+```
+
 ## Implementation Status
 
 **Completed:**
