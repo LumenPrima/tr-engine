@@ -1,0 +1,1979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Scanner — tr-engine</title>
+<meta name="card-title" content="Scanner">
+<meta name="card-description" content="Mobile-friendly radio scanner with auto-play and channel filtering">
+<meta name="card-order" content="1">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #000000;
+  --bg-card: #0d0d0d;
+  --bg-card-alt: #111111;
+  --bg-hover: #1a1a1a;
+  --bg-active: #0a1a1a;
+  --border: #222222;
+  --border-light: #333333;
+  --text: #e0e0e0;
+  --text-dim: #999999;
+  --text-muted: #666666;
+  --text-bright: #ffffff;
+  --cyan: #5ce0d8;
+  --green: #78c06a;
+  --orange: #d4944a;
+  --magenta: #c06abc;
+  --yellow: #c4b44e;
+  --blue: #5a9ec0;
+  --red: #c65454;
+  --teal: #4aafa0;
+  --pink: #d080a0;
+  --lime: #90c050;
+  --emergency: #e03030;
+  --emergency-bg: rgba(224, 48, 48, 0.12);
+  --scanner-on: #5ce0d8;
+  --scanner-off: #666666;
+  --connected: #4a8a4a;
+  --disconnected: #8a4a4a;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+body { display: flex; flex-direction: column; }
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 52px;
+}
+.header-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-bright);
+  letter-spacing: 0.02em;
+}
+.header-title .accent { color: var(--cyan); }
+.header-spacer { flex: 1; }
+.header-btn {
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--text-dim);
+  width: 40px;
+  height: 36px;
+  border-radius: 6px;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.header-btn:active { background: var(--bg-hover); }
+
+/* Scanner toggle */
+.scanner-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 1px solid var(--scanner-off);
+  color: var(--scanner-off);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.scanner-toggle .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--scanner-off);
+  transition: background 0.2s;
+}
+.scanner-toggle.active {
+  border-color: var(--scanner-on);
+  color: var(--scanner-on);
+}
+.scanner-toggle.active .dot {
+  background: var(--scanner-on);
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* ── Now Playing ── */
+.now-playing {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 16px;
+  flex-shrink: 0;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.now-playing.has-audio { background: var(--bg-active); }
+.np-idle {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+.np-idle .big { font-size: 32px; margin-bottom: 8px; }
+.np-content { display: none; }
+.now-playing.has-audio .np-idle { display: none; }
+.now-playing.has-audio .np-content { display: block; }
+
+.np-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.np-play-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--cyan);
+  background: none;
+  color: var(--cyan);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.np-play-btn:active { background: rgba(92, 224, 216, 0.1); }
+.np-info { flex: 1; min-width: 0; }
+.np-nick {
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-channel {
+  font-size: 14px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-time {
+  font-size: 14px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.np-progress {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  position: relative;
+  cursor: pointer;
+}
+.np-progress-fill {
+  height: 100%;
+  background: var(--cyan);
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.15s linear;
+}
+
+/* ── Queue indicator ── */
+.queue-bar {
+  display: none;
+  padding: 6px 16px;
+  background: var(--bg-card-alt);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.queue-bar.has-items { display: flex; gap: 12px; align-items: center; }
+.queue-label { color: var(--text-muted); font-weight: 600; flex-shrink: 0; }
+.queue-item {
+  background: var(--bg-hover);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.queue-item .qi-nick { font-weight: 600; }
+.queue-skip-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Feed ── */
+.feed {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.feed-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  min-height: 52px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.feed-item:active { background: var(--bg-hover); }
+.feed-item.emergency { background: var(--emergency-bg); }
+.feed-item.playing { background: var(--bg-active); }
+
+.fi-play {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-light);
+  background: none;
+  color: var(--cyan);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.feed-item.playing .fi-play { border-color: var(--cyan); }
+.fi-body { flex: 1; min-width: 0; }
+.fi-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.fi-nick {
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fi-channel {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fi-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.fi-emergency { color: var(--emergency); font-weight: 700; font-size: 12px; }
+.fi-time { font-size: 13px; color: var(--text-muted); flex-shrink: 0; white-space: nowrap; }
+
+/* ── Status bar ── */
+.statusbar {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+  gap: 10px;
+  flex-shrink: 0;
+  min-height: 28px;
+}
+.statusbar .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.statusbar .dot.on { background: var(--connected); }
+.statusbar .dot.off { background: var(--disconnected); }
+.statusbar .spacer { flex: 1; }
+
+/* ── Channel drawer (slide-in from left) ── */
+.drawer-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+}
+.drawer-overlay.open { display: block; }
+.drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(320px, 85vw);
+  background: var(--bg-card);
+  z-index: 101;
+  transform: translateX(-100%);
+  transition: transform 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.drawer.open { transform: translateX(0); }
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+.drawer-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-bright);
+  flex: 1;
+}
+.drawer-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px;
+}
+.drawer-search {
+  margin: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  outline: none;
+  width: calc(100% - 24px);
+}
+.drawer-search::placeholder { color: var(--text-muted); }
+.drawer-search:focus { border-color: var(--cyan); }
+
+.drawer-actions {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+}
+.drawer-action-btn {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.drawer-action-btn:active { background: var(--bg-hover); }
+
+.drawer-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.drawer-group-label {
+  padding: 8px 16px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.drawer-ch {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.drawer-ch:active { background: var(--bg-hover); }
+.drawer-ch-check {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-light);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--cyan);
+  transition: all 0.15s;
+}
+.drawer-ch.selected .drawer-ch-check {
+  border-color: var(--cyan);
+  background: rgba(92, 224, 216, 0.15);
+}
+.drawer-ch-info { flex: 1; min-width: 0; }
+.drawer-ch-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drawer-ch-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drawer-ch-badge {
+  font-size: 11px;
+  background: var(--orange);
+  color: var(--bg);
+  padding: 0 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ── Settings drawer (from right) ── */
+.settings-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+}
+.settings-overlay.open { display: block; }
+.settings-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 85vw);
+  background: var(--bg-card);
+  z-index: 101;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-panel.open { transform: translateX(0); }
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+.settings-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-bright);
+  flex: 1;
+}
+.settings-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px;
+}
+.settings-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.settings-group {
+  margin-bottom: 20px;
+}
+.settings-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-label { font-size: 14px; color: var(--text); }
+.settings-sublabel { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* Toggle switch */
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.toggle input { display: none; }
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border-light);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.toggle input:checked + .toggle-track { background: var(--cyan); }
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: var(--text-bright);
+  border-radius: 50%;
+  transition: transform 0.2s;
+  pointer-events: none;
+}
+.toggle input:checked ~ .toggle-thumb { transform: translateX(20px); }
+
+/* Volume slider */
+.volume-slider {
+  width: 100px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border-light);
+  border-radius: 2px;
+  outline: none;
+}
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  background: var(--cyan);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* ── Compact mode ── */
+body.compact .feed-item { padding: 5px 16px; min-height: 36px; gap: 8px; }
+body.compact .fi-play { width: 28px; height: 28px; font-size: 11px; }
+body.compact .fi-nick { font-size: 13px; }
+body.compact .fi-channel { font-size: 11px; }
+body.compact .fi-meta { font-size: 11px; margin-top: 0; }
+body.compact .fi-time { font-size: 11px; }
+body.compact .fi-top { gap: 4px; }
+body.compact .fi-body { line-height: 1.2; }
+
+/* ── Loading spinner ── */
+.feed-loader {
+  display: none;
+  text-align: center;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.feed-loader.visible { display: block; }
+.feed-loader .spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-light);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.feed-end {
+  display: none;
+  text-align: center;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.feed-end.visible { display: block; }
+
+/* ── Empty state ── */
+.feed-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.feed-empty .big { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+.feed-empty p { font-size: 14px; max-width: 260px; }
+
+/* ── Scrollbar ── */
+.feed::-webkit-scrollbar, .drawer-scroll::-webkit-scrollbar, .settings-scroll::-webkit-scrollbar { width: 4px; }
+.feed::-webkit-scrollbar-track, .drawer-scroll::-webkit-scrollbar-track, .settings-scroll::-webkit-scrollbar-track { background: transparent; }
+.feed::-webkit-scrollbar-thumb, .drawer-scroll::-webkit-scrollbar-thumb, .settings-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Landscape tweaks ── */
+@media (min-width: 600px) {
+  .now-playing { flex-direction: row; align-items: center; padding: 12px 20px; min-height: 80px; }
+  .np-top { margin-bottom: 0; flex: 1; }
+  .np-progress { width: 200px; flex-shrink: 0; }
+  .feed-item { padding: 8px 20px; }
+}
+
+/* Prevent pull-to-refresh on mobile */
+body { overscroll-behavior-y: contain; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <button class="header-btn" id="menu-btn" title="Channels">&#9776;</button>
+  <div class="header-title"><span class="accent">&#9655;</span> Scanner</div>
+  <div class="header-spacer"></div>
+  <button class="scanner-toggle" id="scanner-toggle">
+    <span class="dot"></span>
+    <span id="scanner-label">SCAN</span>
+  </button>
+  <button class="header-btn" id="settings-btn" title="Settings">&#9881;</button>
+</div>
+
+<!-- Now Playing -->
+<div class="now-playing" id="now-playing">
+  <div class="np-idle" id="np-idle">
+    <div class="big">&#9655;</div>
+    <div id="np-idle-text">Tap a transmission or enable scanner</div>
+  </div>
+  <div class="np-content">
+    <div class="np-top">
+      <button class="np-play-btn" id="np-play-btn">&#9654;</button>
+      <div class="np-info">
+        <div class="np-nick" id="np-nick"></div>
+        <div class="np-channel" id="np-channel"></div>
+      </div>
+      <div class="np-time" id="np-time">0:00 / 0:00</div>
+    </div>
+    <div class="np-progress" id="np-progress">
+      <div class="np-progress-fill" id="np-progress-fill"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Queue bar -->
+<div class="queue-bar" id="queue-bar">
+  <span class="queue-label">Queue</span>
+  <div id="queue-items"></div>
+  <button class="queue-skip-btn" id="queue-skip">Skip &raquo;</button>
+</div>
+
+<!-- Feed -->
+<div class="feed" id="feed">
+  <div class="feed-empty" id="feed-empty">
+    <div class="big">&#128225;</div>
+    <p id="feed-empty-text">Select channels to start scanning.<br>Tap &#9776; to open channel list.</p>
+  </div>
+  <div class="feed-loader" id="feed-loader"><span class="spinner"></span>Loading...</div>
+  <div class="feed-end" id="feed-end">No more transmissions</div>
+</div>
+
+<!-- Status bar -->
+<div class="statusbar">
+  <span class="dot" id="sb-dot"></span>
+  <span id="sb-status">Connecting...</span>
+  <span id="sb-channels">0 ch</span>
+  <span class="spacer"></span>
+  <span id="sb-rate">0/min</span>
+  <span id="sb-time"></span>
+</div>
+
+<!-- Channel drawer -->
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title">Channels</div>
+    <button class="drawer-close" id="drawer-close">&times;</button>
+  </div>
+  <input class="drawer-search" id="drawer-search" type="text" placeholder="Search channels..." spellcheck="false" autocomplete="off">
+  <div class="drawer-actions">
+    <button class="drawer-action-btn" id="drawer-select-all">Select All</button>
+    <button class="drawer-action-btn" id="drawer-select-none">Select None</button>
+    <button class="drawer-action-btn" id="drawer-select-active">Active Only</button>
+  </div>
+  <div class="drawer-scroll" id="drawer-scroll"></div>
+</div>
+
+<!-- Settings panel -->
+<div class="settings-overlay" id="settings-overlay"></div>
+<div class="settings-panel" id="settings-panel">
+  <div class="settings-header">
+    <div class="settings-title">Settings</div>
+    <button class="settings-close" id="settings-close">&times;</button>
+  </div>
+  <div class="settings-scroll">
+    <div class="settings-group">
+      <div class="settings-group-title">Scanner</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Auto-play new calls</div>
+          <div class="settings-sublabel">Play transmissions as they arrive</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="set-autoplay" checked>
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Queue mode</div>
+          <div class="settings-sublabel">Queue calls instead of interrupting</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="set-queue" checked>
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Emergency priority</div>
+          <div class="settings-sublabel">Jump emergency calls to front of queue</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="set-emergency-priority" checked>
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Skip short calls</div>
+          <div class="settings-sublabel">Auto-skip calls under 1 second</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="set-skip-short">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-group-title">Audio</div>
+      <div class="settings-row">
+        <div class="settings-label">Volume</div>
+        <input type="range" class="volume-slider" id="set-volume" min="0" max="100" value="80">
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-group-title">Display</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Show encrypted calls</div>
+          <div class="settings-sublabel">Display encrypted transmissions in feed</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="set-show-encrypted">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Compact feed</div>
+          <div class="settings-sublabel">Smaller feed items</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="set-compact">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-group-title">About</div>
+      <div class="settings-row">
+        <div class="settings-label" id="sb-about">Scanner — tr-engine v1</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════
+
+const params = new URLSearchParams(location.search);
+const API_BASE = (params.get('api') || '/api/v1').replace(/\/+$/, '');
+
+const MAX_FEED = 2000;
+const MAX_QUEUE = 20;
+const FEED_PAGE_SIZE = 50;
+
+const NICK_COLORS = [
+  'var(--cyan)', 'var(--green)', 'var(--orange)',
+  'var(--magenta)', 'var(--yellow)', 'var(--blue)',
+  'var(--red)', 'var(--teal)', 'var(--pink)', 'var(--lime)',
+];
+
+function nickColor(nick) {
+  let h = 0;
+  for (let i = 0; i < nick.length; i++) h = ((h << 5) - h + nick.charCodeAt(i)) | 0;
+  return NICK_COLORS[Math.abs(h) % NICK_COLORS.length];
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+
+// Channel registry
+const channels = new Map();         // chanName -> { tgid, system_id, alpha_tag, description, group, ... }
+const tgidToChannel = new Map();    // `sys:tg` -> chanName
+const unitNickCache = new Map();    // `sys:unit` -> nick
+const systemNames = new Map();
+
+// Selected channels for scanning
+const selectedChannels = new Set();  // chanName set, persisted to localStorage
+
+// Feed items (newest first display, but stored oldest first)
+const feedItems = [];                // { id, callId, nick, channel, duration, time, emergency, encrypted, played }
+
+// Audio queue
+const audioQueue = [];               // { callId, nick, channel, emergency }
+let scannerActive = false;
+let connectionState = 'disconnected';
+let sseConnection = null;
+let lastEventId = null;
+const activeCalls = new Map();
+const channelActivity = new Map();   // chanName -> count of recent messages
+let eventRate = [];
+
+// Pagination state for infinite scroll
+let feedOffset = 0;
+let feedLoading = false;
+let feedExhausted = false;
+const loadedCallIds = new Set();
+
+// Settings (loaded from localStorage)
+let settings = {
+  autoplay: true,
+  queue: true,
+  emergencyPriority: true,
+  skipShort: false,
+  volume: 80,
+  showEncrypted: false,
+  compact: false,
+};
+
+// ═══════════════════════════════════════════════════════════════
+// DOM REFS
+// ═══════════════════════════════════════════════════════════════
+
+const feedEl = document.getElementById('feed');
+const feedEmpty = document.getElementById('feed-empty');
+const nowPlayingEl = document.getElementById('now-playing');
+const npPlayBtn = document.getElementById('np-play-btn');
+const npNick = document.getElementById('np-nick');
+const npChannel = document.getElementById('np-channel');
+const npTime = document.getElementById('np-time');
+const npProgress = document.getElementById('np-progress');
+const npProgressFill = document.getElementById('np-progress-fill');
+const queueBar = document.getElementById('queue-bar');
+const queueItems = document.getElementById('queue-items');
+const scannerToggle = document.getElementById('scanner-toggle');
+const scannerLabel = document.getElementById('scanner-label');
+
+const sbDot = document.getElementById('sb-dot');
+const sbStatus = document.getElementById('sb-status');
+const sbChannels = document.getElementById('sb-channels');
+const sbRate = document.getElementById('sb-rate');
+const sbTime = document.getElementById('sb-time');
+
+// Audio
+const audioEl = new Audio();
+audioEl.preload = 'auto';
+let currentCallId = null;
+let currentFeedItem = null;
+let lastPlayedFeedItem = null;  // remembers last item for sequential playback
+let playerRaf = null;
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fmtTime(date) {
+  const d = date || new Date();
+  return d.toTimeString().slice(0, 5);
+}
+
+function fmtDuration(sec) {
+  if (!sec && sec !== 0) return '';
+  if (sec < 60) return sec.toFixed(1) + 's';
+  return Math.floor(sec / 60) + 'm' + Math.floor(sec % 60) + 's';
+}
+
+function fmtAudioTime(sec) {
+  if (!sec || !isFinite(sec)) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function toChannelName(alphaTag) {
+  if (!alphaTag) return '#unknown';
+  let name = alphaTag.replace(/[\s\/\\]+/g, '-').replace(/[^a-zA-Z0-9\-_.]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return '#' + (name || 'unknown');
+}
+
+function toNick(alphaTag, unitId) {
+  if (alphaTag && alphaTag.trim()) return alphaTag.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\[\]{}|]/g, '');
+  return 'unit-' + unitId;
+}
+
+function tgKey(sysId, tgid) { return `${sysId}:${tgid}`; }
+
+function resolveNick(systemId, unitId, alphaTag) {
+  const key = `${systemId}:${unitId}`;
+  if (alphaTag && alphaTag.trim()) {
+    const nick = toNick(alphaTag, unitId);
+    unitNickCache.set(key, nick);
+    return nick;
+  }
+  if (unitNickCache.has(key)) return unitNickCache.get(key);
+  const fallback = toNick(null, unitId);
+  unitNickCache.set(key, fallback);
+  return fallback;
+}
+
+function ensureChannel(tg) {
+  const key = tgKey(tg.system_id, tg.tgid);
+  if (tgidToChannel.has(key)) return tgidToChannel.get(key);
+
+  if (tg.system_name && !systemNames.has(tg.system_id)) systemNames.set(tg.system_id, tg.system_name);
+  const chanName = toChannelName(tg.alpha_tag || tg.tg_alpha_tag);
+
+  let finalName = chanName;
+  if (channels.has(finalName)) {
+    const existing = channels.get(finalName);
+    if (existing.tgid !== tg.tgid || existing.system_id !== tg.system_id) {
+      finalName = chanName + '-' + tg.tgid;
+    }
+  }
+
+  if (!channels.has(finalName)) {
+    channels.set(finalName, {
+      tgid: tg.tgid,
+      system_id: tg.system_id,
+      alpha_tag: tg.alpha_tag || tg.tg_alpha_tag || `TG ${tg.tgid}`,
+      description: tg.description || tg.tg_description || '',
+      tag: tg.tag || tg.tg_tag || '',
+      group: tg.group || tg.tg_group || 'Ungrouped',
+    });
+  }
+
+  tgidToChannel.set(key, finalName);
+  return finalName;
+}
+
+function resolveChannel(systemId, tgid) {
+  return tgidToChannel.get(tgKey(systemId, tgid));
+}
+
+function isChannelSelected(chanName) {
+  if (selectedChannels.size === 0) return false;
+  return selectedChannels.has(chanName);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PERSISTENCE
+// ═══════════════════════════════════════════════════════════════
+
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem('scanner_settings');
+    if (saved) Object.assign(settings, JSON.parse(saved));
+  } catch (e) {}
+
+  try {
+    const saved = localStorage.getItem('scanner_channels');
+    if (saved) {
+      const arr = JSON.parse(saved);
+      for (const ch of arr) selectedChannels.add(ch);
+    }
+  } catch (e) {}
+
+  try {
+    const saved = localStorage.getItem('scanner_active');
+    if (saved === '1') scannerActive = true;
+  } catch (e) {}
+}
+
+function saveSettings() {
+  localStorage.setItem('scanner_settings', JSON.stringify(settings));
+}
+
+function saveSelectedChannels() {
+  localStorage.setItem('scanner_channels', JSON.stringify([...selectedChannels]));
+}
+
+function saveScannerState() {
+  localStorage.setItem('scanner_active', scannerActive ? '1' : '0');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FEED RENDERING
+// ═══════════════════════════════════════════════════════════════
+
+let feedIdCounter = 0;
+
+/** Add a live (new) feed item — appended to end of feedItems[], prepended to top of DOM. */
+function addFeedItem(item) {
+  item.id = ++feedIdCounter;
+  if (loadedCallIds.has(item.callId)) return item;  // dedupe
+  loadedCallIds.add(item.callId);
+  feedItems.push(item);
+  feedOffset++;  // keep offset in sync so pagination doesn't re-fetch this
+
+  if (feedItems.length > MAX_FEED) {
+    const removed = feedItems.shift();
+    loadedCallIds.delete(removed.callId);
+  }
+
+  // Track activity
+  channelActivity.set(item.channel, (channelActivity.get(item.channel) || 0) + 1);
+  eventRate.push(Date.now());
+
+  // Only add to DOM if channel is selected
+  if (!isChannelSelected(item.channel)) return item;
+
+  feedEmpty.style.display = 'none';
+
+  const el = createFeedItemEl(item);
+  // Insert at the very top of the feed (after feedEmpty which is hidden)
+  const firstItem = feedEl.querySelector('.feed-item');
+  if (firstItem) {
+    feedEl.insertBefore(el, firstItem);
+  } else {
+    // No items yet — insert after the hidden empty state
+    feedEl.insertBefore(el, feedEmpty.nextSibling);
+  }
+
+  return item;
+}
+
+/** Re-render the entire feed based on current channel selection. */
+function renderFeed() {
+  const loader = document.getElementById('feed-loader');
+  const end = document.getElementById('feed-end');
+
+  // Remove all children
+  while (feedEl.firstChild) feedEl.removeChild(feedEl.firstChild);
+
+  // Re-add structural elements
+  feedEl.appendChild(feedEmpty);
+
+  const feedEmptyText = document.getElementById('feed-empty-text');
+
+  if (selectedChannels.size === 0) {
+    feedEmpty.style.display = '';
+    feedEmptyText.innerHTML = 'Select channels to start scanning.<br>Tap &#9776; to open channel list.';
+    feedEl.appendChild(loader);
+    feedEl.appendChild(end);
+    return;
+  }
+
+  const visible = feedItems.filter(item => isChannelSelected(item.channel));
+  if (visible.length === 0) {
+    feedEmpty.style.display = '';
+    feedEmptyText.innerHTML = 'Waiting for transmissions on selected channels...';
+    feedEl.appendChild(loader);
+    feedEl.appendChild(end);
+    return;
+  }
+
+  feedEmpty.style.display = 'none';
+  // feedItems is oldest-first; render newest-first into DOM
+  for (let i = visible.length - 1; i >= 0; i--) {
+    feedEl.appendChild(createFeedItemEl(visible[i]));
+  }
+
+  // Append loader/end after all items
+  feedEl.appendChild(loader);
+  feedEl.appendChild(end);
+}
+
+function createFeedItemEl(item) {
+  const el = document.createElement('div');
+  el.className = 'feed-item' + (item.emergency ? ' emergency' : '') + (item.id === currentFeedItem?.id ? ' playing' : '');
+  el.dataset.feedId = item.id;
+
+  const color = nickColor(item.nick || '');
+
+  let metaParts = [];
+  if (item.duration) metaParts.push(item.duration);
+  if (item.encrypted) metaParts.push('encrypted');
+
+  el.innerHTML =
+    `<button class="fi-play">${item.encrypted ? '&#128274;' : '&#9654;'}</button>` +
+    `<div class="fi-body">` +
+      `<div class="fi-top">` +
+        `<span class="fi-nick" style="color:${color}">${esc(item.nick)}</span>` +
+        `<span class="fi-channel">${esc(item.channel)}</span>` +
+      `</div>` +
+      `<div class="fi-meta">` +
+        (item.emergency ? '<span class="fi-emergency">EMERGENCY</span>' : '') +
+        (metaParts.length ? `<span>${esc(metaParts.join(' / '))}</span>` : '') +
+      `</div>` +
+    `</div>` +
+    `<span class="fi-time">${esc(item.timeStr)}</span>`;
+
+  if (!item.encrypted) {
+    el.addEventListener('click', () => {
+      playCall(item.callId, item.nick, item.channel, item);
+    });
+  }
+
+  return el;
+}
+
+function updateFeedItemPlaying(feedId, playing) {
+  const el = feedEl.querySelector(`[data-feed-id="${feedId}"]`);
+  if (el) {
+    if (playing) el.classList.add('playing');
+    else el.classList.remove('playing');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUDIO PLAYER
+// ═══════════════════════════════════════════════════════════════
+
+function playCall(callId, nick, channel, feedItem) {
+  // Toggle if same call
+  if (currentCallId === callId && !audioEl.paused) {
+    audioEl.pause();
+    npPlayBtn.innerHTML = '&#9654;';
+    return;
+  }
+  if (currentCallId === callId && audioEl.paused && audioEl.src) {
+    audioEl.play();
+    npPlayBtn.innerHTML = '&#9646;&#9646;';
+    return;
+  }
+
+  // Clear previous
+  if (currentFeedItem) updateFeedItemPlaying(currentFeedItem.id, false);
+
+  currentCallId = callId;
+  currentFeedItem = feedItem;
+
+  if (feedItem) updateFeedItemPlaying(feedItem.id, true);
+
+  // Update now playing
+  nowPlayingEl.classList.add('has-audio');
+  npNick.textContent = nick || '?';
+  npNick.style.color = nickColor(nick || '');
+  npChannel.textContent = channel || '';
+  npTime.textContent = '0:00 / --:--';
+  npProgressFill.style.width = '0%';
+  npPlayBtn.innerHTML = '&#8987;';
+
+  audioEl.volume = settings.volume / 100;
+  audioEl.src = `${API_BASE}/calls/${callId}/audio`;
+  audioEl.load();
+  audioEl.play().then(() => {
+    npPlayBtn.innerHTML = '&#9646;&#9646;';
+    startProgressUpdate();
+  }).catch(err => {
+    npPlayBtn.innerHTML = '&#9654;';
+    npTime.textContent = err.name === 'NotAllowedError' ? 'tap to play' : 'no audio';
+    // On autoplay failure, try advancing queue
+    if (scannerActive) setTimeout(playNext, 500);
+  });
+}
+
+function startProgressUpdate() {
+  if (playerRaf) cancelAnimationFrame(playerRaf);
+  function tick() {
+    if (!audioEl.paused && audioEl.duration) {
+      const pct = (audioEl.currentTime / audioEl.duration) * 100;
+      npProgressFill.style.width = pct + '%';
+      npTime.textContent = `${fmtAudioTime(audioEl.currentTime)} / ${fmtAudioTime(audioEl.duration)}`;
+    }
+    if (!audioEl.paused) playerRaf = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+npPlayBtn.addEventListener('click', () => {
+  if (!audioEl.src) return;
+  if (audioEl.paused) {
+    audioEl.play();
+    npPlayBtn.innerHTML = '&#9646;&#9646;';
+    startProgressUpdate();
+  } else {
+    audioEl.pause();
+    npPlayBtn.innerHTML = '&#9654;';
+  }
+});
+
+npProgress.addEventListener('click', (e) => {
+  if (!audioEl.duration) return;
+  const rect = npProgress.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  audioEl.currentTime = pct * audioEl.duration;
+  npProgressFill.style.width = (pct * 100) + '%';
+});
+
+audioEl.addEventListener('ended', () => {
+  npPlayBtn.innerHTML = '&#9654;';
+  npProgressFill.style.width = '100%';
+  if (currentFeedItem) {
+    updateFeedItemPlaying(currentFeedItem.id, false);
+    lastPlayedFeedItem = currentFeedItem;
+  }
+  currentFeedItem = null;
+  currentCallId = null;
+
+  // Auto-advance: scanner queue first, then sequential feed playback
+  setTimeout(playNext, 300);
+});
+
+audioEl.addEventListener('loadedmetadata', () => {
+  npTime.textContent = `0:00 / ${fmtAudioTime(audioEl.duration)}`;
+
+  // Skip short calls if enabled
+  if (settings.skipShort && audioEl.duration < 1.0 && scannerActive) {
+    audioEl.pause();
+    if (currentFeedItem) updateFeedItemPlaying(currentFeedItem.id, false);
+    currentFeedItem = null;
+    currentCallId = null;
+    playNext();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// QUEUE MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+function enqueueCall(callId, nick, channel, emergency, feedItem) {
+  if (audioQueue.some(q => q.callId === callId)) return;
+  if (audioQueue.length >= MAX_QUEUE) audioQueue.shift();
+
+  const entry = { callId, nick, channel, emergency, feedItem };
+
+  if (emergency && settings.emergencyPriority) {
+    // Insert at front
+    audioQueue.unshift(entry);
+  } else {
+    audioQueue.push(entry);
+  }
+
+  renderQueue();
+}
+
+function playNext() {
+  // 1) Drain the scanner queue first
+  if (audioQueue.length > 0) {
+    const next = audioQueue.shift();
+    renderQueue();
+    playCall(next.callId, next.nick, next.channel, next.feedItem);
+    return;
+  }
+
+  // 2) Sequential feed playback — continue to next chronological item
+  if (currentFeedItem || lastPlayedFeedItem) {
+    const ref = currentFeedItem || lastPlayedFeedItem;
+    const visible = feedItems.filter(item => isChannelSelected(item.channel) && !item.encrypted);
+    const idx = visible.findIndex(item => item.id === ref.id);
+    if (idx >= 0 && idx < visible.length - 1) {
+      const next = visible[idx + 1];
+      playCall(next.callId, next.nick, next.channel, next);
+      return;
+    }
+  }
+
+  // 3) Nothing left — clear now playing
+  if (!audioEl.paused) return;
+  nowPlayingEl.classList.remove('has-audio');
+  updateNpIdleText();
+}
+
+function renderQueue() {
+  if (audioQueue.length === 0) {
+    queueBar.classList.remove('has-items');
+    return;
+  }
+
+  queueBar.classList.add('has-items');
+  queueItems.innerHTML = '';
+  for (const q of audioQueue.slice(0, 5)) {
+    const el = document.createElement('span');
+    el.className = 'queue-item';
+    el.innerHTML = `<span class="qi-nick" style="color:${nickColor(q.nick)}">${esc(q.nick)}</span> ${esc(q.channel)}`;
+    queueItems.appendChild(el);
+  }
+  if (audioQueue.length > 5) {
+    const more = document.createElement('span');
+    more.className = 'queue-item';
+    more.textContent = `+${audioQueue.length - 5} more`;
+    queueItems.appendChild(more);
+  }
+}
+
+document.getElementById('queue-skip').addEventListener('click', () => {
+  audioEl.pause();
+  audioEl.currentTime = 0;
+  if (currentFeedItem) {
+    updateFeedItemPlaying(currentFeedItem.id, false);
+    lastPlayedFeedItem = currentFeedItem;
+  }
+  currentFeedItem = null;
+  currentCallId = null;
+  playNext();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SCANNER MODE
+// ═══════════════════════════════════════════════════════════════
+
+function toggleScanner() {
+  scannerActive = !scannerActive;
+  scannerToggle.classList.toggle('active', scannerActive);
+  scannerLabel.textContent = scannerActive ? 'SCANNING' : 'SCAN';
+  saveScannerState();
+  updateNpIdleText();
+
+  if (scannerActive && !currentCallId && audioQueue.length > 0) {
+    playNext();
+  }
+}
+
+function handleScannerCall(callId, nick, channel, emergency, feedItem) {
+  if (!scannerActive || !settings.autoplay) return;
+  if (!isChannelSelected(channel)) return;
+
+  if (settings.queue) {
+    if (currentCallId && !audioEl.paused) {
+      // Something is playing — queue it
+      enqueueCall(callId, nick, channel, emergency, feedItem);
+    } else {
+      // Nothing playing — play immediately
+      playCall(callId, nick, channel, feedItem);
+    }
+  } else {
+    // No queue mode — interrupt current playback
+    playCall(callId, nick, channel, feedItem);
+  }
+}
+
+scannerToggle.addEventListener('click', toggleScanner);
+
+// Tap idle now-playing area to toggle scanner
+document.getElementById('np-idle').addEventListener('click', () => {
+  if (!currentCallId) toggleScanner();
+});
+
+// Update idle text based on scanner state
+function updateNpIdleText() {
+  const text = document.getElementById('np-idle-text');
+  if (scannerActive) {
+    text.textContent = selectedChannels.size > 0
+      ? 'Scanning... waiting for transmissions'
+      : 'Scanning all channels... tap to select channels';
+  } else {
+    text.textContent = 'Tap to start scanning';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CHANNEL DRAWER
+// ═══════════════════════════════════════════════════════════════
+
+const drawerOverlay = document.getElementById('drawer-overlay');
+const drawer = document.getElementById('drawer');
+const drawerScroll = document.getElementById('drawer-scroll');
+const drawerSearch = document.getElementById('drawer-search');
+
+function openDrawer() {
+  drawerOverlay.classList.add('open');
+  drawer.classList.add('open');
+  renderDrawer();
+}
+
+function closeDrawer() {
+  drawerOverlay.classList.remove('open');
+  drawer.classList.remove('open');
+}
+
+document.getElementById('menu-btn').addEventListener('click', openDrawer);
+document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+drawerOverlay.addEventListener('click', closeDrawer);
+
+function renderDrawer(filter) {
+  const search = (filter || drawerSearch.value).toLowerCase().trim();
+  drawerScroll.innerHTML = '';
+
+  // Group channels
+  const groups = new Map();
+  for (const [name, ch] of channels) {
+    if (search && !name.toLowerCase().includes(search) && !ch.alpha_tag.toLowerCase().includes(search) && !ch.description.toLowerCase().includes(search)) continue;
+    const g = ch.group || 'Ungrouped';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(name);
+  }
+
+  const sortedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  for (const [groupName, chans] of sortedGroups) {
+    const label = document.createElement('div');
+    label.className = 'drawer-group-label';
+    label.textContent = groupName;
+    drawerScroll.appendChild(label);
+
+    chans.sort();
+    for (const ch of chans) {
+      const chData = channels.get(ch);
+      const selected = selectedChannels.has(ch);
+      const activity = channelActivity.get(ch) || 0;
+
+      const el = document.createElement('div');
+      el.className = 'drawer-ch' + (selected ? ' selected' : '');
+      el.innerHTML =
+        `<div class="drawer-ch-check">${selected ? '&#10003;' : ''}</div>` +
+        `<div class="drawer-ch-info">` +
+          `<div class="drawer-ch-name">${esc(ch)}</div>` +
+          `<div class="drawer-ch-desc">${esc(chData.description || chData.alpha_tag)}</div>` +
+        `</div>` +
+        (activity > 0 ? `<span class="drawer-ch-badge">${activity}</span>` : '');
+
+      el.addEventListener('click', () => {
+        if (selectedChannels.has(ch)) {
+          selectedChannels.delete(ch);
+        } else {
+          selectedChannels.add(ch);
+        }
+        onChannelSelectionChanged();
+      });
+
+      drawerScroll.appendChild(el);
+    }
+  }
+}
+
+drawerSearch.addEventListener('input', () => renderDrawer());
+
+/** Return channel names currently visible in the drawer (respecting search filter). */
+function getVisibleDrawerChannels() {
+  const search = drawerSearch.value.toLowerCase().trim();
+  const result = [];
+  for (const [name, ch] of channels) {
+    if (search && !name.toLowerCase().includes(search) && !ch.alpha_tag.toLowerCase().includes(search) && !ch.description.toLowerCase().includes(search)) continue;
+    result.push(name);
+  }
+  return result;
+}
+
+/** Called whenever channel selection changes — save, auto-enable scanner, re-render. */
+function onChannelSelectionChanged() {
+  saveSelectedChannels();
+  // Auto-enable scanner when channels are selected
+  if (selectedChannels.size > 0 && !scannerActive) {
+    scannerActive = true;
+    scannerToggle.classList.add('active');
+    scannerLabel.textContent = 'SCANNING';
+    saveScannerState();
+  }
+  updateNpIdleText();
+  renderDrawer();
+  renderFeed();
+  updateStatusBar();
+  // If visible content doesn't fill the viewport, load more
+  ensureFeedFilled();
+}
+
+document.getElementById('drawer-select-all').addEventListener('click', () => {
+  const visible = getVisibleDrawerChannels();
+  for (const ch of visible) selectedChannels.add(ch);
+  onChannelSelectionChanged();
+});
+
+document.getElementById('drawer-select-none').addEventListener('click', () => {
+  const visible = getVisibleDrawerChannels();
+  for (const ch of visible) selectedChannels.delete(ch);
+  onChannelSelectionChanged();
+});
+
+document.getElementById('drawer-select-active').addEventListener('click', () => {
+  const visible = getVisibleDrawerChannels();
+  // Among visible channels, select only those with activity
+  for (const ch of visible) {
+    if (channelActivity.has(ch)) selectedChannels.add(ch);
+    else selectedChannels.delete(ch);
+  }
+  onChannelSelectionChanged();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS PANEL
+// ═══════════════════════════════════════════════════════════════
+
+const settingsOverlay = document.getElementById('settings-overlay');
+const settingsPanel = document.getElementById('settings-panel');
+
+function openSettings() {
+  settingsOverlay.classList.add('open');
+  settingsPanel.classList.add('open');
+}
+
+function closeSettings() {
+  settingsOverlay.classList.remove('open');
+  settingsPanel.classList.remove('open');
+}
+
+document.getElementById('settings-btn').addEventListener('click', openSettings);
+document.getElementById('settings-close').addEventListener('click', closeSettings);
+settingsOverlay.addEventListener('click', closeSettings);
+
+// Bind settings controls
+const setAutoplay = document.getElementById('set-autoplay');
+const setQueue = document.getElementById('set-queue');
+const setEmergencyPriority = document.getElementById('set-emergency-priority');
+const setSkipShort = document.getElementById('set-skip-short');
+const setVolume = document.getElementById('set-volume');
+const setShowEncrypted = document.getElementById('set-show-encrypted');
+const setCompact = document.getElementById('set-compact');
+
+function applySettings() {
+  setAutoplay.checked = settings.autoplay;
+  setQueue.checked = settings.queue;
+  setEmergencyPriority.checked = settings.emergencyPriority;
+  setSkipShort.checked = settings.skipShort;
+  setVolume.value = settings.volume;
+  setShowEncrypted.checked = settings.showEncrypted;
+  setCompact.checked = settings.compact;
+  audioEl.volume = settings.volume / 100;
+  applyCompact();
+}
+
+setAutoplay.addEventListener('change', () => { settings.autoplay = setAutoplay.checked; saveSettings(); });
+setQueue.addEventListener('change', () => { settings.queue = setQueue.checked; saveSettings(); });
+setEmergencyPriority.addEventListener('change', () => { settings.emergencyPriority = setEmergencyPriority.checked; saveSettings(); });
+setSkipShort.addEventListener('change', () => { settings.skipShort = setSkipShort.checked; saveSettings(); });
+setVolume.addEventListener('input', () => { settings.volume = parseInt(setVolume.value); audioEl.volume = settings.volume / 100; saveSettings(); });
+setShowEncrypted.addEventListener('change', () => { settings.showEncrypted = setShowEncrypted.checked; saveSettings(); });
+setCompact.addEventListener('change', () => { settings.compact = setCompact.checked; applyCompact(); saveSettings(); });
+
+function applyCompact() {
+  document.body.classList.toggle('compact', settings.compact);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// API & SSE
+// ═══════════════════════════════════════════════════════════════
+
+async function fetchJSON(path) {
+  const res = await fetch(API_BASE + path);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+async function bootstrapChannels() {
+  try {
+    const data = await fetchJSON('/talkgroups?limit=1000&sort=alpha_tag');
+    const tgs = data.talkgroups || [];
+    for (const tg of tgs) ensureChannel(tg);
+    updateStatusBar();
+  } catch (err) {
+    console.error('Failed to fetch talkgroups:', err);
+  }
+}
+
+/** Convert an API call object into a feed item (does not add it). */
+function callToFeedItem(call) {
+  const chanName = resolveChannel(call.system_id, call.tgid);
+  if (!chanName) return null;
+  if (call.encrypted && !settings.showEncrypted) return null;
+  if (loadedCallIds.has(call.call_id)) return null;
+
+  const srcList = call.src_list || [];
+  const isEmergency = call.emergency || false;
+
+  let nick, callTime;
+  if (call.encrypted || srcList.length === 0) {
+    const units = call.units || [];
+    nick = units.length > 0
+      ? resolveNick(call.system_id, units[0].unit_id, units[0].alpha_tag)
+      : (call.tg_alpha_tag || `TG ${call.tgid}`);
+    callTime = call.start_time ? new Date(call.start_time) : new Date();
+  } else {
+    const first = srcList[0];
+    nick = resolveNick(call.system_id, first.src, first.tag);
+    callTime = first.time ? new Date(first.time * 1000) : (call.start_time ? new Date(call.start_time) : new Date());
+  }
+
+  return {
+    callId: call.call_id, nick, channel: chanName,
+    duration: call.duration ? fmtDuration(call.duration) : '',
+    time: callTime, timeStr: fmtTime(callTime),
+    emergency: isEmergency, encrypted: !!call.encrypted,
+  };
+}
+
+/**
+ * Prepend older items to the beginning of feedItems (they're chronologically
+ * older) and return the newly created items for DOM insertion.
+ */
+function prependHistoricalItems(calls) {
+  // API returns newest-first; reverse so oldest is first
+  const sorted = [...calls].reverse();
+  const newItems = [];
+
+  for (const call of sorted) {
+    const item = callToFeedItem(call);
+    if (!item) continue;
+    item.id = ++feedIdCounter;
+    loadedCallIds.add(item.callId);
+    // Track activity
+    channelActivity.set(item.channel, (channelActivity.get(item.channel) || 0) + 1);
+    newItems.push(item);
+  }
+
+  // Prepend to feedItems (these are older than existing items)
+  feedItems.unshift(...newItems);
+
+  // Trim from beginning if over limit
+  while (feedItems.length > MAX_FEED) {
+    const removed = feedItems.shift();
+    loadedCallIds.delete(removed.callId);
+  }
+
+  return newItems;
+}
+
+/** Load a page of older calls. Returns newly added items. */
+async function loadMoreCalls() {
+  if (feedLoading || feedExhausted) return [];
+  feedLoading = true;
+
+  const loader = document.getElementById('feed-loader');
+  loader.classList.add('visible');
+
+  try {
+    const data = await fetchJSON(`/calls?sort=-stop_time&deduplicate=true&limit=${FEED_PAGE_SIZE}&offset=${feedOffset}`);
+    const calls = data.calls || [];
+
+    if (calls.length < FEED_PAGE_SIZE) feedExhausted = true;
+    feedOffset += calls.length;
+
+    const newItems = prependHistoricalItems(calls);
+
+    if (feedExhausted) {
+      document.getElementById('feed-end').classList.add('visible');
+    }
+
+    return newItems;
+  } catch (err) {
+    console.error('Failed to load calls:', err);
+    return [];
+  } finally {
+    feedLoading = false;
+    loader.classList.remove('visible');
+  }
+}
+
+/** Append visible items from a batch to the bottom of the feed DOM. */
+function appendItemsToFeedDOM(items) {
+  const loader = document.getElementById('feed-loader');
+  // items is oldest-first from prependHistoricalItems.
+  // DOM order: newest(top) → oldest(bottom) → loader → end.
+  // These items are older than everything already in the DOM,
+  // so they go at the bottom, just before the loader.
+  // Within the batch: newest should be higher, oldest lower.
+  // So iterate newest→oldest (reverse), inserting each before loader
+  // (each one pushes the previous down).
+  const visible = items.filter(item => isChannelSelected(item.channel));
+  if (visible.length === 0) return;
+
+  feedEmpty.style.display = 'none';
+
+  for (let i = visible.length - 1; i >= 0; i--) {
+    feedEl.insertBefore(createFeedItemEl(visible[i]), loader);
+  }
+}
+
+/** Keep loading pages until visible content fills the viewport or data runs out. */
+async function fillFeedViewport() {
+  while (!feedExhausted) {
+    const items = await loadMoreCalls();
+    if (items.length === 0) break;
+    // On first batch do a full render; subsequent batches just append
+    if (feedOffset <= FEED_PAGE_SIZE) {
+      renderFeed();
+    } else {
+      appendItemsToFeedDOM(items);
+    }
+    // Stop once the scrollable area exceeds the viewport
+    if (feedEl.scrollHeight > feedEl.clientHeight + 50) break;
+  }
+}
+
+/** Check if visible content fills the viewport; if not, load more. */
+function ensureFeedFilled() {
+  if (feedExhausted || feedLoading) return;
+  if (selectedChannels.size === 0) return;
+  if (feedEl.scrollHeight > feedEl.clientHeight + 50) return;
+  // Not enough visible content — load more in the background
+  fillFeedViewport();
+}
+
+// Infinite scroll handler
+feedEl.addEventListener('scroll', () => {
+  if (feedExhausted || feedLoading) return;
+  const threshold = 200;
+  if (feedEl.scrollTop + feedEl.clientHeight >= feedEl.scrollHeight - threshold) {
+    loadMoreCalls().then(items => {
+      if (items.length > 0) appendItemsToFeedDOM(items);
+    });
+  }
+});
+
+function connectSSE() {
+  if (sseConnection) {
+    sseConnection.close();
+    sseConnection = null;
+  }
+
+  setConnectionState('connecting');
+
+  const url = `${API_BASE}/events/stream`;
+  const es = new EventSource(url);
+  sseConnection = es;
+
+  es.onopen = () => setConnectionState('connected');
+
+  es.onerror = () => {
+    if (connectionState === 'connected') setConnectionState('disconnected');
+  };
+
+  es.addEventListener('call_end', (e) => {
+    lastEventId = e.lastEventId;
+    const call = JSON.parse(e.data);
+    handleCallEnd(call);
+  });
+
+  es.addEventListener('call_start', (e) => {
+    lastEventId = e.lastEventId;
+    const call = JSON.parse(e.data);
+    handleCallStart(call);
+  });
+
+  es.addEventListener('call_update', (e) => {
+    lastEventId = e.lastEventId;
+    const call = JSON.parse(e.data);
+    handleCallUpdate(call);
+  });
+}
+
+function setConnectionState(state) {
+  connectionState = state;
+  if (state === 'connected') {
+    sbDot.className = 'dot on';
+    sbStatus.textContent = 'Connected';
+  } else if (state === 'connecting') {
+    sbDot.className = 'dot off';
+    sbStatus.textContent = 'Connecting...';
+  } else {
+    sbDot.className = 'dot off';
+    sbStatus.textContent = 'Disconnected';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EVENT HANDLERS
+// ═══════════════════════════════════════════════════════════════
+
+function handleCallStart(call) {
+  const chanName = ensureChannel({
+    system_id: call.system_id, tgid: call.tgid,
+    alpha_tag: call.tg_alpha_tag, description: call.tg_description,
+    tag: call.tg_tag, group: call.tg_group,
+  });
+
+  const srcList = call.src_list || [];
+  activeCalls.set(call.call_id, {
+    tgid: call.tgid, system_id: call.system_id,
+    chanName, srcCount: srcList.length,
+  });
+
+  // Show encrypted calls immediately
+  if (call.encrypted && settings.showEncrypted) {
+    const units = call.units || [];
+    const nick = units.length > 0
+      ? resolveNick(call.system_id, units[0].unit_id, units[0].alpha_tag)
+      : (call.tg_alpha_tag || `TG ${call.tgid}`);
+
+    addFeedItem({
+      callId: call.call_id, nick, channel: chanName,
+      duration: '', time: new Date(), timeStr: fmtTime(),
+      emergency: call.emergency || false, encrypted: true,
+    });
+  }
+}
+
+function handleCallUpdate(call) {
+  const tracked = activeCalls.get(call.call_id);
+  if (!tracked) return;
+  const srcList = call.src_list || [];
+  tracked.srcCount = srcList.length;
+}
+
+function handleCallEnd(call) {
+  const tracked = activeCalls.get(call.call_id);
+  activeCalls.delete(call.call_id);
+
+  const chanName = tracked
+    ? tracked.chanName
+    : resolveChannel(call.system_id, call.tgid);
+  if (!chanName) return;
+
+  if (call.encrypted) return; // Already shown on call_start
+
+  const isEmergency = call.emergency || false;
+  const srcList = call.src_list || [];
+
+  if (srcList.length > 0) {
+    renderCallEnd(call.call_id, call.system_id, chanName, srcList, isEmergency, call.duration);
+  } else {
+    // Fetch full call
+    setTimeout(() => fetchCallEnd(call.call_id, chanName, call.system_id, isEmergency, call), 2500);
+  }
+}
+
+function renderCallEnd(callId, systemId, chanName, srcList, isEmergency, duration) {
+  const first = srcList[0];
+  const nick = resolveNick(systemId, first.src, first.tag);
+
+  const item = addFeedItem({
+    callId, nick, channel: chanName,
+    duration: duration ? fmtDuration(duration) : '',
+    time: new Date(), timeStr: fmtTime(),
+    emergency: isEmergency, encrypted: false,
+  });
+
+  // Scanner auto-play
+  handleScannerCall(callId, nick, chanName, isEmergency, item);
+}
+
+async function fetchCallEnd(callId, chanName, systemId, isEmergency, fallback) {
+  try {
+    const data = await fetchJSON(`/calls/${callId}`);
+    const srcList = data.src_list || [];
+    if (srcList.length > 0) {
+      renderCallEnd(callId, data.system_id || systemId, chanName, srcList, data.emergency || isEmergency, data.duration);
+      return;
+    }
+  } catch (err) {}
+
+  // Fallback
+  const nick = fallback.tg_alpha_tag || `TG ${fallback.tgid}`;
+  const item = addFeedItem({
+    callId, nick, channel: chanName,
+    duration: fallback.duration ? fmtDuration(fallback.duration) : '',
+    time: new Date(), timeStr: fmtTime(),
+    emergency: isEmergency, encrypted: false,
+  });
+
+  handleScannerCall(callId, nick, chanName, isEmergency, item);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATUS BAR
+// ═══════════════════════════════════════════════════════════════
+
+function updateStatusBar() {
+  const now = Date.now();
+  eventRate = eventRate.filter(t => now - t < 60000);
+  sbRate.textContent = eventRate.length + '/min';
+
+  if (selectedChannels.size > 0) {
+    sbChannels.textContent = `${selectedChannels.size}/${channels.size} ch`;
+  } else {
+    sbChannels.textContent = `0/${channels.size} ch`;
+  }
+
+  sbTime.textContent = new Date().toTimeString().slice(0, 8);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+
+async function init() {
+  loadSettings();
+  applySettings();
+
+  if (scannerActive) {
+    scannerToggle.classList.add('active');
+    scannerLabel.textContent = 'SCANNING';
+  }
+  updateNpIdleText();
+
+  await bootstrapChannels();
+  await fillFeedViewport();
+
+  connectSSE();
+
+  setInterval(updateStatusBar, 1000);
+  updateStatusBar();
+}
+
+init();
+</script>
+</body>
+</html>
