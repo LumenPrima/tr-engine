@@ -121,7 +121,7 @@ To enable it, bind-mount trunk-recorder's audio directory into the tr-engine con
       - /path/to/trunk-recorder/audio:/tr-audio:ro
 ```
 
-When `TR_AUDIO_DIR` is set, tr-engine skips saving audio from MQTT and instead resolves files using the `call_filename` path that trunk-recorder reports at call_end. You can disable `mqtt_audio` in the TR plugin config since only the metadata is needed.
+When `TR_AUDIO_DIR` is set, tr-engine skips saving audio from MQTT and instead resolves files using the `call_filename` path that trunk-recorder reports at call_end. In your TR plugin config, keep `mqtt_audio: true` but set `mqtt_audio_type: none` — this sends the call metadata (frequencies, transmissions, unit list) without the base64 audio payload, saving encoding CPU and MQTT bandwidth.
 
 Both modes coexist during a transition — existing MQTT-ingested audio still serves from `AUDIO_DIR`.
 

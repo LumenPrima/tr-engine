@@ -77,7 +77,7 @@ tr-engine supports two modes for call audio:
 
 - **MQTT audio (default):** trunk-recorder sends base64-encoded audio in MQTT messages. tr-engine decodes and saves the files to `AUDIO_DIR`. Enable this by setting `mqtt_audio: true` in trunk-recorder's MQTT plugin config.
 
-- **Filesystem audio (`TR_AUDIO_DIR`):** trunk-recorder saves audio files to its local filesystem. tr-engine serves them directly using the `call_filename` path stored at call_end. Set `TR_AUDIO_DIR` to the directory where trunk-recorder writes audio (its `audioBaseDir`). This avoids the overhead of base64 encoding/decoding over MQTT and eliminates duplicate files. When using this mode, you can disable `mqtt_audio` in trunk-recorder's plugin config — tr-engine still receives the audio metadata message for frequency and transmission data.
+- **Filesystem audio (`TR_AUDIO_DIR`):** trunk-recorder saves audio files to its local filesystem. tr-engine serves them directly using the `call_filename` path stored at call_end. Set `TR_AUDIO_DIR` to the directory where trunk-recorder writes audio (its `audioBaseDir`). This avoids the overhead of base64 encoding/decoding over MQTT and eliminates duplicate files. When using this mode, keep `mqtt_audio: true` but set `mqtt_audio_type: none` in the TR plugin config — this sends the call metadata message (frequencies, transmissions, unit list) without the base64 audio payload, saving encoding CPU and MQTT bandwidth.
 
 Both modes can coexist during a transition. Existing calls with MQTT-ingested audio continue to serve from `AUDIO_DIR`; new calls resolve from `TR_AUDIO_DIR`.
 
