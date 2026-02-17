@@ -714,6 +714,7 @@ const activeCalls = new Map();
 const channelHasActivity = new Set();   // channels with real messages
 const groupCollapsed = new Map();       // group collapse state (true = show all, false = collapsed)
 const channelLoading = new Set();       // prevent duplicate lazy-loads
+const channelLoadedCallIds = new Map(); // chanName -> Set<callId> — deduplicate across bootstrap and lazy load
 
 // ── DOM refs ──
 const messagesEl = document.getElementById('messages');
@@ -988,6 +989,8 @@ function ensureChannel(tg) {
       mode: '+nt',
       users: new Map(),
       messages: [],
+      historyOffset: 0,
+      historyExhausted: false,
     });
     channelUnread.set(finalName, 0);
   }
@@ -1421,9 +1424,13 @@ function switchChannel(ch) {
   for (const m of state.messages) appendMsgDOM(m);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
-  // Lazy-load history for channels that haven't been populated yet
-  if (state.tgid && !channelHasActivity.has(ch) && !channelLoading.has(ch)) {
-    lazyLoadChannel(ch, state.system_id, state.tgid);
+  // Load history if this channel hasn't been populated yet, or fill viewport
+  if (state.tgid && !channelLoading.has(ch)) {
+    if (!channelHasActivity.has(ch)) {
+      lazyLoadChannel(ch, state.system_id, state.tgid).then(() => ensureChannelFilled(ch));
+    } else {
+      ensureChannelFilled(ch);
+    }
   }
 
   // Typing
@@ -1435,71 +1442,105 @@ function switchChannel(ch) {
   renderNicklist();
 }
 
+/** Convert API calls into message objects for a channel. Returns messages oldest-first. Deduplicates by call_id. */
+function callsToMessages(calls, chanName, systemId) {
+  const msgs = [];
+  const ch = channels.get(chanName);
+  if (!channelLoadedCallIds.has(chanName)) channelLoadedCallIds.set(chanName, new Set());
+  const loadedIds = channelLoadedCallIds.get(chanName);
+  const sorted = [...calls].reverse(); // API returns newest-first; flip to oldest-first
+  for (const call of sorted) {
+    if (loadedIds.has(call.call_id)) continue;
+    loadedIds.add(call.call_id);
+    const srcList = call.src_list || [];
+    const isEmergency = call.emergency || false;
+    const sid = call.system_id || systemId;
+
+    if (call.encrypted) {
+      const units = call.units || [];
+      const srcNick = units.length > 0
+        ? resolveNick(sid, units[0].unit_id, units[0].alpha_tag)
+        : (call.tg_alpha_tag || `TG ${call.tgid}`);
+      const callTime = call.start_time ? new Date(call.start_time) : new Date();
+      const dur = call.duration ? fmtDuration(call.duration) : '';
+      msgs.push({
+        ts: ts(callTime), date: callTime, nick: srcNick, encrypted: true,
+        text: `[encrypted${dur ? ', ' + dur : ''}]`,
+      });
+    } else if (srcList.length > 0) {
+      const txSorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
+      for (const tx of txSorted) {
+        const nick = resolveNick(sid, tx.src, tx.tag);
+        const txTime = tx.time ? new Date(tx.time * 1000) : (call.start_time ? new Date(call.start_time) : new Date());
+        const dur = tx.duration ? fmtDuration(tx.duration) : '';
+        if (ch) ensureUserInChannel(ch, chanName, sid, tx.src, tx.tag);
+        msgs.push({
+          ts: ts(txTime), date: txTime, nick, callId: call.call_id,
+          duration: dur, channel: chanName,
+          emergency: isEmergency || tx.emergency === 1,
+        });
+      }
+    } else {
+      const units = call.units || [];
+      const srcNick = units.length > 0
+        ? resolveNick(sid, units[0].unit_id, units[0].alpha_tag)
+        : (call.tg_alpha_tag || `TG ${call.tgid}`);
+      const callTime = call.start_time ? new Date(call.start_time) : new Date();
+      const dur = call.duration ? fmtDuration(call.duration) : '';
+      msgs.push({
+        ts: ts(callTime), date: callTime, nick: srcNick, callId: call.call_id,
+        duration: dur, channel: chanName, emergency: isEmergency,
+      });
+    }
+  }
+  return msgs;
+}
+
+const HISTORY_PAGE_SIZE = 50;
+
 async function lazyLoadChannel(chanName, systemId, tgid) {
   channelLoading.add(chanName);
   const ch = channels.get(chanName);
   if (!ch) { channelLoading.delete(chanName); return; }
 
   try {
-    const data = await fetchJSON(`/calls?tgid=${tgid}&system_id=${systemId}&sort=-stop_time&deduplicate=true&limit=50`);
+    const data = await fetchJSON(`/calls?tgid=${tgid}&system_id=${systemId}&sort=-stop_time&deduplicate=true&limit=${HISTORY_PAGE_SIZE}&offset=${ch.historyOffset}`);
     const calls = data.calls || [];
+
+    if (calls.length < HISTORY_PAGE_SIZE) ch.historyExhausted = true;
+    ch.historyOffset += calls.length;
 
     if (calls.length === 0) {
       channelLoading.delete(chanName);
       return;
     }
 
-    const sorted = [...calls].reverse();
-    for (const call of sorted) {
-      const srcList = call.src_list || [];
-      const isEmergency = call.emergency || false;
+    const newMsgs = callsToMessages(calls, chanName, systemId);
 
-      if (call.encrypted) {
-        const units = call.units || [];
-        const srcNick = units.length > 0
-          ? resolveNick(systemId, units[0].unit_id, units[0].alpha_tag)
-          : (call.tg_alpha_tag || `TG ${call.tgid}`);
-        const callTime = call.start_time ? new Date(call.start_time) : new Date();
-        const dur = call.duration ? fmtDuration(call.duration) : '';
-        ch.messages.push({
-          ts: ts(callTime), date: callTime, nick: srcNick, encrypted: true,
-          text: `[encrypted${dur ? ', ' + dur : ''}]`,
-        });
-      } else if (srcList.length > 0) {
-        const txSorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
-        for (const tx of txSorted) {
-          const nick = resolveNick(systemId, tx.src, tx.tag);
-          const txTime = tx.time ? new Date(tx.time * 1000) : (call.start_time ? new Date(call.start_time) : new Date());
-          const dur = tx.duration ? fmtDuration(tx.duration) : '';
-          ensureUserInChannel(ch, chanName, systemId, tx.src, tx.tag);
-          ch.messages.push({
-            ts: ts(txTime), date: txTime, nick, callId: call.call_id,
-            duration: dur, channel: chanName,
-            emergency: isEmergency || tx.emergency === 1,
-          });
-        }
-      } else {
-        const units = call.units || [];
-        const srcNick = units.length > 0
-          ? resolveNick(systemId, units[0].unit_id, units[0].alpha_tag)
-          : (call.tg_alpha_tag || `TG ${call.tgid}`);
-        const callTime = call.start_time ? new Date(call.start_time) : new Date();
-        const dur = call.duration ? fmtDuration(call.duration) : '';
-        ch.messages.push({
-          ts: ts(callTime), date: callTime, nick: srcNick, callId: call.call_id,
-          duration: dur, channel: chanName, emergency: isEmergency,
-        });
-      }
-    }
+    // Prepend older messages to the beginning of the channel's messages array
+    ch.messages.unshift(...newMsgs);
+
+    // Trim excess from the end if needed
+    while (ch.messages.length > MAX_MESSAGES) ch.messages.pop();
 
     channelHasActivity.add(chanName);
 
-    // Re-render if still on this channel
+    // Re-render if still on this channel, preserving scroll position
     if (activeChannel === chanName) {
+      const prevScrollTop = messagesEl.scrollTop;
+      const prevScrollHeight = messagesEl.scrollHeight;
+      const wasAtBottom = prevScrollHeight - prevScrollTop - messagesEl.clientHeight < 80;
       messagesEl.innerHTML = '';
       lastRenderedDateStr = '';
       for (const m of ch.messages) appendMsgDOM(m);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      const newScrollHeight = messagesEl.scrollHeight;
+      if (wasAtBottom && prevScrollHeight <= messagesEl.clientHeight) {
+        // First load or content didn't fill viewport — scroll to bottom
+        messagesEl.scrollTop = newScrollHeight;
+      } else {
+        // Preserve view: offset by the height of prepended content
+        messagesEl.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+      }
       renderNicklist();
     }
     renderTree();
@@ -1509,6 +1550,33 @@ async function lazyLoadChannel(chanName, systemId, tgid) {
     channelLoading.delete(chanName);
   }
 }
+
+
+/** Keep loading older history until the messages area is scrollable or data is exhausted. */
+async function ensureChannelFilled(chanName) {
+  const ch = channels.get(chanName);
+  if (!ch || !ch.tgid || ch.historyExhausted || channelLoading.has(chanName)) return;
+  if (activeChannel !== chanName) return;
+
+  // If content already fills the viewport, nothing to do
+  if (messagesEl.scrollHeight > messagesEl.clientHeight + 40) return;
+
+  await lazyLoadChannel(chanName, ch.system_id, ch.tgid);
+
+  // Recurse until filled or exhausted
+  if (activeChannel === chanName && !ch.historyExhausted) {
+    ensureChannelFilled(chanName);
+  }
+}
+
+// Scroll-to-top handler: load older messages when scrolling up
+messagesEl.addEventListener('scroll', () => {
+  if (messagesEl.scrollTop > 100) return; // not near top
+  if (!activeChannel || activeChannel === STATUS_CHANNEL) return;
+  const ch = channels.get(activeChannel);
+  if (!ch || !ch.tgid || ch.historyExhausted || channelLoading.has(activeChannel)) return;
+  lazyLoadChannel(activeChannel, ch.system_id, ch.tgid);
+});
 
 
 // ══════════════════════════════════════════════════════════════
@@ -1611,6 +1679,11 @@ async function bootstrapRecentCalls() {
       if (!chanName) continue;
       const ch = channels.get(chanName);
       if (!ch) continue;
+
+      // Track call ID for dedup with lazy load
+      if (!channelLoadedCallIds.has(chanName)) channelLoadedCallIds.set(chanName, new Set());
+      channelLoadedCallIds.get(chanName).add(call.call_id);
+      ch.historyOffset++;
 
       const systemId = call.system_id;
       const srcList = call.src_list || [];
