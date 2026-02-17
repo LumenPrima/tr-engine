@@ -12,13 +12,28 @@ import (
 )
 
 type CallsHandler struct {
-	db       *database.DB
-	audioDir string
-	live     LiveDataSource
+	db         *database.DB
+	audioDir   string
+	trAudioDir string
+	live       LiveDataSource
 }
 
-func NewCallsHandler(db *database.DB, audioDir string, live LiveDataSource) *CallsHandler {
-	return &CallsHandler{db: db, audioDir: audioDir, live: live}
+func NewCallsHandler(db *database.DB, audioDir, trAudioDir string, live LiveDataSource) *CallsHandler {
+	return &CallsHandler{db: db, audioDir: audioDir, trAudioDir: trAudioDir, live: live}
+}
+
+// enrichAudioURLs sets audio_url on calls that have a call_filename but no
+// audio_file_path, when TR_AUDIO_DIR mode is active.
+func (h *CallsHandler) enrichAudioURLs(calls []database.CallAPI) {
+	if h.trAudioDir == "" {
+		return
+	}
+	for i := range calls {
+		if calls[i].AudioURL == nil && calls[i].CallFilename != "" {
+			url := fmt.Sprintf("/api/v1/calls/%d/audio", calls[i].CallID)
+			calls[i].AudioURL = &url
+		}
+	}
 }
 
 var callSortFields = map[string]string{
@@ -70,6 +85,7 @@ func (h *CallsHandler) ListCalls(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, "failed to list calls")
 		return
 	}
+	h.enrichAudioURLs(calls)
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"calls":  calls,
 		"total":  total,
@@ -135,6 +151,10 @@ func (h *CallsHandler) GetCall(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusNotFound, "call not found")
 		return
 	}
+	if h.trAudioDir != "" && call.AudioURL == nil && call.CallFilename != "" {
+		url := fmt.Sprintf("/api/v1/calls/%d/audio", call.CallID)
+		call.AudioURL = &url
+	}
 	WriteJSON(w, http.StatusOK, call)
 }
 
@@ -146,14 +166,14 @@ func (h *CallsHandler) GetCallAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	audioPath, err := h.db.GetCallAudioPath(r.Context(), id)
-	if err != nil || audioPath == "" {
+	audioPath, callFilename, err := h.db.GetCallAudioPath(r.Context(), id)
+	if err != nil {
 		WriteError(w, http.StatusNotFound, "audio not found")
 		return
 	}
 
-	fullPath := filepath.Join(h.audioDir, audioPath)
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+	fullPath := h.resolveAudioFile(audioPath, callFilename)
+	if fullPath == "" {
 		WriteError(w, http.StatusNotFound, "audio file not found on disk")
 		return
 	}
@@ -174,6 +194,56 @@ func (h *CallsHandler) GetCallAudio(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%d%s"`, id, ext))
 	http.ServeFile(w, r, fullPath)
+}
+
+// resolveAudioFile finds the audio file on disk.
+// Priority: 1) AUDIO_DIR/audioPath, 2) TR_AUDIO_DIR + call_filename, 3) call_filename as absolute path.
+func (h *CallsHandler) resolveAudioFile(audioPath, callFilename string) string {
+	// 1) tr-engine managed audio file
+	if audioPath != "" {
+		full := filepath.Join(h.audioDir, audioPath)
+		if _, err := os.Stat(full); err == nil {
+			return full
+		}
+	}
+
+	if callFilename == "" {
+		return ""
+	}
+
+	// 2) TR_AUDIO_DIR configured — resolve call_filename relative to it
+	if h.trAudioDir != "" {
+		// call_filename is TR's absolute path (e.g. /app/tr_audio/warco/2026/2/17/file.m4a)
+		// Try it directly under TR_AUDIO_DIR by extracting the basename
+		// and also try the full relative structure
+		full := filepath.Join(h.trAudioDir, filepath.Base(callFilename))
+		if _, err := os.Stat(full); err == nil {
+			return full
+		}
+
+		// Try matching: find the short_name directory in call_filename
+		// and use everything from there as a relative path under TR_AUDIO_DIR.
+		// e.g. /app/tr_audio/warco/2026/2/17/file.m4a → warco/2026/2/17/file.m4a
+		parts := strings.Split(filepath.ToSlash(callFilename), "/")
+		for i := range parts {
+			if i == 0 {
+				continue
+			}
+			candidate := filepath.Join(h.trAudioDir, filepath.Join(parts[i:]...))
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+	}
+
+	// 3) Try call_filename as an absolute path (same machine, same filesystem)
+	if filepath.IsAbs(callFilename) {
+		if _, err := os.Stat(callFilename); err == nil {
+			return callFilename
+		}
+	}
+
+	return ""
 }
 
 // GetCallFrequencies returns frequency entries for a call.

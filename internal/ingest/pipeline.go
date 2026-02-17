@@ -19,7 +19,8 @@ type Pipeline struct {
 	db       *database.DB
 	identity *IdentityResolver
 	log      zerolog.Logger
-	audioDir string
+	audioDir   string
+	trAudioDir string // when set, skip saving audio files (served from TR's filesystem)
 
 	rawBatcher      *Batcher[database.RawMessageRow]
 	recorderBatcher *Batcher[database.RecorderSnapshotRow]
@@ -55,6 +56,7 @@ type Pipeline struct {
 type PipelineOptions struct {
 	DB               *database.DB
 	AudioDir         string
+	TRAudioDir       string
 	RawStore         bool
 	RawIncludeTopics string
 	RawExcludeTopics string
@@ -91,6 +93,7 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		identity:    NewIdentityResolver(opts.DB, log),
 		log:         log,
 		audioDir:    opts.AudioDir,
+		trAudioDir:  opts.TRAudioDir,
 		rawStore:    rawStore,
 		rawInclude:  rawInclude,
 		rawExclude:  rawExclude,

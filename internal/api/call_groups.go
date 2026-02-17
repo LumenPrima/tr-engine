@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -8,11 +9,12 @@ import (
 )
 
 type CallGroupsHandler struct {
-	db *database.DB
+	db         *database.DB
+	trAudioDir string
 }
 
-func NewCallGroupsHandler(db *database.DB) *CallGroupsHandler {
-	return &CallGroupsHandler{db: db}
+func NewCallGroupsHandler(db *database.DB, trAudioDir string) *CallGroupsHandler {
+	return &CallGroupsHandler{db: db, trAudioDir: trAudioDir}
 }
 
 // ListCallGroups returns deduplicated call groups.
@@ -62,6 +64,14 @@ func (h *CallGroupsHandler) GetCallGroup(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		WriteError(w, http.StatusNotFound, "call group not found")
 		return
+	}
+	if h.trAudioDir != "" {
+		for i := range calls {
+			if calls[i].AudioURL == nil && calls[i].CallFilename != "" {
+				url := fmt.Sprintf("/api/v1/calls/%d/audio", calls[i].CallID)
+				calls[i].AudioURL = &url
+			}
+		}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"call_group": group,

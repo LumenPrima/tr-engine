@@ -16,7 +16,8 @@ type Config struct {
 	MQTTUsername  string `env:"MQTT_USERNAME"`
 	MQTTPassword  string `env:"MQTT_PASSWORD"`
 
-	AudioDir string `env:"AUDIO_DIR" envDefault:"./audio"`
+	AudioDir   string `env:"AUDIO_DIR" envDefault:"./audio"`
+	TRAudioDir string `env:"TR_AUDIO_DIR"`
 
 	HTTPAddr     string        `env:"HTTP_ADDR" envDefault:":8080"`
 	ReadTimeout  time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"5s"`

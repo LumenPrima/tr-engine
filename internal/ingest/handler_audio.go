@@ -43,32 +43,34 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 		}
 	}
 
-	// Decode and save audio file
-	audioData := msg.Call.AudioM4ABase64
-	if audioData == "" {
-		audioData = msg.Call.AudioWavBase64
-	}
-
+	// Decode and save audio file (skip when TR_AUDIO_DIR is set — files served from TR's filesystem)
 	var audioPath string
 	var audioSize int
 
-	if audioData != "" {
-		decoded, decErr := base64.StdEncoding.DecodeString(audioData)
-		if decErr != nil {
-			p.log.Warn().Err(decErr).Msg("failed to decode audio base64")
-		} else {
-			audioSize = len(decoded)
-			audioPath, err = p.saveAudioFile(meta.ShortName, startTime, meta.Filename, decoded)
-			if err != nil {
-				p.log.Error().Err(err).Msg("failed to save audio file")
+	if p.trAudioDir == "" {
+		audioData := msg.Call.AudioM4ABase64
+		if audioData == "" {
+			audioData = msg.Call.AudioWavBase64
+		}
+
+		if audioData != "" {
+			decoded, decErr := base64.StdEncoding.DecodeString(audioData)
+			if decErr != nil {
+				p.log.Warn().Err(decErr).Msg("failed to decode audio base64")
+			} else {
+				audioSize = len(decoded)
+				audioPath, err = p.saveAudioFile(meta.ShortName, startTime, meta.Filename, decoded)
+				if err != nil {
+					p.log.Error().Err(err).Msg("failed to save audio file")
+				}
 			}
 		}
-	}
 
-	// Update call with audio path if we found the call
-	if callID > 0 && audioPath != "" {
-		if err := p.db.UpdateCallAudio(ctx, callID, callStartTime, audioPath, audioSize); err != nil {
-			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update call audio")
+		// Update call with audio path if we found the call
+		if callID > 0 && audioPath != "" {
+			if err := p.db.UpdateCallAudio(ctx, callID, callStartTime, audioPath, audioSize); err != nil {
+				p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update call audio")
+			}
 		}
 	}
 

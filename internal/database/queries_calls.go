@@ -100,6 +100,7 @@ type CallAPI struct {
 	SrcList       json.RawMessage   `json:"src_list,omitempty"`
 	FreqList      json.RawMessage   `json:"freq_list,omitempty"`
 	UnitIDs       []int32           `json:"unit_ids,omitempty"`
+	CallFilename  string            `json:"-"` // TR's original path, not exposed in JSON; used for audio resolution
 }
 
 // ListCalls returns calls matching the filter with a total count.
@@ -167,6 +168,7 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			COALESCE(c.tg_tag, ''), COALESCE(c.tg_group, ''),
 			c.start_time, c.stop_time, c.duration,
 			c.audio_file_path, COALESCE(c.audio_type, ''), c.audio_file_size,
+			COALESCE(c.call_filename, ''),
 			c.freq, c.freq_error, c.signal_db, c.noise_db, c.error_count, c.spike_count,
 			COALESCE(c.call_state_type, ''), COALESCE(c.mon_state_type, ''),
 			COALESCE(c.emergency, false), COALESCE(c.encrypted, false),
@@ -195,6 +197,7 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			&c.Tgid, &c.TgAlphaTag, &c.TgDescription, &c.TgTag, &c.TgGroup,
 			&c.StartTime, &c.StopTime, &c.Duration,
 			&audioPath, &c.AudioType, &c.AudioSize,
+			&c.CallFilename,
 			&c.Freq, &c.FreqError, &c.SignalDB, &c.NoiseDB, &c.ErrorCount, &c.SpikeCount,
 			&c.CallState, &c.MonState,
 			&c.Emergency, &c.Encrypted, &c.Analog, &c.Conventional,
@@ -227,6 +230,7 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 			COALESCE(c.tg_tag, ''), COALESCE(c.tg_group, ''),
 			c.start_time, c.stop_time, c.duration,
 			c.audio_file_path, COALESCE(c.audio_type, ''), c.audio_file_size,
+			COALESCE(c.call_filename, ''),
 			c.freq, c.freq_error, c.signal_db, c.noise_db, c.error_count, c.spike_count,
 			COALESCE(c.call_state_type, ''), COALESCE(c.mon_state_type, ''),
 			COALESCE(c.emergency, false), COALESCE(c.encrypted, false),
@@ -245,6 +249,7 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 		&c.Tgid, &c.TgAlphaTag, &c.TgDescription, &c.TgTag, &c.TgGroup,
 		&c.StartTime, &c.StopTime, &c.Duration,
 		&audioPath, &c.AudioType, &c.AudioSize,
+		&c.CallFilename,
 		&c.Freq, &c.FreqError, &c.SignalDB, &c.NoiseDB, &c.ErrorCount, &c.SpikeCount,
 		&c.CallState, &c.MonState,
 		&c.Emergency, &c.Encrypted, &c.Analog, &c.Conventional,
@@ -262,20 +267,24 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 	return &c, nil
 }
 
-// GetCallAudioPath returns the audio file path for a call.
-func (db *DB) GetCallAudioPath(ctx context.Context, callID int64) (string, error) {
-	var path *string
-	err := db.Pool.QueryRow(ctx, `
-		SELECT audio_file_path FROM calls WHERE call_id = $1
+// GetCallAudioPath returns the audio file path and call_filename for a call.
+// audio_file_path is the tr-engine managed path; call_filename is TR's original absolute path.
+func (db *DB) GetCallAudioPath(ctx context.Context, callID int64) (audioPath string, callFilename string, err error) {
+	var ap, cf *string
+	err = db.Pool.QueryRow(ctx, `
+		SELECT audio_file_path, call_filename FROM calls WHERE call_id = $1
 		ORDER BY start_time DESC LIMIT 1
-	`, callID).Scan(&path)
+	`, callID).Scan(&ap, &cf)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if path == nil {
-		return "", nil
+	if ap != nil {
+		audioPath = *ap
 	}
-	return *path, nil
+	if cf != nil {
+		callFilename = *cf
+	}
+	return audioPath, callFilename, nil
 }
 
 // CallFrequencyAPI represents a frequency entry for API responses.
@@ -462,6 +471,7 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			COALESCE(c.tg_tag, ''), COALESCE(c.tg_group, ''),
 			c.start_time, c.stop_time, c.duration,
 			c.audio_file_path, COALESCE(c.audio_type, ''), c.audio_file_size,
+			COALESCE(c.call_filename, ''),
 			c.freq, c.freq_error, c.signal_db, c.noise_db, c.error_count, c.spike_count,
 			COALESCE(c.call_state_type, ''), COALESCE(c.mon_state_type, ''),
 			COALESCE(c.emergency, false), COALESCE(c.encrypted, false),
@@ -489,6 +499,7 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			&c.Tgid, &c.TgAlphaTag, &c.TgDescription, &c.TgTag, &c.TgGroup,
 			&c.StartTime, &c.StopTime, &c.Duration,
 			&audioPath, &c.AudioType, &c.AudioSize,
+			&c.CallFilename,
 			&c.Freq, &c.FreqError, &c.SignalDB, &c.NoiseDB, &c.ErrorCount, &c.SpikeCount,
 			&c.CallState, &c.MonState,
 			&c.Emergency, &c.Encrypted, &c.Analog, &c.Conventional,
