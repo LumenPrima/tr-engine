@@ -1531,10 +1531,17 @@ function onChannelSelectionChanged() {
   }
   updateNpIdleText();
   renderDrawer();
+
+  // Reset pagination — the offset was for a different tgid filter set
+  feedOffset = 0;
+  feedExhausted = false;
+  feedItems.length = 0;
+  loadedCallIds.clear();
+
   renderFeed();
   updateStatusBar();
-  // If visible content doesn't fill the viewport, load more
-  ensureFeedFilled();
+  // Re-fill viewport with the new server-side filter
+  fillFeedViewport();
 }
 
 document.getElementById('drawer-select-all').addEventListener('click', () => {
@@ -1696,6 +1703,17 @@ function prependHistoricalItems(calls) {
   return newItems;
 }
 
+/** Build comma-separated tgid param from selected channels. */
+function buildTgidFilter() {
+  if (selectedChannels.size === 0) return '';
+  const tgids = new Set();
+  for (const ch of selectedChannels) {
+    const data = channels.get(ch);
+    if (data) tgids.add(data.tgid);
+  }
+  return tgids.size > 0 ? `&tgid=${[...tgids].join(',')}` : '';
+}
+
 /** Load a page of older calls. Returns newly added items. */
 async function loadMoreCalls() {
   if (feedLoading || feedExhausted) return [];
@@ -1705,7 +1723,8 @@ async function loadMoreCalls() {
   loader.classList.add('visible');
 
   try {
-    const data = await fetchJSON(`/calls?sort=-stop_time&deduplicate=true&limit=${FEED_PAGE_SIZE}&offset=${feedOffset}`);
+    const tgFilter = buildTgidFilter();
+    const data = await fetchJSON(`/calls?sort=-stop_time&deduplicate=true&limit=${FEED_PAGE_SIZE}&offset=${feedOffset}${tgFilter}`);
     const calls = data.calls || [];
 
     if (calls.length < FEED_PAGE_SIZE) feedExhausted = true;
