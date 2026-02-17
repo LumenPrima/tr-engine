@@ -21,6 +21,8 @@ curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sq
 curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker-compose.yml
 ```
 
+> **Why download `schema.sql` separately?** The schema is embedded inside the tr-engine image, but PostgreSQL runs in a separate container and needs the file mounted into its init directory to set up tables on first boot. Docker Compose can't share files between containers, so it's mounted from the host.
+
 ## 2. Edit `docker-compose.yml`
 
 Open `docker-compose.yml` and change the tr-engine `environment` section to point at your broker. Remove the `mosquitto` service and the `depends_on` reference to it — you don't need a bundled broker.

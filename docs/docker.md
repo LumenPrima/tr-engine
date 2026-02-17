@@ -26,6 +26,8 @@ Three files — that's all you need:
 - `schema.sql` — database schema, auto-loaded on first run
 - `docker/mosquitto.conf` — minimal Mosquitto config (anonymous access on port 1883)
 
+> **Why download `schema.sql` separately?** The schema is embedded inside the tr-engine image, but PostgreSQL runs in a separate container and needs the file mounted into its init directory to set up tables on first boot. Docker Compose can't share files between containers, so it's mounted from the host.
+
 ## 2. Start
 
 ```bash
