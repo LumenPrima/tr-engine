@@ -202,6 +202,43 @@ func QueryIntList(r *http.Request, name string) []int {
 	return result
 }
 
+// QueryStringList extracts a comma-separated list of strings from a query param.
+func QueryStringList(r *http.Request, name string) []string {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// intSliceContains returns true if the slice contains the value.
+func intSliceContains(s []int, v int) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// stringSliceContains returns true if the slice contains the value.
+func stringSliceContains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
 // PathInt extracts an integer from a chi URL parameter.
 func PathInt(r *http.Request, name string) (int, error) {
 	v := chi.URLParam(r, name)

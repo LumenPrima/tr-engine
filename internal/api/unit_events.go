@@ -27,9 +27,9 @@ var unitEventSortFields = map[string]string{
 // ListUnitEventsGlobal returns unit events across a system with comprehensive filters.
 func (h *UnitEventsHandler) ListUnitEventsGlobal(w http.ResponseWriter, r *http.Request) {
 	// Require system_id or sysid
-	systemID, hasSystemID := QueryInt(r, "system_id")
-	sysid, hasSysid := QueryString(r, "sysid")
-	if !hasSystemID && !hasSysid {
+	systemIDs := QueryIntList(r, "system_id")
+	sysids := QueryStringList(r, "sysid")
+	if len(systemIDs) == 0 && len(sysids) == 0 {
 		WriteError(w, http.StatusBadRequest, "system_id or sysid is required")
 		return
 	}
@@ -42,20 +42,14 @@ func (h *UnitEventsHandler) ListUnitEventsGlobal(w http.ResponseWriter, r *http.
 	sort := ParseSort(r, "-time", unitEventSortFields)
 
 	filter := database.GlobalUnitEventFilter{
-		Limit:  p.Limit,
-		Offset: p.Offset,
-		Sort:   sort.SQLOrderBy(unitEventSortFields),
+		SystemIDs: systemIDs,
+		Sysids:    sysids,
+		Limit:     p.Limit,
+		Offset:    p.Offset,
+		Sort:      sort.SQLOrderBy(unitEventSortFields),
 	}
 
-	if hasSystemID {
-		filter.SystemID = &systemID
-	}
-	if hasSysid {
-		filter.Sysid = &sysid
-	}
-	if v, ok := QueryInt(r, "unit_id"); ok {
-		filter.UnitID = &v
-	}
+	filter.UnitIDs = QueryIntList(r, "unit_id")
 	if v, ok := QueryString(r, "type"); ok {
 		types := strings.Split(v, ",")
 		for i := range types {
@@ -63,9 +57,7 @@ func (h *UnitEventsHandler) ListUnitEventsGlobal(w http.ResponseWriter, r *http.
 		}
 		filter.EventTypes = types
 	}
-	if v, ok := QueryInt(r, "tgid"); ok {
-		filter.Tgid = &v
-	}
+	filter.Tgids = QueryIntList(r, "tgid")
 	if v, ok := QueryBool(r, "emergency"); ok {
 		filter.Emergency = &v
 	}

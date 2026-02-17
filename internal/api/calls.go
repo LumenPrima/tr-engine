@@ -44,21 +44,11 @@ func (h *CallsHandler) ListCalls(w http.ResponseWriter, r *http.Request) {
 		Sort:   sort.SQLOrderBy(callSortFields),
 	}
 
-	if v, ok := QueryString(r, "sysid"); ok {
-		filter.Sysid = &v
-	}
-	if v, ok := QueryInt(r, "system_id"); ok {
-		filter.SystemID = &v
-	}
-	if v, ok := QueryInt(r, "site_id"); ok {
-		filter.SiteID = &v
-	}
-	if v, ok := QueryInt(r, "tgid"); ok {
-		filter.Tgid = &v
-	}
-	if v, ok := QueryInt(r, "unit_id"); ok {
-		filter.UnitID = &v
-	}
+	filter.Sysids = QueryStringList(r, "sysid")
+	filter.SystemIDs = QueryIntList(r, "system_id")
+	filter.SiteIDs = QueryIntList(r, "site_id")
+	filter.Tgids = QueryIntList(r, "tgid")
+	filter.UnitIDs = QueryIntList(r, "unit_id")
 	if v, ok := QueryBool(r, "emergency"); ok {
 		filter.Emergency = &v
 	}

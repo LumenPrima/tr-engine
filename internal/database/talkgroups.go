@@ -9,13 +9,13 @@ import (
 
 // TalkgroupFilter specifies filters for listing talkgroups.
 type TalkgroupFilter struct {
-	SystemID *int
-	Sysid    *string
-	Group    *string
-	Search   *string
-	Limit    int
-	Offset   int
-	Sort     string
+	SystemIDs []int
+	Sysids    []string
+	Group     *string
+	Search    *string
+	Limit     int
+	Offset    int
+	Sort      string
 }
 
 // TalkgroupAPI represents a talkgroup for API responses.
@@ -43,11 +43,11 @@ type TalkgroupAPI struct {
 func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]TalkgroupAPI, int, error) {
 	qb := newQueryBuilder()
 
-	if filter.SystemID != nil {
-		qb.Add("t.system_id = %s", *filter.SystemID)
+	if len(filter.SystemIDs) > 0 {
+		qb.Add("t.system_id = ANY(%s)", filter.SystemIDs)
 	}
-	if filter.Sysid != nil {
-		qb.Add("s.sysid = %s", *filter.Sysid)
+	if len(filter.Sysids) > 0 {
+		qb.Add("s.sysid = ANY(%s)", filter.Sysids)
 	}
 	if filter.Group != nil {
 		qb.Add(`t."group" = %s`, *filter.Group)

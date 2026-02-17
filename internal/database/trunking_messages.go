@@ -24,7 +24,7 @@ type TrunkingMessageRow struct {
 
 // TrunkingMessageFilter specifies filters for listing trunking messages.
 type TrunkingMessageFilter struct {
-	SystemID   *int
+	SystemIDs  []int
 	Opcode     *string
 	OpcodeType *string
 	StartTime  *time.Time
@@ -52,8 +52,8 @@ type TrunkingMessageAPI struct {
 func (db *DB) ListTrunkingMessages(ctx context.Context, filter TrunkingMessageFilter) ([]TrunkingMessageAPI, int, error) {
 	qb := newQueryBuilder()
 
-	if filter.SystemID != nil {
-		qb.Add("tm.system_id = %s", *filter.SystemID)
+	if len(filter.SystemIDs) > 0 {
+		qb.Add("tm.system_id = ANY(%s)", filter.SystemIDs)
 	}
 	if filter.Opcode != nil {
 		qb.Add("tm.opcode = %s", *filter.Opcode)

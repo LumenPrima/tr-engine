@@ -28,12 +28,8 @@ func (h *CallGroupsHandler) ListCallGroups(w http.ResponseWriter, r *http.Reques
 		Offset: p.Offset,
 	}
 
-	if v, ok := QueryString(r, "sysid"); ok {
-		filter.Sysid = &v
-	}
-	if v, ok := QueryInt(r, "tgid"); ok {
-		filter.Tgid = &v
-	}
+	filter.Sysids = QueryStringList(r, "sysid")
+	filter.Tgids = QueryIntList(r, "tgid")
 	if t, ok := QueryTime(r, "start_time"); ok {
 		filter.StartTime = &t
 	}

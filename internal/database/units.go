@@ -12,7 +12,7 @@ type UnitFilter struct {
 	Sysid        *string
 	Search       *string
 	ActiveWithin *int // minutes
-	Talkgroup    *int
+	Talkgroups   []int
 	Limit        int
 	Offset       int
 	Sort         string
@@ -52,8 +52,8 @@ func (db *DB) ListUnits(ctx context.Context, filter UnitFilter) ([]UnitAPI, int,
 	if filter.ActiveWithin != nil {
 		qb.Add("u.last_seen > now() - (%s || ' minutes')::interval", strconv.Itoa(*filter.ActiveWithin))
 	}
-	if filter.Talkgroup != nil {
-		qb.Add("u.last_event_tgid = %s", *filter.Talkgroup)
+	if len(filter.Talkgroups) > 0 {
+		qb.Add("u.last_event_tgid = ANY(%s)", filter.Talkgroups)
 	}
 
 	fromClause := "FROM units u JOIN systems s ON s.system_id = u.system_id AND s.deleted_at IS NULL"

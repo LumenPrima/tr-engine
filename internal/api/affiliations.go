@@ -29,32 +29,30 @@ func (h *AffiliationsHandler) ListAffiliations(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Optional system filters
-	systemID, hasSystemID := QueryInt(r, "system_id")
-	sysid, hasSysid := QueryString(r, "sysid")
-
-	all := h.live.UnitAffiliations()
-
-	// Filter
-	tgid, hasTgid := QueryInt(r, "tgid")
-	unitID, hasUnitID := QueryInt(r, "unit_id")
+	// Optional filters (comma-separated multi-value)
+	systemIDs := QueryIntList(r, "system_id")
+	sysids := QueryStringList(r, "sysid")
+	tgids := QueryIntList(r, "tgid")
+	unitIDs := QueryIntList(r, "unit_id")
 	staleThreshold, hasStaleThreshold := QueryInt(r, "stale_threshold") // seconds
 	activeWithin, hasActiveWithin := QueryInt(r, "active_within")       // seconds
 	status, hasStatus := QueryString(r, "status")
 
+	all := h.live.UnitAffiliations()
+
 	now := time.Now()
 	filtered := make([]UnitAffiliationData, 0, len(all))
 	for _, a := range all {
-		if hasSystemID && a.SystemID != systemID {
+		if len(systemIDs) > 0 && !intSliceContains(systemIDs, a.SystemID) {
 			continue
 		}
-		if hasSysid && a.Sysid != sysid {
+		if len(sysids) > 0 && !stringSliceContains(sysids, a.Sysid) {
 			continue
 		}
-		if hasTgid && a.Tgid != tgid {
+		if len(tgids) > 0 && !intSliceContains(tgids, a.Tgid) {
 			continue
 		}
-		if hasUnitID && a.UnitID != unitID {
+		if len(unitIDs) > 0 && !intSliceContains(unitIDs, a.UnitID) {
 			continue
 		}
 		if hasStatus && a.Status != status {

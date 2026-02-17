@@ -20,11 +20,11 @@ type UnitEventFilter struct {
 
 // GlobalUnitEventFilter specifies filters for system-wide unit event queries.
 type GlobalUnitEventFilter struct {
-	SystemID   *int
-	Sysid      *string
-	UnitID     *int
+	SystemIDs  []int
+	Sysids     []string
+	UnitIDs    []int
 	EventTypes []string // multi-type support (ANY array)
-	Tgid       *int
+	Tgids      []int
 	Emergency  *bool
 	StartTime  *time.Time
 	EndTime    *time.Time
@@ -116,20 +116,20 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFilter) ([]UnitEventAPI, int, error) {
 	qb := newQueryBuilder()
 
-	if filter.SystemID != nil {
-		qb.Add("ue.system_id = %s", *filter.SystemID)
+	if len(filter.SystemIDs) > 0 {
+		qb.Add("ue.system_id = ANY(%s)", filter.SystemIDs)
 	}
-	if filter.Sysid != nil {
-		qb.Add("s.sysid = %s", *filter.Sysid)
+	if len(filter.Sysids) > 0 {
+		qb.Add("s.sysid = ANY(%s)", filter.Sysids)
 	}
-	if filter.UnitID != nil {
-		qb.Add("ue.unit_rid = %s", *filter.UnitID)
+	if len(filter.UnitIDs) > 0 {
+		qb.Add("ue.unit_rid = ANY(%s)", filter.UnitIDs)
 	}
 	if len(filter.EventTypes) > 0 {
 		qb.Add("ue.event_type = ANY(%s)", filter.EventTypes)
 	}
-	if filter.Tgid != nil {
-		qb.Add("ue.tgid = %s", *filter.Tgid)
+	if len(filter.Tgids) > 0 {
+		qb.Add("ue.tgid = ANY(%s)", filter.Tgids)
 	}
 	if filter.Emergency != nil {
 		qb.Add("ue.emergency = %s", *filter.Emergency)

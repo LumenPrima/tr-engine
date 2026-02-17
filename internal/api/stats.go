@@ -57,9 +57,7 @@ func (h *StatsHandler) ListTrunkingMessages(w http.ResponseWriter, r *http.Reque
 		Limit:  p.Limit,
 		Offset: p.Offset,
 	}
-	if v, ok := QueryInt(r, "system_id"); ok {
-		filter.SystemID = &v
-	}
+	filter.SystemIDs = QueryIntList(r, "system_id")
 	if v, ok := QueryString(r, "opcode"); ok {
 		filter.Opcode = &v
 	}

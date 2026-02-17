@@ -40,12 +40,8 @@ func (h *TalkgroupsHandler) ListTalkgroups(w http.ResponseWriter, r *http.Reques
 		Sort:   sort.SQLOrderBy(talkgroupSortFields),
 	}
 
-	if v, ok := QueryInt(r, "system_id"); ok {
-		filter.SystemID = &v
-	}
-	if v, ok := QueryString(r, "sysid"); ok {
-		filter.Sysid = &v
-	}
+	filter.SystemIDs = QueryIntList(r, "system_id")
+	filter.Sysids = QueryStringList(r, "sysid")
 	if v, ok := QueryString(r, "group"); ok {
 		filter.Group = &v
 	}
@@ -169,10 +165,10 @@ func (h *TalkgroupsHandler) ListTalkgroupCalls(w http.ResponseWriter, r *http.Re
 		return
 	}
 	filter := database.CallFilter{
-		Limit:    p.Limit,
-		Offset:   p.Offset,
-		SystemID: &cid.SystemID,
-		Tgid:     &cid.EntityID,
+		Limit:     p.Limit,
+		Offset:    p.Offset,
+		SystemIDs: []int{cid.SystemID},
+		Tgids:     []int{cid.EntityID},
 	}
 	if t, ok := QueryTime(r, "start_time"); ok {
 		filter.StartTime = &t

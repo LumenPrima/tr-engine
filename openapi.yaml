@@ -327,12 +327,13 @@ paths:
       parameters:
         - name: system_id
           in: query
-          description: Filter by system database ID
+          description: Filter by system database ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "1,2"
         - name: sysid
           in: query
-          description: Filter by P25 SYSID (e.g., "348")
+          description: Filter by P25 SYSID (comma-separated for multiple, e.g., "348,34D")
           schema:
             type: string
         - name: group
@@ -537,9 +538,10 @@ paths:
             type: integer
         - name: talkgroup
           in: query
-          description: Filter by talkgroup ID (units recently active on this TG)
+          description: Filter by talkgroup ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "9178,5344"
         - $ref: "#/components/parameters/sort"
         - $ref: "#/components/parameters/sortDir"
         - $ref: "#/components/parameters/limit"
@@ -688,19 +690,21 @@ paths:
       parameters:
         - name: system_id
           in: query
-          description: Filter by internal system ID
+          description: Filter by internal system ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "1,2"
         - name: sysid
           in: query
-          description: Filter by P25 sysid hex
+          description: Filter by P25 sysid hex (comma-separated for multiple)
           schema:
             type: string
         - name: unit_id
           in: query
-          description: Filter by unit radio ID
+          description: Filter by unit radio ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "924003,104"
         - name: type
           in: query
           description: |
@@ -710,9 +714,10 @@ paths:
             type: string
         - name: tgid
           in: query
-          description: Filter by talkgroup ID
+          description: Filter by talkgroup ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "9178,5344"
         - name: emergency
           in: query
           description: Filter by emergency flag
@@ -760,24 +765,27 @@ paths:
       parameters:
         - name: system_id
           in: query
-          description: Filter by internal system ID
+          description: Filter by internal system ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "1,2"
         - name: sysid
           in: query
-          description: Filter by P25 sysid hex
+          description: Filter by P25 sysid hex (comma-separated for multiple)
           schema:
             type: string
         - name: tgid
           in: query
-          description: Filter by talkgroup ID
+          description: Filter by talkgroup ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "9178,5344"
         - name: unit_id
           in: query
-          description: Filter by unit radio ID
+          description: Filter by unit radio ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "924003,104"
         - name: status
           in: query
           description: Filter by status (`affiliated` or `off`)
@@ -830,29 +838,33 @@ paths:
       parameters:
         - name: sysid
           in: query
-          description: Filter by P25 SYSID (e.g., "348")
+          description: Filter by P25 SYSID (comma-separated for multiple, e.g., "348,34D")
           schema:
             type: string
         - name: system_id
           in: query
-          description: Filter by system database ID
+          description: Filter by system database ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "1,2"
         - name: site_id
           in: query
-          description: Filter by recording site ID (specific site within a system)
+          description: Filter by recording site ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "1,3"
         - name: tgid
           in: query
-          description: Filter by talkgroup ID
+          description: Filter by talkgroup ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "9178,5344"
         - name: unit_id
           in: query
-          description: Filter by unit radio ID (calls containing this unit)
+          description: Filter by unit radio ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "924003,104"
         - name: emergency
           in: query
           description: Filter by emergency flag
@@ -1060,14 +1072,15 @@ paths:
       parameters:
         - name: sysid
           in: query
-          description: Filter by P25 SYSID
+          description: Filter by P25 SYSID (comma-separated for multiple)
           schema:
             type: string
         - name: tgid
           in: query
-          description: Filter by talkgroup ID
+          description: Filter by talkgroup ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "9178,5344"
         - $ref: "#/components/parameters/startTime"
         - $ref: "#/components/parameters/endTime"
         - $ref: "#/components/parameters/limit"
@@ -1182,9 +1195,10 @@ paths:
       parameters:
         - name: system_id
           in: query
-          description: Filter by system ID
+          description: Filter by system ID (comma-separated for multiple)
           schema:
-            type: integer
+            type: string
+            example: "1,2"
         - name: opcode
           in: query
           description: Filter by opcode hex value (e.g., "2c")

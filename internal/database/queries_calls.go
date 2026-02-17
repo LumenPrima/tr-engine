@@ -47,11 +47,11 @@ func (qb *queryBuilder) Args() []any {
 
 // CallFilter specifies filters for listing calls.
 type CallFilter struct {
-	SystemID    *int
-	SiteID      *int
-	Sysid       *string
-	Tgid        *int
-	UnitID      *int
+	SystemIDs   []int
+	SiteIDs     []int
+	Sysids      []string
+	Tgids       []int
+	UnitIDs     []int
 	Emergency   *bool
 	Encrypted   *bool
 	Deduplicate bool
@@ -116,20 +116,20 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 		qb.Add("c.start_time < %s", *filter.EndTime)
 	}
 
-	if filter.SystemID != nil {
-		qb.Add("c.system_id = %s", *filter.SystemID)
+	if len(filter.SystemIDs) > 0 {
+		qb.Add("c.system_id = ANY(%s)", filter.SystemIDs)
 	}
-	if filter.SiteID != nil {
-		qb.Add("c.site_id = %s", *filter.SiteID)
+	if len(filter.SiteIDs) > 0 {
+		qb.Add("c.site_id = ANY(%s)", filter.SiteIDs)
 	}
-	if filter.Sysid != nil {
-		qb.Add("s.sysid = %s", *filter.Sysid)
+	if len(filter.Sysids) > 0 {
+		qb.Add("s.sysid = ANY(%s)", filter.Sysids)
 	}
-	if filter.Tgid != nil {
-		qb.Add("c.tgid = %s", *filter.Tgid)
+	if len(filter.Tgids) > 0 {
+		qb.Add("c.tgid = ANY(%s)", filter.Tgids)
 	}
-	if filter.UnitID != nil {
-		qb.Add("c.unit_ids @> ARRAY[%s]::int[]", *filter.UnitID)
+	if len(filter.UnitIDs) > 0 {
+		qb.Add("c.unit_ids && %s", filter.UnitIDs)
 	}
 	if filter.Emergency != nil {
 		qb.Add("c.emergency = %s", *filter.Emergency)
@@ -345,8 +345,8 @@ func (db *DB) GetCallTransmissions(ctx context.Context, callID int64) ([]CallTra
 
 // CallGroupFilter specifies filters for listing call groups.
 type CallGroupFilter struct {
-	Sysid     *string
-	Tgid      *int
+	Sysids    []string
+	Tgids     []int
 	StartTime *time.Time
 	EndTime   *time.Time
 	Limit     int
@@ -383,11 +383,11 @@ func (db *DB) ListCallGroups(ctx context.Context, filter CallGroupFilter) ([]Cal
 	if filter.EndTime != nil {
 		qb.Add("cg.start_time < %s", *filter.EndTime)
 	}
-	if filter.Sysid != nil {
-		qb.Add("s.sysid = %s", *filter.Sysid)
+	if len(filter.Sysids) > 0 {
+		qb.Add("s.sysid = ANY(%s)", filter.Sysids)
 	}
-	if filter.Tgid != nil {
-		qb.Add("cg.tgid = %s", *filter.Tgid)
+	if len(filter.Tgids) > 0 {
+		qb.Add("cg.tgid = ANY(%s)", filter.Tgids)
 	}
 
 	fromClause := "FROM call_groups cg JOIN systems s ON s.system_id = cg.system_id"

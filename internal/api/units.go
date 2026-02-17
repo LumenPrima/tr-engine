@@ -46,9 +46,7 @@ func (h *UnitsHandler) ListUnits(w http.ResponseWriter, r *http.Request) {
 	if v, ok := QueryInt(r, "active_within"); ok {
 		filter.ActiveWithin = &v
 	}
-	if v, ok := QueryInt(r, "talkgroup"); ok {
-		filter.Talkgroup = &v
-	}
+	filter.Talkgroups = QueryIntList(r, "talkgroup")
 
 	units, total, err := h.db.ListUnits(r.Context(), filter)
 	if err != nil {
@@ -163,10 +161,10 @@ func (h *UnitsHandler) ListUnitCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter := database.CallFilter{
-		Limit:    p.Limit,
-		Offset:   p.Offset,
-		SystemID: &cid.SystemID,
-		UnitID:   &cid.EntityID,
+		Limit:     p.Limit,
+		Offset:    p.Offset,
+		SystemIDs: []int{cid.SystemID},
+		UnitIDs:   []int{cid.EntityID},
 	}
 	if t, ok := QueryTime(r, "start_time"); ok {
 		filter.StartTime = &t
