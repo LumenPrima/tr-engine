@@ -107,6 +107,24 @@ environment:
 
 Then restart: `docker compose up -d`
 
+### Filesystem audio (TR_AUDIO_DIR)
+
+Instead of receiving audio over MQTT as base64, tr-engine can serve audio files directly from trunk-recorder's filesystem. This avoids the encoding overhead and eliminates duplicate files.
+
+To enable it, bind-mount trunk-recorder's audio directory into the tr-engine container and set `TR_AUDIO_DIR`:
+
+```yaml
+  tr-engine:
+    environment:
+      TR_AUDIO_DIR: /tr-audio
+    volumes:
+      - /path/to/trunk-recorder/audio:/tr-audio:ro
+```
+
+When `TR_AUDIO_DIR` is set, tr-engine skips saving audio from MQTT and instead resolves files using the `call_filename` path that trunk-recorder reports at call_end. You can disable `mqtt_audio` in the TR plugin config since only the metadata is needed.
+
+Both modes coexist during a transition — existing MQTT-ingested audio still serves from `AUDIO_DIR`.
+
 ### Custom web UI files
 
 The web UI is embedded in the binary, but you can override it by mounting a local directory:

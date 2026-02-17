@@ -143,6 +143,22 @@ Add any variable from [sample.env](https://github.com/LumenPrima/tr-engine/blob/
 
 Then restart: `docker compose up -d`
 
+### Filesystem audio (TR_AUDIO_DIR)
+
+If trunk-recorder runs on the same machine (or its audio directory is accessible via a network mount), you can serve audio files directly from TR's filesystem instead of receiving them over MQTT as base64. This avoids encoding overhead and duplicate files.
+
+Bind-mount TR's audio directory into the container and set `TR_AUDIO_DIR`:
+
+```yaml
+    environment:
+      TR_AUDIO_DIR: /tr-audio
+    volumes:
+      - ./audio:/data/audio
+      - /path/to/trunk-recorder/audio:/tr-audio:ro
+```
+
+When `TR_AUDIO_DIR` is set, tr-engine skips saving audio files from MQTT and resolves them using the `call_filename` path reported at call_end. You can disable `mqtt_audio` in the TR plugin config — tr-engine still receives the metadata message for frequency and transmission data.
+
 ## Custom web UI
 
 Mount a local `web/` directory to override the embedded UI files without rebuilding:

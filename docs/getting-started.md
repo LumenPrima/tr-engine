@@ -146,7 +146,7 @@ Add the plugin to your trunk-recorder `config.json`:
 | `unit_topic` | No | Topic prefix for unit events (on/off/call/join). Recommended. |
 | `message_topic` | No | Topic prefix for trunking messages. **Very high volume** — omit unless you specifically need trunking message data. |
 | `console_logs` | No | Publish TR console output over MQTT (default: false) |
-| `mqtt_audio` | No | Send audio as base64 in MQTT messages (default: false) |
+| `mqtt_audio` | No | Send audio as base64 in MQTT messages (default: false). Not needed if using `TR_AUDIO_DIR`. |
 | `instanceId` | No | Identifier for this TR instance (default: `trunk-recorder`) |
 | `username` | No | MQTT broker credentials |
 | `password` | No | MQTT broker credentials |
@@ -198,6 +198,10 @@ MQTT_TOPICS=trengine/#
 HTTP_ADDR=:8080
 LOG_LEVEL=info
 AUDIO_DIR=./audio
+
+# To serve audio directly from trunk-recorder's filesystem instead of
+# receiving it over MQTT, set TR_AUDIO_DIR to TR's audioBaseDir:
+# TR_AUDIO_DIR=/path/to/trunk-recorder/audio
 ```
 
 `MQTT_TOPICS` must match the topic prefixes from your TR plugin config. If all your TR topics share a common root (e.g. `topic: "trengine/feeds"`, `unit_topic: "trengine/units"`), a single wildcard like `trengine/#` covers everything. If they differ, comma-separate them: `MQTT_TOPICS=prefix1/#,prefix2/#`.
@@ -252,4 +256,4 @@ There's no manual system/site/talkgroup configuration needed — everything is d
 
 **Database errors on startup:** Ensure `schema.sql` was loaded successfully. Check that the database user has ownership of all tables.
 
-**Audio playback not working:** tr-engine serves audio from `AUDIO_DIR`. If trunk-recorder writes audio to a different path, either symlink or set `AUDIO_DIR` to match.
+**Audio playback not working:** tr-engine serves audio from `AUDIO_DIR` (for MQTT-ingested audio) or `TR_AUDIO_DIR` (for filesystem audio). If using MQTT audio, ensure `mqtt_audio: true` is set in the TR plugin config. If using filesystem audio, set `TR_AUDIO_DIR` to trunk-recorder's `audioBaseDir` and ensure tr-engine can read those files. On the same machine, just point to the directory. In Docker, bind-mount TR's audio directory into the container.

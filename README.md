@@ -66,9 +66,20 @@ The `.env` file is auto-loaded from the current directory on startup. See `sampl
 | `HTTP_ADDR` | No | `:8080` | HTTP listen address |
 | `AUTH_TOKEN` | No | | Bearer token for API auth (disabled if empty) |
 | `AUDIO_DIR` | No | `./audio` | Audio file storage directory |
+| `TR_AUDIO_DIR` | No | | Serve audio from trunk-recorder's filesystem (see below) |
 | `LOG_LEVEL` | No | `info` | Log level |
 
 See `sample.env` for the full list including MQTT credentials, HTTP timeouts, and raw archival settings.
+
+### Audio Modes
+
+tr-engine supports two modes for call audio:
+
+- **MQTT audio (default):** trunk-recorder sends base64-encoded audio in MQTT messages. tr-engine decodes and saves the files to `AUDIO_DIR`. Enable this by setting `mqtt_audio: true` in trunk-recorder's MQTT plugin config.
+
+- **Filesystem audio (`TR_AUDIO_DIR`):** trunk-recorder saves audio files to its local filesystem. tr-engine serves them directly using the `call_filename` path stored at call_end. Set `TR_AUDIO_DIR` to the directory where trunk-recorder writes audio (its `audioBaseDir`). This avoids the overhead of base64 encoding/decoding over MQTT and eliminates duplicate files. When using this mode, you can disable `mqtt_audio` in trunk-recorder's plugin config — tr-engine still receives the audio metadata message for frequency and transmission data.
+
+Both modes can coexist during a transition. Existing calls with MQTT-ingested audio continue to serve from `AUDIO_DIR`; new calls resolve from `TR_AUDIO_DIR`.
 
 ## How It Works
 
