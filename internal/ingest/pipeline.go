@@ -138,6 +138,13 @@ func (p *Pipeline) StartWatcher(watchDir, instanceID string, backfillDays int) e
 	return nil
 }
 
+// ResolveIdentity resolves (or auto-creates) the system/site for a given
+// instance ID and system name. Used by TR auto-discovery to resolve system IDs
+// for talkgroup directory import.
+func (p *Pipeline) ResolveIdentity(ctx context.Context, instanceID, sysName string) (*ResolvedIdentity, error) {
+	return p.identity.Resolve(ctx, instanceID, sysName)
+}
+
 // WatcherStatus returns the file watcher status, or nil if not active.
 func (p *Pipeline) WatcherStatus() *api.WatcherStatusData {
 	if p.watcher == nil {

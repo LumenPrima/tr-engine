@@ -141,12 +141,15 @@ The `.env` file is auto-loaded from the current directory on startup (silent if 
 | `--mqtt-url` | `MQTT_BROKER_URL` | _(optional)_ | MQTT broker URL |
 | `--audio-dir` | `AUDIO_DIR` | `./audio` | Audio file directory |
 | `--watch-dir` | `WATCH_DIR` | — | Watch TR audio directory for new files |
+| `--tr-dir` | `TR_DIR` | — | Path to trunk-recorder directory for auto-discovery |
 | `--env-file` | — | `.env` | Path to .env file |
 | `--version` | — | — | Print version and exit |
 
 Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`, `RAW_STORE` (bool, default `true` — master switch to disable all raw MQTT archival), `RAW_INCLUDE_TOPICS` (comma-separated allowlist of handler names for raw archival; supports `_unknown` for unrecognized topics; takes priority over `RAW_EXCLUDE_TOPICS`), `RAW_EXCLUDE_TOPICS` (comma-separated denylist of handler names to exclude from raw archival), `WATCH_INSTANCE_ID` (instance ID for file-watched calls, default `file-watch`), `WATCH_BACKFILL_DAYS` (days of existing files to backfill on startup, default `7`; `0` = all, `-1` = none).
 
-**Ingest modes:** At least one of `MQTT_BROKER_URL` or `WATCH_DIR` must be set. Both can be used simultaneously — watch mode provides file-based ingest while MQTT provides real-time events. Watch mode only produces `call_end` events (files appear after calls complete). MQTT is the upgrade path for `call_start`, unit events, recorder state, and decode rates.
+**Ingest modes:** At least one of `MQTT_BROKER_URL`, `WATCH_DIR`, or `TR_DIR` must be set. Both MQTT and watch mode can run simultaneously. Watch mode only produces `call_end` events (files appear after calls complete). MQTT is the upgrade path for `call_start`, unit events, recorder state, and decode rates.
+
+**TR auto-discovery (`TR_DIR`):** Point at the directory containing trunk-recorder's `config.json`. Auto-discovers `captureDir` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, and imports talkgroup CSVs into a `talkgroup_directory` reference table (separate from the main `talkgroups` table which only contains heard talkgroups). If a `docker-compose.yaml` is found, container paths are translated to host paths via volume mappings. Browsable via `GET /api/v1/talkgroup-directory?search=...`.
 
 ## Development Environment
 

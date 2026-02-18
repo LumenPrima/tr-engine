@@ -25,6 +25,9 @@ type Config struct {
 	WatchInstanceID   string `env:"WATCH_INSTANCE_ID" envDefault:"file-watch"`
 	WatchBackfillDays int    `env:"WATCH_BACKFILL_DAYS" envDefault:"7"`
 
+	// TR auto-discovery (reads trunk-recorder's config.json + docker-compose.yaml)
+	TRDir string `env:"TR_DIR"`
+
 	HTTPAddr     string        `env:"HTTP_ADDR" envDefault:":8080"`
 	ReadTimeout  time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"5s"`
 	WriteTimeout time.Duration `env:"HTTP_WRITE_TIMEOUT" envDefault:"30s"`
@@ -38,10 +41,10 @@ type Config struct {
 	RawExcludeTopics string `env:"RAW_EXCLUDE_TOPICS"`
 }
 
-// Validate checks that at least one ingest source (MQTT or watch directory) is configured.
+// Validate checks that at least one ingest source (MQTT, watch directory, or TR auto-discovery) is configured.
 func (c *Config) Validate() error {
-	if c.MQTTBrokerURL == "" && c.WatchDir == "" {
-		return fmt.Errorf("at least one of MQTT_BROKER_URL or WATCH_DIR must be set")
+	if c.MQTTBrokerURL == "" && c.WatchDir == "" && c.TRDir == "" {
+		return fmt.Errorf("at least one of MQTT_BROKER_URL, WATCH_DIR, or TR_DIR must be set")
 	}
 	return nil
 }
@@ -55,6 +58,7 @@ type Overrides struct {
 	MQTTBrokerURL string
 	AudioDir      string
 	WatchDir      string
+	TRDir         string
 }
 
 // Load reads configuration from .env file, environment variables, and CLI overrides.
@@ -93,6 +97,9 @@ func Load(overrides Overrides) (*Config, error) {
 	}
 	if overrides.WatchDir != "" {
 		cfg.WatchDir = overrides.WatchDir
+	}
+	if overrides.TRDir != "" {
+		cfg.TRDir = overrides.TRDir
 	}
 
 	return cfg, nil

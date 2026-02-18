@@ -154,6 +154,43 @@ CREATE TRIGGER trg_talkgroups_updated_at
     BEFORE UPDATE ON talkgroups
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- 4b. talkgroup_directory (reference from TR's talkgroup CSV, not cluttered by live data)
+-- ============================================================
+
+CREATE TABLE talkgroup_directory (
+    system_id     int          NOT NULL REFERENCES systems (system_id),
+    tgid          int          NOT NULL,
+    alpha_tag     text,
+    mode          text,
+    description   text,
+    tag           text,
+    category      text,
+    priority      int,
+    search_vector tsvector,
+    imported_at   timestamptz  NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (system_id, tgid)
+);
+
+CREATE INDEX idx_tg_dir_search ON talkgroup_directory USING gin (search_vector);
+
+CREATE OR REPLACE FUNCTION talkgroup_directory_search_vector_update()
+RETURNS trigger AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('english', coalesce(NEW.alpha_tag, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(NEW.description, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(NEW.category, '')), 'C') ||
+        setweight(to_tsvector('english', coalesce(NEW.tag, '')), 'C');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_tg_dir_search_vector
+    BEFORE INSERT OR UPDATE OF alpha_tag, description, category, tag
+    ON talkgroup_directory
+    FOR EACH ROW EXECUTE FUNCTION talkgroup_directory_search_vector_update();
+
 -- ============================================================
 -- 5. units
 -- ============================================================

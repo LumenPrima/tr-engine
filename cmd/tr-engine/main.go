@@ -16,6 +16,7 @@ import (
 	"github.com/snarg/tr-engine/internal/database"
 	"github.com/snarg/tr-engine/internal/ingest"
 	"github.com/snarg/tr-engine/internal/mqttclient"
+	"github.com/snarg/tr-engine/internal/trconfig"
 )
 
 // version, commit, and buildTime are injected at build time via ldflags.
@@ -37,6 +38,7 @@ func main() {
 	flag.StringVar(&overrides.MQTTBrokerURL, "mqtt-url", "", "MQTT broker URL (overrides MQTT_BROKER_URL)")
 	flag.StringVar(&overrides.AudioDir, "audio-dir", "", "Audio file directory (overrides AUDIO_DIR)")
 	flag.StringVar(&overrides.WatchDir, "watch-dir", "", "Watch TR audio directory for new files (overrides WATCH_DIR)")
+	flag.StringVar(&overrides.TRDir, "tr-dir", "", "Path to trunk-recorder directory for auto-discovery (overrides TR_DIR)")
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.Parse()
 
@@ -53,6 +55,23 @@ func main() {
 		early := zerolog.New(os.Stderr).With().Timestamp().Logger()
 		early.Fatal().Err(err).Msg("failed to load config")
 	}
+	// TR auto-discovery: read trunk-recorder's config.json + docker-compose.yaml
+	var discovered *trconfig.DiscoveryResult
+	if cfg.TRDir != "" {
+		earlyLog := zerolog.New(os.Stdout).With().Timestamp().Logger()
+		discovered, err = trconfig.Discover(cfg.TRDir, earlyLog)
+		if err != nil {
+			earlyLog.Fatal().Err(err).Str("tr_dir", cfg.TRDir).Msg("failed to read trunk-recorder config")
+		}
+		// Auto-set WatchDir and TRAudioDir if not explicitly configured
+		if cfg.WatchDir == "" {
+			cfg.WatchDir = discovered.CaptureDir
+		}
+		if cfg.TRAudioDir == "" {
+			cfg.TRAudioDir = discovered.CaptureDir
+		}
+	}
+
 	if err := cfg.Validate(); err != nil {
 		early := zerolog.New(os.Stderr).With().Timestamp().Logger()
 		early.Fatal().Err(err).Msg("invalid config")
@@ -122,6 +141,35 @@ func main() {
 	// Wire MQTT → Pipeline
 	if mqtt != nil {
 		mqtt.SetMessageHandler(pipeline.HandleMessage)
+	}
+
+	// Import talkgroup directory from TR's CSV files (if TR_DIR discovery found any)
+	if discovered != nil {
+		for _, sys := range discovered.Systems {
+			if len(sys.Talkgroups) == 0 {
+				continue
+			}
+			identity, idErr := pipeline.ResolveIdentity(ctx, cfg.WatchInstanceID, sys.ShortName)
+			if idErr != nil {
+				log.Warn().Err(idErr).Str("system", sys.ShortName).Msg("failed to resolve system for talkgroup import")
+				continue
+			}
+			imported := 0
+			for _, tg := range sys.Talkgroups {
+				if uErr := db.UpsertTalkgroupDirectory(ctx, identity.SystemID, tg.Tgid,
+					tg.AlphaTag, tg.Mode, tg.Description, tg.Tag, tg.Category, tg.Priority,
+				); uErr != nil {
+					log.Warn().Err(uErr).Int("tgid", tg.Tgid).Msg("failed to import talkgroup")
+					continue
+				}
+				imported++
+			}
+			log.Info().
+				Str("system", sys.ShortName).
+				Int("imported", imported).
+				Int("total", len(sys.Talkgroups)).
+				Msg("talkgroup directory imported")
+		}
 	}
 
 	// File watcher (optional — alternative to MQTT ingest)

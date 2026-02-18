@@ -378,3 +378,110 @@ func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag,
 	`, systemID, tgid, alphaTag, tag, group, description)
 	return err
 }
+
+// TalkgroupDirectoryRow represents a row in the talkgroup_directory reference table.
+type TalkgroupDirectoryRow struct {
+	SystemID    int     `json:"system_id"`
+	SystemName  string  `json:"system_name,omitempty"`
+	Tgid        int     `json:"tgid"`
+	AlphaTag    string  `json:"alpha_tag,omitempty"`
+	Mode        string  `json:"mode,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Tag         string  `json:"tag,omitempty"`
+	Category    string  `json:"category,omitempty"`
+	Priority    *int    `json:"priority,omitempty"`
+}
+
+// UpsertTalkgroupDirectory inserts or updates a talkgroup directory entry.
+func (db *DB) UpsertTalkgroupDirectory(ctx context.Context, systemID, tgid int, alphaTag, mode, description, tag, category string, priority int) error {
+	var prio *int
+	if priority > 0 {
+		prio = &priority
+	}
+	_, err := db.Pool.Exec(ctx, `
+		INSERT INTO talkgroup_directory (system_id, tgid, alpha_tag, mode, description, tag, category, priority)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (system_id, tgid) DO UPDATE SET
+			alpha_tag   = COALESCE(NULLIF($3, ''), talkgroup_directory.alpha_tag),
+			mode        = COALESCE(NULLIF($4, ''), talkgroup_directory.mode),
+			description = COALESCE(NULLIF($5, ''), talkgroup_directory.description),
+			tag         = COALESCE(NULLIF($6, ''), talkgroup_directory.tag),
+			category    = COALESCE(NULLIF($7, ''), talkgroup_directory.category),
+			priority    = COALESCE($8, talkgroup_directory.priority),
+			imported_at = now()
+	`, systemID, tgid, alphaTag, mode, description, tag, category, prio)
+	return err
+}
+
+// TalkgroupDirectoryFilter specifies filters for listing talkgroup directory entries.
+type TalkgroupDirectoryFilter struct {
+	SystemIDs []int
+	Search    *string
+	Category  *string
+	Mode      *string
+	Limit     int
+	Offset    int
+}
+
+// SearchTalkgroupDirectory searches the talkgroup directory reference table.
+func (db *DB) SearchTalkgroupDirectory(ctx context.Context, filter TalkgroupDirectoryFilter) ([]TalkgroupDirectoryRow, int, error) {
+	qb := newQueryBuilder()
+
+	if len(filter.SystemIDs) > 0 {
+		qb.Add("td.system_id = ANY(%s)", filter.SystemIDs)
+	}
+	if filter.Search != nil && *filter.Search != "" {
+		qb.Add("td.search_vector @@ plainto_tsquery('english', %s)", *filter.Search)
+	}
+	if filter.Category != nil && *filter.Category != "" {
+		qb.Add("td.category = %s", *filter.Category)
+	}
+	if filter.Mode != nil && *filter.Mode != "" {
+		qb.Add("td.mode = %s", *filter.Mode)
+	}
+
+	where := qb.WhereClause()
+	args := qb.Args()
+
+	// Count
+	var total int
+	countQuery := `SELECT count(*) FROM talkgroup_directory td` + where
+	if err := db.Pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Fetch
+	limit := filter.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+
+	query := `
+		SELECT td.system_id, COALESCE(s.name, ''), td.tgid,
+			COALESCE(td.alpha_tag, ''), COALESCE(td.mode, ''),
+			COALESCE(td.description, ''), COALESCE(td.tag, ''),
+			COALESCE(td.category, ''), td.priority
+		FROM talkgroup_directory td
+		LEFT JOIN systems s ON s.system_id = td.system_id
+	` + where + `
+		ORDER BY td.system_id, td.tgid
+		LIMIT ` + strconv.Itoa(limit) + ` OFFSET ` + strconv.Itoa(filter.Offset)
+
+	rows, err := db.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var results []TalkgroupDirectoryRow
+	for rows.Next() {
+		var r TalkgroupDirectoryRow
+		if err := rows.Scan(&r.SystemID, &r.SystemName, &r.Tgid,
+			&r.AlphaTag, &r.Mode, &r.Description, &r.Tag, &r.Category, &r.Priority); err != nil {
+			return nil, 0, err
+		}
+		results = append(results, r)
+	}
+
+	return results, total, rows.Err()
+}

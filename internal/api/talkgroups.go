@@ -254,6 +254,43 @@ func (h *TalkgroupsHandler) GetEncryptionStats(w http.ResponseWriter, r *http.Re
 	})
 }
 
+// ListTalkgroupDirectory searches the talkgroup directory (reference table imported from TR's CSV).
+func (h *TalkgroupsHandler) ListTalkgroupDirectory(w http.ResponseWriter, r *http.Request) {
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	filter := database.TalkgroupDirectoryFilter{
+		Limit:  p.Limit,
+		Offset: p.Offset,
+	}
+
+	filter.SystemIDs = QueryIntList(r, "system_id")
+	if v, ok := QueryString(r, "search"); ok {
+		filter.Search = &v
+	}
+	if v, ok := QueryString(r, "category"); ok {
+		filter.Category = &v
+	}
+	if v, ok := QueryString(r, "mode"); ok {
+		filter.Mode = &v
+	}
+
+	entries, total, err := h.db.SearchTalkgroupDirectory(r.Context(), filter)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to search talkgroup directory")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"talkgroups": entries,
+		"total":      total,
+		"limit":      p.Limit,
+		"offset":     p.Offset,
+	})
+}
+
 // Routes registers talkgroup routes on the given router.
 func (h *TalkgroupsHandler) Routes(r chi.Router) {
 	r.Get("/talkgroups", h.ListTalkgroups)
@@ -262,4 +299,5 @@ func (h *TalkgroupsHandler) Routes(r chi.Router) {
 	r.Patch("/talkgroups/{id}", h.UpdateTalkgroup)
 	r.Get("/talkgroups/{id}/calls", h.ListTalkgroupCalls)
 	r.Get("/talkgroups/{id}/units", h.ListTalkgroupUnits)
+	r.Get("/talkgroup-directory", h.ListTalkgroupDirectory)
 }
