@@ -50,12 +50,23 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// MQTT check
-	if h.mqtt.IsConnected() {
-		checks["mqtt"] = "ok"
+	if h.mqtt != nil {
+		if h.mqtt.IsConnected() {
+			checks["mqtt"] = "ok"
+		} else {
+			checks["mqtt"] = "disconnected"
+			if status == "healthy" {
+				status = "degraded"
+			}
+		}
 	} else {
-		checks["mqtt"] = "disconnected"
-		if status == "healthy" {
-			status = "degraded"
+		checks["mqtt"] = "not_configured"
+	}
+
+	// File watcher check
+	if h.live != nil {
+		if ws := h.live.WatcherStatus(); ws != nil {
+			checks["file_watcher"] = ws.Status
 		}
 	}
 

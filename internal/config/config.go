@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 
 type Config struct {
 	DatabaseURL   string `env:"DATABASE_URL,required"`
-	MQTTBrokerURL string `env:"MQTT_BROKER_URL,required"`
+	MQTTBrokerURL string `env:"MQTT_BROKER_URL"`
 	MQTTTopics    string `env:"MQTT_TOPICS" envDefault:"#"`
 	MQTTClientID  string `env:"MQTT_CLIENT_ID" envDefault:"tr-engine"`
 	MQTTUsername  string `env:"MQTT_USERNAME"`
@@ -18,6 +19,11 @@ type Config struct {
 
 	AudioDir   string `env:"AUDIO_DIR" envDefault:"./audio"`
 	TRAudioDir string `env:"TR_AUDIO_DIR"`
+
+	// File-watch ingest mode (alternative to MQTT)
+	WatchDir          string `env:"WATCH_DIR"`
+	WatchInstanceID   string `env:"WATCH_INSTANCE_ID" envDefault:"file-watch"`
+	WatchBackfillDays int    `env:"WATCH_BACKFILL_DAYS" envDefault:"7"`
 
 	HTTPAddr     string        `env:"HTTP_ADDR" envDefault:":8080"`
 	ReadTimeout  time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"5s"`
@@ -32,6 +38,14 @@ type Config struct {
 	RawExcludeTopics string `env:"RAW_EXCLUDE_TOPICS"`
 }
 
+// Validate checks that at least one ingest source (MQTT or watch directory) is configured.
+func (c *Config) Validate() error {
+	if c.MQTTBrokerURL == "" && c.WatchDir == "" {
+		return fmt.Errorf("at least one of MQTT_BROKER_URL or WATCH_DIR must be set")
+	}
+	return nil
+}
+
 // Overrides holds CLI flag values that take priority over env vars.
 type Overrides struct {
 	EnvFile       string
@@ -40,6 +54,7 @@ type Overrides struct {
 	DatabaseURL   string
 	MQTTBrokerURL string
 	AudioDir      string
+	WatchDir      string
 }
 
 // Load reads configuration from .env file, environment variables, and CLI overrides.
@@ -75,6 +90,9 @@ func Load(overrides Overrides) (*Config, error) {
 	}
 	if overrides.AudioDir != "" {
 		cfg.AudioDir = overrides.AudioDir
+	}
+	if overrides.WatchDir != "" {
+		cfg.WatchDir = overrides.WatchDir
 	}
 
 	return cfg, nil

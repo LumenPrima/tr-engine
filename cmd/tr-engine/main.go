@@ -36,6 +36,7 @@ func main() {
 	flag.StringVar(&overrides.DatabaseURL, "database-url", "", "PostgreSQL connection URL (overrides DATABASE_URL)")
 	flag.StringVar(&overrides.MQTTBrokerURL, "mqtt-url", "", "MQTT broker URL (overrides MQTT_BROKER_URL)")
 	flag.StringVar(&overrides.AudioDir, "audio-dir", "", "Audio file directory (overrides AUDIO_DIR)")
+	flag.StringVar(&overrides.WatchDir, "watch-dir", "", "Watch TR audio directory for new files (overrides WATCH_DIR)")
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.Parse()
 
@@ -51,6 +52,10 @@ func main() {
 	if err != nil {
 		early := zerolog.New(os.Stderr).With().Timestamp().Logger()
 		early.Fatal().Err(err).Msg("failed to load config")
+	}
+	if err := cfg.Validate(); err != nil {
+		early := zerolog.New(os.Stderr).With().Timestamp().Logger()
+		early.Fatal().Err(err).Msg("invalid config")
 	}
 
 	// Logger
@@ -78,21 +83,26 @@ func main() {
 	}
 	defer db.Close()
 
-	// MQTT
-	mqttLog := log.With().Str("component", "mqtt").Logger()
-	mqtt, err := mqttclient.Connect(mqttclient.Options{
-		BrokerURL: cfg.MQTTBrokerURL,
-		ClientID:  cfg.MQTTClientID,
-		Topics:    cfg.MQTTTopics,
-		Username:  cfg.MQTTUsername,
-		Password:  cfg.MQTTPassword,
-		Log:       mqttLog,
-	})
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to connect to mqtt broker")
+	// MQTT (optional — not needed when using watch mode)
+	var mqtt *mqttclient.Client
+	if cfg.MQTTBrokerURL != "" {
+		mqttLog := log.With().Str("component", "mqtt").Logger()
+		mqtt, err = mqttclient.Connect(mqttclient.Options{
+			BrokerURL: cfg.MQTTBrokerURL,
+			ClientID:  cfg.MQTTClientID,
+			Topics:    cfg.MQTTTopics,
+			Username:  cfg.MQTTUsername,
+			Password:  cfg.MQTTPassword,
+			Log:       mqttLog,
+		})
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to connect to mqtt broker")
+		}
+		defer mqtt.Close()
+		log.Info().Str("broker", cfg.MQTTBrokerURL).Str("client_id", cfg.MQTTClientID).Msg("mqtt connected")
+	} else {
+		log.Info().Msg("mqtt not configured (watch-only mode)")
 	}
-	defer mqtt.Close()
-	log.Info().Str("broker", cfg.MQTTBrokerURL).Str("client_id", cfg.MQTTClientID).Msg("mqtt connected")
 
 	// Ingest Pipeline
 	pipeline := ingest.NewPipeline(ingest.PipelineOptions{
@@ -110,7 +120,17 @@ func main() {
 	defer pipeline.Stop()
 
 	// Wire MQTT → Pipeline
-	mqtt.SetMessageHandler(pipeline.HandleMessage)
+	if mqtt != nil {
+		mqtt.SetMessageHandler(pipeline.HandleMessage)
+	}
+
+	// File watcher (optional — alternative to MQTT ingest)
+	if cfg.WatchDir != "" {
+		if err := pipeline.StartWatcher(cfg.WatchDir, cfg.WatchInstanceID, cfg.WatchBackfillDays); err != nil {
+			log.Fatal().Err(err).Msg("failed to start file watcher")
+		}
+		log.Info().Str("watch_dir", cfg.WatchDir).Str("instance_id", cfg.WatchInstanceID).Msg("file watcher started")
+	}
 
 	// HTTP Server
 	httpLog := log.With().Str("component", "http").Logger()

@@ -23,6 +23,17 @@ type LiveDataSource interface {
 
 	// ReplaySince returns buffered events since the given event ID (for Last-Event-ID recovery).
 	ReplaySince(lastEventID string, filter EventFilter) []SSEEvent
+
+	// WatcherStatus returns the file watcher status, or nil if not active.
+	WatcherStatus() *WatcherStatusData
+}
+
+// WatcherStatusData represents the status of the file watcher ingest mode.
+type WatcherStatusData struct {
+	Status         string `json:"status"`           // "watching", "backfilling", "stopped"
+	WatchDir       string `json:"watch_dir"`
+	FilesProcessed int64  `json:"files_processed"`
+	FilesSkipped   int64  `json:"files_skipped"`
 }
 
 // ActiveCallData represents an in-progress call from the pipeline.

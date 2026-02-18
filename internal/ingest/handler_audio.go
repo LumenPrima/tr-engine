@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/snarg/tr-engine/internal/database"
@@ -75,131 +76,8 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 	}
 
 	// Build srcList/freqList JSON and update call
-	if callID > 0 && (len(meta.SrcList) > 0 || len(meta.FreqList) > 0) {
-		// Build freqList JSON
-		var freqListJSON json.RawMessage
-		if len(meta.FreqList) > 0 {
-			type freqEntry struct {
-				Freq       int64   `json:"freq"`
-				Time       int64   `json:"time"`
-				Pos        float64 `json:"pos"`
-				Len        float64 `json:"len"`
-				ErrorCount int     `json:"error_count"`
-				SpikeCount int     `json:"spike_count"`
-			}
-			entries := make([]freqEntry, len(meta.FreqList))
-			for i, f := range meta.FreqList {
-				entries[i] = freqEntry{
-					Freq:       int64(f.Freq),
-					Time:       f.Time,
-					Pos:        f.Pos,
-					Len:        f.Len,
-					ErrorCount: f.ErrorCount,
-					SpikeCount: f.SpikeCount,
-				}
-			}
-			freqListJSON, _ = json.Marshal(entries)
-		}
-
-		// Build srcList JSON with computed duration
-		var srcListJSON json.RawMessage
-		unitSet := make(map[int32]struct{})
-		if len(meta.SrcList) > 0 {
-			type srcEntry struct {
-				Src          int     `json:"src"`
-				Tag          string  `json:"tag,omitempty"`
-				Time         int64   `json:"time"`
-				Pos          float64 `json:"pos"`
-				Duration     float64 `json:"duration,omitempty"`
-				Emergency    int     `json:"emergency"`
-				SignalSystem string  `json:"signal_system,omitempty"`
-			}
-			entries := make([]srcEntry, len(meta.SrcList))
-			for i, s := range meta.SrcList {
-				// Duration = next transmission's pos - this pos; last = call length - pos
-				var dur float64
-				if i+1 < len(meta.SrcList) {
-					dur = meta.SrcList[i+1].Pos - s.Pos
-				} else if meta.CallLength > 0 {
-					dur = float64(meta.CallLength) - s.Pos
-				}
-				entries[i] = srcEntry{
-					Src:          s.Src,
-					Tag:          s.Tag,
-					Time:         s.Time,
-					Pos:          s.Pos,
-					Duration:     dur,
-					Emergency:    s.Emergency,
-					SignalSystem: s.SignalSystem,
-				}
-				unitSet[int32(s.Src)] = struct{}{}
-			}
-			srcListJSON, _ = json.Marshal(entries)
-		}
-
-		// Extract distinct unit IDs
-		unitIDs := make([]int32, 0, len(unitSet))
-		for uid := range unitSet {
-			unitIDs = append(unitIDs, uid)
-		}
-
-		if err := p.db.UpdateCallSrcFreq(ctx, callID, callStartTime, srcListJSON, freqListJSON, unitIDs); err != nil {
-			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update call src/freq data")
-		}
-
-		// Also insert into relational tables for ad-hoc queries
-		if len(meta.FreqList) > 0 {
-			freqRows := make([]database.CallFrequencyRow, 0, len(meta.FreqList))
-			for _, f := range meta.FreqList {
-				ft := time.Unix(f.Time, 0)
-				pos := float32(f.Pos)
-				length := float32(f.Len)
-				ec := f.ErrorCount
-				sc := f.SpikeCount
-				freqRows = append(freqRows, database.CallFrequencyRow{
-					CallID:        callID,
-					CallStartTime: callStartTime,
-					Freq:          int64(f.Freq),
-					Time:          &ft,
-					Pos:           &pos,
-					Len:           &length,
-					ErrorCount:    &ec,
-					SpikeCount:    &sc,
-				})
-			}
-			if _, err := p.db.InsertCallFrequencies(ctx, freqRows); err != nil {
-				p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert call frequencies")
-			}
-		}
-		if len(meta.SrcList) > 0 {
-			txRows := make([]database.CallTransmissionRow, 0, len(meta.SrcList))
-			for i, s := range meta.SrcList {
-				st := time.Unix(s.Time, 0)
-				pos := float32(s.Pos)
-				var dur *float32
-				if i+1 < len(meta.SrcList) {
-					d := float32(meta.SrcList[i+1].Pos - s.Pos)
-					dur = &d
-				} else if meta.CallLength > 0 {
-					d := float32(float64(meta.CallLength) - s.Pos)
-					dur = &d
-				}
-				txRows = append(txRows, database.CallTransmissionRow{
-					CallID:        callID,
-					CallStartTime: callStartTime,
-					Src:           s.Src,
-					Time:          &st,
-					Pos:           &pos,
-					Duration:      dur,
-					Emergency:     int16(s.Emergency),
-					SignalSystem:  s.SignalSystem,
-					Tag:           s.Tag,
-				})
-			}
-			if _, err := p.db.InsertCallTransmissions(ctx, txRows); err != nil {
-				p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert call transmissions")
-			}
-		}
+	if callID > 0 {
+		p.processSrcFreqData(ctx, callID, callStartTime, meta)
 	}
 
 	p.log.Debug().
@@ -286,6 +164,223 @@ func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedId
 		Msg("call created from audio metadata")
 
 	return callID, startTime, nil
+}
+
+// processSrcFreqData builds srcList/freqList JSON, updates the call's denormalized
+// JSONB columns, and inserts into the relational call_frequencies/call_transmissions tables.
+func (p *Pipeline) processSrcFreqData(ctx context.Context, callID int64, callStartTime time.Time, meta *AudioMetadata) {
+	if len(meta.SrcList) == 0 && len(meta.FreqList) == 0 {
+		return
+	}
+
+	// Build freqList JSON
+	var freqListJSON json.RawMessage
+	if len(meta.FreqList) > 0 {
+		type freqEntry struct {
+			Freq       int64   `json:"freq"`
+			Time       int64   `json:"time"`
+			Pos        float64 `json:"pos"`
+			Len        float64 `json:"len"`
+			ErrorCount int     `json:"error_count"`
+			SpikeCount int     `json:"spike_count"`
+		}
+		entries := make([]freqEntry, len(meta.FreqList))
+		for i, f := range meta.FreqList {
+			entries[i] = freqEntry{
+				Freq:       int64(f.Freq),
+				Time:       f.Time,
+				Pos:        f.Pos,
+				Len:        f.Len,
+				ErrorCount: f.ErrorCount,
+				SpikeCount: f.SpikeCount,
+			}
+		}
+		freqListJSON, _ = json.Marshal(entries)
+	}
+
+	// Build srcList JSON with computed duration
+	var srcListJSON json.RawMessage
+	unitSet := make(map[int32]struct{})
+	if len(meta.SrcList) > 0 {
+		type srcEntry struct {
+			Src          int     `json:"src"`
+			Tag          string  `json:"tag,omitempty"`
+			Time         int64   `json:"time"`
+			Pos          float64 `json:"pos"`
+			Duration     float64 `json:"duration,omitempty"`
+			Emergency    int     `json:"emergency"`
+			SignalSystem string  `json:"signal_system,omitempty"`
+		}
+		entries := make([]srcEntry, len(meta.SrcList))
+		for i, s := range meta.SrcList {
+			var dur float64
+			if i+1 < len(meta.SrcList) {
+				dur = meta.SrcList[i+1].Pos - s.Pos
+			} else if meta.CallLength > 0 {
+				dur = float64(meta.CallLength) - s.Pos
+			}
+			entries[i] = srcEntry{
+				Src:          s.Src,
+				Tag:          s.Tag,
+				Time:         s.Time,
+				Pos:          s.Pos,
+				Duration:     dur,
+				Emergency:    s.Emergency,
+				SignalSystem: s.SignalSystem,
+			}
+			unitSet[int32(s.Src)] = struct{}{}
+		}
+		srcListJSON, _ = json.Marshal(entries)
+	}
+
+	unitIDs := make([]int32, 0, len(unitSet))
+	for uid := range unitSet {
+		unitIDs = append(unitIDs, uid)
+	}
+
+	if err := p.db.UpdateCallSrcFreq(ctx, callID, callStartTime, srcListJSON, freqListJSON, unitIDs); err != nil {
+		p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update call src/freq data")
+	}
+
+	// Insert into relational tables for ad-hoc queries
+	if len(meta.FreqList) > 0 {
+		freqRows := make([]database.CallFrequencyRow, 0, len(meta.FreqList))
+		for _, f := range meta.FreqList {
+			ft := time.Unix(f.Time, 0)
+			pos := float32(f.Pos)
+			length := float32(f.Len)
+			ec := f.ErrorCount
+			sc := f.SpikeCount
+			freqRows = append(freqRows, database.CallFrequencyRow{
+				CallID:        callID,
+				CallStartTime: callStartTime,
+				Freq:          int64(f.Freq),
+				Time:          &ft,
+				Pos:           &pos,
+				Len:           &length,
+				ErrorCount:    &ec,
+				SpikeCount:    &sc,
+			})
+		}
+		if _, err := p.db.InsertCallFrequencies(ctx, freqRows); err != nil {
+			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert call frequencies")
+		}
+	}
+	if len(meta.SrcList) > 0 {
+		txRows := make([]database.CallTransmissionRow, 0, len(meta.SrcList))
+		for i, s := range meta.SrcList {
+			st := time.Unix(s.Time, 0)
+			pos := float32(s.Pos)
+			var dur *float32
+			if i+1 < len(meta.SrcList) {
+				d := float32(meta.SrcList[i+1].Pos - s.Pos)
+				dur = &d
+			} else if meta.CallLength > 0 {
+				d := float32(float64(meta.CallLength) - s.Pos)
+				dur = &d
+			}
+			txRows = append(txRows, database.CallTransmissionRow{
+				CallID:        callID,
+				CallStartTime: callStartTime,
+				Src:           s.Src,
+				Time:          &st,
+				Pos:           &pos,
+				Duration:      dur,
+				Emergency:     int16(s.Emergency),
+				SignalSystem:  s.SignalSystem,
+				Tag:           s.Tag,
+			})
+		}
+		if _, err := p.db.InsertCallTransmissions(ctx, txRows); err != nil {
+			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert call transmissions")
+		}
+	}
+}
+
+// processWatchedFile handles a JSON metadata file from the file watcher.
+// It creates a call record, processes srcList/freqList, sets the audio path,
+// and publishes a call_end SSE event.
+func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, jsonPath string) error {
+	startTime := time.Unix(meta.StartTime, 0)
+
+	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Second)
+	defer cancel()
+
+	// Resolve identity (auto-creates system/site if needed)
+	identity, err := p.identity.Resolve(ctx, instanceID, meta.ShortName)
+	if err != nil {
+		return fmt.Errorf("resolve identity: %w", err)
+	}
+
+	// Check for existing call (dedup against MQTT ingest or prior backfill)
+	if existingID, _, findErr := p.db.FindCallForAudio(ctx, identity.SystemID, meta.Talkgroup, startTime); findErr == nil {
+		p.log.Debug().
+			Int64("call_id", existingID).
+			Str("path", jsonPath).
+			Msg("watched file already in DB, skipping")
+		return nil
+	}
+
+	// Create call from audio metadata
+	callID, callStartTime, err := p.createCallFromAudio(ctx, identity, meta, startTime)
+	if err != nil {
+		return fmt.Errorf("create call from watched file: %w", err)
+	}
+
+	// Set call_filename to the companion audio file (.m4a next to .json)
+	audioPath := strings.TrimSuffix(jsonPath, ".json") + ".m4a"
+	if _, statErr := os.Stat(audioPath); statErr == nil {
+		if err := p.db.UpdateCallFilename(ctx, callID, callStartTime, audioPath); err != nil {
+			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to set call_filename from watched file")
+		}
+	}
+
+	// Process srcList/freqList
+	p.processSrcFreqData(ctx, callID, callStartTime, meta)
+
+	// Upsert units from srcList
+	for _, s := range meta.SrcList {
+		if s.Src > 0 {
+			_ = p.db.UpsertUnit(ctx, identity.SystemID, s.Src,
+				s.Tag, "file_watch", startTime, meta.Talkgroup,
+			)
+		}
+	}
+
+	// Publish call_end SSE event (file appears after call is complete)
+	stopTime := startTime
+	if meta.StopTime > 0 {
+		stopTime = time.Unix(meta.StopTime, 0)
+	}
+	p.PublishEvent(EventData{
+		Type:     "call_end",
+		SystemID: identity.SystemID,
+		SiteID:   identity.SiteID,
+		Tgid:     meta.Talkgroup,
+		Payload: map[string]any{
+			"call_id":       callID,
+			"system_id":     identity.SystemID,
+			"tgid":          meta.Talkgroup,
+			"tg_alpha_tag":  meta.TalkgroupTag,
+			"freq":          int64(meta.Freq),
+			"start_time":    startTime,
+			"stop_time":     stopTime,
+			"duration":      float64(meta.CallLength),
+			"emergency":     meta.Emergency != 0,
+			"encrypted":     meta.Encrypted != 0,
+			"call_filename": audioPath,
+			"source":        "file_watch",
+		},
+	})
+
+	p.log.Debug().
+		Int64("call_id", callID).
+		Int("tgid", meta.Talkgroup).
+		Str("sys_name", meta.ShortName).
+		Str("path", jsonPath).
+		Msg("call created from watched file")
+
+	return nil
 }
 
 // saveAudioFile writes decoded audio to the filesystem.

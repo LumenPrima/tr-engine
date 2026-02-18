@@ -138,12 +138,15 @@ The `.env` file is auto-loaded from the current directory on startup (silent if 
 | `--listen` | `HTTP_ADDR` | `:8080` | HTTP listen address |
 | `--log-level` | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 | `--database-url` | `DATABASE_URL` | _(required)_ | PostgreSQL connection URL |
-| `--mqtt-url` | `MQTT_BROKER_URL` | _(required)_ | MQTT broker URL |
+| `--mqtt-url` | `MQTT_BROKER_URL` | _(optional)_ | MQTT broker URL |
 | `--audio-dir` | `AUDIO_DIR` | `./audio` | Audio file directory |
+| `--watch-dir` | `WATCH_DIR` | — | Watch TR audio directory for new files |
 | `--env-file` | — | `.env` | Path to .env file |
 | `--version` | — | — | Print version and exit |
 
-Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`, `RAW_STORE` (bool, default `true` — master switch to disable all raw MQTT archival), `RAW_INCLUDE_TOPICS` (comma-separated allowlist of handler names for raw archival; supports `_unknown` for unrecognized topics; takes priority over `RAW_EXCLUDE_TOPICS`), `RAW_EXCLUDE_TOPICS` (comma-separated denylist of handler names to exclude from raw archival).
+Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`, `RAW_STORE` (bool, default `true` — master switch to disable all raw MQTT archival), `RAW_INCLUDE_TOPICS` (comma-separated allowlist of handler names for raw archival; supports `_unknown` for unrecognized topics; takes priority over `RAW_EXCLUDE_TOPICS`), `RAW_EXCLUDE_TOPICS` (comma-separated denylist of handler names to exclude from raw archival), `WATCH_INSTANCE_ID` (instance ID for file-watched calls, default `file-watch`), `WATCH_BACKFILL_DAYS` (days of existing files to backfill on startup, default `7`; `0` = all, `-1` = none).
+
+**Ingest modes:** At least one of `MQTT_BROKER_URL` or `WATCH_DIR` must be set. Both can be used simultaneously — watch mode provides file-based ingest while MQTT provides real-time events. Watch mode only produces `call_end` events (files appear after calls complete). MQTT is the upgrade path for `call_start`, unit events, recorder state, and decode rates.
 
 ## Development Environment
 

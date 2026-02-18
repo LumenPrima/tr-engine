@@ -40,6 +40,9 @@ type Pipeline struct {
 	rawInclude map[string]bool // if non-empty, allowlist mode (only these handlers)
 	rawExclude map[string]bool // if non-empty, denylist mode (skip these handlers)
 
+	// File watcher (optional, nil if WATCH_DIR not set)
+	watcher *FileWatcher
+
 	// Recorder cache: recorder_id → latest state
 	recorderCache sync.Map
 
@@ -125,9 +128,30 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	return nil
 }
 
+// StartWatcher creates and starts a file watcher on the given directory.
+func (p *Pipeline) StartWatcher(watchDir, instanceID string, backfillDays int) error {
+	fw := newFileWatcher(p, watchDir, instanceID, backfillDays)
+	if err := fw.Start(); err != nil {
+		return err
+	}
+	p.watcher = fw
+	return nil
+}
+
+// WatcherStatus returns the file watcher status, or nil if not active.
+func (p *Pipeline) WatcherStatus() *api.WatcherStatusData {
+	if p.watcher == nil {
+		return nil
+	}
+	return p.watcher.Status()
+}
+
 // Stop flushes batchers and cancels the context.
 func (p *Pipeline) Stop() {
 	p.log.Info().Int64("total_messages", p.msgCount.Load()).Msg("ingest pipeline stopping")
+	if p.watcher != nil {
+		p.watcher.Stop()
+	}
 	p.rawBatcher.Stop()
 	p.recorderBatcher.Stop()
 	p.trunkingBatcher.Stop()

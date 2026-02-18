@@ -190,6 +190,15 @@ func (db *DB) UpdateCallAudio(ctx context.Context, callID int64, startTime time.
 	return err
 }
 
+// UpdateCallFilename sets the call_filename field (TR's original audio file path).
+func (db *DB) UpdateCallFilename(ctx context.Context, callID int64, startTime time.Time, callFilename string) error {
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE calls SET call_filename = $3
+		WHERE call_id = $1 AND start_time = $2
+	`, callID, startTime, callFilename)
+	return err
+}
+
 // UpsertCallGroup creates or finds a call group and returns its id.
 func (db *DB) UpsertCallGroup(ctx context.Context, systemID, tgid int, startTime time.Time,
 	tgAlphaTag, tgDescription, tgTag, tgGroup string,
