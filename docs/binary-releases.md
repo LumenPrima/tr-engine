@@ -1,6 +1,6 @@
 # Getting Started — Binary Release
 
-Download a pre-built binary and get running in minutes. You still need PostgreSQL, an MQTT broker, and a running trunk-recorder instance.
+Download a pre-built binary and get running in minutes. You need PostgreSQL and at least one ingest source (MQTT broker, TR's audio directory, or TR's install directory).
 
 > **Other installation methods:**
 > - **[Build from source](./getting-started.md)** — compile everything yourself from scratch
@@ -9,9 +9,11 @@ Download a pre-built binary and get running in minutes. You still need PostgreSQ
 
 ## Prerequisites
 
-- A running **trunk-recorder** instance with the [MQTT Status plugin](https://github.com/TrunkRecorder/trunk-recorder-mqtt-status) configured
-- An **MQTT broker** (e.g., Mosquitto) that trunk-recorder is publishing to
-- **PostgreSQL 17+** (18 recommended)
+- **PostgreSQL 18**
+- A running **trunk-recorder** instance with one of:
+  - The [MQTT Status plugin](https://github.com/TrunkRecorder/trunk-recorder-mqtt-status) and an MQTT broker
+  - An accessible audio output directory (for file watch mode)
+  - An accessible install directory (for TR auto-discovery)
 
 If you don't have these yet, see the [build from source guide](./getting-started.md) for setup instructions on each component.
 
@@ -57,20 +59,23 @@ This creates all tables, indexes, partitions, and triggers. Takes a few seconds.
 cp sample.env .env
 ```
 
-Edit `.env` — you only need to set two values:
+Edit `.env` — you need `DATABASE_URL` plus at least one ingest source:
 
 ```env
 DATABASE_URL=postgres://trengine:your_password_here@localhost:5432/trengine?sslmode=disable
+
+# Option A: MQTT ingest (richest data — call_start, units, recorders, rates)
 MQTT_BROKER_URL=tcp://localhost:1883
-```
-
-Make sure `MQTT_TOPICS` matches your trunk-recorder plugin's topic prefix. If your TR config uses `"topic": "trengine/feeds"`, then:
-
-```env
 MQTT_TOPICS=trengine/#
+
+# Option B: Auto-discover from trunk-recorder's directory (simplest setup)
+# TR_DIR=/path/to/trunk-recorder
+
+# Option C: Watch TR's audio directory for new files
+# WATCH_DIR=/path/to/trunk-recorder/audio
 ```
 
-See `sample.env` for all available options (HTTP port, auth token, log level, audio directory, raw archival settings).
+All three modes can run simultaneously. See `sample.env` for all available options (HTTP port, auth token, log level, audio directory, backfill settings, raw archival).
 
 ## 4. Run
 

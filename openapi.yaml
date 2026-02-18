@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: tr-engine API
-  version: 1.0.0
+  version: 0.6.1
   description: |
     Backend service for trunk-recorder data ingestion and querying.
     Provides REST APIs for accessing radio system data, calls, talkgroups,
@@ -503,6 +503,120 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EncryptionStatsResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Talkgroup Directory
+  # ----------------------------------------------------------
+  /talkgroup-directory:
+    get:
+      operationId: listTalkgroupDirectory
+      summary: Search talkgroup reference directory
+      description: |
+        Searches the talkgroup directory — a reference table imported from
+        trunk-recorder's talkgroup CSV files via TR_DIR auto-discovery or
+        CSV upload. Separate from the main talkgroups endpoint, which only
+        contains talkgroups actually heard on the air.
+      tags: [talkgroups]
+      parameters:
+        - name: system_id
+          in: query
+          description: Filter by system ID (repeatable)
+          schema:
+            type: integer
+        - name: search
+          in: query
+          description: Full-text search across alpha_tag, description, tag, category
+          schema:
+            type: string
+        - name: category
+          in: query
+          description: Filter by category
+          schema:
+            type: string
+        - name: mode
+          in: query
+          description: Filter by mode (D, A, E, M)
+          schema:
+            type: string
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  talkgroups:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TalkgroupDirectoryEntry"
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /talkgroup-directory/import:
+    post:
+      operationId: importTalkgroupDirectory
+      summary: Upload talkgroup CSV
+      description: |
+        Imports a trunk-recorder talkgroup CSV file into the talkgroup directory.
+        Accepts either `system_id` (must exist) or `system_name` (creates the
+        system if it doesn't exist). CSV format: Decimal, Hex, Alpha Tag, Mode,
+        Description, Tag, Category (header-aware, column order doesn't matter).
+      tags: [talkgroups]
+      parameters:
+        - name: system_id
+          in: query
+          description: Target system ID (must exist). Mutually exclusive with system_name.
+          schema:
+            type: integer
+        - name: system_name
+          in: query
+          description: Target system name (created if it doesn't exist). Mutually exclusive with system_id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Talkgroup CSV file
+      responses:
+        "200":
+          description: Import successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: integer
+                    description: Number of talkgroups successfully imported
+                  total:
+                    type: integer
+                    description: Total valid rows in the CSV
+                  system_id:
+                    type: integer
+                    description: System ID the talkgroups were imported into
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -2603,7 +2717,7 @@ components:
           enum: [healthy, degraded, unhealthy]
         version:
           type: string
-          example: "1.0.0"
+          example: "0.6.1"
         uptime_seconds:
           type: integer
           example: 86400
@@ -3042,6 +3156,38 @@ components:
           type: number
           description: Percentage of calls that were encrypted (0.0 - 100.0)
           example: 0.0
+
+    TalkgroupDirectoryEntry:
+      type: object
+      properties:
+        system_id:
+          type: integer
+          example: 1
+        system_name:
+          type: string
+          example: "butco"
+        tgid:
+          type: integer
+          example: 5000
+        alpha_tag:
+          type: string
+          example: "FD01DISP"
+        mode:
+          type: string
+          example: "D"
+        description:
+          type: string
+          example: "County Fire/EMS Dispatch"
+        tag:
+          type: string
+          example: "Fire Dispatch"
+        category:
+          type: string
+          example: "Adams County (01)"
+        priority:
+          type: integer
+          nullable: true
+          example: 1
 
     RecorderListResponse:
       type: object

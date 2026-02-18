@@ -40,7 +40,7 @@ Set a password if needed:
 sudo -u postgres psql -c "ALTER USER trengine PASSWORD 'yourpassword';"
 ```
 
-No TimescaleDB required. No extensions at all — plain PostgreSQL 17 or 18.
+No TimescaleDB required. No extensions at all — plain PostgreSQL 18.
 
 Load the schema:
 
@@ -71,6 +71,10 @@ Edit `.env`:
 ```bash
 DATABASE_URL=postgres://trengine:yourpassword@localhost:5432/trengine?sslmode=disable
 MQTT_BROKER_URL=tcp://localhost:1883
+
+# New in v1: MQTT is optional if you use file watch or TR auto-discovery instead
+# TR_DIR=/path/to/trunk-recorder     # auto-discover from TR's config.json
+# WATCH_DIR=/path/to/trunk-recorder/audio  # watch for new files
 ```
 
 That's it. No YAML, no TimescaleDB tuning, no migration tracker.

@@ -1,8 +1,8 @@
 # tr-engine
 
-Backend service that ingests MQTT messages from [trunk-recorder](https://github.com/robotastic/trunk-recorder) instances and serves them via a REST API. Handles radio system monitoring data: calls, talkgroups, units, and recorder state.
+Backend service that ingests data from [trunk-recorder](https://github.com/robotastic/trunk-recorder) instances via MQTT or filesystem watching and serves it via a REST API. Handles radio system monitoring data: calls, talkgroups, units, and recorder state.
 
-Zero configuration for radio systems — tr-engine discovers systems, sites, talkgroups, and units automatically from the MQTT feed. Point it at a broker, give it a database, and it figures out the rest.
+Zero configuration for radio systems — tr-engine discovers systems, sites, talkgroups, and units automatically. Point it at a broker, a watch directory, or a trunk-recorder install, give it a database, and it figures out the rest.
 
 > **Note:** This is a ground-up rewrite of the original tr-engine, now archived at [LumenPrima/tr-engine-v0](https://github.com/LumenPrima/tr-engine-v0). The database schema is not compatible — there is no migration path from v0. If you're coming from v0, see the **[migration guide](docs/migrating-from-v0.md)**. If you're starting fresh, you're in the right place.
 
@@ -14,9 +14,9 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 ## Tech Stack
 
 - **Go** — multi-core utilization at high message rates
-- **PostgreSQL 17+** — partitioned tables, JSONB, denormalized for read performance
-- **MQTT** — ingests from trunk-recorder via the [MQTT Status plugin](https://github.com/TrunkRecorder/trunk-recorder-mqtt-status)
-- **REST API** — 36 endpoints under `/api/v1`, defined in `openapi.yaml`
+- **PostgreSQL 18** — partitioned tables, JSONB, denormalized for read performance
+- **MQTT + File Watch** — ingests from trunk-recorder via MQTT or filesystem monitoring (or both)
+- **REST API** — 38 endpoints under `/api/v1`, defined in `openapi.yaml`
 - **SSE** — real-time event streaming with server-side filtering
 - **Web UI** — built-in dashboards demonstrating API and SSE capabilities
 
@@ -24,8 +24,8 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 
 - **[Docker Compose](docs/docker.md)** — single `docker compose up` with PostgreSQL, MQTT, and tr-engine
 - **[Docker with existing MQTT](docs/docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
-- **[Build from source](docs/getting-started.md)** — roll your own: compile from source, bring your own PostgreSQL and MQTT
-- **[Binary releases](docs/binary-releases.md)** — download a pre-built binary, just add PostgreSQL and MQTT
+- **[Build from source](docs/getting-started.md)** — roll your own: compile from source, bring your own PostgreSQL
+- **[Binary releases](docs/binary-releases.md)** — download a pre-built binary, just add PostgreSQL
 
 ### Quick Start
 
@@ -52,6 +52,8 @@ The `.env` file is auto-loaded from the current directory on startup. See `sampl
 --database-url  PostgreSQL connection URL
 --mqtt-url      MQTT broker URL
 --audio-dir     Audio file directory (default ./audio)
+--watch-dir     Watch TR audio directory for new files
+--tr-dir        Path to trunk-recorder directory for auto-discovery
 --env-file      Path to .env file (default .env)
 --version       Print version and exit
 ```
@@ -61,13 +63,19 @@ The `.env` file is auto-loaded from the current directory on startup. See `sampl
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | | PostgreSQL connection string |
-| `MQTT_BROKER_URL` | Yes | | MQTT broker URL (e.g., `tcp://localhost:1883`) |
+| `MQTT_BROKER_URL` | * | | MQTT broker URL (e.g., `tcp://localhost:1883`) |
+| `WATCH_DIR` | * | | Watch TR audio directory for new files |
+| `TR_DIR` | * | | Path to trunk-recorder directory for auto-discovery |
 | `MQTT_TOPICS` | No | `#` | MQTT topic filter (match your TR plugin prefix with `/#`) |
 | `HTTP_ADDR` | No | `:8080` | HTTP listen address |
 | `AUTH_TOKEN` | No | | Bearer token for API auth (disabled if empty) |
 | `AUDIO_DIR` | No | `./audio` | Audio file storage directory |
 | `TR_AUDIO_DIR` | No | | Serve audio from trunk-recorder's filesystem (see below) |
+| `WATCH_INSTANCE_ID` | No | `file-watch` | Instance ID for file-watched calls |
+| `WATCH_BACKFILL_DAYS` | No | `7` | Days of existing files to backfill on startup (0=all, -1=none) |
 | `LOG_LEVEL` | No | `info` | Log level |
+
+\* At least one of `MQTT_BROKER_URL`, `WATCH_DIR`, or `TR_DIR` must be set. All three can run simultaneously.
 
 See `sample.env` for the full list including MQTT credentials, HTTP timeouts, and raw archival settings.
 
@@ -83,9 +91,17 @@ Both modes can coexist during a transition. Existing calls with MQTT-ingested au
 
 ## How It Works
 
+### Ingest Modes
+
+tr-engine supports three ingest modes that can run independently or simultaneously:
+
+- **MQTT** — subscribes to trunk-recorder's MQTT status plugin for real-time call events, unit activity, recorder state, and decode rates. The richest data source.
+- **File Watch** (`WATCH_DIR`) — monitors trunk-recorder's audio output directory for new `.json` metadata files via fsnotify. Only produces `call_end` events (no `call_start`, unit events, or recorder state). Backfills existing files on startup (configurable via `WATCH_BACKFILL_DAYS`).
+- **TR Auto-Discovery** (`TR_DIR`) — the simplest setup. Point at the directory containing trunk-recorder's `config.json`. Auto-discovers `captureDir` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, and imports talkgroup CSVs into a browsable reference directory. If a `docker-compose.yaml` is found, container paths are translated to host paths via volume mappings.
+
 ### Auto-Discovery
 
-tr-engine builds its model of the radio world entirely from MQTT messages. When trunk-recorder publishes system info, call events, and unit activity, tr-engine:
+tr-engine builds its model of the radio world automatically. When trunk-recorder publishes messages (MQTT) or writes files (watch mode), tr-engine:
 
 1. **Identifies systems** by matching P25 `(sysid, wacn)` pairs or conventional `(instance_id, sys_name)`
 2. **Discovers sites** within each system — multiple TR instances monitoring the same P25 network auto-merge into one system with separate sites
@@ -103,12 +119,13 @@ System "MARCS" (P25 sysid=348, wacn=BEE00)
 
 ```
 trunk-recorder  ──MQTT──>  broker  ──MQTT──>  tr-engine  ──REST/SSE──>  clients
-                                                  |
-                                                  v
-                                              PostgreSQL
+      |                                            |
+      +──audio files──>  fsnotify watcher ─────────+
+                                                   v
+                                               PostgreSQL
 ```
 
-MQTT messages are routed to specialized handlers (calls, units, recorders, rates, trunking messages, etc.) that write to PostgreSQL and publish events to the SSE bus.
+MQTT messages are routed to specialized handlers (calls, units, recorders, rates, trunking messages, etc.) that write to PostgreSQL and publish events to the SSE bus. File-watched calls go through the same pipeline as `call_end` events.
 
 ## Real-Time Event Streaming
 
@@ -138,6 +155,8 @@ All under `/api/v1`. See `openapi.yaml` for the full specification.
 | `GET /recorders` | Recorder hardware state |
 | `GET /events/stream` | Real-time SSE event stream |
 | `GET /stats` | System statistics |
+| `GET /talkgroup-directory` | Search talkgroup reference directory |
+| `POST /talkgroup-directory/import` | Upload talkgroup CSV |
 | `POST /query` | Ad-hoc read-only SQL queries |
 
 ## Web UI
@@ -150,6 +169,7 @@ tr-engine ships with several built-in dashboards at `http://localhost:8080`. The
 | **Live Events** | Real-time SSE event stream with type filtering |
 | **Unit Tracker** | Live unit status grid with state colors and group filters |
 | **IRC Radio Live** | IRC-style monitor — talkgroups as channels, units as nicks, audio playback |
+| **Talkgroup Directory** | Browse and import talkgroup reference data from CSV |
 | **Signal Flow** | Stream graph of talkgroup activity over time (D3.js) |
 | **API Docs** | Interactive Swagger UI for the REST API |
 
@@ -180,13 +200,17 @@ internal/
     router.go                   Topic-to-handler routing
     identity.go                 System/site identity resolution + caching
     eventbus.go                 SSE pub/sub with ring buffer replay
+    watcher.go                  fsnotify-based file watcher for watch mode
     handler_*.go                Per-topic message handlers
+  trconfig/
+    trconfig.go                 TR config.json, docker-compose, and CSV parsers
+    discover.go                 TR auto-discovery orchestrator
   api/
     server.go                   Chi router + HTTP server
     middleware.go               RequestID, logging, recovery, auth
     events.go                   SSE event stream endpoint
     *.go                        Handler files for each resource
-web/irc-radio-live.html         IRC-style live radio monitor
+web/                            Built-in dashboards (auto-discovered by index)
 openapi.yaml                    API specification (source of truth)
 schema.sql                      PostgreSQL DDL
 sample.env                      Configuration template

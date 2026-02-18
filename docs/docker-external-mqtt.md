@@ -10,7 +10,7 @@ Run tr-engine via Docker Compose, connecting to an MQTT broker you already have 
 ## Prerequisites
 
 - Docker and Docker Compose
-- A running **MQTT broker** that trunk-recorder is already publishing to
+- A running **MQTT broker** that trunk-recorder is already publishing to (or use file watch mode instead — see [Configuration](#other-settings))
 - The broker's address, port, and credentials (if any)
 
 ## 1. Create a project directory and grab the files
@@ -32,7 +32,7 @@ Here's what the file should look like after editing:
 ```yaml
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: trengine
       POSTGRES_PASSWORD: trengine
@@ -139,9 +139,26 @@ Add any variable from [sample.env](https://github.com/LumenPrima/tr-engine/blob/
       LOG_LEVEL: debug                   # more verbose logging
       RAW_STORE: "false"                 # disable raw MQTT archival (saves disk)
       RAW_EXCLUDE_TOPICS: trunking_message  # exclude high-volume raw archival
+      # TR_DIR: /tr-config              # auto-discover from TR's config.json
+      # WATCH_DIR: /tr-audio            # file watch mode (alternative to MQTT)
+      # WATCH_BACKFILL_DAYS: 7          # days to backfill on startup
 ```
 
 Then restart: `docker compose up -d`
+
+### File watch mode and TR auto-discovery
+
+MQTT is optional — you can ingest calls by watching TR's audio directory instead (or in addition to MQTT). Bind-mount TR's directory into the container:
+
+```yaml
+    environment:
+      TR_DIR: /tr-config              # auto-discover everything from TR's config
+      # or just: WATCH_DIR: /tr-audio  # watch audio directory only
+    volumes:
+      - /path/to/trunk-recorder:/tr-config:ro
+```
+
+`TR_DIR` reads TR's `config.json`, auto-sets `WATCH_DIR` and `TR_AUDIO_DIR`, and imports talkgroup CSVs. See [sample.env](https://github.com/LumenPrima/tr-engine/blob/master/sample.env) for all available options.
 
 ### Filesystem audio (TR_AUDIO_DIR)
 

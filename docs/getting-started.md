@@ -11,15 +11,16 @@ This guide walks through setting up tr-engine from scratch on bare metal: instal
 
 ```
 trunk-recorder  ──MQTT──>  broker  ──MQTT──>  tr-engine  ──REST/SSE──>  clients
-   (radio)                (mosquitto)          (Go server)              (web UI)
-                                                   │
-                                                   v
-                                               PostgreSQL
+   (radio)      ──files──>  audio dir ──fsnotify──>  |                  (web UI)
+                                                     v
+                                                 PostgreSQL
 ```
 
-trunk-recorder captures radio traffic from SDR hardware and publishes events over MQTT. tr-engine subscribes to that MQTT feed, stores everything in PostgreSQL, and exposes it via a REST API with real-time SSE streaming.
+trunk-recorder captures radio traffic from SDR hardware. tr-engine can ingest data via **MQTT** (real-time events), **file watching** (monitoring TR's audio output directory), or both. Data is stored in PostgreSQL and exposed via a REST API with real-time SSE streaming.
 
-## 1. MQTT Broker
+## 1. MQTT Broker (optional)
+
+> **MQTT is optional.** If you only need call recordings, you can skip MQTT entirely and use file watch mode or TR auto-discovery instead — see sections 4 and 5. MQTT provides richer data: real-time `call_start` events, unit activity, recorder state, and decode rates.
 
 tr-engine needs an MQTT broker between it and trunk-recorder. Mosquitto is the simplest choice.
 
@@ -59,7 +60,7 @@ mosquitto_pub -t 'test' -m 'hello'
 
 ## 2. PostgreSQL
 
-tr-engine requires PostgreSQL 17 or later (tested on 18). It uses partitioned tables, JSONB, and GIN indexes.
+tr-engine requires PostgreSQL 18. It uses partitioned tables, JSONB, and GIN indexes.
 
 ### Install
 
@@ -190,9 +191,13 @@ Edit `.env` with your values:
 ```env
 # Required
 DATABASE_URL=postgres://trengine:your_password_here@localhost:5432/trengine?sslmode=disable
-MQTT_BROKER_URL=tcp://localhost:1883
 
-# Match your TR plugin's topic prefix + wildcard
+# Ingest mode — at least one of these must be set:
+MQTT_BROKER_URL=tcp://localhost:1883     # MQTT ingest (richest data)
+# WATCH_DIR=/path/to/trunk-recorder/audio  # File watch (call recordings only)
+# TR_DIR=/path/to/trunk-recorder           # Auto-discover from TR's config.json
+
+# Match your TR plugin's topic prefix + wildcard (only needed for MQTT)
 MQTT_TOPICS=trengine/#
 
 # Optional
@@ -206,6 +211,34 @@ AUDIO_DIR=./audio
 ```
 
 `MQTT_TOPICS` must match the topic prefixes from your TR plugin config. If all your TR topics share a common root (e.g. `topic: "trengine/feeds"`, `unit_topic: "trengine/units"`), a single wildcard like `trengine/#` covers everything. If they differ, comma-separate them: `MQTT_TOPICS=prefix1/#,prefix2/#`.
+
+### TR Auto-Discovery (simplest setup)
+
+If trunk-recorder runs on the same machine (or its directory is accessible), set `TR_DIR` to the directory containing TR's `config.json`:
+
+```env
+TR_DIR=/home/radio/trunk-recorder
+```
+
+This auto-discovers:
+- **`captureDir`** from `config.json` — sets `WATCH_DIR` and `TR_AUDIO_DIR` automatically
+- **System names** — from `config.json` system entries
+- **Talkgroup names** — imports TR's talkgroup CSV files into a browsable reference directory
+- **Docker volume mappings** — if `docker-compose.yaml` is found, translates container paths to host paths
+
+`TR_DIR` replaces `WATCH_DIR`, `TR_AUDIO_DIR`, and manual talkgroup import. All three ingest modes (MQTT, watch, TR_DIR) can run simultaneously.
+
+### File Watch Mode
+
+To use file watching without the full auto-discovery, set `WATCH_DIR` directly:
+
+```env
+WATCH_DIR=/path/to/trunk-recorder/audio
+WATCH_INSTANCE_ID=my-site          # default: file-watch
+WATCH_BACKFILL_DAYS=7              # days to backfill on startup (0=all, -1=none)
+```
+
+Watch mode monitors TR's audio output directory for new `.json` metadata files. It only produces `call_end` events — for `call_start`, unit events, recorder state, and decode rates, add MQTT.
 
 ### Run
 
@@ -241,17 +274,20 @@ tr-engine serves static files from a `web/` directory in dev mode. Open `http://
 
 ## What happens on first run
 
-1. tr-engine connects to PostgreSQL and MQTT
-2. It subscribes to the configured MQTT topics
-3. When trunk-recorder publishes its first messages, tr-engine auto-discovers systems and sites from the MQTT data
-4. Talkgroups, units, and calls populate as radio traffic flows
-5. The SSE event stream (`/api/v1/events/stream`) begins pushing events to connected clients
+1. tr-engine connects to PostgreSQL (and MQTT if configured)
+2. If `TR_DIR` is set, reads TR's `config.json` and imports talkgroup CSVs into the reference directory
+3. If `WATCH_DIR` is set (directly or via `TR_DIR`), backfills existing audio files and starts watching for new ones
+4. If MQTT is configured, subscribes to the configured topics
+5. Systems, sites, talkgroups, and units auto-populate as data flows
+6. The SSE event stream (`/api/v1/events/stream`) begins pushing events to connected clients
 
-There's no manual system/site/talkgroup configuration needed — everything is discovered from the MQTT feed. Talkgroup names come from trunk-recorder's CSV import (configured in TR's `config.json`).
+There's no manual system/site/talkgroup configuration needed — everything is discovered automatically. Talkgroup names come from TR's CSV files (via `TR_DIR` auto-import or CSV upload at `/api/v1/talkgroup-directory/import`) and from call metadata in the MQTT feed.
 
 ## Troubleshooting
 
-**No systems appearing:** Check that trunk-recorder is running, connected to the MQTT broker, and publishing messages. Use `mosquitto_sub -t '#' -v` to verify messages are flowing.
+**No systems appearing (MQTT mode):** Check that trunk-recorder is running, connected to the MQTT broker, and publishing messages. Use `mosquitto_sub -t '#' -v` to verify messages are flowing.
+
+**No systems appearing (watch mode):** Check that `WATCH_DIR` points to TR's audio output directory (the one containing per-system subdirectories like `butco/`, `warco/`). Verify `.json` metadata files exist alongside the audio files.
 
 **MQTT connection failing:** Verify `MQTT_BROKER_URL` matches your broker's address and port. Check firewall rules if the broker is remote.
 

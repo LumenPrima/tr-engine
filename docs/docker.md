@@ -103,9 +103,42 @@ environment:
   AUDIO_DIR: /data/audio
   LOG_LEVEL: debug        # add any env var from sample.env
   AUTH_TOKEN: my-secret   # enable API authentication
+  # TR_DIR: /tr-config    # auto-discover from TR's config.json (see below)
+  # WATCH_DIR: /tr-audio  # file watch mode (alternative to MQTT)
 ```
 
 Then restart: `docker compose up -d`
+
+### TR auto-discovery (TR_DIR)
+
+The simplest setup if trunk-recorder's directory is accessible. Bind-mount TR's directory and set `TR_DIR`:
+
+```yaml
+  tr-engine:
+    environment:
+      TR_DIR: /tr-config
+    volumes:
+      - /path/to/trunk-recorder:/tr-config:ro
+      # If TR's audio is in a separate location, mount that too:
+      # - /path/to/trunk-recorder/audio:/tr-audio:ro
+```
+
+This auto-discovers `captureDir` from `config.json` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, and imports talkgroup CSVs into a browsable reference directory. If TR runs in Docker, container paths are translated to host paths via volume mappings in `docker-compose.yaml`.
+
+### File watch mode (WATCH_DIR)
+
+To watch TR's audio directory for new files without the full auto-discovery:
+
+```yaml
+  tr-engine:
+    environment:
+      WATCH_DIR: /tr-audio
+      # WATCH_BACKFILL_DAYS: 7  # days to backfill on startup (0=all, -1=none)
+    volumes:
+      - /path/to/trunk-recorder/audio:/tr-audio:ro
+```
+
+Watch mode only produces `call_end` events. For `call_start`, unit events, and recorder state, add MQTT. Both modes can run simultaneously.
 
 ### Filesystem audio (TR_AUDIO_DIR)
 
