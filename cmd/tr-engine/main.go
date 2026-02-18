@@ -16,6 +16,7 @@ import (
 	"github.com/snarg/tr-engine/internal/database"
 	"github.com/snarg/tr-engine/internal/ingest"
 	"github.com/snarg/tr-engine/internal/mqttclient"
+	"github.com/snarg/tr-engine/internal/transcribe"
 	"github.com/snarg/tr-engine/internal/trconfig"
 )
 
@@ -39,6 +40,7 @@ func main() {
 	flag.StringVar(&overrides.AudioDir, "audio-dir", "", "Audio file directory (overrides AUDIO_DIR)")
 	flag.StringVar(&overrides.WatchDir, "watch-dir", "", "Watch TR audio directory for new files (overrides WATCH_DIR)")
 	flag.StringVar(&overrides.TRDir, "tr-dir", "", "Path to trunk-recorder directory for auto-discovery (overrides TR_DIR)")
+	flag.StringVar(&overrides.WhisperURL, "whisper-url", "", "Whisper API URL for transcription (overrides WHISPER_URL)")
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.Parse()
 
@@ -123,6 +125,32 @@ func main() {
 		log.Info().Msg("mqtt not configured (watch-only mode)")
 	}
 
+	// Transcription (optional — disabled when WHISPER_URL is empty)
+	var transcribeOpts *transcribe.WorkerPoolOptions
+	if cfg.WhisperURL != "" {
+		transcribeOpts = &transcribe.WorkerPoolOptions{
+			DB:              db,
+			AudioDir:        cfg.AudioDir,
+			TRAudioDir:      cfg.TRAudioDir,
+			WhisperURL:      cfg.WhisperURL,
+			WhisperModel:    cfg.WhisperModel,
+			WhisperTimeout:  cfg.WhisperTimeout,
+			Temperature:     cfg.WhisperTemperature,
+			Language:        cfg.WhisperLanguage,
+			PreprocessAudio: cfg.PreprocessAudio,
+			Workers:         cfg.TranscribeWorkers,
+			QueueSize:       cfg.TranscribeQueueSize,
+			MinDuration:     cfg.TranscribeMinDuration,
+			MaxDuration:     cfg.TranscribeMaxDuration,
+			Log:             log.With().Str("component", "transcribe").Logger(),
+		}
+		log.Info().
+			Str("whisper_url", cfg.WhisperURL).
+			Str("model", cfg.WhisperModel).
+			Int("workers", cfg.TranscribeWorkers).
+			Msg("transcription enabled")
+	}
+
 	// Ingest Pipeline
 	pipeline := ingest.NewPipeline(ingest.PipelineOptions{
 		DB:               db,
@@ -131,6 +159,7 @@ func main() {
 		RawStore:         cfg.RawStore,
 		RawIncludeTopics: cfg.RawIncludeTopics,
 		RawExcludeTopics: cfg.RawExcludeTopics,
+		TranscribeOpts:   transcribeOpts,
 		Log:              log,
 	})
 	if err := pipeline.Start(ctx); err != nil {

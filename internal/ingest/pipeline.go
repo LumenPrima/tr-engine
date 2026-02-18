@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/snarg/tr-engine/internal/api"
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/transcribe"
 )
 
 // Pipeline processes incoming MQTT messages from trunk-recorder.
@@ -40,6 +41,9 @@ type Pipeline struct {
 	rawInclude map[string]bool // if non-empty, allowlist mode (only these handlers)
 	rawExclude map[string]bool // if non-empty, denylist mode (skip these handlers)
 
+	// Transcription worker pool (optional, nil if WHISPER_URL not set)
+	transcriber *transcribe.WorkerPool
+
 	// File watcher (optional, nil if WATCH_DIR not set)
 	watcher *FileWatcher
 
@@ -63,6 +67,7 @@ type PipelineOptions struct {
 	RawStore         bool
 	RawIncludeTopics string
 	RawExcludeTopics string
+	TranscribeOpts   *transcribe.WorkerPoolOptions // nil = transcription disabled
 	Log              zerolog.Logger
 }
 
@@ -107,6 +112,20 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		cancel:      cancel,
 	}
 
+	// Transcription worker pool (optional)
+	if opts.TranscribeOpts != nil {
+		tOpts := opts.TranscribeOpts
+		tOpts.PublishEvent = func(eventType string, systemID, tgid int, payload map[string]any) {
+			p.PublishEvent(EventData{
+				Type:     eventType,
+				SystemID: systemID,
+				Tgid:     tgid,
+				Payload:  payload,
+			})
+		}
+		p.transcriber = transcribe.NewWorkerPool(*tOpts)
+	}
+
 	p.rawBatcher = NewBatcher[database.RawMessageRow](100, 2*time.Second, p.flushRawMessages)
 	p.recorderBatcher = NewBatcher[database.RecorderSnapshotRow](100, 2*time.Second, p.flushRecorderSnapshots)
 	p.trunkingBatcher = NewBatcher[database.TrunkingMessageRow](100, 2*time.Second, p.flushTrunkingMessages)
@@ -124,6 +143,9 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	}
 	go p.statsLoop()
 	go p.maintenanceLoop()
+	if p.transcriber != nil {
+		p.transcriber.Start()
+	}
 	p.log.Info().Msg("ingest pipeline started")
 	return nil
 }
@@ -153,11 +175,108 @@ func (p *Pipeline) WatcherStatus() *api.WatcherStatusData {
 	return p.watcher.Status()
 }
 
+// TranscriptionStatus returns the transcription service status.
+func (p *Pipeline) TranscriptionStatus() *api.TranscriptionStatusData {
+	if p.transcriber == nil {
+		return nil
+	}
+	return &api.TranscriptionStatusData{
+		Status:  "ok",
+		Model:   p.transcriber.Model(),
+		Workers: p.transcriber.Workers(),
+	}
+}
+
+// EnqueueTranscription enqueues a call for transcription by looking it up in the DB.
+func (p *Pipeline) EnqueueTranscription(callID int64) bool {
+	if p.transcriber == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+	defer cancel()
+
+	c, err := p.db.GetCallForTranscription(ctx, callID)
+	if err != nil {
+		p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to load call for transcription")
+		return false
+	}
+	return p.transcriber.Enqueue(transcribe.Job{
+		CallID:        c.CallID,
+		CallStartTime: c.StartTime,
+		SystemID:      c.SystemID,
+		Tgid:          c.Tgid,
+		Duration:      derefFloat32(c.Duration),
+		AudioFilePath: c.AudioFilePath,
+		CallFilename:  c.CallFilename,
+		SrcList:       c.SrcList,
+		TgAlphaTag:    c.TgAlphaTag,
+		TgDescription: c.TgDescription,
+		TgTag:         c.TgTag,
+		TgGroup:       c.TgGroup,
+	})
+}
+
+// TranscriptionQueueStats returns transcription queue statistics.
+func (p *Pipeline) TranscriptionQueueStats() *api.TranscriptionQueueStatsData {
+	if p.transcriber == nil {
+		return nil
+	}
+	stats := p.transcriber.Stats()
+	return &api.TranscriptionQueueStatsData{
+		Pending:   stats.Pending,
+		Completed: stats.Completed,
+		Failed:    stats.Failed,
+	}
+}
+
+// enqueueTranscription is called by ingest handlers when a call has audio ready.
+func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, systemID int, meta *AudioMetadata) {
+	if p.transcriber == nil {
+		return
+	}
+	dur := float32(meta.CallLength)
+	if dur < float32(p.transcriber.MinDuration()) || dur > float32(p.transcriber.MaxDuration()) {
+		return
+	}
+	job := transcribe.Job{
+		CallID:        callID,
+		CallStartTime: startTime,
+		SystemID:      systemID,
+		Tgid:          meta.Talkgroup,
+		Duration:      dur,
+		AudioFilePath: "", // will be resolved by worker from call record
+		CallFilename:  meta.Filename,
+		TgAlphaTag:    meta.TalkgroupTag,
+		TgDescription: meta.TalkgroupDesc,
+		TgTag:         meta.TalkgroupGroupTag,
+		TgGroup:       meta.TalkgroupGroup,
+	}
+	// Try to get src_list from metadata
+	if len(meta.SrcList) > 0 {
+		if raw, err := json.Marshal(meta.SrcList); err == nil {
+			job.SrcList = raw
+		}
+	}
+	if !p.transcriber.Enqueue(job) {
+		p.log.Warn().Int64("call_id", callID).Msg("transcription queue full, skipping")
+	}
+}
+
+func derefFloat32(p *float32) float32 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
 // Stop flushes batchers and cancels the context.
 func (p *Pipeline) Stop() {
 	p.log.Info().Int64("total_messages", p.msgCount.Load()).Msg("ingest pipeline stopping")
 	if p.watcher != nil {
 		p.watcher.Stop()
+	}
+	if p.transcriber != nil {
+		p.transcriber.Stop()
 	}
 	p.rawBatcher.Stop()
 	p.recorderBatcher.Stop()

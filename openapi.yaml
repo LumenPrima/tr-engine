@@ -108,6 +108,8 @@ tags:
     description: Trunk-recorder hardware state
   - name: events
     description: Real-time event streaming (SSE)
+  - name: transcriptions
+    description: Transcription access, search, and management
   - name: admin
     description: Administrative operations (system merge, cleanup)
 
@@ -1170,6 +1172,242 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Transcriptions
+  # ----------------------------------------------------------
+  /calls/{id}/transcription:
+    get:
+      operationId: getCallTranscription
+      summary: Get primary transcription for a call
+      description: Returns the current primary transcription with unit-attributed word timestamps and segments.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transcription"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: submitTranscriptionCorrection
+      summary: Submit human correction
+      description: |
+        Creates a human correction as a new primary transcription variant
+        and marks the call's transcription_status as "verified".
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  description: Corrected transcription text
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  call_id:
+                    type: integer
+                  source:
+                    type: string
+                    example: human
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /calls/{id}/transcriptions:
+    get:
+      operationId: listCallTranscriptions
+      summary: List all transcription variants for a call
+      description: |
+        Returns all transcription variants (auto, human, LLM) for a call.
+        The primary variant is marked with `is_primary: true`.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transcriptions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Transcription"
+                  total:
+                    type: integer
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /calls/{id}/transcribe:
+    post:
+      operationId: transcribeCall
+      summary: Queue call for transcription
+      description: Queues a call for transcription (or re-transcription). Returns 202 if accepted.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "202":
+          description: Accepted — queued for transcription
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  call_id:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [queued]
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Transcription queue full or not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /calls/{id}/transcription/verify:
+    post:
+      operationId: verifyTranscription
+      summary: Verify a transcription
+      description: Marks the call's current transcription as human-verified.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /calls/{id}/transcription/reject:
+    post:
+      operationId: rejectTranscription
+      summary: Reject a transcription
+      description: Resets the call's transcription_status to "reviewed" (unverified).
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /calls/{id}/transcription/exclude:
+    post:
+      operationId: excludeFromDataset
+      summary: Exclude call from training dataset
+      description: Marks a call as permanently excluded from the training dataset.
+      tags: [transcriptions]
+      parameters:
+        - $ref: "#/components/parameters/callId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusChangeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /transcriptions/search:
+    get:
+      operationId: searchTranscriptions
+      summary: Full-text search across transcriptions
+      description: |
+        Searches transcription text using PostgreSQL full-text search.
+        Results include call context (talkgroup, system, timing) so no
+        follow-up lookups are needed.
+      tags: [transcriptions]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query
+          schema:
+            type: string
+        - name: system_id
+          in: query
+          description: Filter by system ID(s), comma-separated
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID(s), comma-separated
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          description: Start of time range (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          description: End of time range (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionSearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /transcriptions/queue:
+    get:
+      operationId: getTranscriptionQueueStatus
+      summary: Get transcription queue status
+      description: Returns statistics about the transcription processing queue.
+      tags: [transcriptions]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionQueueStats"
 
   # ----------------------------------------------------------
   # Call Groups
@@ -2298,6 +2536,30 @@ components:
           items:
             $ref: "#/components/schemas/CallUnit"
 
+        # Transcription (denormalized from transcriptions table)
+        has_transcription:
+          type: boolean
+          description: Whether this call has been transcribed
+          example: true
+        transcription_status:
+          type: string
+          enum: [none, auto, reviewed, verified, excluded]
+          description: |
+            - **none**: no transcription attempted
+            - **auto**: machine-transcribed, unreviewed
+            - **reviewed**: passed quality checks
+            - **verified**: human-verified correct
+            - **excluded**: permanently excluded from dataset
+        transcription_text:
+          type: string
+          nullable: true
+          description: Primary transcription text (null if no transcription)
+          example: Engine 5 responding to the scene
+        transcription_word_count:
+          type: integer
+          nullable: true
+          example: 6
+
         # Extensible metadata
         metadata_json:
           type: object
@@ -2511,9 +2773,224 @@ components:
           type: integer
           description: Call ID of the best-quality recording
           example: 48531
+        # Transcription (denormalized from primary call)
+        has_transcription:
+          type: boolean
+          example: true
+        transcription_status:
+          type: string
+          enum: [none, auto, reviewed, verified, excluded]
+        transcription_text:
+          type: string
+          nullable: true
+          example: Engine 5 responding to the scene
 
-    # ========== Transcription schemas moved to openapi-transcriptions.yaml ==========
-    # To be implemented later when transcription system is built.
+    # ========== Transcription schemas ==========
+
+    TranscriptionStatus:
+      type: string
+      enum: [none, auto, reviewed, verified, excluded]
+      description: |
+        - **none**: no transcription attempted
+        - **auto**: machine-transcribed, unreviewed
+        - **reviewed**: passed quality checks
+        - **verified**: human-verified correct
+        - **excluded**: permanently excluded from dataset
+
+    TranscriptionSource:
+      type: string
+      enum: [auto, human, llm]
+      description: |
+        - **auto**: automated transcription (e.g., Whisper)
+        - **human**: human correction/transcription
+        - **llm**: LLM-generated correction
+
+    Transcription:
+      type: object
+      description: A transcription of a call's audio content with unit attribution
+      required: [id, call_id, text, source]
+      properties:
+        id:
+          type: integer
+          example: 1
+        call_id:
+          type: integer
+          example: 48531
+        text:
+          type: string
+          example: Engine 5 responding to the scene
+        source:
+          $ref: "#/components/schemas/TranscriptionSource"
+        is_primary:
+          type: boolean
+          example: true
+        confidence:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+          example: 0.95
+        language:
+          type: string
+          example: en
+        model:
+          type: string
+          example: deepdml/faster-whisper-large-v3-turbo-ct2
+        provider:
+          type: string
+          example: whisper
+        word_count:
+          type: integer
+          example: 6
+        duration_ms:
+          type: integer
+          description: Transcription processing time in milliseconds
+          example: 1500
+        created_at:
+          type: string
+          format: date-time
+        words:
+          type: object
+          description: |
+            Unit-attributed word timestamps and segments. The `words` array
+            contains every word with timing and the radio unit that said it.
+            The `segments` array groups consecutive words by the same unit.
+          properties:
+            words:
+              type: array
+              items:
+                $ref: "#/components/schemas/AttributedWord"
+            segments:
+              type: array
+              items:
+                $ref: "#/components/schemas/TranscriptionSegment"
+
+    AttributedWord:
+      type: object
+      description: A word with timing and unit attribution
+      required: [word, start, end, src]
+      properties:
+        word:
+          type: string
+          example: Engine
+        start:
+          type: number
+          description: Start time in seconds from audio start
+          example: 0.12
+        end:
+          type: number
+          description: End time in seconds from audio start
+          example: 0.45
+        src:
+          type: integer
+          description: Unit/radio ID (0 if unattributed)
+          example: 9130
+        src_tag:
+          type: string
+          description: Unit alpha tag
+          example: "Medic 83"
+
+    TranscriptionSegment:
+      type: object
+      description: Consecutive words from the same radio unit
+      required: [src, start, end, text]
+      properties:
+        src:
+          type: integer
+          description: Unit/radio ID
+          example: 9130
+        src_tag:
+          type: string
+          example: "Medic 83"
+        start:
+          type: number
+          example: 0.12
+        end:
+          type: number
+          example: 1.8
+        text:
+          type: string
+          example: "Medic 83 transporting to Fort."
+
+    TranscriptionSearchHit:
+      type: object
+      description: A search result with relevance score and call context
+      properties:
+        id:
+          type: integer
+        call_id:
+          type: integer
+        text:
+          type: string
+        source:
+          type: string
+        is_primary:
+          type: boolean
+        word_count:
+          type: integer
+        duration_ms:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        rank:
+          type: number
+          description: Search relevance score (higher is better)
+        system_id:
+          type: integer
+        system_name:
+          type: string
+        tgid:
+          type: integer
+        tg_alpha_tag:
+          type: string
+        call_start_time:
+          type: string
+          format: date-time
+        call_duration:
+          type: number
+          nullable: true
+
+    TranscriptionSearchResponse:
+      type: object
+      required: [results, total, limit, offset]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptionSearchHit"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    TranscriptionQueueStats:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, not_configured]
+        pending:
+          type: integer
+          example: 15
+        completed:
+          type: integer
+          example: 5000
+        failed:
+          type: integer
+          example: 12
+
+    StatusChangeResponse:
+      type: object
+      properties:
+        call_id:
+          type: integer
+          example: 48531
+        status:
+          type: string
+          example: verified
 
     Recorder:
       type: object
@@ -2731,6 +3208,9 @@ components:
             mqtt:
               type: string
               enum: [ok, error, disconnected]
+            transcription:
+              type: string
+              enum: [ok, not_configured]
         trunk_recorders:
           type: array
           description: Status of connected trunk-recorder instances

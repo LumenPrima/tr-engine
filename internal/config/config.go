@@ -39,6 +39,27 @@ type Config struct {
 	RawStore         bool   `env:"RAW_STORE" envDefault:"true"`
 	RawIncludeTopics string `env:"RAW_INCLUDE_TOPICS"`
 	RawExcludeTopics string `env:"RAW_EXCLUDE_TOPICS"`
+
+	// Transcription (optional — disabled when WHISPER_URL is empty)
+	WhisperURL         string        `env:"WHISPER_URL"`
+	WhisperModel       string        `env:"WHISPER_MODEL"`
+	WhisperTimeout     time.Duration `env:"WHISPER_TIMEOUT" envDefault:"30s"`
+	WhisperTemperature float64       `env:"WHISPER_TEMPERATURE" envDefault:"0.1"`
+	WhisperLanguage    string        `env:"WHISPER_LANGUAGE" envDefault:"en"`
+
+	// LLM post-processing (optional — disabled when LLM_URL is empty; not yet implemented)
+	LLMUrl     string        `env:"LLM_URL"`
+	LLMModel   string        `env:"LLM_MODEL"`
+	LLMTimeout time.Duration `env:"LLM_TIMEOUT" envDefault:"30s"`
+
+	// Audio preprocessing (requires sox in PATH)
+	PreprocessAudio bool `env:"PREPROCESS_AUDIO" envDefault:"false"`
+
+	// Transcription worker pool
+	TranscribeWorkers     int     `env:"TRANSCRIBE_WORKERS" envDefault:"2"`
+	TranscribeQueueSize   int     `env:"TRANSCRIBE_QUEUE_SIZE" envDefault:"500"`
+	TranscribeMinDuration float64 `env:"TRANSCRIBE_MIN_DURATION" envDefault:"1.0"`
+	TranscribeMaxDuration float64 `env:"TRANSCRIBE_MAX_DURATION" envDefault:"300"`
 }
 
 // Validate checks that at least one ingest source (MQTT, watch directory, or TR auto-discovery) is configured.
@@ -59,6 +80,7 @@ type Overrides struct {
 	AudioDir      string
 	WatchDir      string
 	TRDir         string
+	WhisperURL    string
 }
 
 // Load reads configuration from .env file, environment variables, and CLI overrides.
@@ -100,6 +122,9 @@ func Load(overrides Overrides) (*Config, error) {
 	}
 	if overrides.TRDir != "" {
 		cfg.TRDir = overrides.TRDir
+	}
+	if overrides.WhisperURL != "" {
+		cfg.WhisperURL = overrides.WhisperURL
 	}
 
 	return cfg, nil

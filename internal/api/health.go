@@ -70,6 +70,15 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Transcription check
+	if h.live != nil {
+		if ts := h.live.TranscriptionStatus(); ts != nil {
+			checks["transcription"] = ts.Status
+		} else {
+			checks["transcription"] = "not_configured"
+		}
+	}
+
 	// TR instance status
 	var trInstances []TRInstanceStatusData
 	if h.live != nil {

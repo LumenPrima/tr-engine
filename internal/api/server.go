@@ -60,6 +60,7 @@ func NewServer(opts ServerOptions) *Server {
 			NewEventsHandler(opts.Live).Routes(r)
 			NewUnitEventsHandler(opts.DB).Routes(r)
 			NewAffiliationsHandler(opts.Live).Routes(r)
+			NewTranscriptionsHandler(opts.DB, opts.Live).Routes(r)
 			NewAdminHandler(opts.DB).Routes(r)
 			NewQueryHandler(opts.DB).Routes(r)
 		})

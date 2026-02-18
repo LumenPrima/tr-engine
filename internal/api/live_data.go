@@ -26,6 +26,16 @@ type LiveDataSource interface {
 
 	// WatcherStatus returns the file watcher status, or nil if not active.
 	WatcherStatus() *WatcherStatusData
+
+	// TranscriptionStatus returns the transcription service status, or nil if not configured.
+	TranscriptionStatus() *TranscriptionStatusData
+
+	// EnqueueTranscription adds a call to the transcription queue.
+	// Returns false if the queue is full or transcription is disabled.
+	EnqueueTranscription(callID int64) bool
+
+	// TranscriptionQueueStats returns queue statistics, or nil if not configured.
+	TranscriptionQueueStats() *TranscriptionQueueStatsData
 }
 
 // WatcherStatusData represents the status of the file watcher ingest mode.
@@ -101,6 +111,20 @@ type UnitAffiliationData struct {
 	AffiliatedSince time.Time `json:"affiliated_since"`
 	LastEventTime   time.Time `json:"last_event_time"`
 	Status          string    `json:"status"` // "affiliated" or "off"
+}
+
+// TranscriptionStatusData represents the status of the transcription service.
+type TranscriptionStatusData struct {
+	Status  string `json:"status"`            // "ok", "unavailable", "not_configured"
+	Model   string `json:"model,omitempty"`
+	Workers int    `json:"workers,omitempty"`
+}
+
+// TranscriptionQueueStatsData reports transcription queue statistics.
+type TranscriptionQueueStatsData struct {
+	Pending   int   `json:"pending"`
+	Completed int64 `json:"completed"`
+	Failed    int64 `json:"failed"`
 }
 
 // EventFilter specifies which events an SSE subscriber wants to receive.

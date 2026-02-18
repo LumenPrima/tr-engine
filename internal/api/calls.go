@@ -3,11 +3,11 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/snarg/tr-engine/internal/audio"
 	"github.com/snarg/tr-engine/internal/database"
 )
 
@@ -197,53 +197,8 @@ func (h *CallsHandler) GetCallAudio(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveAudioFile finds the audio file on disk.
-// Priority: 1) AUDIO_DIR/audioPath, 2) TR_AUDIO_DIR + call_filename, 3) call_filename as absolute path.
 func (h *CallsHandler) resolveAudioFile(audioPath, callFilename string) string {
-	// 1) tr-engine managed audio file
-	if audioPath != "" {
-		full := filepath.Join(h.audioDir, audioPath)
-		if _, err := os.Stat(full); err == nil {
-			return full
-		}
-	}
-
-	if callFilename == "" {
-		return ""
-	}
-
-	// 2) TR_AUDIO_DIR configured — resolve call_filename relative to it
-	if h.trAudioDir != "" {
-		// call_filename is TR's absolute path (e.g. /app/tr_audio/warco/2026/2/17/file.m4a)
-		// Try it directly under TR_AUDIO_DIR by extracting the basename
-		// and also try the full relative structure
-		full := filepath.Join(h.trAudioDir, filepath.Base(callFilename))
-		if _, err := os.Stat(full); err == nil {
-			return full
-		}
-
-		// Try matching: find the short_name directory in call_filename
-		// and use everything from there as a relative path under TR_AUDIO_DIR.
-		// e.g. /app/tr_audio/warco/2026/2/17/file.m4a → warco/2026/2/17/file.m4a
-		parts := strings.Split(filepath.ToSlash(callFilename), "/")
-		for i := range parts {
-			if i == 0 {
-				continue
-			}
-			candidate := filepath.Join(h.trAudioDir, filepath.Join(parts[i:]...))
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate
-			}
-		}
-	}
-
-	// 3) Try call_filename as an absolute path (same machine, same filesystem)
-	if filepath.IsAbs(callFilename) {
-		if _, err := os.Stat(callFilename); err == nil {
-			return callFilename
-		}
-	}
-
-	return ""
+	return audio.ResolveFile(h.audioDir, h.trAudioDir, audioPath, callFilename)
 }
 
 // GetCallFrequencies returns frequency entries for a call.
