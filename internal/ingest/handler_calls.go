@@ -30,7 +30,7 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 	// Upsert talkgroup
 	if call.Talkgroup > 0 {
 		if err := p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
-			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription,
+			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
 		); err != nil {
 			p.log.Warn().Err(err).Int("tgid", call.Talkgroup).Msg("failed to upsert talkgroup")
 		}
@@ -267,7 +267,7 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 	identity, idErr := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)
 	if idErr == nil && call.Talkgroup > 0 {
 		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
-			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription,
+			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
 		)
 	}
 
@@ -368,7 +368,7 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 	// Upsert talkgroup
 	if call.Talkgroup > 0 {
 		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
-			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription,
+			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
 		)
 	}
 

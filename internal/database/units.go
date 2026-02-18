@@ -190,10 +190,11 @@ func (db *DB) UpsertUnit(ctx context.Context, systemID, unitID int, alphaTag, ev
 		VALUES ($1, $2, $3, $5, $5, $4, $5, $6)
 		ON CONFLICT (system_id, unit_id) DO UPDATE SET
 			alpha_tag       = COALESCE(NULLIF($3, ''), units.alpha_tag),
-			last_seen       = $5,
-			last_event_type = $4,
-			last_event_time = $5,
-			last_event_tgid = CASE WHEN $6 > 0 THEN $6 ELSE units.last_event_tgid END
+			first_seen      = LEAST(units.first_seen, $5),
+			last_seen       = GREATEST(units.last_seen, $5),
+			last_event_type = CASE WHEN $5 >= units.last_event_time THEN $4 ELSE units.last_event_type END,
+			last_event_time = GREATEST(units.last_event_time, $5),
+			last_event_tgid = CASE WHEN $5 >= units.last_event_time AND $6 > 0 THEN $6 ELSE units.last_event_tgid END
 	`, systemID, unitID, alphaTag, eventType, eventTime, tgid)
 	return err
 }

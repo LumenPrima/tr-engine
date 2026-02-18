@@ -365,17 +365,18 @@ func (db *DB) GetEncryptionStats(ctx context.Context, hours int, sysid string) (
 }
 
 // UpsertTalkgroup inserts or updates a talkgroup, never overwriting good data with empty strings.
-func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, tag, group, description string) error {
+func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, tag, group, description string, eventTime time.Time) error {
 	_, err := db.Pool.Exec(ctx, `
 		INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, first_seen, last_seen)
-		VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 		ON CONFLICT (system_id, tgid) DO UPDATE SET
 			alpha_tag   = COALESCE(NULLIF($3, ''), talkgroups.alpha_tag),
 			tag         = COALESCE(NULLIF($4, ''), talkgroups.tag),
 			"group"     = COALESCE(NULLIF($5, ''), talkgroups."group"),
 			description = COALESCE(NULLIF($6, ''), talkgroups.description),
-			last_seen   = now()
-	`, systemID, tgid, alphaTag, tag, group, description)
+			first_seen  = LEAST(talkgroups.first_seen, $7),
+			last_seen   = GREATEST(talkgroups.last_seen, $7)
+	`, systemID, tgid, alphaTag, tag, group, description, eventTime)
 	return err
 }
 

@@ -54,7 +54,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 	// Upsert talkgroup if present
 	if data.Talkgroup > 0 {
 		if err := p.db.UpsertTalkgroup(ctx, identity.SystemID, data.Talkgroup,
-			data.TalkgroupAlphaTag, data.TalkgroupTag, data.TalkgroupGroup, data.TalkgroupDescription,
+			data.TalkgroupAlphaTag, data.TalkgroupTag, data.TalkgroupGroup, data.TalkgroupDescription, ts,
 		); err != nil {
 			p.log.Warn().Err(err).Int("tgid", data.Talkgroup).Msg("failed to upsert talkgroup")
 		}

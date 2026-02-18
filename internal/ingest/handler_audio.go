@@ -144,7 +144,7 @@ func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedId
 	// Upsert talkgroup
 	if meta.Talkgroup > 0 {
 		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, meta.Talkgroup,
-			meta.TalkgroupTag, meta.TalkgroupGroupTag, meta.TalkgroupGroup, meta.TalkgroupDesc,
+			meta.TalkgroupTag, meta.TalkgroupGroupTag, meta.TalkgroupGroup, meta.TalkgroupDesc, startTime,
 		)
 	}
 
