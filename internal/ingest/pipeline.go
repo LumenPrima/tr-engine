@@ -325,6 +325,25 @@ func beginningOfMonth(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())
 }
 
+// ensurePartitionsFor creates monthly partitions for all partitioned tables for
+// the month containing the given timestamp. Called on-demand when an insert
+// fails with "no partition found".
+func (p *Pipeline) ensurePartitionsFor(t time.Time) {
+	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
+	defer cancel()
+
+	month := beginningOfMonth(t)
+	tables := []string{"calls", "call_frequencies", "call_transmissions", "unit_events", "trunking_messages"}
+	for _, table := range tables {
+		result, err := p.db.CreateMonthlyPartition(ctx, table, month)
+		if err != nil {
+			p.log.Warn().Err(err).Str("table", table).Time("month", month).Msg("failed to create on-demand partition")
+		} else if !strings.Contains(result, "already exists") {
+			p.log.Info().Str("result", result).Str("table", table).Msg("created on-demand partition")
+		}
+	}
+}
+
 // HandleMessage is the entry point called by the MQTT client for each message.
 func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 	p.msgCount.Add(1)

@@ -283,33 +283,46 @@ func (fw *FileWatcher) backfill() {
 		Int("backfill_days", fw.backfillDays).
 		Msg("backfill starting")
 
-	// Rate limit: 50 files/second
-	ticker := time.NewTicker(20 * time.Millisecond)
-	defer ticker.Stop()
+	// Process files concurrently with a worker pool.
+	const numWorkers = 16
+	work := make(chan fileEntry, numWorkers*2)
+	var wg sync.WaitGroup
 
-	processed := 0
+	var processed atomic.Int64
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for f := range work {
+				fw.processJSONFile(f.path)
+				n := processed.Add(1)
+				if n%5000 == 0 {
+					fw.log.Info().
+						Int64("processed", n).
+						Int("total", len(files)).
+						Msg("backfill progress")
+				}
+			}
+		}()
+	}
+
 	for _, f := range files {
 		select {
 		case <-fw.pipeline.ctx.Done():
-			fw.log.Info().Int("processed", processed).Msg("backfill interrupted by shutdown")
+			fw.log.Info().Int64("processed", processed.Load()).Msg("backfill interrupted by shutdown")
+			close(work)
+			wg.Wait()
 			return
-		case <-ticker.C:
-		}
-
-		fw.processJSONFile(f.path)
-		processed++
-
-		if processed%1000 == 0 {
-			fw.log.Info().
-				Int("processed", processed).
-				Int("total", len(files)).
-				Msg("backfill progress")
+		case work <- f:
 		}
 	}
+	close(work)
+	wg.Wait()
 
 	fw.status.Store("watching")
 	fw.log.Info().
-		Int("processed", processed).
+		Int64("processed", processed.Load()).
 		Dur("elapsed", time.Since(start)).
 		Msg("backfill complete")
 }

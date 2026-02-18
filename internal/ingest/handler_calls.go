@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/snarg/tr-engine/internal/database"
@@ -121,6 +122,10 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 
 		var insertErr error
 		callID, insertErr = p.db.InsertCall(ctx, row)
+		if insertErr != nil && strings.Contains(insertErr.Error(), "no partition") {
+			p.ensurePartitionsFor(startTime)
+			callID, insertErr = p.db.InsertCall(ctx, row)
+		}
 		if insertErr != nil {
 			return fmt.Errorf("insert call: %w", insertErr)
 		}
@@ -427,6 +432,10 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 	}
 
 	callID, err := p.db.InsertCall(ctx, row)
+	if err != nil && strings.Contains(err.Error(), "no partition") {
+		p.ensurePartitionsFor(startTime)
+		callID, err = p.db.InsertCall(ctx, row)
+	}
 	if err != nil {
 		return fmt.Errorf("insert call from end: %w", err)
 	}

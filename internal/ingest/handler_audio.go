@@ -323,6 +323,11 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 
 	// Create call from audio metadata
 	callID, callStartTime, err := p.createCallFromAudio(ctx, identity, meta, startTime)
+	if err != nil && strings.Contains(err.Error(), "no partition") {
+		// Auto-create missing partition and retry once
+		p.ensurePartitionsFor(startTime)
+		callID, callStartTime, err = p.createCallFromAudio(ctx, identity, meta, startTime)
+	}
 	if err != nil {
 		return fmt.Errorf("create call from watched file: %w", err)
 	}
