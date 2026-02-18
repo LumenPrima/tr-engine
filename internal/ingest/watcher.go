@@ -270,6 +270,14 @@ func (fw *FileWatcher) backfill() {
 		return files[i].startTime < files[j].startTime
 	})
 
+	// Ensure partitions exist for the full date range before processing.
+	// The schema only creates partitions for current month + 3 ahead, so
+	// older backfill data would fail with "no partition found".
+	if len(files) > 0 {
+		oldest := time.Unix(files[0].startTime, 0)
+		fw.ensurePartitions(oldest)
+	}
+
 	fw.log.Info().
 		Int("files", len(files)).
 		Int("backfill_days", fw.backfillDays).
@@ -304,6 +312,35 @@ func (fw *FileWatcher) backfill() {
 		Int("processed", processed).
 		Dur("elapsed", time.Since(start)).
 		Msg("backfill complete")
+}
+
+// ensurePartitions creates monthly partitions for all partitioned tables from
+// the given start time through the current month. This is needed for backfill
+// since the schema only creates partitions for the current month + 3 ahead.
+func (fw *FileWatcher) ensurePartitions(oldest time.Time) {
+	ctx := fw.pipeline.ctx
+	db := fw.pipeline.db
+
+	monthlyTables := []string{"calls", "call_frequencies", "call_transmissions", "unit_events", "trunking_messages"}
+	start := beginningOfMonth(oldest)
+	now := beginningOfMonth(time.Now())
+	created := 0
+
+	for m := start; !m.After(now); m = m.AddDate(0, 1, 0) {
+		for _, table := range monthlyTables {
+			result, err := db.CreateMonthlyPartition(ctx, table, m)
+			if err != nil {
+				fw.log.Warn().Err(err).Str("table", table).Time("month", m).Msg("failed to create backfill partition")
+			} else if !strings.Contains(result, "already exists") {
+				created++
+				fw.log.Info().Str("result", result).Str("table", table).Msg("created backfill partition")
+			}
+		}
+	}
+
+	if created > 0 {
+		fw.log.Info().Int("partitions_created", created).Time("oldest_file", oldest).Msg("backfill partitions ensured")
+	}
 }
 
 // parseStartTimeFromFilename extracts the Unix timestamp from a trunk-recorder
