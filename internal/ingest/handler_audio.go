@@ -303,7 +303,7 @@ func (p *Pipeline) processSrcFreqData(ctx context.Context, callID int64, callSta
 func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, jsonPath string) error {
 	startTime := time.Unix(meta.StartTime, 0)
 
-	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(p.ctx, 60*time.Second)
 	defer cancel()
 
 	// Resolve identity (auto-creates system/site if needed)

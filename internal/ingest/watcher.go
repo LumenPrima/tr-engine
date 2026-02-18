@@ -148,14 +148,11 @@ func (fw *FileWatcher) watchLoop() {
 				continue
 			}
 
-			// New directory: add it to the watch set so we catch files in
-			// newly created date directories (e.g. 2026/2/18/).
+			// New directory: recursively walk and add all subdirectories,
+			// then process any .json files already inside. This handles
+			// bulk copies (cp -r) where the entire tree lands at once.
 			if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-				if err := fw.watcher.Add(event.Name); err != nil {
-					fw.log.Warn().Err(err).Str("path", event.Name).Msg("failed to watch new directory")
-				} else {
-					fw.log.Debug().Str("path", event.Name).Msg("watching new directory")
-				}
+				fw.addDirRecursive(event.Name)
 				continue
 			}
 
@@ -173,6 +170,34 @@ func (fw *FileWatcher) watchLoop() {
 			fw.log.Error().Err(err).Msg("fsnotify error")
 		}
 	}
+}
+
+// addDirRecursive walks a new directory tree, adds all subdirectories to the
+// watcher, and processes any .json files already present. This handles bulk
+// copies (cp -r) where the entire tree exists by the time we process the
+// parent directory's Create event.
+func (fw *FileWatcher) addDirRecursive(root string) {
+	// During backfill, just register directories — backfill will handle files.
+	status, _ := fw.status.Load().(string)
+	processFiles := status == "watching"
+
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if err := fw.watcher.Add(path); err != nil {
+				fw.log.Warn().Err(err).Str("path", path).Msg("failed to watch new directory")
+			} else {
+				fw.log.Debug().Str("path", path).Msg("watching new directory")
+			}
+			return nil
+		}
+		if processFiles && strings.HasSuffix(strings.ToLower(path), ".json") {
+			fw.scheduleProcess(path)
+		}
+		return nil
+	})
 }
 
 // scheduleProcess debounces file processing by 500ms. This coalesces rapid
@@ -284,7 +309,9 @@ func (fw *FileWatcher) backfill() {
 		Msg("backfill starting")
 
 	// Process files concurrently with a worker pool.
-	const numWorkers = 16
+	// Keep workers under the DB pool size (20 max conns) to avoid
+	// connection starvation during partition creation DDL.
+	const numWorkers = 8
 	work := make(chan fileEntry, numWorkers*2)
 	var wg sync.WaitGroup
 
