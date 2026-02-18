@@ -50,8 +50,16 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 
 	if p.trAudioDir == "" {
 		audioData := msg.Call.AudioM4ABase64
+		inferredType := "m4a"
 		if audioData == "" {
 			audioData = msg.Call.AudioWavBase64
+			inferredType = "wav"
+		}
+
+		// Prefer audio_type from metadata, fall back to whichever base64 field was populated
+		audioType := meta.AudioType
+		if audioType == "" {
+			audioType = inferredType
 		}
 
 		if audioData != "" {
@@ -60,7 +68,7 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 				p.log.Warn().Err(decErr).Msg("failed to decode audio base64")
 			} else {
 				audioSize = len(decoded)
-				audioPath, err = p.saveAudioFile(meta.ShortName, startTime, meta.Filename, decoded)
+				audioPath, err = p.saveAudioFile(meta.ShortName, startTime, meta.Filename, audioType, decoded)
 				if err != nil {
 					p.log.Error().Err(err).Msg("failed to save audio file")
 				}
@@ -398,7 +406,7 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 
 // saveAudioFile writes decoded audio to the filesystem.
 // Path: {audioDir}/{sysName}/{YYYY-MM-DD}/{filename}
-func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename string, data []byte) (string, error) {
+func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename string, audioType string, data []byte) (string, error) {
 	dateDir := startTime.Format("2006-01-02")
 	dir := filepath.Join(p.audioDir, sysName, dateDir)
 
@@ -407,7 +415,17 @@ func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename s
 	}
 
 	if filename == "" {
-		filename = fmt.Sprintf("%d.m4a", startTime.Unix())
+		// Use audio_type from metadata if available, default to .wav
+		ext := ".wav"
+		if audioType != "" {
+			// audio_type from TR is typically "m4a", "wav", "mp3" (no dot)
+			if audioType[0] != '.' {
+				ext = "." + audioType
+			} else {
+				ext = audioType
+			}
+		}
+		filename = fmt.Sprintf("%d%s", startTime.Unix(), ext)
 	}
 
 	path := filepath.Join(dir, filename)
