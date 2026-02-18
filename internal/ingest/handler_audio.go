@@ -332,9 +332,17 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 		return fmt.Errorf("create call from watched file: %w", err)
 	}
 
-	// Set call_filename to the companion audio file (.m4a next to .json)
-	audioPath := strings.TrimSuffix(jsonPath, ".json") + ".m4a"
-	if _, statErr := os.Stat(audioPath); statErr == nil {
+	// Set call_filename to the companion audio file next to the .json.
+	// Try common extensions in preference order.
+	base := strings.TrimSuffix(jsonPath, ".json")
+	var audioPath string
+	for _, ext := range []string{".m4a", ".wav", ".mp3"} {
+		if _, statErr := os.Stat(base + ext); statErr == nil {
+			audioPath = base + ext
+			break
+		}
+	}
+	if audioPath != "" {
 		if err := p.db.UpdateCallFilename(ctx, callID, callStartTime, audioPath); err != nil {
 			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to set call_filename from watched file")
 		}
