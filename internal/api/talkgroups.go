@@ -1,10 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/trconfig"
 )
 
 type TalkgroupsHandler struct {
@@ -291,6 +293,75 @@ func (h *TalkgroupsHandler) ListTalkgroupDirectory(w http.ResponseWriter, r *htt
 	})
 }
 
+// ImportTalkgroupDirectory accepts a CSV upload and imports it into the talkgroup directory.
+// Accepts either system_id (existing) or system_name (creates system if needed).
+// POST /api/v1/talkgroup-directory/import?system_id=1
+// POST /api/v1/talkgroup-directory/import?system_name=butco
+// Content-Type: multipart/form-data (field name: "file")
+func (h *TalkgroupsHandler) ImportTalkgroupDirectory(w http.ResponseWriter, r *http.Request) {
+	var systemID int
+
+	if id, ok := QueryInt(r, "system_id"); ok && id > 0 {
+		// Verify system exists
+		if _, err := h.db.GetSystemByID(r.Context(), id); err != nil {
+			WriteError(w, http.StatusNotFound, fmt.Sprintf("system_id %d not found", id))
+			return
+		}
+		systemID = id
+	} else if name, ok := QueryString(r, "system_name"); ok && name != "" {
+		// Find or create system by name
+		id, _, err := h.db.FindOrCreateSystem(r.Context(), "csv-import", name)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to resolve system %q: %v", name, err))
+			return
+		}
+		systemID = id
+	} else {
+		WriteError(w, http.StatusBadRequest, "system_id or system_name query parameter is required")
+		return
+	}
+
+	// 10 MB max upload
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		WriteError(w, http.StatusBadRequest, "invalid multipart form (10 MB max)")
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "missing 'file' field in multipart form")
+		return
+	}
+	defer file.Close()
+
+	entries, err := trconfig.ParseTalkgroupCSV(file)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse CSV: %v", err))
+		return
+	}
+
+	if len(entries) == 0 {
+		WriteError(w, http.StatusBadRequest, "CSV contains no valid talkgroup entries")
+		return
+	}
+
+	imported := 0
+	for _, tg := range entries {
+		if err := h.db.UpsertTalkgroupDirectory(r.Context(), systemID, tg.Tgid,
+			tg.AlphaTag, tg.Mode, tg.Description, tg.Tag, tg.Category, tg.Priority,
+		); err != nil {
+			continue
+		}
+		imported++
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"imported":  imported,
+		"total":     len(entries),
+		"system_id": systemID,
+	})
+}
+
 // Routes registers talkgroup routes on the given router.
 func (h *TalkgroupsHandler) Routes(r chi.Router) {
 	r.Get("/talkgroups", h.ListTalkgroups)
@@ -300,4 +371,5 @@ func (h *TalkgroupsHandler) Routes(r chi.Router) {
 	r.Get("/talkgroups/{id}/calls", h.ListTalkgroupCalls)
 	r.Get("/talkgroups/{id}/units", h.ListTalkgroupUnits)
 	r.Get("/talkgroup-directory", h.ListTalkgroupDirectory)
+	r.Post("/talkgroup-directory/import", h.ImportTalkgroupDirectory)
 }

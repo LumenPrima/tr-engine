@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="card-title" content="Talkgroup Directory">
+<meta name="card-description" content="Browse and import talkgroup reference data from CSV">
+<meta name="card-order" content="5">
+<title>Talkgroup Directory — tr-engine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: #0d1117; color: #c9d1d9; font-size: 14px; min-height: 100vh; }
+
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: #0d1117; border-bottom: 1px solid #21262d;
+    padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; white-space: nowrap; }
+  header h1 span { font-weight: 400; color: #8b949e; }
+
+  .header-controls { display: flex; gap: 10px; align-items: center; flex: 1; flex-wrap: wrap; }
+
+  .search-box {
+    flex: 1; min-width: 200px; max-width: 400px;
+    padding: 6px 10px;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    color: #c9d1d9; font-size: 13px; font-family: inherit;
+  }
+  .search-box:focus { outline: none; border-color: #58a6ff; }
+
+  select.filter-select {
+    padding: 6px 10px;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    color: #c9d1d9; font-size: 13px; font-family: inherit;
+    cursor: pointer;
+  }
+  select.filter-select:focus { outline: none; border-color: #58a6ff; }
+
+  .header-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .count { font-size: 12px; color: #8b949e; white-space: nowrap; }
+
+  /* --- Import panel --- */
+  .import-toggle {
+    padding: 6px 14px;
+    background: #238636; border: none; border-radius: 6px;
+    color: #fff; font-size: 13px; font-weight: 500; cursor: pointer;
+    font-family: inherit;
+  }
+  .import-toggle:hover { background: #2ea043; }
+
+  .import-panel {
+    display: none; background: #161b22; border-bottom: 1px solid #21262d;
+    padding: 16px 20px;
+  }
+  .import-panel.visible { display: block; }
+  .import-panel h3 { font-size: 14px; color: #e6edf3; margin-bottom: 10px; }
+  .import-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+
+  .import-field label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; }
+  .import-field input[type="text"],
+  .import-field select {
+    padding: 6px 10px;
+    background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    color: #c9d1d9; font-size: 13px; font-family: inherit;
+  }
+  .import-field input:focus, .import-field select:focus { outline: none; border-color: #58a6ff; }
+
+  .file-label {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px;
+    background: #21262d; border: 1px solid #30363d; border-radius: 6px;
+    color: #c9d1d9; font-size: 13px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .file-label:hover { border-color: #58a6ff; }
+  .file-label input[type="file"] { display: none; }
+  .file-name { color: #8b949e; font-size: 12px; }
+
+  .import-btn {
+    padding: 6px 18px;
+    background: #238636; border: none; border-radius: 6px;
+    color: #fff; font-size: 13px; font-weight: 500; cursor: pointer;
+    font-family: inherit;
+  }
+  .import-btn:hover { background: #2ea043; }
+  .import-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .import-status { margin-top: 10px; font-size: 13px; }
+  .import-status.success { color: #3fb950; }
+  .import-status.error { color: #f85149; }
+
+  .or-divider { color: #8b949e; font-size: 12px; padding: 0 4px; align-self: center; }
+
+  /* --- Table --- */
+  .table-wrap { overflow-x: auto; }
+
+  table {
+    width: 100%; border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead { position: sticky; top: 52px; z-index: 10; }
+  th {
+    text-align: left; padding: 8px 12px;
+    background: #161b22; border-bottom: 1px solid #21262d;
+    color: #8b949e; font-weight: 500; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+    white-space: nowrap; user-select: none;
+  }
+  td {
+    padding: 6px 12px; border-bottom: 1px solid #161b22;
+    vertical-align: top;
+  }
+  tr:hover td { background: #161b22; }
+
+  .tgid { font-family: 'SF Mono', Consolas, monospace; color: #58a6ff; font-size: 12px; }
+  .alpha { color: #e6edf3; font-weight: 500; }
+  .mode-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    background: #30363d; color: #8b949e;
+  }
+  .mode-badge.d { background: #1f6feb33; color: #58a6ff; }
+  .mode-badge.a { background: #23883233; color: #3fb950; }
+  .mode-badge.e { background: #f8514933; color: #f85149; }
+  .mode-badge.m { background: #d2992233; color: #e3b341; }
+  .tag-text { color: #bc8cff; font-size: 12px; }
+  .cat-text { color: #8b949e; font-size: 12px; }
+  .desc-text { color: #c9d1d9; max-width: 300px; }
+  .priority-text { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: #8b949e; text-align: center; }
+  .sys-name { color: #8b949e; font-size: 12px; }
+
+  /* --- Pagination --- */
+  .pagination {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 16px 20px; border-top: 1px solid #21262d;
+  }
+  .pagination button {
+    padding: 6px 14px;
+    background: #21262d; border: 1px solid #30363d; border-radius: 6px;
+    color: #c9d1d9; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .pagination button:hover:not(:disabled) { border-color: #58a6ff; }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pagination .page-info { font-size: 12px; color: #8b949e; }
+
+  .empty-state {
+    text-align: center; padding: 60px 20px; color: #8b949e;
+  }
+  .empty-state h2 { font-size: 18px; color: #e6edf3; margin-bottom: 8px; }
+  .empty-state p { font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Talkgroup Directory <span id="total-count"></span></h1>
+  <div class="header-controls">
+    <input type="text" class="search-box" id="search" placeholder="Search talkgroups..." autocomplete="off">
+    <select class="filter-select" id="system-filter">
+      <option value="">All systems</option>
+    </select>
+    <select class="filter-select" id="mode-filter">
+      <option value="">All modes</option>
+      <option value="D">Digital</option>
+      <option value="A">Analog</option>
+      <option value="E">Encrypted</option>
+      <option value="M">Mixed</option>
+    </select>
+    <select class="filter-select" id="category-filter">
+      <option value="">All categories</option>
+    </select>
+  </div>
+  <div class="header-right">
+    <button class="import-toggle" id="import-toggle-btn">Import CSV</button>
+  </div>
+</header>
+
+<div class="import-panel" id="import-panel">
+  <h3>Import Talkgroup CSV</h3>
+  <p style="font-size:12px; color:#8b949e; margin-bottom:12px;">
+    Upload a trunk-recorder talkgroup CSV file. Format: Decimal, Hex, Alpha Tag, Mode, Description, Tag, Category
+  </p>
+  <div class="import-row">
+    <div class="import-field">
+      <label>System</label>
+      <select id="import-system">
+        <option value="">-- select existing --</option>
+      </select>
+    </div>
+    <span class="or-divider">or</span>
+    <div class="import-field">
+      <label>New system name</label>
+      <input type="text" id="import-system-name" placeholder="e.g. butco">
+    </div>
+    <div class="import-field">
+      <label>CSV file</label>
+      <label class="file-label">
+        Choose file...
+        <input type="file" id="import-file" accept=".csv,.txt">
+      </label>
+      <span class="file-name" id="file-name">No file selected</span>
+    </div>
+    <button class="import-btn" id="import-btn" disabled>Upload</button>
+  </div>
+  <div class="import-status" id="import-status"></div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>TGID</th>
+        <th>Alpha Tag</th>
+        <th>Mode</th>
+        <th>Description</th>
+        <th>Tag</th>
+        <th>Category</th>
+        <th>Priority</th>
+        <th>System</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<div id="empty" class="empty-state" style="display:none;">
+  <h2>No talkgroups found</h2>
+  <p>Import a CSV file or adjust your search filters.</p>
+</div>
+
+<div class="pagination" id="pagination" style="display:none;">
+  <button id="prev-btn" disabled>&laquo; Previous</button>
+  <span class="page-info" id="page-info"></span>
+  <button id="next-btn" disabled>Next &raquo;</button>
+</div>
+
+<script>
+const API = '/api/v1';
+const PAGE_SIZE = 100;
+
+let currentOffset = 0;
+let totalResults = 0;
+let debounceTimer = null;
+let categories = new Set();
+
+const tbody = document.getElementById('tbody');
+const searchInput = document.getElementById('search');
+const systemFilter = document.getElementById('system-filter');
+const modeFilter = document.getElementById('mode-filter');
+const categoryFilter = document.getElementById('category-filter');
+const totalCountEl = document.getElementById('total-count');
+const emptyEl = document.getElementById('empty');
+const paginationEl = document.getElementById('pagination');
+const prevBtn = document.getElementById('prev-btn');
+const nextBtn = document.getElementById('next-btn');
+const pageInfo = document.getElementById('page-info');
+
+// --- Auth ---
+function getAuthHeaders() {
+  const token = localStorage.getItem('tr-engine-token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+// --- Load systems ---
+async function loadSystems() {
+  try {
+    const res = await fetch(`${API}/systems`, { headers: getAuthHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    const systems = data.systems || [];
+    systems.forEach(s => {
+      const opt1 = new Option(s.name || `System ${s.system_id}`, s.system_id);
+      systemFilter.appendChild(opt1);
+      const opt2 = new Option(`${s.name || s.system_id} (ID: ${s.system_id})`, s.system_id);
+      document.getElementById('import-system').appendChild(opt2);
+    });
+  } catch (e) { /* ignore */ }
+}
+
+// --- Search directory ---
+async function search() {
+  const params = new URLSearchParams();
+  params.set('limit', PAGE_SIZE);
+  params.set('offset', currentOffset);
+
+  const q = searchInput.value.trim();
+  if (q) params.set('search', q);
+  const sys = systemFilter.value;
+  if (sys) params.set('system_id', sys);
+  const mode = modeFilter.value;
+  if (mode) params.set('mode', mode);
+  const cat = categoryFilter.value;
+  if (cat) params.set('category', cat);
+
+  try {
+    const res = await fetch(`${API}/talkgroup-directory?${params}`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    totalResults = data.total || 0;
+    renderTable(data.talkgroups || []);
+    renderPagination();
+  } catch (e) {
+    tbody.innerHTML = '';
+    totalCountEl.textContent = '';
+    emptyEl.style.display = 'block';
+    paginationEl.style.display = 'none';
+  }
+}
+
+function renderTable(rows) {
+  totalCountEl.textContent = `(${totalResults.toLocaleString()})`;
+  if (rows.length === 0) {
+    tbody.innerHTML = '';
+    emptyEl.style.display = 'block';
+    paginationEl.style.display = 'none';
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  // Collect categories for filter
+  rows.forEach(r => { if (r.category) categories.add(r.category); });
+  updateCategoryFilter();
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="tgid">${r.tgid}</td>
+      <td class="alpha">${esc(r.alpha_tag || '')}</td>
+      <td>${modeBadge(r.mode)}</td>
+      <td class="desc-text">${esc(r.description || '')}</td>
+      <td class="tag-text">${esc(r.tag || '')}</td>
+      <td class="cat-text">${esc(r.category || '')}</td>
+      <td class="priority-text">${r.priority != null ? r.priority : ''}</td>
+      <td class="sys-name">${esc(r.system_name || String(r.system_id))}</td>
+    </tr>
+  `).join('');
+}
+
+function renderPagination() {
+  if (totalResults <= PAGE_SIZE) {
+    paginationEl.style.display = 'none';
+    return;
+  }
+  paginationEl.style.display = 'flex';
+  const page = Math.floor(currentOffset / PAGE_SIZE) + 1;
+  const pages = Math.ceil(totalResults / PAGE_SIZE);
+  pageInfo.textContent = `Page ${page} of ${pages}`;
+  prevBtn.disabled = currentOffset === 0;
+  nextBtn.disabled = currentOffset + PAGE_SIZE >= totalResults;
+}
+
+function modeBadge(mode) {
+  if (!mode) return '';
+  const cls = mode.charAt(0).toLowerCase();
+  return `<span class="mode-badge ${cls}">${esc(mode)}</span>`;
+}
+
+function esc(s) {
+  const el = document.createElement('span');
+  el.textContent = s;
+  return el.innerHTML;
+}
+
+function updateCategoryFilter() {
+  const current = categoryFilter.value;
+  const existing = new Set();
+  for (const opt of categoryFilter.options) existing.add(opt.value);
+  const sorted = [...categories].sort();
+  sorted.forEach(c => {
+    if (!existing.has(c)) {
+      categoryFilter.appendChild(new Option(c, c));
+    }
+  });
+  categoryFilter.value = current;
+}
+
+// --- Events ---
+searchInput.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => { currentOffset = 0; search(); }, 300);
+});
+
+[systemFilter, modeFilter, categoryFilter].forEach(el => {
+  el.addEventListener('change', () => { currentOffset = 0; search(); });
+});
+
+prevBtn.addEventListener('click', () => {
+  currentOffset = Math.max(0, currentOffset - PAGE_SIZE);
+  search();
+});
+nextBtn.addEventListener('click', () => {
+  currentOffset += PAGE_SIZE;
+  search();
+});
+
+// --- Import ---
+const importPanel = document.getElementById('import-panel');
+const importToggle = document.getElementById('import-toggle-btn');
+const importFile = document.getElementById('import-file');
+const importBtn = document.getElementById('import-btn');
+const importSystem = document.getElementById('import-system');
+const importSystemName = document.getElementById('import-system-name');
+const fileNameEl = document.getElementById('file-name');
+const importStatus = document.getElementById('import-status');
+
+importToggle.addEventListener('click', () => {
+  importPanel.classList.toggle('visible');
+  importToggle.textContent = importPanel.classList.contains('visible') ? 'Cancel' : 'Import CSV';
+});
+
+importFile.addEventListener('change', () => {
+  if (importFile.files.length) {
+    fileNameEl.textContent = importFile.files[0].name;
+    updateImportBtn();
+  } else {
+    fileNameEl.textContent = 'No file selected';
+    updateImportBtn();
+  }
+});
+
+importSystem.addEventListener('change', () => {
+  if (importSystem.value) importSystemName.value = '';
+  updateImportBtn();
+});
+importSystemName.addEventListener('input', () => {
+  if (importSystemName.value) importSystem.value = '';
+  updateImportBtn();
+});
+
+function updateImportBtn() {
+  const hasFile = importFile.files.length > 0;
+  const hasSystem = importSystem.value || importSystemName.value.trim();
+  importBtn.disabled = !(hasFile && hasSystem);
+}
+
+importBtn.addEventListener('click', async () => {
+  const file = importFile.files[0];
+  if (!file) return;
+
+  const params = new URLSearchParams();
+  if (importSystem.value) {
+    params.set('system_id', importSystem.value);
+  } else {
+    params.set('system_name', importSystemName.value.trim());
+  }
+
+  importBtn.disabled = true;
+  importBtn.textContent = 'Uploading...';
+  importStatus.textContent = '';
+  importStatus.className = 'import-status';
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+
+    const res = await fetch(`${API}/talkgroup-directory/import?${params}`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: form,
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    importStatus.textContent = `Imported ${data.imported.toLocaleString()} of ${data.total.toLocaleString()} talkgroups into system ${data.system_id}.`;
+    importStatus.className = 'import-status success';
+
+    // Refresh systems list and search results
+    const sysOpts = document.querySelectorAll('#system-filter option, #import-system option');
+    sysOpts.forEach(o => { if (o.value) o.remove(); });
+    await loadSystems();
+    currentOffset = 0;
+    search();
+  } catch (e) {
+    importStatus.textContent = `Import failed: ${e.message}`;
+    importStatus.className = 'import-status error';
+  } finally {
+    importBtn.disabled = false;
+    importBtn.textContent = 'Upload';
+    updateImportBtn();
+  }
+});
+
+// --- Init ---
+loadSystems().then(() => search());
+</script>
+</body>
+</html>

@@ -151,15 +151,20 @@ func LoadTalkgroupCSV(path string) ([]TalkgroupEntry, error) {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
+	return ParseTalkgroupCSV(f)
+}
 
-	r := csv.NewReader(f)
+// ParseTalkgroupCSV parses trunk-recorder talkgroup CSV data from a reader.
+// Header-aware: matches columns by name, not position.
+func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, error) {
+	r := csv.NewReader(reader)
 	r.TrimLeadingSpace = true
 	r.LazyQuotes = true
 
 	// Read header row
 	header, err := r.Read()
 	if err != nil {
-		return nil, fmt.Errorf("read header from %s: %w", path, err)
+		return nil, fmt.Errorf("read CSV header: %w", err)
 	}
 
 	// Build column index map (case-insensitive, trimmed)
@@ -171,7 +176,7 @@ func LoadTalkgroupCSV(path string) ([]TalkgroupEntry, error) {
 	// Require at minimum the Decimal column
 	decIdx, ok := colIdx["decimal"]
 	if !ok {
-		return nil, fmt.Errorf("%s: missing required 'Decimal' column in header", path)
+		return nil, fmt.Errorf("missing required 'Decimal' column in header")
 	}
 
 	var entries []TalkgroupEntry
