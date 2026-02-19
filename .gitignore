@@ -4,6 +4,7 @@
 *.dll
 *.so
 *.dylib
+tr-engine-linux
 
 # Test binary
 *.test
