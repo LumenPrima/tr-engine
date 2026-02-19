@@ -1,0 +1,21 @@
+services:
+  whisper:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v3}
+      - DEVICE=${DEVICE:-auto}
+      - COMPUTE_TYPE=${COMPUTE_TYPE:-float16}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:

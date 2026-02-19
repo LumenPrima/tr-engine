@@ -46,6 +46,18 @@ type Config struct {
 	WhisperTimeout     time.Duration `env:"WHISPER_TIMEOUT" envDefault:"30s"`
 	WhisperTemperature float64       `env:"WHISPER_TEMPERATURE" envDefault:"0.1"`
 	WhisperLanguage    string        `env:"WHISPER_LANGUAGE" envDefault:"en"`
+	WhisperPrompt      string        `env:"WHISPER_PROMPT"`
+	WhisperHotwords    string        `env:"WHISPER_HOTWORDS"`
+	WhisperBeamSize    int           `env:"WHISPER_BEAM_SIZE" envDefault:"0"`
+
+	// Anti-hallucination parameters (require custom whisper-server or compatible endpoint)
+	WhisperRepetitionPenalty          float64 `env:"WHISPER_REPETITION_PENALTY" envDefault:"0"`
+	WhisperNoRepeatNgram              int     `env:"WHISPER_NO_REPEAT_NGRAM" envDefault:"0"`
+	WhisperConditionOnPrev            *bool   `env:"WHISPER_CONDITION_ON_PREV"`
+	WhisperNoSpeechThreshold          float64 `env:"WHISPER_NO_SPEECH_THRESHOLD" envDefault:"0"`
+	WhisperHallucinationThreshold     float64 `env:"WHISPER_HALLUCINATION_THRESHOLD" envDefault:"0"`
+	WhisperMaxTokens                  int     `env:"WHISPER_MAX_TOKENS" envDefault:"0"`
+	WhisperVadFilter                  bool    `env:"WHISPER_VAD_FILTER" envDefault:"false"`
 
 	// LLM post-processing (optional — disabled when LLM_URL is empty; not yet implemented)
 	LLMUrl     string        `env:"LLM_URL"`

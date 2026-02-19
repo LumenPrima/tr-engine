@@ -22,9 +22,28 @@ type WhisperClient struct {
 }
 
 // TranscribeOpts are per-request options for the Whisper API.
+// Zero-value fields are omitted from the request, preserving backward
+// compatibility with servers that ignore unknown form fields (e.g. speaches).
 type TranscribeOpts struct {
+	// Standard OpenAI params
 	Temperature float64
 	Language    string
+	Prompt      string // initial_prompt / domain vocabulary
+	Hotwords    string // vocabulary boost terms
+
+	// Decoding
+	BeamSize int // 0 = server default (typically 5)
+
+	// Anti-hallucination
+	RepetitionPenalty           float64 // >1.0 penalizes repetition (0 = omit)
+	NoRepeatNgramSize           int     // block n-gram repetition (0 = disabled)
+	ConditionOnPreviousText     *bool   // nil = omit (server default); false = prevent cascading
+	NoSpeechThreshold           float64 // 0 = omit (server default ~0.6)
+	HallucinationSilenceThreshold float64 // 0 = omit/disabled
+	MaxNewTokens                int     // 0 = omit/unlimited
+
+	// VAD
+	VadFilter bool
 }
 
 // WhisperResponse is the parsed response from the Whisper API (verbose_json format).
@@ -53,8 +72,8 @@ func NewWhisperClient(url, model string, timeout time.Duration) *WhisperClient {
 }
 
 // Transcribe sends an audio file to the Whisper API and returns the result.
-// Uses multipart/form-data with: file, model, language, temperature,
-// response_format=verbose_json, timestamp_granularities[]=word.
+// Uses multipart/form-data. Only non-default parameters are sent, so this
+// works with speaches, the custom whisper-server, or any OpenAI-compatible endpoint.
 func (wc *WhisperClient) Transcribe(ctx context.Context, audioPath string, opts TranscribeOpts) (*WhisperResponse, error) {
 	f, err := os.Open(audioPath)
 	if err != nil {
@@ -94,6 +113,52 @@ func (wc *WhisperClient) Transcribe(ctx context.Context, audioPath string, opts 
 
 	// Request word-level timestamps
 	w.WriteField("timestamp_granularities[]", "word")
+
+	// --- Extended parameters (only sent when non-default) ---
+
+	if opts.Prompt != "" {
+		w.WriteField("prompt", opts.Prompt)
+	}
+
+	if opts.Hotwords != "" {
+		w.WriteField("hotwords", opts.Hotwords)
+	}
+
+	if opts.BeamSize > 0 {
+		w.WriteField("beam_size", fmt.Sprintf("%d", opts.BeamSize))
+	}
+
+	if opts.RepetitionPenalty > 0 && opts.RepetitionPenalty != 1.0 {
+		w.WriteField("repetition_penalty", fmt.Sprintf("%.2f", opts.RepetitionPenalty))
+	}
+
+	if opts.NoRepeatNgramSize > 0 {
+		w.WriteField("no_repeat_ngram_size", fmt.Sprintf("%d", opts.NoRepeatNgramSize))
+	}
+
+	if opts.ConditionOnPreviousText != nil {
+		if *opts.ConditionOnPreviousText {
+			w.WriteField("condition_on_previous_text", "true")
+		} else {
+			w.WriteField("condition_on_previous_text", "false")
+		}
+	}
+
+	if opts.NoSpeechThreshold > 0 {
+		w.WriteField("no_speech_threshold", fmt.Sprintf("%.2f", opts.NoSpeechThreshold))
+	}
+
+	if opts.HallucinationSilenceThreshold > 0 {
+		w.WriteField("hallucination_silence_threshold", fmt.Sprintf("%.2f", opts.HallucinationSilenceThreshold))
+	}
+
+	if opts.MaxNewTokens > 0 {
+		w.WriteField("max_new_tokens", fmt.Sprintf("%d", opts.MaxNewTokens))
+	}
+
+	if opts.VadFilter {
+		w.WriteField("vad_filter", "true")
+	}
 
 	w.Close()
 

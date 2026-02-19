@@ -137,12 +137,23 @@ func main() {
 			WhisperTimeout:  cfg.WhisperTimeout,
 			Temperature:     cfg.WhisperTemperature,
 			Language:        cfg.WhisperLanguage,
+			Prompt:          cfg.WhisperPrompt,
+			Hotwords:        cfg.WhisperHotwords,
+			BeamSize:        cfg.WhisperBeamSize,
 			PreprocessAudio: cfg.PreprocessAudio,
 			Workers:         cfg.TranscribeWorkers,
 			QueueSize:       cfg.TranscribeQueueSize,
 			MinDuration:     cfg.TranscribeMinDuration,
 			MaxDuration:     cfg.TranscribeMaxDuration,
 			Log:             log.With().Str("component", "transcribe").Logger(),
+
+			RepetitionPenalty:             cfg.WhisperRepetitionPenalty,
+			NoRepeatNgramSize:             cfg.WhisperNoRepeatNgram,
+			ConditionOnPreviousText:       cfg.WhisperConditionOnPrev,
+			NoSpeechThreshold:             cfg.WhisperNoSpeechThreshold,
+			HallucinationSilenceThreshold: cfg.WhisperHallucinationThreshold,
+			MaxNewTokens:                  cfg.WhisperMaxTokens,
+			VadFilter:                     cfg.WhisperVadFilter,
 		}
 		log.Info().
 			Str("whisper_url", cfg.WhisperURL).

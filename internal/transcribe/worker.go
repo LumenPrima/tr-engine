@@ -50,6 +50,9 @@ type WorkerPoolOptions struct {
 	WhisperTimeout  time.Duration
 	Temperature     float64
 	Language        string
+	Prompt          string
+	Hotwords        string
+	BeamSize        int
 	PreprocessAudio bool
 	Workers         int
 	QueueSize       int
@@ -57,6 +60,15 @@ type WorkerPoolOptions struct {
 	MaxDuration     float64
 	PublishEvent    EventPublishFunc
 	Log             zerolog.Logger
+
+	// Anti-hallucination
+	RepetitionPenalty             float64
+	NoRepeatNgramSize             int
+	ConditionOnPreviousText       *bool
+	NoSpeechThreshold             float64
+	HallucinationSilenceThreshold float64
+	MaxNewTokens                  int
+	VadFilter                     bool
 }
 
 // WorkerPool manages transcription workers.
@@ -190,8 +202,18 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 
 	// 3. Send to Whisper
 	whisperResp, err := wp.whisper.Transcribe(ctx, transcribePath, TranscribeOpts{
-		Temperature: wp.opts.Temperature,
-		Language:    wp.opts.Language,
+		Temperature:                   wp.opts.Temperature,
+		Language:                      wp.opts.Language,
+		Prompt:                        wp.opts.Prompt,
+		Hotwords:                      wp.opts.Hotwords,
+		BeamSize:                      wp.opts.BeamSize,
+		RepetitionPenalty:             wp.opts.RepetitionPenalty,
+		NoRepeatNgramSize:             wp.opts.NoRepeatNgramSize,
+		ConditionOnPreviousText:       wp.opts.ConditionOnPreviousText,
+		NoSpeechThreshold:             wp.opts.NoSpeechThreshold,
+		HallucinationSilenceThreshold: wp.opts.HallucinationSilenceThreshold,
+		MaxNewTokens:                  wp.opts.MaxNewTokens,
+		VadFilter:                     wp.opts.VadFilter,
 	})
 	if err != nil {
 		return errorf("whisper: %w", err)
