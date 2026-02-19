@@ -359,6 +359,7 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 		if err := p.db.UpdateCallFilename(ctx, callID, callStartTime, audioPath); err != nil {
 			p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to set call_filename from watched file")
 		}
+		meta.Filename = audioPath // pass to transcription job
 	}
 
 	// Process srcList/freqList
