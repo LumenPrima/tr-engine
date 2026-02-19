@@ -74,13 +74,13 @@ func ParseSrcList(srcListJSON json.RawMessage, totalDuration float64) []Transmis
 	return txs
 }
 
-// AttributeWords correlates Whisper word timestamps with transmission boundaries
+// AttributeWords correlates word timestamps with transmission boundaries
 // to determine which radio unit said each word.
 //
 // For each word, the midpoint (start+end)/2 is compared against transmission
 // boundaries [Pos, Pos+Duration). Words falling outside all transmissions
 // are attributed to the nearest transmission.
-func AttributeWords(words []WhisperWord, transmissions []Transmission) *TranscriptionWords {
+func AttributeWords(words []Word, transmissions []Transmission) *TranscriptionWords {
 	if len(words) == 0 {
 		return &TranscriptionWords{
 			Words:    []AttributedWord{},

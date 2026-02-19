@@ -40,7 +40,8 @@ type Config struct {
 	RawIncludeTopics string `env:"RAW_INCLUDE_TOPICS"`
 	RawExcludeTopics string `env:"RAW_EXCLUDE_TOPICS"`
 
-	// Transcription (optional — disabled when WHISPER_URL is empty)
+	// Transcription (optional — disabled when no STT provider is configured)
+	STTProvider        string `env:"STT_PROVIDER" envDefault:"whisper"`
 	WhisperURL         string        `env:"WHISPER_URL"`
 	WhisperModel       string        `env:"WHISPER_MODEL"`
 	WhisperTimeout     time.Duration `env:"WHISPER_TIMEOUT" envDefault:"30s"`
@@ -58,6 +59,11 @@ type Config struct {
 	WhisperHallucinationThreshold     float64 `env:"WHISPER_HALLUCINATION_THRESHOLD" envDefault:"0"`
 	WhisperMaxTokens                  int     `env:"WHISPER_MAX_TOKENS" envDefault:"0"`
 	WhisperVadFilter                  bool    `env:"WHISPER_VAD_FILTER" envDefault:"false"`
+
+	// ElevenLabs STT (alternative to Whisper; used when STT_PROVIDER=elevenlabs)
+	ElevenLabsAPIKey   string `env:"ELEVENLABS_API_KEY"`
+	ElevenLabsModel    string `env:"ELEVENLABS_MODEL" envDefault:"scribe_v2"`
+	ElevenLabsKeyterms string `env:"ELEVENLABS_KEYTERMS"`
 
 	// LLM post-processing (optional — disabled when LLM_URL is empty; not yet implemented)
 	LLMUrl     string        `env:"LLM_URL"`

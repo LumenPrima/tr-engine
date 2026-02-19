@@ -45,9 +45,8 @@ type WorkerPoolOptions struct {
 	DB              *database.DB
 	AudioDir        string
 	TRAudioDir      string
-	WhisperURL      string
-	WhisperModel    string
-	WhisperTimeout  time.Duration
+	Provider        Provider
+	ProviderTimeout time.Duration // used for per-job context timeout
 	Temperature     float64
 	Language        string
 	Prompt          string
@@ -61,7 +60,7 @@ type WorkerPoolOptions struct {
 	PublishEvent    EventPublishFunc
 	Log             zerolog.Logger
 
-	// Anti-hallucination
+	// Anti-hallucination (Whisper-specific; ignored by other providers)
 	RepetitionPenalty             float64
 	NoRepeatNgramSize             int
 	ConditionOnPreviousText       *bool
@@ -73,14 +72,14 @@ type WorkerPoolOptions struct {
 
 // WorkerPool manages transcription workers.
 type WorkerPool struct {
-	jobs    chan Job
-	db      *database.DB
-	whisper *WhisperClient
-	opts    WorkerPoolOptions
-	log     zerolog.Logger
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
+	jobs     chan Job
+	db       *database.DB
+	provider Provider
+	opts     WorkerPoolOptions
+	log      zerolog.Logger
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 
 	completed atomic.Int64
 	failed    atomic.Int64
@@ -90,13 +89,13 @@ type WorkerPool struct {
 func NewWorkerPool(opts WorkerPoolOptions) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
-		jobs:    make(chan Job, opts.QueueSize),
-		db:      opts.DB,
-		whisper: NewWhisperClient(opts.WhisperURL, opts.WhisperModel, opts.WhisperTimeout),
-		opts:    opts,
-		log:     opts.Log,
-		ctx:     ctx,
-		cancel:  cancel,
+		jobs:     make(chan Job, opts.QueueSize),
+		db:       opts.DB,
+		provider: opts.Provider,
+		opts:     opts,
+		log:      opts.Log,
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 }
 
@@ -154,8 +153,8 @@ func (wp *WorkerPool) MinDuration() float64 { return wp.opts.MinDuration }
 // MaxDuration returns the maximum call duration for transcription.
 func (wp *WorkerPool) MaxDuration() float64 { return wp.opts.MaxDuration }
 
-// Model returns the configured Whisper model name.
-func (wp *WorkerPool) Model() string { return wp.opts.WhisperModel }
+// Model returns the configured STT model name.
+func (wp *WorkerPool) Model() string { return wp.provider.Model() }
 
 // Workers returns the number of worker goroutines.
 func (wp *WorkerPool) Workers() int { return wp.opts.Workers }
@@ -179,7 +178,7 @@ func (wp *WorkerPool) worker(id int) {
 
 func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(wp.ctx, wp.opts.WhisperTimeout+10*time.Second)
+	ctx, cancel := context.WithTimeout(wp.ctx, wp.opts.ProviderTimeout+10*time.Second)
 	defer cancel()
 
 	// 1. Resolve audio file path
@@ -200,8 +199,8 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 		}
 	}
 
-	// 3. Send to Whisper
-	whisperResp, err := wp.whisper.Transcribe(ctx, transcribePath, TranscribeOpts{
+	// 3. Send to STT provider
+	resp, err := wp.provider.Transcribe(ctx, transcribePath, TranscribeOpts{
 		Temperature:                   wp.opts.Temperature,
 		Language:                      wp.opts.Language,
 		Prompt:                        wp.opts.Prompt,
@@ -216,29 +215,29 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 		VadFilter:                     wp.opts.VadFilter,
 	})
 	if err != nil {
-		return errorf("whisper: %w", err)
+		return errorf("%s: %w", wp.provider.Name(), err)
 	}
 
-	text := strings.TrimSpace(whisperResp.Text)
+	text := strings.TrimSpace(resp.Text)
 	if text == "" {
-		log.Debug().Int64("call_id", job.CallID).Msg("whisper returned empty text, skipping")
+		log.Debug().Int64("call_id", job.CallID).Msg("provider returned empty text, skipping")
 		return nil
 	}
 
 	// 4. Unit attribution — correlate word timestamps with src_list
 	totalDuration := float64(job.Duration)
-	if whisperResp.Duration > 0 {
-		totalDuration = whisperResp.Duration
+	if resp.Duration > 0 {
+		totalDuration = resp.Duration
 	}
 	transmissions := ParseSrcList(job.SrcList, totalDuration)
-	tw := AttributeWords(whisperResp.Words, transmissions)
+	tw := AttributeWords(resp.Words, transmissions)
 
 	wordsJSON, err := json.Marshal(tw)
 	if err != nil {
 		return errorf("marshal words: %w", err)
 	}
 
-	wordCount := len(whisperResp.Words)
+	wordCount := len(resp.Words)
 	if wordCount == 0 {
 		// Fallback: count words from text
 		wordCount = len(strings.Fields(text))
@@ -253,9 +252,9 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 		Text:          text,
 		Source:        "auto",
 		IsPrimary:     true,
-		Language:      whisperResp.Language,
-		Model:         wp.opts.WhisperModel,
-		Provider:      "whisper",
+		Language:      resp.Language,
+		Model:         wp.provider.Model(),
+		Provider:      wp.provider.Name(),
 		WordCount:     wordCount,
 		DurationMs:    durationMs,
 		Words:         wordsJSON,
@@ -275,7 +274,7 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 			"text":        text,
 			"word_count":  wordCount,
 			"segments":    len(tw.Segments),
-			"model":       wp.opts.WhisperModel,
+			"model":       wp.provider.Model(),
 			"duration_ms": durationMs,
 		})
 	}

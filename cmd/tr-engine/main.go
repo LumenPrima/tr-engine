@@ -125,16 +125,30 @@ func main() {
 		log.Info().Msg("mqtt not configured (watch-only mode)")
 	}
 
-	// Transcription (optional — disabled when WHISPER_URL is empty)
+	// Transcription (optional — build provider based on STT_PROVIDER)
 	var transcribeOpts *transcribe.WorkerPoolOptions
-	if cfg.WhisperURL != "" {
+	var sttProvider transcribe.Provider
+	switch cfg.STTProvider {
+	case "whisper":
+		if cfg.WhisperURL != "" {
+			sttProvider = transcribe.NewWhisperClient(cfg.WhisperURL, cfg.WhisperModel, cfg.WhisperTimeout)
+		}
+	case "elevenlabs":
+		if cfg.ElevenLabsAPIKey == "" {
+			log.Fatal().Msg("STT_PROVIDER=elevenlabs requires ELEVENLABS_API_KEY")
+		}
+		sttProvider = transcribe.NewElevenLabsClient(cfg.ElevenLabsAPIKey, cfg.ElevenLabsModel, cfg.ElevenLabsKeyterms, cfg.WhisperTimeout)
+	default:
+		log.Fatal().Str("provider", cfg.STTProvider).Msg("unknown STT_PROVIDER (valid: whisper, elevenlabs)")
+	}
+
+	if sttProvider != nil {
 		transcribeOpts = &transcribe.WorkerPoolOptions{
 			DB:              db,
 			AudioDir:        cfg.AudioDir,
 			TRAudioDir:      cfg.TRAudioDir,
-			WhisperURL:      cfg.WhisperURL,
-			WhisperModel:    cfg.WhisperModel,
-			WhisperTimeout:  cfg.WhisperTimeout,
+			Provider:        sttProvider,
+			ProviderTimeout: cfg.WhisperTimeout,
 			Temperature:     cfg.WhisperTemperature,
 			Language:        cfg.WhisperLanguage,
 			Prompt:          cfg.WhisperPrompt,
@@ -156,8 +170,8 @@ func main() {
 			VadFilter:                     cfg.WhisperVadFilter,
 		}
 		log.Info().
-			Str("whisper_url", cfg.WhisperURL).
-			Str("model", cfg.WhisperModel).
+			Str("provider", sttProvider.Name()).
+			Str("model", sttProvider.Model()).
 			Int("workers", cfg.TranscribeWorkers).
 			Msg("transcription enabled")
 	}

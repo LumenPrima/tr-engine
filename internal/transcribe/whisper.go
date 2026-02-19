@@ -14,6 +14,7 @@ import (
 )
 
 // WhisperClient calls an OpenAI-compatible /v1/audio/transcriptions endpoint.
+// Implements the Provider interface.
 type WhisperClient struct {
 	url     string
 	model   string
@@ -35,27 +36,27 @@ type TranscribeOpts struct {
 	BeamSize int // 0 = server default (typically 5)
 
 	// Anti-hallucination
-	RepetitionPenalty           float64 // >1.0 penalizes repetition (0 = omit)
-	NoRepeatNgramSize           int     // block n-gram repetition (0 = disabled)
-	ConditionOnPreviousText     *bool   // nil = omit (server default); false = prevent cascading
-	NoSpeechThreshold           float64 // 0 = omit (server default ~0.6)
+	RepetitionPenalty             float64 // >1.0 penalizes repetition (0 = omit)
+	NoRepeatNgramSize             int     // block n-gram repetition (0 = disabled)
+	ConditionOnPreviousText       *bool   // nil = omit (server default); false = prevent cascading
+	NoSpeechThreshold             float64 // 0 = omit (server default ~0.6)
 	HallucinationSilenceThreshold float64 // 0 = omit/disabled
-	MaxNewTokens                int     // 0 = omit/unlimited
+	MaxNewTokens                  int     // 0 = omit/unlimited
 
 	// VAD
 	VadFilter bool
 }
 
-// WhisperResponse is the parsed response from the Whisper API (verbose_json format).
-type WhisperResponse struct {
+// whisperResponse is the parsed response from the Whisper API (verbose_json format).
+type whisperResponse struct {
 	Text     string        `json:"text"`
 	Language string        `json:"language"`
 	Duration float64       `json:"duration"`
-	Words    []WhisperWord `json:"words"`
+	Words    []whisperWord `json:"words"`
 }
 
-// WhisperWord is a word with start/end timestamps from Whisper.
-type WhisperWord struct {
+// whisperWord is a word with start/end timestamps from Whisper.
+type whisperWord struct {
 	Word  string  `json:"word"`
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
@@ -71,10 +72,16 @@ func NewWhisperClient(url, model string, timeout time.Duration) *WhisperClient {
 	}
 }
 
+// Name returns the provider name.
+func (wc *WhisperClient) Name() string { return "whisper" }
+
+// Model returns the configured model identifier.
+func (wc *WhisperClient) Model() string { return wc.model }
+
 // Transcribe sends an audio file to the Whisper API and returns the result.
 // Uses multipart/form-data. Only non-default parameters are sent, so this
 // works with speaches, the custom whisper-server, or any OpenAI-compatible endpoint.
-func (wc *WhisperClient) Transcribe(ctx context.Context, audioPath string, opts TranscribeOpts) (*WhisperResponse, error) {
+func (wc *WhisperClient) Transcribe(ctx context.Context, audioPath string, opts TranscribeOpts) (*Response, error) {
 	f, err := os.Open(audioPath)
 	if err != nil {
 		return nil, fmt.Errorf("open audio file: %w", err)
@@ -183,10 +190,25 @@ func (wc *WhisperClient) Transcribe(ctx context.Context, audioPath string, opts 
 		return nil, fmt.Errorf("whisper API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	var result WhisperResponse
+	var result whisperResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	return &result, nil
+	// Convert internal types to common Response/Word types
+	words := make([]Word, len(result.Words))
+	for i, ww := range result.Words {
+		words[i] = Word{
+			Word:  ww.Word,
+			Start: ww.Start,
+			End:   ww.End,
+		}
+	}
+
+	return &Response{
+		Text:     result.Text,
+		Language: result.Language,
+		Duration: result.Duration,
+		Words:    words,
+	}, nil
 }
