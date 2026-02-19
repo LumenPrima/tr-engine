@@ -11,6 +11,7 @@ type StatsResponse struct {
 	Talkgroups         int              `json:"talkgroups"`
 	Units              int              `json:"units"`
 	TotalCalls         int              `json:"total_calls"`
+	Calls30d           int              `json:"calls_30d"`
 	Calls24h           int              `json:"calls_24h"`
 	Calls1h            int              `json:"calls_1h"`
 	TotalDurationHours float64          `json:"total_duration_hours"`
@@ -36,11 +37,12 @@ func (db *DB) GetStats(ctx context.Context) (*StatsResponse, error) {
 			(SELECT count(*) FROM systems WHERE deleted_at IS NULL),
 			(SELECT count(*) FROM talkgroups),
 			(SELECT count(*) FROM units),
+			(SELECT count(*) FROM calls),
 			(SELECT count(*) FROM calls WHERE start_time > now() - interval '30 days'),
 			(SELECT count(*) FROM calls WHERE start_time > now() - interval '24 hours'),
 			(SELECT count(*) FROM calls WHERE start_time > now() - interval '1 hour'),
-			COALESCE((SELECT sum(duration) / 3600.0 FROM calls WHERE start_time > now() - interval '30 days' AND duration IS NOT NULL), 0)
-	`).Scan(&s.Systems, &s.Talkgroups, &s.Units, &s.TotalCalls, &s.Calls24h, &s.Calls1h, &s.TotalDurationHours)
+			COALESCE((SELECT sum(duration) / 3600.0 FROM calls WHERE duration IS NOT NULL), 0)
+	`).Scan(&s.Systems, &s.Talkgroups, &s.Units, &s.TotalCalls, &s.Calls30d, &s.Calls24h, &s.Calls1h, &s.TotalDurationHours)
 	if err != nil {
 		return nil, err
 	}
