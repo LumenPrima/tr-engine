@@ -363,7 +363,7 @@ body {
 .player-progress:hover .player-progress-fill { background: var(--white); }
 
 /* ── Voice message links ── */
-.voice-play { color: var(--nick-cyan); font-size: 15px; margin-right: 2px; }
+.voice-play { color: var(--nick-cyan); font-size: 15px; margin-right: 2px; cursor: pointer; }
 .voice-dur { color: var(--text); }
 .voice-listen {
   color: var(--text-dim);
@@ -374,6 +374,10 @@ body {
   transition: color 0.15s;
 }
 .voice-listen:hover { color: var(--nick-cyan); border-bottom-color: var(--nick-cyan); }
+.voice-text { color: var(--text); }
+.voice-controls { color: var(--text-muted); font-size: 14px; margin-left: 6px; white-space: nowrap; }
+.voice-controls .voice-play { font-size: 13px; }
+.voice-controls .voice-listen { margin-left: 2px; }
 .msg.now-playing { background: rgba(92, 224, 216, 0.04); }
 .msg.now-playing .voice-listen { color: var(--nick-cyan); border-bottom-color: var(--nick-cyan); }
 
@@ -1084,37 +1088,63 @@ function appendMsgDOM(m) {
     const color = nickColor(m.nick || '');
     const nickHtml = `<span class="ts">${esc(m.ts)}</span><span class="nick" style="color:${color}" data-nick="${esc(m.nick || '')}">${esc(m.nick || '???')}</span>`;
 
-    // Voice message with audio link
+    // Voice message with audio link (and optional transcription text)
     if (m.callId) {
       const dur = m.duration || '';
       const body = document.createElement('span');
       body.className = 'body';
 
-      const play = document.createElement('span');
-      play.className = 'voice-play';
-      play.textContent = '▶';
-      body.appendChild(play);
+      if (m.text) {
+        // Transcription text with compact audio controls
+        const textSpan = document.createElement('span');
+        textSpan.className = 'voice-text';
+        textSpan.textContent = m.text;
+        body.appendChild(textSpan);
 
-      if (dur) {
-        const durSpan = document.createElement('span');
-        durSpan.className = 'voice-dur';
-        durSpan.textContent = ' ' + dur + ' ';
-        body.appendChild(durSpan);
+        const controls = document.createElement('span');
+        controls.className = 'voice-controls';
+        const play = document.createElement('span');
+        play.className = 'voice-play';
+        play.textContent = '▶';
+        play.addEventListener('click', (e) => {
+          e.preventDefault();
+          playCall(m.callId, m.nick, m.channel, div);
+        });
+        controls.appendChild(play);
+        const listen = document.createElement('a');
+        listen.className = 'voice-listen';
+        listen.textContent = dur || 'listen';
+        listen.href = '#';
+        listen.addEventListener('click', (e) => {
+          e.preventDefault();
+          playCall(m.callId, m.nick, m.channel, div);
+        });
+        controls.appendChild(listen);
+        body.appendChild(controls);
+      } else {
+        // No transcription yet — show play button only
+        const play = document.createElement('span');
+        play.className = 'voice-play';
+        play.textContent = '▶';
+        body.appendChild(play);
+
+        if (dur) {
+          const durSpan = document.createElement('span');
+          durSpan.className = 'voice-dur';
+          durSpan.textContent = ' ' + dur + ' ';
+          body.appendChild(durSpan);
+        }
+
+        const listen = document.createElement('a');
+        listen.className = 'voice-listen';
+        listen.textContent = 'listen';
+        listen.href = '#';
+        listen.addEventListener('click', (e) => {
+          e.preventDefault();
+          playCall(m.callId, m.nick, m.channel, div);
+        });
+        body.appendChild(listen);
       }
-
-      const listen = document.createElement('a');
-      listen.className = 'voice-listen';
-      listen.textContent = 'listen';
-      listen.href = '#';
-      listen.dataset.callId = m.callId;
-      listen.dataset.nick = m.nick || '';
-      listen.dataset.channel = m.channel || '';
-      listen.dataset.dur = dur;
-      listen.addEventListener('click', (e) => {
-        e.preventDefault();
-        playCall(m.callId, m.nick, m.channel, div);
-      });
-      body.appendChild(listen);
 
       div.innerHTML = nickHtml;
       div.appendChild(body);
@@ -1475,7 +1505,8 @@ function callsToMessages(calls, chanName, systemId) {
         const dur = tx.duration ? fmtDuration(tx.duration) : '';
         if (ch) ensureUserInChannel(ch, chanName, sid, tx.src, tx.tag);
         msgs.push({
-          ts: ts(txTime), date: txTime, nick, callId: call.call_id,
+          ts: ts(txTime), date: txTime, nick, src: tx.src, callId: call.call_id,
+          pos: tx.pos || 0, txDuration: tx.duration || 0,
           duration: dur, channel: chanName,
           emergency: isEmergency || tx.emergency === 1,
         });
@@ -1544,6 +1575,10 @@ async function lazyLoadChannel(chanName, systemId, tgid) {
       renderNicklist();
     }
     renderTree();
+
+    // Fetch transcriptions for loaded calls (async, non-blocking)
+    const callIds = calls.map(c => c.call_id).filter(Boolean);
+    fetchTranscriptionsForCalls(callIds);
   } catch (err) {
     serverMsgTo(chanName, `Failed to load history: ${err.message}`);
   } finally {
@@ -1719,7 +1754,8 @@ async function bootstrapRecentCalls() {
 
           ch.messages.push({
             ts: ts(txTime), date: txTime,
-            nick,
+            nick, src: tx.src,
+            pos: tx.pos || 0, txDuration: tx.duration || 0,
             callId: call.call_id,
             duration: dur,
             channel: chanName,
@@ -1774,6 +1810,10 @@ async function bootstrapRecentCalls() {
     }
 
     renderTree();
+
+    // Fetch transcriptions for loaded calls (async, non-blocking)
+    const callIds = calls.map(c => c.call_id).filter(Boolean);
+    fetchTranscriptionsForCalls(callIds);
   } catch (err) {
     serverMsg(`ERROR fetching recent calls: ${err.message}`);
   }
@@ -1850,6 +1890,13 @@ function connectSSE() {
       titlebarLag.textContent = `decode: ${pct}%`;
     }
   });
+
+  // ── Transcription events ──
+  es.addEventListener('transcription', (e) => {
+    lastEventId = e.lastEventId;
+    const data = JSON.parse(e.data);
+    handleTranscription(data);
+  });
 }
 
 function setConnectionState(state) {
@@ -1875,6 +1922,149 @@ function setConnectionState(state) {
 // ══════════════════════════════════════════════════════════════
 // EVENT HANDLERS — Map SSE events to IRC actions
 // ══════════════════════════════════════════════════════════════
+
+/** Handle a transcription SSE event — inject text into existing call messages. */
+async function handleTranscription(data) {
+  const callId = data.call_id;
+  const chanName = resolveChannel(data.system_id, data.tgid);
+  if (!chanName) return;
+
+  const ch = channels.get(chanName);
+  if (!ch) return;
+
+  // Fetch full transcription with segments for per-unit text
+  let segments = [];
+  let fullText = data.text || '';
+  try {
+    const tx = await fetchJSON(`/calls/${callId}/transcription`);
+    if (tx.words && tx.words.segments) segments = tx.words.segments;
+    if (tx.text) fullText = tx.text;
+  } catch (err) {
+    // API fetch failed — use the full text from the SSE event
+  }
+
+  applyTranscriptionToChannel(ch, chanName, callId, fullText, segments);
+}
+
+/** Apply transcription text to messages in a channel, matching segments to units.
+ *  Uses time-overlap matching: each segment has start/end (seconds from audio start),
+ *  each message has pos/txDuration (seconds from audio start). Match by overlap. */
+function applyTranscriptionToChannel(ch, chanName, callId, fullText, segments) {
+  const callMsgs = ch.messages.filter(m => m.callId === callId);
+  if (callMsgs.length === 0) return;
+
+  if (segments.length > 0) {
+    const assigned = new Set();
+
+    for (const seg of segments) {
+      if (seg.start === 0 && seg.end === 0 && segments.length > 1) continue; // skip empty segments
+
+      let bestIdx = -1;
+      let bestOverlap = -1;
+
+      for (let i = 0; i < callMsgs.length; i++) {
+        if (assigned.has(i)) continue;
+        const m = callMsgs[i];
+
+        // Time-overlap matching: segment start/end vs message pos/txDuration
+        if (m.pos !== undefined && m.txDuration > 0 && seg.end > 0) {
+          const mEnd = m.pos + m.txDuration;
+          const overlapStart = Math.max(seg.start, m.pos);
+          const overlapEnd = Math.min(seg.end, mEnd);
+          const overlap = overlapEnd - overlapStart;
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            bestIdx = i;
+          }
+        } else if (m.src === seg.src && bestIdx === -1) {
+          // Fallback: src match (for messages without pos data)
+          bestIdx = i;
+        }
+      }
+
+      if (bestIdx >= 0) {
+        callMsgs[bestIdx].text = seg.text;
+        assigned.add(bestIdx);
+      }
+    }
+
+    // If nothing matched at all, fall back to simple assignment
+    if (assigned.size === 0) {
+      if (callMsgs.length === 1) {
+        callMsgs[0].text = fullText;
+      } else {
+        for (let i = 0; i < callMsgs.length && i < segments.length; i++) {
+          callMsgs[i].text = segments[i].text;
+        }
+      }
+    }
+  } else if (callMsgs.length === 1) {
+    callMsgs[0].text = fullText;
+  } else {
+    // No segments, multiple messages — put full text on first
+    callMsgs[0].text = fullText;
+  }
+
+  if (chanName === activeChannel) {
+    reRenderChannel(chanName);
+  }
+}
+
+/** Re-render the active channel's messages. */
+function reRenderChannel(chanName) {
+  const ch = channels.get(chanName);
+  if (!ch || chanName !== activeChannel) return;
+  const wasAtBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+  messagesEl.innerHTML = '';
+  lastRenderedDateStr = '';
+  for (const m of ch.messages) appendMsgDOM(m);
+  if (wasAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/** Batch-fetch transcriptions for a list of call IDs and apply to channel messages. */
+async function fetchTranscriptionsForCalls(callIds) {
+  if (callIds.length === 0) return;
+
+  // Use the ad-hoc query endpoint to batch-fetch
+  const idList = callIds.join(',');
+  try {
+    const resp = await fetch(`${API_BASE}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sql: `SELECT call_id, text, words->'segments' as segments FROM transcriptions WHERE call_id IN (${idList}) AND is_primary = true`,
+      }),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const rows = data.rows || [];
+    const cols = data.columns || [];
+
+    // Map column names to indices
+    const ci = {};
+    cols.forEach((c, i) => ci[c] = i);
+
+    // Build a map of call_id → {text, segments}
+    const txMap = new Map();
+    for (const row of rows) {
+      const cid = row[ci.call_id];
+      const rawSeg = row[ci.segments];
+      const segments = Array.isArray(rawSeg) ? rawSeg : [];
+      txMap.set(cid, { text: row[ci.text] || '', segments });
+    }
+
+    // Apply to all channels
+    for (const [chanName, ch] of channels) {
+      const chanCallIds = new Set(ch.messages.filter(m => m.callId && txMap.has(m.callId)).map(m => m.callId));
+      for (const callId of chanCallIds) {
+        const tx = txMap.get(callId);
+        if (tx) applyTranscriptionToChannel(ch, chanName, callId, tx.text, tx.segments);
+      }
+    }
+  } catch (err) {
+    // Silent — transcriptions are non-critical
+  }
+}
 
 function handleCallStart(call) {
   // Ensure channel exists
@@ -2054,7 +2244,8 @@ function renderCallTransmissions(chanName, callId, systemId, srcList, isEmergenc
 
     addMsg(chanName, {
       ts: ts(txTime), date: txTime,
-      nick,
+      nick, src: tx.src,
+      pos: tx.pos || 0, txDuration: tx.duration || 0,
       callId,
       duration: dur,
       channel: chanName,

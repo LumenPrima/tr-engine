@@ -138,8 +138,10 @@ func main() {
 			log.Fatal().Msg("STT_PROVIDER=elevenlabs requires ELEVENLABS_API_KEY")
 		}
 		sttProvider = transcribe.NewElevenLabsClient(cfg.ElevenLabsAPIKey, cfg.ElevenLabsModel, cfg.ElevenLabsKeyterms, cfg.WhisperTimeout)
+	case "none", "":
+		// Transcription explicitly disabled
 	default:
-		log.Fatal().Str("provider", cfg.STTProvider).Msg("unknown STT_PROVIDER (valid: whisper, elevenlabs)")
+		log.Fatal().Str("provider", cfg.STTProvider).Msg("unknown STT_PROVIDER (valid: whisper, elevenlabs, none)")
 	}
 
 	if sttProvider != nil {
