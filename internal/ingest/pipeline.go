@@ -262,6 +262,53 @@ func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, syste
 	}
 }
 
+// insertSourceTranscription inserts a pre-generated transcript directly, bypassing the STT queue.
+func (p *Pipeline) insertSourceTranscription(callID int64, startTime time.Time, systemID, tgid int, meta *AudioMetadata) {
+	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Second)
+	defer cancel()
+
+	text := strings.TrimSpace(meta.Transcript)
+	if text == "" {
+		return
+	}
+
+	wordCount := len(strings.Fields(text))
+
+	row := &database.TranscriptionRow{
+		CallID:        callID,
+		CallStartTime: startTime,
+		Text:          text,
+		Source:        "auto",
+		IsPrimary:     true,
+		Provider:      "source",
+		WordCount:     wordCount,
+		Words:         meta.TranscriptWords, // nil if not provided
+	}
+
+	id, err := p.db.InsertTranscription(ctx, row)
+	if err != nil {
+		p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to insert source transcript")
+		return
+	}
+
+	p.log.Debug().Int64("call_id", callID).Int("transcription_id", id).Msg("source transcript inserted")
+
+	// Publish SSE event
+	p.PublishEvent(EventData{
+		Type:     "transcription",
+		SystemID: systemID,
+		Tgid:     tgid,
+		Payload: map[string]any{
+			"call_id":    callID,
+			"system_id":  systemID,
+			"tgid":       tgid,
+			"text":       text,
+			"word_count": wordCount,
+			"source":     "source",
+		},
+	})
+}
+
 func derefFloat32(p *float32) float32 {
 	if p == nil {
 		return 0

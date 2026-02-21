@@ -100,7 +100,9 @@ type AudioMetadata struct {
 	ShortName           string     `json:"short_name"`
 	FreqList            []FreqItem `json:"freqList"`
 	SrcList             []SrcItem  `json:"srcList"`
-	Filename            string     `json:"filename"`
+	Filename            string          `json:"filename"`
+	Transcript          string          `json:"transcript,omitempty"`        // pre-generated transcription text
+	TranscriptWords     json.RawMessage `json:"transcript_words,omitempty"` // optional pre-built word/segment data
 }
 
 // FreqItem is a frequency entry in the audio metadata.

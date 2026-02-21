@@ -90,7 +90,11 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 
 	// Enqueue for transcription if audio was saved and call is not encrypted
 	if callID > 0 && meta.Encrypted == 0 {
-		p.enqueueTranscription(callID, callStartTime, identity.SystemID, meta)
+		if meta.Transcript != "" {
+			p.insertSourceTranscription(callID, callStartTime, identity.SystemID, meta.Talkgroup, meta)
+		} else {
+			p.enqueueTranscription(callID, callStartTime, identity.SystemID, meta)
+		}
 	}
 
 	p.log.Debug().
@@ -402,7 +406,11 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 
 	// Enqueue for transcription if not encrypted
 	if meta.Encrypted == 0 {
-		p.enqueueTranscription(callID, callStartTime, identity.SystemID, meta)
+		if meta.Transcript != "" {
+			p.insertSourceTranscription(callID, callStartTime, identity.SystemID, meta.Talkgroup, meta)
+		} else {
+			p.enqueueTranscription(callID, callStartTime, identity.SystemID, meta)
+		}
 	}
 
 	p.log.Debug().

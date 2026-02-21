@@ -99,8 +99,13 @@ type CallAPI struct {
 	PatchedTgids  []int32           `json:"patched_tgids,omitempty"`
 	SrcList       json.RawMessage   `json:"src_list,omitempty"`
 	FreqList      json.RawMessage   `json:"freq_list,omitempty"`
-	UnitIDs       []int32           `json:"unit_ids,omitempty"`
-	CallFilename  string            `json:"-"` // TR's original path, not exposed in JSON; used for audio resolution
+	UnitIDs              []int32         `json:"unit_ids,omitempty"`
+	HasTranscription     bool            `json:"has_transcription"`
+	TranscriptionStatus  string          `json:"transcription_status,omitempty"`
+	TranscriptionText    *string         `json:"transcription_text,omitempty"`
+	TranscriptionWordCt  *int            `json:"transcription_word_count,omitempty"`
+	MetadataJSON         json.RawMessage `json:"metadata_json,omitempty"`
+	CallFilename         string          `json:"-"` // TR's original path, not exposed in JSON; used for audio resolution
 }
 
 // ListCalls returns calls matching the filter with a total count.
@@ -175,7 +180,10 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			COALESCE(c.analog, false), COALESCE(c.conventional, false),
 			COALESCE(c.phase2_tdma, false), c.tdma_slot,
 			c.patched_tgids,
-			c.src_list, c.freq_list, c.unit_ids
+			c.src_list, c.freq_list, c.unit_ids,
+			COALESCE(c.has_transcription, false), COALESCE(c.transcription_status, 'none'),
+			c.transcription_text, c.transcription_word_count,
+			c.metadata_json
 		%s %s
 		ORDER BY %s
 		LIMIT %d OFFSET %d
@@ -204,6 +212,9 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			&c.Phase2TDMA, &c.TDMASlot,
 			&c.PatchedTgids,
 			&c.SrcList, &c.FreqList, &c.UnitIDs,
+			&c.HasTranscription, &c.TranscriptionStatus,
+			&c.TranscriptionText, &c.TranscriptionWordCt,
+			&c.MetadataJSON,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -237,7 +248,10 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 			COALESCE(c.analog, false), COALESCE(c.conventional, false),
 			COALESCE(c.phase2_tdma, false), c.tdma_slot,
 			c.patched_tgids,
-			c.src_list, c.freq_list, c.unit_ids
+			c.src_list, c.freq_list, c.unit_ids,
+			COALESCE(c.has_transcription, false), COALESCE(c.transcription_status, 'none'),
+			c.transcription_text, c.transcription_word_count,
+			c.metadata_json
 		FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		WHERE c.call_id = $1
@@ -256,6 +270,9 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 		&c.Phase2TDMA, &c.TDMASlot,
 		&c.PatchedTgids,
 		&c.SrcList, &c.FreqList, &c.UnitIDs,
+		&c.HasTranscription, &c.TranscriptionStatus,
+		&c.TranscriptionText, &c.TranscriptionWordCt,
+		&c.MetadataJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -364,20 +381,25 @@ type CallGroupFilter struct {
 
 // CallGroupAPI represents a call group for API responses.
 type CallGroupAPI struct {
-	ID            int        `json:"id"`
-	SystemID      int        `json:"system_id"`
-	SystemName    string     `json:"system_name,omitempty"`
-	Sysid         string     `json:"sysid,omitempty"`
-	Tgid          int        `json:"tgid"`
-	TgAlphaTag    string     `json:"tg_alpha_tag,omitempty"`
-	TgDescription string     `json:"tg_description,omitempty"`
-	TgTag         string     `json:"tg_tag,omitempty"`
-	TgGroup       string     `json:"tg_group,omitempty"`
-	StartTime     time.Time  `json:"start_time"`
-	StopTime      *time.Time `json:"stop_time,omitempty"`
-	Duration      *float32   `json:"duration,omitempty"`
-	CallCount     int        `json:"call_count"`
-	PrimaryCallID *int64     `json:"primary_call_id,omitempty"`
+	ID                  int        `json:"id"`
+	SystemID            int        `json:"system_id"`
+	SystemName          string     `json:"system_name,omitempty"`
+	Sysid               string     `json:"sysid,omitempty"`
+	SiteID              *int       `json:"site_id,omitempty"`
+	SiteShortName       string     `json:"site_short_name,omitempty"`
+	Tgid                int        `json:"tgid"`
+	TgAlphaTag          string     `json:"tg_alpha_tag,omitempty"`
+	TgDescription       string     `json:"tg_description,omitempty"`
+	TgTag               string     `json:"tg_tag,omitempty"`
+	TgGroup             string     `json:"tg_group,omitempty"`
+	StartTime           time.Time  `json:"start_time"`
+	StopTime            *time.Time `json:"stop_time,omitempty"`
+	Duration            *float32   `json:"duration,omitempty"`
+	CallCount           int        `json:"call_count"`
+	PrimaryCallID       *int64     `json:"primary_call_id,omitempty"`
+	HasTranscription    bool       `json:"has_transcription"`
+	TranscriptionStatus string     `json:"transcription_status,omitempty"`
+	TranscriptionText   *string    `json:"transcription_text,omitempty"`
 }
 
 // ListCallGroups returns call groups matching the filter.
@@ -399,7 +421,9 @@ func (db *DB) ListCallGroups(ctx context.Context, filter CallGroupFilter) ([]Cal
 		qb.Add("cg.tgid = ANY(%s)", filter.Tgids)
 	}
 
-	fromClause := "FROM call_groups cg JOIN systems s ON s.system_id = cg.system_id"
+	fromClause := `FROM call_groups cg
+		JOIN systems s ON s.system_id = cg.system_id
+		LEFT JOIN calls pc ON pc.call_id = cg.primary_call_id AND pc.start_time >= cg.start_time - interval '10 seconds'`
 	whereClause := qb.WhereClause()
 
 	var total int
@@ -409,10 +433,14 @@ func (db *DB) ListCallGroups(ctx context.Context, filter CallGroupFilter) ([]Cal
 
 	dataQuery := fmt.Sprintf(`
 		SELECT cg.id, cg.system_id, COALESCE(s.name, ''), COALESCE(s.sysid, ''),
+			pc.site_id, COALESCE(pc.site_short_name, ''),
 			cg.tgid, COALESCE(cg.tg_alpha_tag, ''), COALESCE(cg.tg_description, ''),
 			COALESCE(cg.tg_tag, ''), COALESCE(cg.tg_group, ''),
 			cg.start_time, cg.primary_call_id,
-			(SELECT count(*) FROM calls c WHERE c.call_group_id = cg.id)
+			(SELECT count(*) FROM calls c WHERE c.call_group_id = cg.id),
+			COALESCE(cg.transcription_text IS NOT NULL, false),
+			COALESCE(cg.transcription_status, 'none'),
+			cg.transcription_text
 		%s %s
 		ORDER BY cg.start_time DESC
 		LIMIT %d OFFSET %d
@@ -429,8 +457,10 @@ func (db *DB) ListCallGroups(ctx context.Context, filter CallGroupFilter) ([]Cal
 		var g CallGroupAPI
 		if err := rows.Scan(
 			&g.ID, &g.SystemID, &g.SystemName, &g.Sysid,
+			&g.SiteID, &g.SiteShortName,
 			&g.Tgid, &g.TgAlphaTag, &g.TgDescription, &g.TgTag, &g.TgGroup,
 			&g.StartTime, &g.PrimaryCallID, &g.CallCount,
+			&g.HasTranscription, &g.TranscriptionStatus, &g.TranscriptionText,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -447,17 +477,24 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 	var g CallGroupAPI
 	err := db.Pool.QueryRow(ctx, `
 		SELECT cg.id, cg.system_id, COALESCE(s.name, ''), COALESCE(s.sysid, ''),
+			pc.site_id, COALESCE(pc.site_short_name, ''),
 			cg.tgid, COALESCE(cg.tg_alpha_tag, ''), COALESCE(cg.tg_description, ''),
 			COALESCE(cg.tg_tag, ''), COALESCE(cg.tg_group, ''),
 			cg.start_time, cg.primary_call_id,
-			(SELECT count(*) FROM calls c WHERE c.call_group_id = cg.id)
+			(SELECT count(*) FROM calls c WHERE c.call_group_id = cg.id),
+			COALESCE(cg.transcription_text IS NOT NULL, false),
+			COALESCE(cg.transcription_status, 'none'),
+			cg.transcription_text
 		FROM call_groups cg
 		JOIN systems s ON s.system_id = cg.system_id
+		LEFT JOIN calls pc ON pc.call_id = cg.primary_call_id AND pc.start_time >= cg.start_time - interval '10 seconds'
 		WHERE cg.id = $1
 	`, id).Scan(
 		&g.ID, &g.SystemID, &g.SystemName, &g.Sysid,
+		&g.SiteID, &g.SiteShortName,
 		&g.Tgid, &g.TgAlphaTag, &g.TgDescription, &g.TgTag, &g.TgGroup,
 		&g.StartTime, &g.PrimaryCallID, &g.CallCount,
+		&g.HasTranscription, &g.TranscriptionStatus, &g.TranscriptionText,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -478,7 +515,10 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			COALESCE(c.analog, false), COALESCE(c.conventional, false),
 			COALESCE(c.phase2_tdma, false), c.tdma_slot,
 			c.patched_tgids,
-			c.src_list, c.freq_list, c.unit_ids
+			c.src_list, c.freq_list, c.unit_ids,
+			COALESCE(c.has_transcription, false), COALESCE(c.transcription_status, 'none'),
+			c.transcription_text, c.transcription_word_count,
+			c.metadata_json
 		FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		WHERE c.call_group_id = $1
@@ -506,6 +546,9 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			&c.Phase2TDMA, &c.TDMASlot,
 			&c.PatchedTgids,
 			&c.SrcList, &c.FreqList, &c.UnitIDs,
+			&c.HasTranscription, &c.TranscriptionStatus,
+			&c.TranscriptionText, &c.TranscriptionWordCt,
+			&c.MetadataJSON,
 		); err != nil {
 			return nil, nil, err
 		}

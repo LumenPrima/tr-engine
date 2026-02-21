@@ -73,7 +73,11 @@ func (h *TranscriptionsHandler) SubmitCorrection(w http.ResponseWriter, r *http.
 	}
 
 	var body struct {
-		Text string `json:"text"`
+		Text     string          `json:"text"`
+		Source   string          `json:"source"`   // default "human"
+		Provider string          `json:"provider"` // default ""
+		Language string          `json:"language"` // default ""
+		Words    json.RawMessage `json:"words"`    // optional pre-built segments
 	}
 	if err := DecodeJSON(r, &body); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid request body")
@@ -82,6 +86,11 @@ func (h *TranscriptionsHandler) SubmitCorrection(w http.ResponseWriter, r *http.
 	if body.Text == "" {
 		WriteError(w, http.StatusBadRequest, "text is required")
 		return
+	}
+
+	source := body.Source
+	if source == "" {
+		source = "human"
 	}
 
 	// Look up the call to get start_time for partitioned insert
@@ -95,8 +104,11 @@ func (h *TranscriptionsHandler) SubmitCorrection(w http.ResponseWriter, r *http.
 		CallID:        call.CallID,
 		CallStartTime: call.StartTime,
 		Text:          body.Text,
-		Source:        "human",
+		Source:        source,
 		IsPrimary:     true,
+		Provider:      body.Provider,
+		Language:      body.Language,
+		Words:         body.Words,
 	}
 
 	txID, err := h.db.InsertTranscription(r.Context(), row)
@@ -107,7 +119,7 @@ func (h *TranscriptionsHandler) SubmitCorrection(w http.ResponseWriter, r *http.
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"id":      txID,
 		"call_id": call.CallID,
-		"source":  "human",
+		"source":  source,
 	})
 }
 

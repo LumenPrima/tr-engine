@@ -31,6 +31,7 @@ type UnitAPI struct {
 	LastEventType  *string    `json:"last_event_type,omitempty"`
 	LastEventTime  *time.Time `json:"last_event_time,omitempty"`
 	LastEventTgid  *int       `json:"last_event_tgid,omitempty"`
+	LastEventTgTag string     `json:"last_event_tg_tag,omitempty"`
 	RelevanceScore *int       `json:"relevance_score,omitempty"`
 }
 
@@ -56,7 +57,9 @@ func (db *DB) ListUnits(ctx context.Context, filter UnitFilter) ([]UnitAPI, int,
 		qb.Add("u.last_event_tgid = ANY(%s)", filter.Talkgroups)
 	}
 
-	fromClause := "FROM units u JOIN systems s ON s.system_id = u.system_id AND s.deleted_at IS NULL"
+	fromClause := `FROM units u
+		JOIN systems s ON s.system_id = u.system_id AND s.deleted_at IS NULL
+		LEFT JOIN talkgroups tg ON tg.system_id = u.system_id AND tg.tgid = u.last_event_tgid`
 	whereClause := qb.WhereClause()
 
 	var total int
@@ -73,7 +76,8 @@ func (db *DB) ListUnits(ctx context.Context, filter UnitFilter) ([]UnitAPI, int,
 		SELECT u.system_id, COALESCE(s.name, ''), s.sysid,
 			u.unit_id, COALESCE(u.alpha_tag, ''), COALESCE(u.alpha_tag_source, ''),
 			u.first_seen, u.last_seen,
-			u.last_event_type, u.last_event_time, u.last_event_tgid
+			u.last_event_type, u.last_event_time, u.last_event_tgid,
+			COALESCE(tg.alpha_tag, '')
 		%s %s
 		ORDER BY %s
 		LIMIT %d OFFSET %d
@@ -93,6 +97,7 @@ func (db *DB) ListUnits(ctx context.Context, filter UnitFilter) ([]UnitAPI, int,
 			&u.UnitID, &u.AlphaTag, &u.AlphaTagSource,
 			&u.FirstSeen, &u.LastSeen,
 			&u.LastEventType, &u.LastEventTime, &u.LastEventTgid,
+			&u.LastEventTgTag,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -123,15 +128,18 @@ func (db *DB) GetUnitByComposite(ctx context.Context, systemID, unitID int) (*Un
 		SELECT u.system_id, COALESCE(s.name, ''), s.sysid,
 			u.unit_id, COALESCE(u.alpha_tag, ''), COALESCE(u.alpha_tag_source, ''),
 			u.first_seen, u.last_seen,
-			u.last_event_type, u.last_event_time, u.last_event_tgid
+			u.last_event_type, u.last_event_time, u.last_event_tgid,
+			COALESCE(tg.alpha_tag, '')
 		FROM units u
 		JOIN systems s ON s.system_id = u.system_id
+		LEFT JOIN talkgroups tg ON tg.system_id = u.system_id AND tg.tgid = u.last_event_tgid
 		WHERE u.system_id = $1 AND u.unit_id = $2
 	`, systemID, unitID).Scan(
 		&u.SystemID, &u.SystemName, &u.Sysid,
 		&u.UnitID, &u.AlphaTag, &u.AlphaTagSource,
 		&u.FirstSeen, &u.LastSeen,
 		&u.LastEventType, &u.LastEventTime, &u.LastEventTgid,
+		&u.LastEventTgTag,
 	)
 	if err != nil {
 		return nil, err

@@ -44,6 +44,7 @@ type UnitEventAPI struct {
 	UnitAlphaTag  string     `json:"unit_alpha_tag,omitempty"`
 	Tgid          *int       `json:"tgid,omitempty"`
 	TgAlphaTag    string     `json:"tg_alpha_tag,omitempty"`
+	TgDescription string     `json:"tg_description,omitempty"`
 	InstanceID    string     `json:"instance_id,omitempty"`
 }
 
@@ -68,7 +69,8 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 		qb.Add("ue.time < %s", *filter.EndTime)
 	}
 
-	fromClause := "FROM unit_events ue"
+	fromClause := `FROM unit_events ue
+		LEFT JOIN talkgroups tg ON tg.system_id = ue.system_id AND tg.tgid = ue.tgid`
 	whereClause := qb.WhereClause()
 
 	var total int
@@ -79,7 +81,8 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 	dataQuery := fmt.Sprintf(`
 		SELECT ue.id, ue.event_type, ue.time, ue.system_id,
 			ue.unit_rid, COALESCE(ue.unit_alpha_tag, ''),
-			ue.tgid, COALESCE(ue.tg_alpha_tag, ''),
+			ue.tgid, COALESCE(tg.alpha_tag, ue.tg_alpha_tag, ''),
+			COALESCE(tg.description, ''),
 			COALESCE(ue.instance_id, '')
 		%s %s
 		ORDER BY ue.time DESC
@@ -98,7 +101,7 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 		if err := rows.Scan(
 			&e.ID, &e.EventType, &e.Time, &e.SystemID,
 			&e.UnitRID, &e.UnitAlphaTag,
-			&e.Tgid, &e.TgAlphaTag,
+			&e.Tgid, &e.TgAlphaTag, &e.TgDescription,
 			&e.InstanceID,
 		); err != nil {
 			return nil, 0, err
@@ -163,6 +166,7 @@ func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFi
 		SELECT ue.id, ue.event_type, ue.time, ue.system_id, COALESCE(s.name, ''),
 			ue.unit_rid, COALESCE(u.alpha_tag, ue.unit_alpha_tag, ''),
 			ue.tgid, COALESCE(tg.alpha_tag, ue.tg_alpha_tag, ''),
+			COALESCE(tg.description, ''),
 			COALESCE(ue.instance_id, '')
 		%s %s
 		ORDER BY %s
@@ -181,7 +185,7 @@ func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFi
 		if err := rows.Scan(
 			&e.ID, &e.EventType, &e.Time, &e.SystemID, &e.SystemName,
 			&e.UnitRID, &e.UnitAlphaTag,
-			&e.Tgid, &e.TgAlphaTag,
+			&e.Tgid, &e.TgAlphaTag, &e.TgDescription,
 			&e.InstanceID,
 		); err != nil {
 			return nil, 0, err

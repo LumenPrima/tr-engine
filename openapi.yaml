@@ -2,6 +2,9 @@ openapi: 3.0.3
 info:
   title: tr-engine API
   version: 0.6.1
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
   description: |
     Backend service for trunk-recorder data ingestion and querying.
     Provides REST APIs for accessing radio system data, calls, talkgroups,
@@ -135,6 +138,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "503":
           description: Unhealthy
           content:
@@ -162,6 +167,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -310,6 +317,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/P25SystemListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -359,6 +368,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TalkgroupListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -505,6 +516,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EncryptionStatsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -562,6 +575,8 @@ paths:
                     type: integer
                   offset:
                     type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -669,6 +684,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UnitListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1063,6 +1080,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ActiveCallListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1196,10 +1215,12 @@ paths:
 
     put:
       operationId: submitTranscriptionCorrection
-      summary: Submit human correction
+      summary: Submit transcription
       description: |
-        Creates a human correction as a new primary transcription variant
-        and marks the call's transcription_status as "verified".
+        Creates a new primary transcription variant for a call. Defaults to
+        source "human" for backward compatibility, but callers can supply
+        source, provider, language, and pre-built word/segment data for
+        source-side or programmatic transcriptions.
       tags: [transcriptions]
       parameters:
         - $ref: "#/components/parameters/callId"
@@ -1213,7 +1234,25 @@ paths:
               properties:
                 text:
                   type: string
-                  description: Corrected transcription text
+                  description: Transcription text
+                source:
+                  type: string
+                  description: Transcription source. Defaults to "human" if omitted.
+                  example: human
+                provider:
+                  type: string
+                  description: Provider identifier (e.g., "client-whisper", "elevenlabs")
+                  example: client-whisper
+                language:
+                  type: string
+                  description: Language code
+                  example: en
+                words:
+                  type: object
+                  nullable: true
+                  description: |
+                    Optional pre-built word/segment data. Same structure as the
+                    `words` field in the Transcription schema.
       responses:
         "200":
           description: OK
@@ -1408,6 +1447,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TranscriptionQueueStats"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 
   # ----------------------------------------------------------
   # Call Groups
@@ -1444,6 +1485,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CallGroupListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1490,6 +1533,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1509,6 +1554,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DecodeRatesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1531,6 +1578,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RecorderListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   # ----------------------------------------------------------
   # Trunking Messages
@@ -1572,6 +1623,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TrunkingMessageListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1608,6 +1661,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConsoleMessageListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1750,6 +1805,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
+  # Pages (Web UI metadata)
+  # ----------------------------------------------------------
+  /pages:
+    get:
+      operationId: listPages
+      summary: List web UI pages
+      description: |
+        Scans the web directory for HTML pages with `card-title` meta tags
+        and returns metadata for building navigation. Pages without
+        `card-title` are excluded.
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                      description: Relative path to the HTML page
+                      example: /events.html
+                    title:
+                      type: string
+                      description: Page title from card-title meta tag
+                      example: Live Events
+                    description:
+                      type: string
+                      description: Page description from card-description meta tag
+                      example: Real-time event stream
+                    order:
+                      type: integer
+                      description: Sort order (lower = first)
+                      example: 2
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1998,6 +2097,13 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/AmbiguousError"
+
+    Unauthorized:
+      description: Unauthorized — missing or invalid auth token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
 
     InternalError:
       description: Internal Server Error
@@ -2542,14 +2648,7 @@ components:
           description: Whether this call has been transcribed
           example: true
         transcription_status:
-          type: string
-          enum: [none, auto, reviewed, verified, excluded]
-          description: |
-            - **none**: no transcription attempted
-            - **auto**: machine-transcribed, unreviewed
-            - **reviewed**: passed quality checks
-            - **verified**: human-verified correct
-            - **excluded**: permanently excluded from dataset
+          $ref: "#/components/schemas/TranscriptionStatus"
         transcription_text:
           type: string
           nullable: true
@@ -2778,8 +2877,7 @@ components:
           type: boolean
           example: true
         transcription_status:
-          type: string
-          enum: [none, auto, reviewed, verified, excluded]
+          $ref: "#/components/schemas/TranscriptionStatus"
         transcription_text:
           type: string
           nullable: true
@@ -3707,6 +3805,9 @@ components:
 
     SSEEvent:
       type: object
+      properties:
+        event:
+          $ref: "#/components/schemas/SSEEventType"
       additionalProperties: true
       description: |
         Each SSE event is sent as three lines:
