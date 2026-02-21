@@ -7,14 +7,237 @@
 <meta name="card-description" content="Interactive OpenAPI documentation with try-it-out">
 <meta name="card-order" content="10">
 <title>tr-engine API docs</title>
+
+<!-- Theme engine fonts (all 10 themes) -->
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;700&family=Outfit:wght@200;300;400;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Karla:wght@200;300;400;500&family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Theme config must load before any CSS that references theme vars -->
+<script src="theme-config.js"></script>
+
 <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+
 <style>
-  body { margin: 0; }
-  .topbar { display: none; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ── Page base ── */
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-body);
+  min-height: 100vh;
+  transition: background 0.6s ease, color 0.5s ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Background layers ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: var(--grid-bg);
+  background-size: var(--grid-size) var(--grid-size);
+  pointer-events: none; z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: var(--scanlines);
+  pointer-events: none; z-index: 9999;
+}
+.vignette-overlay {
+  position: fixed; inset: 0;
+  background: var(--vignette);
+  pointer-events: none; z-index: 9998;
+  transition: background 0.6s;
+}
+
+/* ── Swagger container ── */
+.swagger-wrap {
+  position: relative; z-index: 1;
+  max-width: 1200px;
+  margin: 32px auto 64px;
+  padding: 0 24px;
+}
+
+.swagger-shell {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(var(--glass-blur, 20px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
+  overflow: hidden;
+  box-shadow: var(--shadow-panel);
+  transition: background 0.5s, border-color 0.4s, border-radius 0.4s, box-shadow 0.5s;
+}
+[data-square-elements="true"] .swagger-shell { border-radius: 0; }
+
+/* ── Swagger UI theme overrides ── */
+.swagger-ui { font-family: var(--font-body) !important; color: var(--text) !important; }
+.swagger-ui .topbar { display: none; }
+.swagger-ui .info { margin: 32px 24px 0; }
+.swagger-ui .info .title {
+  font-family: var(--font-display) !important;
+  font-weight: var(--font-weight-display) !important;
+  color: var(--accent) !important; letter-spacing: 1px;
+}
+[data-glow-text="true"] .swagger-ui .info .title { text-shadow: 0 0 20px var(--accent-glow); }
+.swagger-ui .info p,
+.swagger-ui .info li,
+.swagger-ui .info .description p {
+  color: var(--text-mid) !important; font-family: var(--font-body) !important;
+}
+.swagger-ui .scheme-container {
+  background: var(--bg-surface) !important;
+  border-bottom: 1px solid var(--border) !important;
+  box-shadow: none !important; padding: 16px 24px;
+  transition: background 0.5s, border-color 0.4s;
+}
+
+/* Operation blocks */
+.swagger-ui .opblock {
+  background: var(--tile-bg) !important; border: 1px solid var(--tile-border) !important;
+  border-radius: var(--radius-sm) !important; box-shadow: none !important;
+  margin-bottom: 8px !important;
+  transition: background 0.5s, border-color 0.4s, border-radius 0.4s;
+}
+[data-square-elements="true"] .swagger-ui .opblock { border-radius: 0 !important; }
+.swagger-ui .opblock:hover { border-color: var(--border-hover) !important; }
+.swagger-ui .opblock .opblock-summary { border-color: transparent !important; }
+.swagger-ui .opblock .opblock-summary-method {
+  font-family: var(--font-mono) !important; border-radius: var(--radius-xs) !important;
+  font-size: 12px !important; font-weight: 600 !important;
+  min-width: 70px !important; text-align: center; transition: border-radius 0.4s;
+}
+[data-square-elements="true"] .swagger-ui .opblock .opblock-summary-method { border-radius: 0 !important; }
+.swagger-ui .opblock.opblock-get    .opblock-summary-method { background: var(--info) !important; }
+.swagger-ui .opblock.opblock-post   .opblock-summary-method { background: var(--success) !important; }
+.swagger-ui .opblock.opblock-put    .opblock-summary-method { background: var(--warning) !important; }
+.swagger-ui .opblock.opblock-patch  .opblock-summary-method { background: var(--orange) !important; }
+.swagger-ui .opblock.opblock-delete .opblock-summary-method { background: var(--danger) !important; }
+.swagger-ui .opblock.opblock-get    { border-left: 3px solid var(--info) !important; }
+.swagger-ui .opblock.opblock-post   { border-left: 3px solid var(--success) !important; }
+.swagger-ui .opblock.opblock-put    { border-left: 3px solid var(--warning) !important; }
+.swagger-ui .opblock.opblock-patch  { border-left: 3px solid var(--orange) !important; }
+.swagger-ui .opblock.opblock-delete { border-left: 3px solid var(--danger) !important; }
+.swagger-ui .opblock .opblock-summary-path,
+.swagger-ui .opblock .opblock-summary-path__deprecated {
+  font-family: var(--font-mono) !important; color: var(--text) !important;
+}
+.swagger-ui .opblock .opblock-summary-description {
+  color: var(--text-muted) !important; font-family: var(--font-body) !important;
+}
+.swagger-ui .opblock-body pre {
+  background: var(--bg) !important; color: var(--cyan, #00e5ff) !important;
+  font-family: var(--font-mono) !important; border-radius: var(--radius-xs) !important;
+}
+
+/* Tags */
+.swagger-ui .opblock-tag {
+  border-bottom: 1px solid var(--border) !important; color: var(--accent) !important;
+  font-family: var(--font-display) !important; font-size: 18px !important; letter-spacing: 1px;
+  transition: color 0.4s, border-color 0.4s;
+}
+[data-glow-text="true"] .swagger-ui .opblock-tag { text-shadow: 0 0 14px var(--accent-glow); }
+.swagger-ui .opblock-tag small {
+  color: var(--text-muted) !important; font-family: var(--font-body) !important; font-size: 13px !important;
+}
+
+/* Tables */
+.swagger-ui table thead tr th,
+.swagger-ui table thead tr td {
+  color: var(--text-muted) !important; font-family: var(--font-mono) !important;
+  font-size: 11px !important; letter-spacing: 1px; border-bottom: 1px solid var(--border) !important;
+}
+.swagger-ui .parameter__name,
+.swagger-ui .parameter__type { font-family: var(--font-mono) !important; color: var(--text) !important; }
+.swagger-ui .parameter__type { color: var(--accent-light, var(--accent)) !important; }
+.swagger-ui .response-col_status { font-family: var(--font-mono) !important; color: var(--success) !important; }
+
+/* Buttons */
+.swagger-ui .btn {
+  font-family: var(--font-body) !important; border-radius: var(--radius-sm) !important; transition: all 0.3s !important;
+}
+[data-square-elements="true"] .swagger-ui .btn { border-radius: 0 !important; }
+.swagger-ui .btn.execute { background: var(--accent) !important; border-color: var(--accent) !important; color: var(--bg) !important; }
+.swagger-ui .btn.execute:hover { box-shadow: 0 0 16px var(--accent-glow) !important; }
+.swagger-ui .btn.cancel { border-color: var(--danger) !important; color: var(--danger) !important; background: transparent !important; }
+.swagger-ui .btn.try-out__btn { border-color: var(--accent) !important; color: var(--accent) !important; background: transparent !important; }
+
+/* Inputs */
+.swagger-ui input[type=text],
+.swagger-ui textarea,
+.swagger-ui select {
+  background: var(--bg-surface) !important; border: 1px solid var(--border) !important;
+  color: var(--text) !important; font-family: var(--font-mono) !important;
+  border-radius: var(--radius-xs) !important; transition: border-color 0.3s !important;
+}
+.swagger-ui input[type=text]:focus,
+.swagger-ui textarea:focus {
+  border-color: var(--accent) !important; outline: none !important;
+  box-shadow: 0 0 0 2px var(--accent-dim) !important;
+}
+
+/* Models */
+.swagger-ui section.models {
+  background: var(--bg-surface) !important; border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important; transition: background 0.5s, border-color 0.4s;
+}
+.swagger-ui section.models h4 { color: var(--accent) !important; font-family: var(--font-display) !important; }
+.swagger-ui .model-title,
+.swagger-ui .model .property { color: var(--text) !important; font-family: var(--font-mono) !important; }
+.swagger-ui .model .property.primitive { color: var(--cyan, #00e5ff) !important; }
+[data-inverted-labels="true"] .swagger-ui .opblock-tag {
+  background: var(--accent-dim) !important; padding: 8px 16px !important; border-radius: var(--radius-xs) !important;
+}
+
+/* Markdown */
+.swagger-ui .markdown p,
+.swagger-ui .markdown li { color: var(--text-mid) !important; font-family: var(--font-body) !important; }
+.swagger-ui .markdown code {
+  background: var(--bg) !important; color: var(--accent) !important;
+  font-family: var(--font-mono) !important; padding: 2px 6px; border-radius: 3px;
+}
+.swagger-ui .microlight { background: var(--bg) !important; font-family: var(--font-mono) !important; color: var(--text-mid) !important; }
+.swagger-ui .responses-inner h4,
+.swagger-ui .responses-inner h5 {
+  color: var(--text-muted) !important; font-family: var(--font-mono) !important;
+  font-size: 11px !important; letter-spacing: 1px;
+}
+.swagger-ui .copy-to-clipboard { background: var(--bg-elevated, var(--bg-surface)) !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+/* Toast label */
+.theme-label {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 10000; font-family: var(--font-display); font-size: 12px;
+  letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+  background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border); padding: 10px 24px; border-radius: 100px;
+  transition: all 0.5s; pointer-events: none; opacity: 0;
+}
+.theme-label.show { opacity: 1; animation: labelPop 0.4s ease; }
+@keyframes labelPop {
+  from { transform: translateX(-50%) translateY(10px); opacity: 0; }
+  to   { transform: translateX(-50%) translateY(0);    opacity: 1; }
+}
 </style>
 </head>
 <body>
-<div id="swagger-ui"></div>
+
+<div class="vignette-overlay"></div>
+<div class="theme-label" id="themeLabel"></div>
+
+<div class="swagger-wrap">
+  <div class="swagger-shell">
+    <div id="swagger-ui"></div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
 <script>
 SwaggerUIBundle({
@@ -28,5 +251,8 @@ SwaggerUIBundle({
   tryItOutEnabled: true
 });
 </script>
+
+<!-- Theme engine injects the sticky header and picker automatically -->
+<script src="theme-engine.js"></script>
 </body>
 </html>
