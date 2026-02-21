@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="card-title" content="Event Horizon">
-<meta name="card-description" content="System overview — live stats, health, and navigation">
+<meta name="card-description" content="System overview — live stats, health, and navigation — built on tr-engine">
 <meta name="card-order" content="1">
 <title>Event Horizon — tr-engine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -255,8 +255,15 @@ body::after {
 .rate-scale-label { font-family: var(--font-mono); font-size: 8px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }
 .rate-empty { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); text-align: center; padding: 32px 0; }
 
+/* ── Intro card ── */
+.col-intro { grid-column: span 12; }
+.intro-text { font-family: var(--font-body); font-size: 13.5px; line-height: 1.6; color: var(--text-mid); transition: color 0.4s; }
+.intro-text a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent), transparent 60%); transition: border-color 0.2s; }
+.intro-text a:hover { border-bottom-color: var(--accent); }
+.intro-text .intro-label { font-family: var(--font-display); font-weight: var(--font-weight-display); font-size: 15px; color: var(--text); letter-spacing: 0.01em; }
+
 /* ── Misc ── */
-.footer { margin-top: 28px; text-align: center; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); opacity: 0.4; }
+.footer { margin-top: 28px; text-align: center; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); opacity: 0.6; }
 .tip { position: fixed; z-index: 10000; padding: 7px 14px; border-radius: var(--radius-xs); background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: 0 4px 24px rgba(0,0,0,0.12); backdrop-filter: blur(16px); font-family: var(--font-mono); font-size: 10.5px; color: var(--text-mid); pointer-events: none; opacity: 0; transition: opacity 0.15s; white-space: nowrap; }
 .tip.show { opacity: 1; }
 .placeholder { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); text-align: center; padding: 24px 0; opacity: 0.5; }
@@ -297,6 +304,14 @@ body::after {
 
 <div class="shell">
   <div class="grid">
+    <div class="panel col-intro">
+      <div class="panel-body">
+        <div class="intro-text">
+          <span class="intro-label">Event Horizon</span> is a tech demo frontend for <a href="https://github.com/LumenPrima/tr-engine" target="_blank">tr-engine</a>, a backend service that ingests and serves radio system monitoring data from <a href="https://github.com/robotastic/trunk-recorder" target="_blank">trunk-recorder</a>. Everything on these pages is powered by the tr-engine <a href="docs.html">REST API</a> and real-time SSE event stream.
+        </div>
+      </div>
+    </div>
+
     <div class="panel col-health-status">
       <div class="panel-head">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
@@ -399,12 +414,21 @@ body::after {
       </div>
     </div>
   </div>
-  <div class="footer" id="footer"></div>
+  <div class="footer" id="footer">Event Horizon · built on <a href="https://github.com/LumenPrima/tr-engine" style="color:inherit;text-decoration:none;border-bottom:1px solid currentColor">tr-engine</a></div>
 </div>
 <div class="tip" id="tip"></div>
 
 <!-- Theme engine (external — reads config, applies vars, builds switcher) -->
 <script src="theme-engine.js"></script>
+<script>
+// Linkify "tr-engine" in the header subtitle injected by theme-engine
+(function() {
+  const sub = document.querySelector('.eh-header-sub');
+  if (sub && sub.textContent.includes('tr-engine')) {
+    sub.innerHTML = sub.textContent.replace(/tr-engine/, '<a href="https://github.com/LumenPrima/tr-engine" style="color:inherit;text-decoration:none;border-bottom:1px solid currentColor" target="_blank">tr-engine</a>');
+  }
+})();
+</script>
 
 <!-- ═══════════════════════════════════════════════
      APP LOGIC
@@ -438,7 +462,10 @@ async function loadHealth() {
     if (d.trunk_recorders?.length)
       el.innerHTML = d.trunk_recorders.map(t => `<div class="instance-row"><div class="instance-dot ${t.status==='connected'?'ok':'err'}"></div><span class="instance-name">${t.instance_id}</span><span class="instance-time">${t.last_seen?ago(t.last_seen):''}</span></div>`).join('');
     else el.innerHTML = '<div class="placeholder">no instances</div>';
-    if (d.uptime_seconds) $('footer').textContent = 'uptime ' + fmtUp(d.uptime_seconds);
+    const footerParts = ['Event Horizon · built on <a href="https://github.com/LumenPrima/tr-engine" style="color:inherit;text-decoration:none;border-bottom:1px solid currentColor">tr-engine</a>'];
+    if (d.version) { const m = d.version.match(/v?\d+\.\d+\.\d+/); if (m) footerParts.push(m[0]); }
+    if (d.uptime_seconds) footerParts.push('uptime ' + fmtUp(d.uptime_seconds));
+    $('footer').innerHTML = footerParts.join(' · ');
   } catch { $('health-dot').className = 'health-dot-lg unknown'; $('health-label').textContent = 'unreachable'; }
 }
 
