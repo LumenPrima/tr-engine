@@ -7,153 +7,212 @@
 <meta name="card-description" content="Browse and import talkgroup reference data from CSV">
 <meta name="card-order" content="5">
 <title>Talkgroup Directory — tr-engine</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;700&family=Outfit:wght@200;300;400;500;600;700;800;900&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Karla:wght@200;300;400;500&family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500;700&family=VT323&family=Share+Tech+Mono&family=Press+Start+2P&display=swap" rel="stylesheet">
+
+<script src="theme-config.js"></script>
+
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: #0d1117; color: #c9d1d9; font-size: 14px; min-height: 100vh; }
 
-  header {
-    position: sticky; top: 0; z-index: 20;
-    background: #0d1117; border-bottom: 1px solid #21262d;
-    padding: 12px 20px;
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  body {
+    font-family: var(--font-body);
+    font-weight: var(--font-weight-body);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    min-height: 100vh;
+    transition: background 0.5s, color 0.4s;
+    -webkit-font-smoothing: antialiased;
   }
-  header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; white-space: nowrap; }
-  header h1 span { font-weight: 400; color: #8b949e; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: var(--grid-bg);
+    background-size: var(--grid-size) var(--grid-size);
+    pointer-events: none; z-index: 0;
+  }
+  body::after {
+    content: ''; position: fixed; inset: 0;
+    background: var(--scanlines);
+    pointer-events: none; z-index: 9999;
+  }
+  .vignette-overlay {
+    position: fixed; inset: 0;
+    background: var(--vignette);
+    pointer-events: none; z-index: 9998;
+    transition: background 0.6s;
+  }
+
+  .toolbar {
+    position: sticky; top: 60px; z-index: 20;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    transition: background 0.5s, border-color 0.4s;
+  }
+
+  .toolbar-title { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; font-family: var(--font-display); }
+  .toolbar-title span { font-weight: 400; color: var(--text-muted); }
 
   .header-controls { display: flex; gap: 10px; align-items: center; flex: 1; flex-wrap: wrap; }
 
   .search-box {
     flex: 1; min-width: 200px; max-width: 400px;
     padding: 6px 10px;
-    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-    color: #c9d1d9; font-size: 13px; font-family: inherit;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text); font-size: 13px; font-family: var(--font-mono);
+    transition: border-color 0.2s;
   }
-  .search-box:focus { outline: none; border-color: #58a6ff; }
+  .search-box:focus { outline: none; border-color: var(--accent); }
 
   select.filter-select {
     padding: 6px 10px;
-    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-    color: #c9d1d9; font-size: 13px; font-family: inherit;
-    cursor: pointer;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text); font-size: 13px; font-family: var(--font-body);
+    cursor: pointer; transition: border-color 0.2s;
   }
-  select.filter-select:focus { outline: none; border-color: #58a6ff; }
+  select.filter-select:focus { outline: none; border-color: var(--accent); }
 
   .header-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-  .count { font-size: 12px; color: #8b949e; white-space: nowrap; }
+  .count { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 
   /* --- Import panel --- */
   .import-toggle {
     padding: 6px 14px;
-    background: #238636; border: none; border-radius: 6px;
+    background: var(--accent); border: none; border-radius: var(--radius-xs);
     color: #fff; font-size: 13px; font-weight: 500; cursor: pointer;
-    font-family: inherit;
+    font-family: var(--font-body); transition: opacity 0.15s;
   }
-  .import-toggle:hover { background: #2ea043; }
+  .import-toggle:hover { opacity: 0.85; }
 
   .import-panel {
-    display: none; background: #161b22; border-bottom: 1px solid #21262d;
+    display: none;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
     padding: 16px 20px;
+    position: relative; z-index: 1;
   }
   .import-panel.visible { display: block; }
-  .import-panel h3 { font-size: 14px; color: #e6edf3; margin-bottom: 10px; }
+  .import-panel h3 { font-size: 14px; color: var(--text); margin-bottom: 10px; font-family: var(--font-display); }
+  .import-panel .import-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
   .import-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 
-  .import-field label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; }
+  .import-field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
   .import-field input[type="text"],
   .import-field select {
     padding: 6px 10px;
-    background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
-    color: #c9d1d9; font-size: 13px; font-family: inherit;
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text); font-size: 13px; font-family: var(--font-body);
   }
-  .import-field input:focus, .import-field select:focus { outline: none; border-color: #58a6ff; }
+  .import-field input:focus, .import-field select:focus { outline: none; border-color: var(--accent); }
 
   .file-label {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 6px 14px;
-    background: #21262d; border: 1px solid #30363d; border-radius: 6px;
-    color: #c9d1d9; font-size: 13px; cursor: pointer;
+    background: var(--bg-tile); border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text); font-size: 13px; cursor: pointer;
     transition: border-color 0.15s;
   }
-  .file-label:hover { border-color: #58a6ff; }
+  .file-label:hover { border-color: var(--accent); }
   .file-label input[type="file"] { display: none; }
-  .file-name { color: #8b949e; font-size: 12px; }
+  .file-name { color: var(--text-muted); font-size: 12px; }
 
   .import-btn {
     padding: 6px 18px;
-    background: #238636; border: none; border-radius: 6px;
+    background: var(--accent); border: none; border-radius: var(--radius-xs);
     color: #fff; font-size: 13px; font-weight: 500; cursor: pointer;
-    font-family: inherit;
+    font-family: var(--font-body); transition: opacity 0.15s;
   }
-  .import-btn:hover { background: #2ea043; }
-  .import-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .import-btn:hover { opacity: 0.85; }
+  .import-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .import-status { margin-top: 10px; font-size: 13px; }
-  .import-status.success { color: #3fb950; }
-  .import-status.error { color: #f85149; }
+  .import-status.success { color: var(--success); }
+  .import-status.error { color: var(--danger); }
 
-  .or-divider { color: #8b949e; font-size: 12px; padding: 0 4px; align-self: center; }
+  .or-divider { color: var(--text-muted); font-size: 12px; padding: 0 4px; align-self: center; }
 
   /* --- Table --- */
-  .table-wrap { overflow-x: auto; }
+  .table-wrap { overflow-x: auto; position: relative; z-index: 1; }
 
   table {
     width: 100%; border-collapse: collapse;
     font-size: 13px;
   }
-  thead { position: sticky; top: 52px; z-index: 10; }
+  thead { position: sticky; top: 112px; z-index: 10; }
   th {
     text-align: left; padding: 8px 12px;
-    background: #161b22; border-bottom: 1px solid #21262d;
-    color: #8b949e; font-weight: 500; font-size: 12px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted); font-weight: 500; font-size: 12px;
     text-transform: uppercase; letter-spacing: 0.3px;
     white-space: nowrap; user-select: none;
   }
   td {
-    padding: 6px 12px; border-bottom: 1px solid #161b22;
+    padding: 6px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
     vertical-align: top;
   }
-  tr:hover td { background: #161b22; }
+  tr:hover td { background: var(--bg-surface); }
 
-  .tgid { font-family: 'SF Mono', Consolas, monospace; color: #58a6ff; font-size: 12px; }
-  .alpha { color: #e6edf3; font-weight: 500; }
+  .tgid { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+  .alpha { color: var(--text); font-weight: 500; }
   .mode-badge {
-    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    display: inline-block; padding: 1px 6px; border-radius: var(--radius-xs);
     font-size: 11px; font-weight: 600; text-transform: uppercase;
-    background: #30363d; color: #8b949e;
+    background: var(--bg-tile); color: var(--text-muted);
   }
-  .mode-badge.d { background: #1f6feb33; color: #58a6ff; }
-  .mode-badge.a { background: #23883233; color: #3fb950; }
-  .mode-badge.e { background: #f8514933; color: #f85149; }
-  .mode-badge.m { background: #d2992233; color: #e3b341; }
-  .tag-text { color: #bc8cff; font-size: 12px; }
-  .cat-text { color: #8b949e; font-size: 12px; }
-  .desc-text { color: #c9d1d9; max-width: 300px; }
-  .priority-text { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: #8b949e; text-align: center; }
-  .sys-name { color: #8b949e; font-size: 12px; }
+  .mode-badge.d { background: color-mix(in srgb, var(--info) 20%, transparent); color: var(--info); }
+  .mode-badge.a { background: color-mix(in srgb, var(--success) 20%, transparent); color: var(--success); }
+  .mode-badge.e { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+  .mode-badge.m { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); }
+  .tag-text { color: var(--magenta); font-size: 12px; }
+  .cat-text { color: var(--text-muted); font-size: 12px; }
+  .desc-text { color: var(--text); max-width: 300px; }
+  .priority-text { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); text-align: center; }
+  .sys-name { color: var(--text-muted); font-size: 12px; }
 
   /* --- Pagination --- */
   .pagination {
     display: flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 16px 20px; border-top: 1px solid #21262d;
+    padding: 16px 20px; border-top: 1px solid var(--border);
+    position: relative; z-index: 1;
   }
   .pagination button {
     padding: 6px 14px;
-    background: #21262d; border: 1px solid #30363d; border-radius: 6px;
-    color: #c9d1d9; font-size: 13px; cursor: pointer; font-family: inherit;
+    background: var(--bg-tile); border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text); font-size: 13px; cursor: pointer; font-family: var(--font-body);
+    transition: border-color 0.15s;
   }
-  .pagination button:hover:not(:disabled) { border-color: #58a6ff; }
+  .pagination button:hover:not(:disabled) { border-color: var(--accent); }
   .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .pagination .page-info { font-size: 12px; color: #8b949e; }
+  .pagination .page-info { font-size: 12px; color: var(--text-muted); }
 
   .empty-state {
-    text-align: center; padding: 60px 20px; color: #8b949e;
+    text-align: center; padding: 60px 20px; color: var(--text-muted);
+    position: relative; z-index: 1;
   }
-  .empty-state h2 { font-size: 18px; color: #e6edf3; margin-bottom: 8px; }
+  .empty-state h2 { font-size: 18px; color: var(--text); margin-bottom: 8px; font-family: var(--font-display); }
   .empty-state p { font-size: 14px; }
 
-  @media (max-width: 520px) {
-    header { padding: 10px 12px; gap: 8px; }
-    header h1 { font-size: 14px; width: 100%; }
+  .theme-label {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    z-index: 10000; font-family: var(--font-display); font-size: 12px;
+    letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+    background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border); padding: 10px 24px; border-radius: 100px;
+    transition: all 0.5s; pointer-events: none; opacity: 0;
+  }
+  .theme-label.show { opacity: 1; }
+
+  @media (max-width: 600px) {
+    .toolbar { padding: 8px 12px; gap: 8px; top: 50px; }
+    .toolbar-title { font-size: 13px; width: 100%; }
     .header-controls { gap: 6px; }
     .search-box { min-width: 0; max-width: none; }
     select.filter-select { font-size: 12px; padding: 5px 6px; }
@@ -172,8 +231,10 @@
 </head>
 <body>
 
-<header>
-  <h1>Talkgroup Directory <span id="total-count"></span></h1>
+<div class="vignette-overlay"></div>
+
+<div class="toolbar">
+  <span class="toolbar-title">Talkgroup Directory <span id="total-count"></span></span>
   <div class="header-controls">
     <input type="text" class="search-box" id="search" placeholder="Search talkgroups..." autocomplete="off">
     <select class="filter-select" id="system-filter">
@@ -193,11 +254,11 @@
   <div class="header-right">
     <button class="import-toggle" id="import-toggle-btn">Import CSV</button>
   </div>
-</header>
+</div>
 
 <div class="import-panel" id="import-panel">
   <h3>Import Talkgroup CSV</h3>
-  <p style="font-size:12px; color:#8b949e; margin-bottom:12px;">
+  <p class="import-desc">
     Upload a trunk-recorder talkgroup CSV file. Format: Decimal, Hex, Alpha Tag, Mode, Description, Tag, Category
   </p>
   <div class="import-row">
@@ -253,6 +314,8 @@
   <span class="page-info" id="page-info"></span>
   <button id="next-btn" disabled>Next &raquo;</button>
 </div>
+
+<div class="theme-label" id="themeLabel"></div>
 
 <script>
 const API = '/api/v1';
@@ -505,5 +568,6 @@ importBtn.addEventListener('click', async () => {
 // --- Init ---
 loadSystems().then(() => search());
 </script>
+<script src="theme-engine.js"></script>
 </body>
 </html>

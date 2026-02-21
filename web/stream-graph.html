@@ -3,93 +3,86 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signal Flow — Stream Graph</title>
+  <title>Signal Flow — tr-engine</title>
   <meta name="card-title" content="Signal Flow">
   <meta name="card-description" content="Stream graph visualization of radio traffic by talkgroup over time">
   <meta name="card-order" content="4">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;700&family=Outfit:wght@200;300;400;500;600;700;800;900&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Karla:wght@200;300;400;500&family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500;700&family=VT323&family=Share+Tech+Mono&family=Press+Start+2P&display=swap" rel="stylesheet">
+
+  <script src="theme-config.js"></script>
+
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-    :root {
-      --bg-deep: #05080f;
-      --bg-mid: #0a1020;
-      --surface: #111a2e;
-      --border: #1a2744;
-      --text-primary: #e2e8f4;
-      --text-muted: #5a6b8a;
-      --text-dim: #2e3d5a;
-      --accent-cyan: #00e5ff;
-      --accent-violet: #a855f7;
-      --accent-amber: #f59e0b;
-      --accent-rose: #f43f5e;
-      --accent-emerald: #10b981;
-    }
-
     body {
-      background: var(--bg-deep);
-      color: var(--text-primary);
-      font-family: 'Outfit', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-weight: var(--font-weight-body);
       overflow: hidden;
       height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      transition: background 0.5s, color 0.4s;
+      -webkit-font-smoothing: antialiased;
     }
-
+    body::before {
+      content: ''; position: fixed; inset: 0;
+      background-image: var(--grid-bg);
+      background-size: var(--grid-size) var(--grid-size);
+      pointer-events: none; z-index: 0;
+    }
     body::after {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.018'/%3E%3C/svg%3E");
-      pointer-events: none;
-      z-index: 9999;
+      content: ''; position: fixed; inset: 0;
+      background: var(--scanlines);
+      pointer-events: none; z-index: 9999;
+    }
+    .vignette-overlay {
+      position: fixed; inset: 0;
+      background: var(--vignette);
+      pointer-events: none; z-index: 9998;
+      transition: background 0.6s;
     }
 
-    .container { width: 100%; max-width: 1400px; padding: 0 40px; }
+    .container { width: 100%; max-width: 1400px; padding: 0 40px; position: relative; z-index: 1; }
 
-    .header {
+    .toolbar {
       display: flex;
       align-items: baseline;
       gap: 16px;
       margin-bottom: 16px;
     }
-    .header h1 {
-      font-family: 'Outfit', sans-serif;
-      font-weight: 700;
-      font-size: 15px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
     #system-select {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 11px;
       font-weight: 500;
-      color: var(--text-primary);
-      background: var(--surface);
+      color: var(--text);
+      background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-xs);
       padding: 4px 10px;
       cursor: pointer;
       outline: none;
       transition: border-color 0.2s ease;
     }
     #system-select:hover, #system-select:focus {
-      border-color: rgba(0, 229, 255, 0.4);
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
     }
     #system-select option {
-      background: var(--bg-mid);
-      color: var(--text-primary);
+      background: var(--bg-warm);
+      color: var(--text);
     }
-    .header .pulse-dot {
+    .toolbar .pulse-dot {
       width: 7px; height: 7px;
-      background: var(--accent-cyan);
+      background: var(--accent);
       border-radius: 50%;
       animation: pulse 2s ease-in-out infinite;
-      box-shadow: 0 0 8px var(--accent-cyan), 0 0 20px rgba(0,229,255,0.2);
+      box-shadow: 0 0 8px var(--accent), 0 0 20px color-mix(in srgb, var(--accent) 20%, transparent);
     }
     @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.7)} }
 
@@ -97,10 +90,10 @@
       display: flex;
       gap: 28px;
       margin-left: auto;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 11px;
       font-weight: 400;
-      color: var(--text-dim);
+      color: var(--text-faint);
       letter-spacing: 0.05em;
     }
     .stats .stat-value { color: var(--text-muted); font-weight: 500; }
@@ -113,23 +106,23 @@
       margin-bottom: 14px;
     }
     .metric-bar-label {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 9px;
       font-weight: 500;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: var(--text-dim);
+      color: var(--text-faint);
       margin-right: 8px;
     }
     .metric-btn {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 10px;
       font-weight: 400;
       letter-spacing: 0.04em;
-      color: var(--text-dim);
+      color: var(--text-faint);
       background: transparent;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-xs);
       padding: 5px 12px;
       cursor: pointer;
       transition: all 0.25s ease;
@@ -137,30 +130,24 @@
     }
     .metric-btn:hover {
       color: var(--text-muted);
-      border-color: var(--text-dim);
+      border-color: var(--text-faint);
     }
     .metric-btn.active {
-      color: var(--accent-cyan);
-      border-color: rgba(0, 229, 255, 0.35);
-      background: rgba(0, 229, 255, 0.06);
-      box-shadow: 0 0 12px rgba(0, 229, 255, 0.08);
+      color: var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+      background: color-mix(in srgb, var(--accent) 6%, transparent);
+      box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 8%, transparent);
     }
     .metric-desc {
       margin-left: auto;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 10px;
-      color: var(--text-dim);
+      color: var(--text-faint);
       letter-spacing: 0.02em;
       opacity: 0.7;
     }
 
     /* ── Layout Toggle ───────────────────────── */
-    .controls-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 14px;
-    }
     .controls-separator {
       width: 1px;
       height: 18px;
@@ -168,14 +155,14 @@
       margin: 0 10px;
     }
     .layout-btn {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 10px;
       font-weight: 400;
       letter-spacing: 0.04em;
-      color: var(--text-dim);
+      color: var(--text-faint);
       background: transparent;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-xs);
       padding: 5px 12px;
       cursor: pointer;
       transition: all 0.25s ease;
@@ -183,13 +170,13 @@
     }
     .layout-btn:hover {
       color: var(--text-muted);
-      border-color: var(--text-dim);
+      border-color: var(--text-faint);
     }
     .layout-btn.active {
-      color: var(--accent-violet);
-      border-color: rgba(168, 85, 247, 0.35);
-      background: rgba(168, 85, 247, 0.06);
-      box-shadow: 0 0 12px rgba(168, 85, 247, 0.08);
+      color: var(--magenta);
+      border-color: color-mix(in srgb, var(--magenta) 35%, transparent);
+      background: color-mix(in srgb, var(--magenta) 6%, transparent);
+      box-shadow: 0 0 12px color-mix(in srgb, var(--magenta) 8%, transparent);
     }
 
     /* ── Graph ────────────────────────────────── */
@@ -197,53 +184,45 @@
       position: relative;
       width: 100%;
       height: 460px;
-      background: linear-gradient(180deg, rgba(10,16,32,0.3) 0%, rgba(5,8,15,0.6) 50%, rgba(10,16,32,0.3) 100%);
-      border-radius: 12px;
+      background: linear-gradient(180deg, color-mix(in srgb, var(--bg-warm) 30%, transparent) 0%, color-mix(in srgb, var(--bg) 60%, transparent) 50%, color-mix(in srgb, var(--bg-warm) 30%, transparent) 100%);
+      border-radius: var(--radius);
       overflow: hidden;
+      border: 1px solid var(--border);
     }
     .graph-wrapper::before {
       content: '';
       position: absolute;
       inset: 0;
-      background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,229,255,0.006) 3px, rgba(0,229,255,0.006) 4px);
+      background: repeating-linear-gradient(0deg, transparent, transparent 3px, color-mix(in srgb, var(--accent) 1%, transparent) 3px, color-mix(in srgb, var(--accent) 1%, transparent) 4px);
       pointer-events: none;
       z-index: 5;
-    }
-    .graph-wrapper::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-      pointer-events: none;
-      z-index: 1;
-      border-radius: 12px;
     }
 
     .now-zone {
       position: absolute;
       right: 0; top: 0;
       width: 100px; height: 100%;
-      background: linear-gradient(270deg, rgba(0,229,255,0.05) 0%, transparent 100%);
-      border-right: 2px solid rgba(0,229,255,0.2);
+      background: linear-gradient(270deg, color-mix(in srgb, var(--accent) 6%, transparent) 0%, transparent 100%);
+      border-right: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
       pointer-events: none;
       z-index: 2;
     }
     .now-label {
       position: absolute;
       right: 12px; top: 12px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 9px;
       font-weight: 500;
       letter-spacing: 0.15em;
       text-transform: uppercase;
-      color: var(--accent-cyan);
+      color: var(--accent);
       opacity: 0.6;
     }
     .decay-zone {
       position: absolute;
       left: 0; top: 0;
       width: 160px; height: 100%;
-      background: linear-gradient(90deg, var(--bg-deep), transparent);
+      background: linear-gradient(90deg, var(--bg), transparent);
       pointer-events: none;
       z-index: 3;
     }
@@ -262,9 +241,9 @@
       margin-top: 10px;
       position: relative;
       height: 18px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 9px;
-      color: var(--text-dim);
+      color: var(--text-faint);
       letter-spacing: 0.06em;
     }
     .time-marker {
@@ -284,32 +263,32 @@
       display: flex;
       align-items: center;
       gap: 7px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 10px;
-      color: var(--text-dim);
+      color: var(--text-faint);
       letter-spacing: 0.04em;
       cursor: pointer;
       transition: color 0.2s ease;
       white-space: nowrap;
     }
     .legend-item:hover { color: var(--text-muted); }
-    .legend-item.active { color: var(--text-primary); }
+    .legend-item.active { color: var(--text); }
     .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
     .tooltip {
       position: fixed;
       pointer-events: none;
-      background: rgba(17, 26, 46, 0.95);
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-sm);
       padding: 12px 16px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 11px;
-      color: var(--text-primary);
+      color: var(--text);
       opacity: 0;
       transition: opacity 0.15s ease;
       z-index: 100;
-      backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       box-shadow: 0 8px 32px rgba(0,0,0,0.6);
       min-width: 190px;
     }
@@ -317,13 +296,13 @@
     .tooltip .tt-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
     .tooltip .tt-group { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
     .tooltip .tt-stats { display: grid; grid-template-columns: auto auto; gap: 2px 12px; font-size: 10px; }
-    .tooltip .tt-label { color: var(--text-dim); }
+    .tooltip .tt-label { color: var(--text-faint); }
     .tooltip .tt-val { color: var(--text-muted); text-align: right; }
     .tooltip .tt-roster-label, .tooltip .tt-roster-val { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
-    .tooltip .tt-roster-val { color: var(--accent-cyan); opacity: 0.8; }
+    .tooltip .tt-roster-val { color: var(--accent); opacity: 0.8; }
 
-    .crosshair-line { stroke: rgba(0,229,255,0.15); stroke-width: 1; stroke-dasharray: 3,5; pointer-events: none; }
-    .crosshair-time { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: var(--text-dim); pointer-events: none; }
+    .crosshair-line { stroke: color-mix(in srgb, var(--accent) 15%, transparent); stroke-width: 1; stroke-dasharray: 3,5; pointer-events: none; }
+    .crosshair-time { font-family: var(--font-mono); font-size: 9px; fill: var(--text-faint); pointer-events: none; }
 
     /* ── Bucket Detail ───────────────────────── */
     .tt-detail {
@@ -339,17 +318,17 @@
       font-size: 9px;
       letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: var(--text-dim);
+      color: var(--text-faint);
       margin-bottom: 4px;
     }
     .tt-detail-loading {
       font-size: 9px;
-      color: var(--text-dim);
+      color: var(--text-faint);
       font-style: italic;
     }
     .tt-detail-empty {
       font-size: 9px;
-      color: var(--text-dim);
+      color: var(--text-faint);
       opacity: 0.6;
     }
     .tt-call-row {
@@ -359,21 +338,39 @@
       padding: 2px 0;
       font-size: 9px;
       color: var(--text-muted);
-      border-bottom: 1px solid rgba(26, 39, 68, 0.4);
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
     }
     .tt-call-row:last-child { border-bottom: none; }
-    .tt-call-row.emergency { color: var(--accent-rose); }
+    .tt-call-row.emergency { color: var(--danger); }
     .tt-call-time { flex-shrink: 0; width: 56px; }
     .tt-call-dur { flex-shrink: 0; width: 36px; text-align: right; }
-    .tt-call-units { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tt-call-emg { color: var(--accent-rose); font-weight: 600; flex-shrink: 0; }
+    .tt-call-units { color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tt-call-emg { color: var(--danger); font-weight: 600; flex-shrink: 0; }
+
+    .theme-label {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 10000; font-family: var(--font-display); font-size: 12px;
+      letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+      background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border); padding: 10px 24px; border-radius: 100px;
+      transition: all 0.5s; pointer-events: none; opacity: 0;
+    }
+    .theme-label.show { opacity: 1; }
+
+    @media (max-width: 768px) {
+      .container { padding: 0 12px; }
+      .toolbar { flex-wrap: wrap; gap: 8px; }
+      .stats { gap: 12px; font-size: 10px; }
+      .controls-row { flex-wrap: wrap; }
+      .graph-wrapper { height: 320px; }
+    }
   </style>
 </head>
 <body>
+<div class="vignette-overlay"></div>
 <div class="container">
-  <div class="header">
+  <div class="toolbar">
     <div class="pulse-dot"></div>
-    <h1>Signal Flow</h1>
     <select id="system-select"></select>
     <div class="stats">
       <span>Channels <span class="stat-value" id="stat-channels">0</span></span>
@@ -421,12 +418,11 @@
   <div class="tt-detail" id="tt-detail" style="display:none"></div>
 </div>
 
+<div class="theme-label" id="themeLabel"></div>
+
 <script type="module">
 import { init as initData, destroy as destroyData, BUCKET_SEC, WINDOW_SEC } from './signal-flow-data.js';
 
-// ═══════════════════════════════════════════════════════════════
-// METRIC DEFINITIONS
-// ═══════════════════════════════════════════════════════════════
 const METRICS = {
   calls:        { label: 'Call Rate',     unit: '/min',   desc: 'calls per minute per talkgroup' },
   airtime:      { label: 'Airtime',       unit: 's/min',  desc: 'seconds of audio per minute per talkgroup' },
@@ -444,30 +440,12 @@ const LAYOUT_DESCS = {
   stacked: 'zero-baseline — shows total volume + composition',
 };
 
-// ═══════════════════════════════════════════════════════════════
-// COLOR PALETTE — 15 distinct colors for talkgroup assignment
-// ═══════════════════════════════════════════════════════════════
 const COLOR_PALETTE = [
-  '#00e5ff', // cyan
-  '#f43f5e', // rose
-  '#a855f7', // violet
-  '#f59e0b', // amber
-  '#10b981', // emerald
-  '#38bdf8', // sky
-  '#fb923c', // orange
-  '#818cf8', // indigo
-  '#c084fc', // purple
-  '#34d399', // green
-  '#fbbf24', // yellow
-  '#f87171', // red
-  '#22d3ee', // teal
-  '#e879f9', // fuchsia
-  '#64748b', // slate
+  '#00e5ff', '#f43f5e', '#a855f7', '#f59e0b', '#10b981',
+  '#38bdf8', '#fb923c', '#818cf8', '#c084fc', '#34d399',
+  '#fbbf24', '#f87171', '#22d3ee', '#e879f9', '#64748b',
 ];
 
-// ═══════════════════════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════════════════════
 let timeSeries = [];
 let keys = [];
 let colorMap = {};
@@ -476,9 +454,6 @@ let groupMap = {};
 let talkgroupMap = null;
 let highlightedKey = null;
 
-// ═══════════════════════════════════════════════════════════════
-// DOM & SCALES
-// ═══════════════════════════════════════════════════════════════
 const svgEl = document.getElementById('graph');
 const svg = d3.select(svgEl);
 const tooltipEl = document.getElementById('tooltip');
@@ -500,7 +475,6 @@ let width, height, margin;
 const xScale = d3.scaleLinear();
 const yScale = d3.scaleLinear();
 
-// D3 stack — keys set dynamically when talkgroups load
 const stack = d3.stack()
   .offset(d3.stackOffsetWiggle)
   .order(d3.stackOrderInsideOut);
@@ -511,7 +485,6 @@ const area = d3.area()
   .y0(d => yScale(d[0]))
   .y1(d => yScale(d[1]));
 
-// SVG layers
 const defsEl = svg.append('defs');
 const gridGroup = svg.append('g');
 const streamGroup = svg.append('g');
@@ -519,16 +492,12 @@ const crosshairGroup = svg.append('g').style('display', 'none');
 const crosshairLine = crosshairGroup.append('line').attr('class', 'crosshair-line');
 const crosshairLabel = crosshairGroup.append('text').attr('class', 'crosshair-time');
 
-// Time grid
 const TIME_LABELS = [
   { sec: 300, label: '5m' }, { sec: 600, label: '10m' },
   { sec: 1800, label: '30m' }, { sec: 3600, label: '1h' },
   { sec: 7200, label: '2h' }, { sec: 10800, label: '3h' },
 ];
 
-// ═══════════════════════════════════════════════════════════════
-// TALKGROUP SETUP — called once when adapter delivers metadata
-// ═══════════════════════════════════════════════════════════════
 function setupTalkgroups(talkgroups) {
   keys = talkgroups.map(tg => String(tg.tgid));
   colorMap = {};
@@ -544,10 +513,8 @@ function setupTalkgroups(talkgroups) {
     tg.color = color;
   });
 
-  // Update D3 stack keys
   stack.keys(keys);
 
-  // Generate SVG gradients
   defsEl.selectAll('linearGradient').remove();
   keys.forEach(key => {
     const color = colorMap[key];
@@ -564,9 +531,6 @@ function setupTalkgroups(talkgroups) {
   statChannels.textContent = keys.length;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// LAYOUT
-// ═══════════════════════════════════════════════════════════════
 function resize() {
   const rect = svgEl.parentElement.getBoundingClientRect();
   width = rect.width; height = rect.height;
@@ -607,15 +571,12 @@ function updateGrid() {
       gridGroup.append('line')
         .attr('x1', x).attr('x2', x)
         .attr('y1', margin.top).attr('y2', height - margin.bottom)
-        .attr('stroke', '#1a2744').attr('stroke-width', 0.5)
+        .style('stroke', 'var(--border)').attr('stroke-width', 0.5)
         .attr('stroke-dasharray', '2,6').attr('opacity', 0.4);
     }
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// RENDER
-// ═══════════════════════════════════════════════════════════════
 function getStackData() {
   return timeSeries.map(b => {
     const row = { time: b.time };
@@ -627,7 +588,6 @@ function getStackData() {
 function render() {
   if (!width || !timeSeries.length || !keys.length) return;
 
-  // Set stack offset based on layout mode
   if (activeLayout === 'proportion') {
     stack.offset(d3.stackOffsetExpand).order(d3.stackOrderInsideOut);
   } else if (activeLayout === 'stacked') {
@@ -642,7 +602,6 @@ function render() {
   const stacked = stack(data);
 
   if (activeLayout === 'proportion') {
-    // stackOffsetExpand normalizes to 0-1
     yScale.domain([0, 1]);
   } else {
     let yMin = Infinity, yMax = -Infinity;
@@ -679,9 +638,6 @@ function render() {
   updateStats();
 }
 
-// ═══════════════════════════════════════════════════════════════
-// INTERACTION
-// ═══════════════════════════════════════════════════════════════
 function highlightStream(key) {
   highlightedKey = key;
   streamGroup.selectAll('.stream-path')
@@ -713,7 +669,6 @@ function showTooltip(key, event) {
   const recent = timeSeries[timeSeries.length - 1];
   const cur = recent ? (recent[activeMetric][key] || 0) : 0;
 
-  // Always show raw value + proportion context
   const totalNow = recent ? keys.reduce((s, k) => s + ((recent[activeMetric][k]) || 0), 0) : 0;
   const pctNow = totalNow > 0 ? (cur / totalNow * 100).toFixed(1) : '0.0';
 
@@ -738,7 +693,6 @@ function showTooltip(key, event) {
 
   ttPct.textContent = totalNow > 0 ? pctNow + '%' : '0%';
 
-  // Roster context — show for all metrics except roster itself
   if (activeMetric !== 'roster' && recent && recent.roster) {
     const rosterNow = recent.roster[key] || 0;
     const unitsNow = recent.units ? (recent.units[key] || 0) : 0;
@@ -775,9 +729,6 @@ function updateCrosshair(ev) {
 }
 function hideCrosshair() { crosshairGroup.style('display', 'none'); }
 
-// ═══════════════════════════════════════════════════════════════
-// BUCKET DETAIL — on-demand fetch of calls for hovered bucket
-// ═══════════════════════════════════════════════════════════════
 const ttDetail = document.getElementById('tt-detail');
 const detailCache = new Map();
 let detailTimer = null;
@@ -794,30 +745,25 @@ function scheduleDetailFetch(ev, tgKey) {
   const idx = getBucketIdx(ev);
   const cacheKey = `${idx}:${tgKey}`;
 
-  // Already showing this bucket's detail
   if (cacheKey === detailLastKey) return;
 
   clearTimeout(detailTimer);
   detailTimer = setTimeout(() => {
     detailLastKey = cacheKey;
 
-    // Check cache
     if (detailCache.has(cacheKey)) {
       renderDetail(detailCache.get(cacheKey));
       return;
     }
 
-    // Fetch
     fetchBucketDetail(idx, tgKey, cacheKey);
   }, 300);
 }
 
 async function fetchBucketDetail(idx, tgKey, cacheKey) {
-  // Show loading
   ttDetail.style.display = '';
   ttDetail.innerHTML = '<div class="tt-detail-loading">loading...</div>';
 
-  // Abort any in-flight request
   if (detailAbort) detailAbort.abort();
   detailAbort = new AbortController();
 
@@ -829,7 +775,6 @@ async function fetchBucketDetail(idx, tgKey, cacheKey) {
   const startISO = new Date(startMs).toISOString();
   const endISO = new Date(endMs).toISOString();
 
-  // Fetch calls via REST API — src_list is embedded in the response.
   try {
     const params = new URLSearchParams({
       system_id: activeSystemId,
@@ -844,7 +789,6 @@ async function fetchBucketDetail(idx, tgKey, cacheKey) {
     if (!resp.ok) throw new Error(resp.status);
     const data = await resp.json();
 
-    // Extract unit display strings from embedded src_list
     const calls = (data.calls || []).map(c => ({
       start_time: c.start_time,
       duration: c.duration,
@@ -854,7 +798,6 @@ async function fetchBucketDetail(idx, tgKey, cacheKey) {
 
     detailCache.set(cacheKey, calls);
 
-    // Only render if still hovering the same bucket
     if (detailLastKey === cacheKey) {
       renderDetail(calls);
     }
@@ -896,9 +839,6 @@ function clearDetail() {
   ttDetail.innerHTML = '';
 }
 
-// ═══════════════════════════════════════════════════════════════
-// STATS
-// ═══════════════════════════════════════════════════════════════
 function updateStats() {
   const recent = timeSeries[timeSeries.length - 1];
   if (recent) {
@@ -907,7 +847,6 @@ function updateStats() {
       ? '100%'
       : ((activeMetric === 'units' || activeMetric === 'roster') ? Math.round(total) : total.toFixed(0));
 
-    // Affiliated count — always from roster metric regardless of active metric
     if (recent.roster) {
       const totalAffiliated = keys.reduce((s, k) => s + (recent.roster[k] || 0), 0);
       statAffiliated.textContent = Math.round(totalAffiliated);
@@ -923,9 +862,6 @@ function updateStats() {
     : ((activeMetric === 'units' || activeMetric === 'roster') ? Math.round(peak) : peak.toFixed(0));
 }
 
-// ═══════════════════════════════════════════════════════════════
-// METRIC SELECTOR
-// ═══════════════════════════════════════════════════════════════
 function updateDesc() {
   metricDesc.textContent = METRICS[activeMetric].desc + ' · ' + LAYOUT_DESCS[activeLayout];
 }
@@ -942,9 +878,6 @@ document.querySelectorAll('.metric-btn').forEach(btn => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
-// LAYOUT SELECTOR
-// ═══════════════════════════════════════════════════════════════
 document.querySelectorAll('.layout-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     activeLayout = btn.dataset.layout;
@@ -956,9 +889,6 @@ document.querySelectorAll('.layout-btn').forEach(btn => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
-// LEGEND
-// ═══════════════════════════════════════════════════════════════
 function buildLegend() {
   const legend = document.getElementById('legend');
   legend.innerHTML = '';
@@ -977,16 +907,12 @@ function buildLegend() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// INIT — fetch systems, populate dropdown, auto-start first
-// ═══════════════════════════════════════════════════════════════
 const params = new URLSearchParams(window.location.search);
 const apiBase = params.get('api') || '/api/v1';
 const selectEl = document.getElementById('system-select');
 let activeSystemId = null;
 
 function startSystem(sysId) {
-  // Tear down previous
   if (activeSystemId !== null) {
     destroyData();
     streamGroup.selectAll('.stream-path').remove();
@@ -1019,7 +945,6 @@ function startSystem(sysId) {
 selectEl.addEventListener('change', () => {
   const sysId = parseInt(selectEl.value, 10);
   if (sysId && sysId !== activeSystemId) {
-    // Update URL without reload
     const url = new URL(window.location);
     url.searchParams.set('system', sysId);
     history.replaceState(null, '', url);
@@ -1047,7 +972,6 @@ selectEl.addEventListener('change', () => {
       selectEl.appendChild(opt);
     });
 
-    // Use ?system= param if valid, otherwise first system
     const requested = parseInt(params.get('system'), 10);
     const initial = systems.find(s => s.system_id === requested) ? requested : systems[0].system_id;
     selectEl.value = initial;
@@ -1060,5 +984,6 @@ selectEl.addEventListener('change', () => {
   }
 })();
 </script>
+<script src="theme-engine.js"></script>
 </body>
 </html>

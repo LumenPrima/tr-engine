@@ -7,78 +7,74 @@
 <meta name="card-title" content="IRC Radio">
 <meta name="card-description" content="IRC-style live radio monitor with channels, nicks, and audio playback">
 <meta name="card-order" content="0">
+<script src="theme-config.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Iosevka:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
-:root {
-  --bg: #000000;
-  --bg-panel: #0a0a0a;
-  --bg-input: #000000;
-  --bg-highlight: #1a1a1a;
-  --bg-hover: #151515;
-  --border: #444444;
-  --border-light: #555555;
-  --text: #f0f0f0;
-  --text-dim: #bbbbbb;
-  --text-muted: #999999;
-  --text-bright: #ffffff;
-  --white: #ffffff;
-  --nick-cyan: #5ce0d8;
-  --nick-green: #78c06a;
-  --nick-orange: #d4944a;
-  --nick-magenta: #c06abc;
-  --nick-yellow: #c4b44e;
-  --nick-blue: #5a9ec0;
-  --nick-red: #c65454;
-  --nick-teal: #4aafa0;
-  --nick-pink: #d080a0;
-  --nick-lime: #90c050;
-  --join: #55cc55;
-  --part: #cc5555;
-  --action: #7a5aa0;
-  --notice: #aabbdd;
-  --emergency: #e03030;
-  --emergency-bg: rgba(224, 48, 48, 0.08);
-  --encrypted-bg: rgba(200, 160, 40, 0.06);
-  --chan-active: #ffffff;
-  --chan-inactive: #bbbbbb;
-  --chan-highlight: #d4944a;
-  --status-connected: #4a8a4a;
-  --status-disconnected: #8a4a4a;
-  --status-connecting: #8a8a4a;
-  --timestamp: #888888;
-}
 
 html, body { height: 100%; overflow: hidden; }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-family: var(--font-mono), 'Courier New', monospace;
   font-size: 16px;
   line-height: 1.45;
   display: flex;
   flex-direction: column;
 }
 
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 60px 60px;
+  opacity: 0.04;
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9998;
+}
+.vignette-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9997;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.3) 100%);
+}
+
 /* ── Top bar ── */
 .titlebar {
   height: 28px;
-  background: var(--bg-panel);
+  background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   padding: 0 12px;
   font-size: 14px;
-  color: var(--text-dim);
+  color: var(--text-mid);
   gap: 8px;
   flex-shrink: 0;
   user-select: none;
 }
-.titlebar .server { color: var(--nick-cyan); font-weight: 500; }
+.titlebar .server { color: var(--cyan); font-weight: 500; }
 .titlebar .topic { color: var(--text-muted); margin-left: 8px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.titlebar .lag { color: var(--status-connecting); margin-left: auto; }
+.titlebar .lag { color: var(--warning); margin-left: auto; }
 
 /* ── Main layout ── */
 .main { display: flex; flex: 1; overflow: hidden; }
@@ -87,7 +83,7 @@ body {
 .channel-tree {
   width: 240px;
   min-width: 240px;
-  background: var(--bg-panel);
+  background: var(--bg-surface);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -110,8 +106,8 @@ body {
 }
 .read-all-btn {
   background: none;
-  border: 1px solid var(--border-light);
-  color: var(--text-dim);
+  border: 1px solid var(--border-hover);
+  color: var(--text-mid);
   font-family: inherit;
   font-size: 12px;
   padding: 1px 6px;
@@ -119,7 +115,7 @@ body {
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
 }
-.read-all-btn:hover { color: var(--nick-cyan); border-color: var(--nick-cyan); }
+.read-all-btn:hover { color: var(--cyan); border-color: var(--cyan); }
 .tree-more {
   padding: 2px 12px 2px 20px;
   font-size: 13px;
@@ -128,7 +124,7 @@ body {
   cursor: pointer;
   transition: color 0.15s;
 }
-.tree-more:hover { color: var(--text-dim); }
+.tree-more:hover { color: var(--text-mid); }
 .tree-scroll {
   flex: 1;
   overflow-y: auto;
@@ -147,14 +143,14 @@ body {
   cursor: pointer;
 }
 .tree-section-label .nb { white-space: nowrap; }
-.tree-section-label:hover { color: var(--text-dim); }
+.tree-section-label:hover { color: var(--text-mid); }
 .tree-section-label::before { content: '▾ '; font-size: 11px; }
 .tree-section-label.collapsed::before { content: '▸ '; }
 
 .channel-item {
   padding: 2px 12px 2px 20px;
   cursor: pointer;
-  color: var(--chan-inactive);
+  color: var(--text-mid);
   font-size: 14px;
   display: flex;
   align-items: center;
@@ -162,14 +158,14 @@ body {
   white-space: nowrap;
   overflow: hidden;
 }
-.channel-item:hover { background: var(--bg-hover); color: var(--text); }
-.channel-item.active { color: var(--chan-active); background: var(--bg-highlight); font-weight: 500; }
-.channel-item.has-activity { color: var(--chan-highlight); }
+.channel-item:hover { background: var(--bg-elevated); color: var(--text); }
+.channel-item.active { color: var(--text); background: var(--bg-elevated); font-weight: 500; }
+.channel-item.has-activity { color: var(--orange); }
 .channel-item .chan-prefix { color: var(--text-muted); }
 .channel-item .chan-label { overflow: hidden; text-overflow: ellipsis; }
 .channel-item .unread {
   margin-left: auto; font-size: 12px; color: var(--bg);
-  background: var(--chan-highlight); border-radius: 3px;
+  background: var(--orange); border-radius: 3px;
   padding: 0 4px; min-width: 14px; text-align: center; font-weight: 600;
   flex-shrink: 0;
 }
@@ -185,9 +181,9 @@ body {
   display: inline-block; width: 6px; height: 6px;
   border-radius: 50%; margin-right: 4px; vertical-align: middle;
 }
-.tree-status .dot.connected { background: var(--status-connected); }
-.tree-status .dot.disconnected { background: var(--status-disconnected); }
-.tree-status .dot.connecting { background: var(--status-connecting); animation: blink 1s infinite; }
+.tree-status .dot.connected { background: var(--success); }
+.tree-status .dot.disconnected { background: var(--danger); }
+.tree-status .dot.connecting { background: var(--warning); animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: 0.3; } }
 
 /* ── Chat area ── */
@@ -195,7 +191,7 @@ body {
 
 .channel-bar {
   height: 32px;
-  background: var(--bg-panel);
+  background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -203,10 +199,10 @@ body {
   gap: 10px;
   flex-shrink: 0;
 }
-.channel-bar .chan-name { font-weight: 600; font-size: 16px; color: var(--white); }
-.channel-bar .chan-topic { font-size: 14px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.channel-bar .chan-name { font-weight: 600; font-size: 16px; color: var(--text); }
+.channel-bar .chan-topic { font-size: 14px; color: var(--text-mid); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .channel-bar .chan-mode { font-size: 13px; color: var(--text-muted); }
-.channel-bar .chan-count { font-size: 13px; color: var(--text-dim); margin-left: auto; white-space: nowrap; }
+.channel-bar .chan-count { font-size: 13px; color: var(--text-mid); margin-left: auto; white-space: nowrap; }
 
 /* ── Messages ── */
 .messages {
@@ -218,7 +214,7 @@ body {
 .messages::-webkit-scrollbar { width: 8px; }
 .messages::-webkit-scrollbar-track { background: transparent; }
 .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-.messages::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+.messages::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 
 .msg {
   padding: 1px 14px;
@@ -227,8 +223,8 @@ body {
   min-height: 19px;
   align-items: baseline;
 }
-.msg:hover { background: var(--bg-hover); }
-.msg .ts { color: var(--timestamp); font-size: 14px; min-width: 82px; flex-shrink: 0; user-select: none; }
+.msg:hover { background: var(--bg-elevated); }
+.msg .ts { color: var(--text-faint); font-size: 14px; min-width: 82px; flex-shrink: 0; user-select: none; }
 .date-separator {
   text-align: center;
   font-size: 13px;
@@ -260,19 +256,19 @@ body {
 .msg.system .prefix { color: var(--text-muted); margin-right: 0; }
 .msg.system .body { font-size: 15px; }
 
-.msg.join .body { color: var(--join); }
-.msg.part .body, .msg.quit .body { color: var(--part); }
-.msg.mode .body { color: var(--notice); }
-.msg.action .body { color: var(--action); font-style: italic; }
-.msg.notice .body { color: var(--notice); }
-.msg.topic .body { color: var(--notice); }
+.msg.join .body { color: var(--success); }
+.msg.part .body, .msg.quit .body { color: var(--danger); }
+.msg.mode .body { color: var(--info); }
+.msg.action .body { color: var(--magenta); font-style: italic; }
+.msg.notice .body { color: var(--info); }
+.msg.topic .body { color: var(--info); }
 
-.msg.emergency { background: var(--emergency-bg); }
-.msg.emergency .body { color: var(--emergency); font-weight: 600; }
-.msg.emergency .nick { color: var(--emergency) !important; }
+.msg.emergency { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.msg.emergency .body { color: var(--danger); font-weight: 600; }
+.msg.emergency .nick { color: var(--danger) !important; }
 
-.msg.encrypted { background: var(--encrypted-bg); }
-.msg.encrypted .body { color: var(--nick-yellow); font-style: italic; }
+.msg.encrypted { background: color-mix(in srgb, var(--warning) 6%, transparent); }
+.msg.encrypted .body { color: var(--warning); font-style: italic; }
 
 /* ── Call grouping — visual bracket for multi-transmission calls ── */
 .msg.call-group-first,
@@ -282,7 +278,7 @@ body {
 .msg.call-group-mid::before,
 .msg.call-group-last::before {
   content: ''; position: absolute; left: 70px; top: 0; bottom: 0;
-  border-left: 2px solid var(--border-light);
+  border-left: 2px solid var(--border-hover);
 }
 .msg.call-group-first::before { top: 50%; }
 .msg.call-group-last::before { bottom: 50%; }
@@ -298,13 +294,13 @@ body {
   background: var(--bg);
   flex-shrink: 0;
 }
-.typing-bar .typing-nick { color: var(--nick-cyan); }
+.typing-bar .typing-nick { color: var(--cyan); }
 
 /* ── Audio player bar ── */
 .player-bar {
   display: none;
   border-top: 1px solid var(--border);
-  background: var(--bg-panel);
+  background: var(--bg-surface);
   flex-shrink: 0;
   padding: 4px 14px;
 }
@@ -316,8 +312,8 @@ body {
 }
 .player-btn {
   background: none;
-  border: 1px solid var(--border-light);
-  color: var(--nick-cyan);
+  border: 1px solid var(--border-hover);
+  color: var(--cyan);
   font-size: 14px;
   width: 26px;
   height: 22px;
@@ -330,9 +326,9 @@ body {
   font-family: inherit;
   transition: border-color 0.15s, color 0.15s;
 }
-.player-btn:hover { border-color: var(--nick-cyan); color: var(--white); }
-.player-btn.player-close { color: var(--text-dim); font-size: 13px; width: 22px; }
-.player-btn.player-close:hover { color: var(--nick-red); border-color: var(--nick-red); }
+.player-btn:hover { border-color: var(--cyan); color: var(--text); }
+.player-btn.player-close { color: var(--text-mid); font-size: 13px; width: 22px; }
+.player-btn.player-close:hover { color: var(--danger); border-color: var(--danger); }
 .player-info {
   display: flex;
   gap: 8px;
@@ -341,9 +337,9 @@ body {
   min-width: 0;
   flex-shrink: 0;
 }
-.player-nick { color: var(--nick-cyan); font-weight: 500; }
+.player-nick { color: var(--cyan); font-weight: 500; }
 .player-chan { color: var(--text-muted); }
-.player-time { color: var(--text-dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+.player-time { color: var(--text-mid); font-size: 13px; font-variant-numeric: tabular-nums; }
 .player-progress {
   flex: 1;
   height: 4px;
@@ -355,43 +351,43 @@ body {
 }
 .player-progress-fill {
   height: 100%;
-  background: var(--nick-cyan);
+  background: var(--cyan);
   border-radius: 2px;
   width: 0%;
   transition: width 0.1s linear;
 }
-.player-progress:hover .player-progress-fill { background: var(--white); }
+.player-progress:hover .player-progress-fill { background: var(--text); }
 
 /* ── Voice message links ── */
-.voice-play { color: var(--nick-cyan); font-size: 15px; margin-right: 2px; cursor: pointer; }
+.voice-play { color: var(--cyan); font-size: 15px; margin-right: 2px; cursor: pointer; }
 .voice-dur { color: var(--text); }
 .voice-listen {
-  color: var(--text-dim);
+  color: var(--text-mid);
   cursor: pointer;
   text-decoration: none;
   border-bottom: 1px dotted var(--text-muted);
   margin-left: 4px;
   transition: color 0.15s;
 }
-.voice-listen:hover { color: var(--nick-cyan); border-bottom-color: var(--nick-cyan); }
+.voice-listen:hover { color: var(--cyan); border-bottom-color: var(--cyan); }
 .voice-text { color: var(--text); }
 .voice-controls { color: var(--text-muted); font-size: 14px; margin-left: 6px; white-space: nowrap; }
 .voice-controls .voice-play { font-size: 13px; }
 .voice-controls .voice-listen { margin-left: 2px; }
-.msg.now-playing { background: rgba(92, 224, 216, 0.04); }
-.msg.now-playing .voice-listen { color: var(--nick-cyan); border-bottom-color: var(--nick-cyan); }
+.msg.now-playing { background: color-mix(in srgb, var(--cyan) 4%, transparent); }
+.msg.now-playing .voice-listen { color: var(--cyan); border-bottom-color: var(--cyan); }
 
 /* ── Input ── */
 .input-area {
   display: flex;
   align-items: center;
   border-top: 1px solid var(--border);
-  background: var(--bg-input);
+  background: var(--bg);
   flex-shrink: 0;
 }
 .input-prompt {
   padding: 0 4px 0 14px;
-  color: var(--text-dim);
+  color: var(--text-mid);
   font-size: 15px;
   user-select: none;
   white-space: nowrap;
@@ -401,11 +397,11 @@ body {
   background: none;
   border: none;
   outline: none;
-  color: var(--text-bright);
+  color: var(--text);
   font-family: inherit;
   font-size: 16px;
   padding: 8px 8px;
-  caret-color: var(--nick-cyan);
+  caret-color: var(--cyan);
 }
 .input-field::placeholder { color: var(--text-muted); }
 
@@ -413,7 +409,7 @@ body {
 .nicklist {
   width: 164px;
   min-width: 164px;
-  background: var(--bg-panel);
+  background: var(--bg-surface);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -453,34 +449,34 @@ body {
   text-overflow: ellipsis;
   cursor: default;
 }
-.nick-item:hover { background: var(--bg-hover); }
+.nick-item:hover { background: var(--bg-elevated); }
 .nick-item .nick-prefix { color: var(--text-muted); font-size: 13px; margin-right: 2px; }
-.nick-item.op { color: var(--nick-cyan); }
-.nick-item.voice { color: var(--nick-green); }
-.nick-item.regular { color: var(--text-dim); }
+.nick-item.op { color: var(--cyan); }
+.nick-item.voice { color: var(--green); }
+.nick-item.regular { color: var(--text-mid); }
 .nick-item.offline { opacity: 0.35; }
-.nick-item.talked::after { content: '●'; color: var(--nick-green); font-size: 10px; margin-left: 4px; vertical-align: middle; }
+.nick-item.talked::after { content: '●'; color: var(--green); font-size: 10px; margin-left: 4px; vertical-align: middle; }
 
 /* ── Nick tooltip ── */
 .nick-tooltip {
   display: none; position: fixed; z-index: 100;
-  background: #1a1a2e; border: 1px solid var(--border-light); border-radius: 4px;
+  background: var(--bg-elevated); border: 1px solid var(--border-hover); border-radius: 4px;
   padding: 6px 10px; font-size: 14px; line-height: 1.5;
-  color: var(--text-dim); pointer-events: none;
+  color: var(--text-mid); pointer-events: none;
   max-width: 260px; white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  box-shadow: var(--shadow-panel);
 }
-.nick-tooltip .tt-nick { color: var(--nick-cyan); font-weight: 600; }
+.nick-tooltip .tt-nick { color: var(--cyan); font-weight: 600; }
 .nick-tooltip .tt-label { color: var(--text-muted); }
-.nick-tooltip .tt-online { color: var(--nick-green); }
-.nick-tooltip .tt-offline { color: #888; }
+.nick-tooltip .tt-online { color: var(--green); }
+.nick-tooltip .tt-offline { color: var(--text-faint); }
 .msg .nick { cursor: default; }
 .nick-item { cursor: default; }
 
 /* ── Status bar ── */
 .statusbar {
   height: 22px;
-  background: var(--bg-panel);
+  background: var(--bg-surface);
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -491,13 +487,13 @@ body {
   flex-shrink: 0;
   user-select: none;
 }
-.statusbar .sep { color: var(--border-light); }
-.statusbar .status-highlight { color: var(--nick-orange); }
-.statusbar .status-ok { color: var(--status-connected); }
-.statusbar .status-err { color: var(--status-disconnected); }
+.statusbar .sep { color: var(--border-hover); }
+.statusbar .status-highlight { color: var(--orange); }
+.statusbar .status-ok { color: var(--success); }
+.statusbar .status-err { color: var(--danger); }
 .statusbar .nerd-btn {
   background: none;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border-hover);
   color: var(--text-muted);
   font-family: inherit;
   font-size: 12px;
@@ -508,30 +504,10 @@ body {
   margin-left: auto;
   transition: color 0.15s, border-color 0.15s;
 }
-.statusbar .nerd-btn:hover { color: var(--nick-cyan); border-color: var(--nick-cyan); }
-html.nerd .statusbar .nerd-btn { color: var(--nick-magenta); border-color: var(--nick-magenta); }
+.statusbar .nerd-btn:hover { color: var(--cyan); border-color: var(--cyan); }
+html.nerd .statusbar .nerd-btn { color: var(--magenta); border-color: var(--magenta); }
 
-/* ── Hipster nerd cool mode — low-contrast, tiny text ── */
-html.nerd {
-  --bg: #0a0a12;
-  --bg-panel: #0e0e1a;
-  --bg-input: #08080f;
-  --bg-highlight: #141425;
-  --bg-hover: #12121f;
-  --border: #1a1a2e;
-  --border-light: #2e2e4a;
-  --text: #c8c8d4;
-  --text-dim: #7a7a96;
-  --text-muted: #555570;
-  --text-bright: #e8e8f0;
-  --white: #f0f0f8;
-  --chan-active: #e8e8f0;
-  --chan-inactive: #80809a;
-  --timestamp: #3a3a52;
-  --notice: #5a6a8a;
-  --join: #3a7a3a;
-  --part: #6a4040;
-}
+/* ── Hipster nerd cool mode — tiny text ── */
 html.nerd body { font-size: 13px; }
 html.nerd .titlebar { font-size: 11px; }
 html.nerd .tree-header-text { font-size: 10px; }
@@ -671,9 +647,9 @@ const DEFAULT_OP_PATTERNS = 'LocutionLCD,\\dCOM,CHF,CAPT,BATT,Desk';
 
 // ── Nick color palette ──
 const NICK_COLORS = [
-  'var(--nick-cyan)', 'var(--nick-green)', 'var(--nick-orange)',
-  'var(--nick-magenta)', 'var(--nick-yellow)', 'var(--nick-blue)',
-  'var(--nick-red)', 'var(--nick-teal)', 'var(--nick-pink)', 'var(--nick-lime)',
+  'var(--cyan)', 'var(--green)', 'var(--orange)',
+  'var(--magenta)', 'var(--warning)', 'var(--info)',
+  'var(--danger)', 'var(--success)', 'var(--rose)', 'var(--lime)',
 ];
 function nickColor(nick) {
   let h = 0;
@@ -2802,5 +2778,8 @@ async function init() {
 init();
 inputField.focus();
 </script>
+<div class="vignette-overlay"></div>
+<div class="theme-label" id="themeLabel"></div>
+<script src="theme-engine.js"></script>
 </body>
 </html>
