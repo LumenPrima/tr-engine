@@ -93,7 +93,7 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 		if meta.Transcript != "" {
 			p.insertSourceTranscription(callID, callStartTime, identity.SystemID, meta.Talkgroup, meta)
 		} else {
-			p.enqueueTranscription(callID, callStartTime, identity.SystemID, meta)
+			p.enqueueTranscription(callID, callStartTime, identity.SystemID, audioPath, meta)
 		}
 	}
 
@@ -409,7 +409,7 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 		if meta.Transcript != "" {
 			p.insertSourceTranscription(callID, callStartTime, identity.SystemID, meta.Talkgroup, meta)
 		} else {
-			p.enqueueTranscription(callID, callStartTime, identity.SystemID, meta)
+			p.enqueueTranscription(callID, callStartTime, identity.SystemID, audioPath, meta)
 		}
 	}
 

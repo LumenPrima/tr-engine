@@ -230,7 +230,7 @@ func (p *Pipeline) TranscriptionQueueStats() *api.TranscriptionQueueStatsData {
 }
 
 // enqueueTranscription is called by ingest handlers when a call has audio ready.
-func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, systemID int, meta *AudioMetadata) {
+func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, systemID int, audioFilePath string, meta *AudioMetadata) {
 	if p.transcriber == nil {
 		return
 	}
@@ -244,7 +244,7 @@ func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, syste
 		SystemID:      systemID,
 		Tgid:          meta.Talkgroup,
 		Duration:      dur,
-		AudioFilePath: "", // will be resolved by worker from call record
+		AudioFilePath: audioFilePath,
 		CallFilename:  meta.Filename,
 		TgAlphaTag:    meta.TalkgroupTag,
 		TgDescription: meta.TalkgroupDesc,
