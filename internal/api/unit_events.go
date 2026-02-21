@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -9,8 +10,13 @@ import (
 	"github.com/snarg/tr-engine/internal/database"
 )
 
+// unitEventQuerier is the subset of database.DB used by UnitEventsHandler.
+type unitEventQuerier interface {
+	ListUnitEventsGlobal(ctx context.Context, filter database.GlobalUnitEventFilter) ([]database.UnitEventAPI, int, error)
+}
+
 type UnitEventsHandler struct {
-	db *database.DB
+	db unitEventQuerier
 }
 
 func NewUnitEventsHandler(db *database.DB) *UnitEventsHandler {
