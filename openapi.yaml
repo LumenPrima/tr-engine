@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: tr-engine API
-  version: 0.6.1
+  version: 0.7.0
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT

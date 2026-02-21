@@ -16,7 +16,7 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 - **Go** — multi-core utilization at high message rates
 - **PostgreSQL 18** — partitioned tables, JSONB, denormalized for read performance
 - **MQTT + File Watch** — ingests from trunk-recorder via MQTT or filesystem monitoring (or both)
-- **REST API** — 38 endpoints under `/api/v1`, defined in `openapi.yaml`
+- **REST API** — 49 endpoints under `/api/v1`, defined in `openapi.yaml`
 - **SSE** — real-time event streaming with server-side filtering
 - **Web UI** — built-in dashboards demonstrating API and SSE capabilities
 
@@ -157,6 +157,11 @@ All under `/api/v1`. See `openapi.yaml` for the full specification.
 | `GET /stats` | System statistics |
 | `GET /talkgroup-directory` | Search talkgroup reference directory |
 | `POST /talkgroup-directory/import` | Upload talkgroup CSV |
+| `GET /calls/{id}/transcription` | Primary transcription for a call |
+| `GET /transcriptions/search` | Full-text search across transcriptions |
+| `PUT /calls/{id}/transcription` | Submit human correction |
+| `POST /calls/{id}/transcribe` | Enqueue call for transcription |
+| `POST /admin/systems/merge` | Merge duplicate systems |
 | `POST /query` | Ad-hoc read-only SQL queries |
 
 ## Web UI
@@ -169,6 +174,7 @@ tr-engine ships with several built-in dashboards at `http://localhost:8080`. The
 | **Live Events** | Real-time SSE event stream with type filtering |
 | **Unit Tracker** | Live unit status grid with state colors and group filters |
 | **IRC Radio Live** | IRC-style monitor — talkgroups as channels, units as nicks, audio playback |
+| **Scanner** | Mobile-friendly radio scanner with auto-play and channel filtering |
 | **Talkgroup Directory** | Browse and import talkgroup reference data from CSV |
 | **Signal Flow** | Stream graph of talkgroup activity over time (D3.js) |
 | **API Docs** | Interactive Swagger UI for the REST API |
