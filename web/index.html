@@ -60,34 +60,6 @@ body::after {
 
 .shell { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; padding: 36px 28px 56px; }
 
-/* ═══════════════════════════════════════════════
-   THEME SWITCHER (populated by theme-engine.js)
-   ═══════════════════════════════════════════════ */
-.theme-switcher {
-  position: fixed; top: 20px; right: 20px; z-index: 10000;
-  display: flex; gap: 5px; padding: 5px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border); border-radius: 12px;
-  transition: all 0.5s;
-}
-.theme-btn {
-  width: 28px; height: 28px; border-radius: 6px;
-  border: 2px solid transparent;
-  cursor: pointer; transition: all 0.3s;
-  position: relative; overflow: hidden; font-size: 0;
-}
-.theme-btn:hover { transform: scale(1.12); }
-.theme-btn.active { border-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow); transform: scale(1.05); }
-.theme-btn::after {
-  content: attr(data-name);
-  position: absolute; bottom: -26px; left: 50%; transform: translateX(-50%);
-  font-size: 8px; font-family: var(--font-mono);
-  letter-spacing: 1px; text-transform: uppercase;
-  white-space: nowrap; color: var(--text-muted);
-  opacity: 0; transition: opacity 0.3s; pointer-events: none;
-}
-.theme-btn:hover::after { opacity: 1; }
 
 .theme-label {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -105,113 +77,48 @@ body::after {
 @keyframes labelPop { from{transform:translateX(-50%) translateY(10px);opacity:0} to{transform:translateX(-50%) translateY(0);opacity:1} }
 
 /* ═══════════════════════════════════════════════
-   HEADER
+   HEALTH STATUS CARD
    ═══════════════════════════════════════════════ */
-.header { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
-.header-mark {
-  width: 48px; height: 48px; border-radius: var(--radius-sm);
-  background: var(--mark-bg);
-  box-shadow: var(--mark-shadow), inset 0 1px 0 rgba(255,255,255,0.25);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; position: relative; overflow: hidden; transition: all 0.5s;
+.col-health-status { grid-column: span 4; }
+.health-card { display: flex; align-items: center; gap: 18px; }
+.health-dot-lg {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  transition: all 0.3s;
 }
-.header-mark::before {
-  content: ''; position: absolute; top: 0; left: -5%; right: -5%; height: 52%;
-  background: linear-gradient(180deg, rgba(255,255,255,0.35) 0%, transparent 100%);
-  border-radius: 0 0 50% 50%;
-}
-.header-mark svg { width: 22px; height: 22px; position: relative; z-index: 1; }
-
-.header-text .sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-top: 3px; transition: color 0.5s; }
-
-/* Health pill */
-.health-badge {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 18px; border-radius: 24px;
-  background: var(--glass-bg); border: 1px solid var(--glass-border);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
-  color: var(--text-mid); text-transform: uppercase; letter-spacing: 0.07em;
-  transition: all 0.5s;
-}
-.health-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--success); box-shadow: 0 0 8px color-mix(in srgb, var(--success), transparent 40%);
-  animation: pulse 2s ease-in-out infinite; transition: background 0.3s;
-}
-.health-dot.degraded { background: var(--warning); box-shadow: 0 0 8px color-mix(in srgb, var(--warning), transparent 50%); }
-.health-dot.unhealthy { background: var(--danger); box-shadow: 0 0 8px color-mix(in srgb, var(--danger), transparent 50%); animation: none; }
-.health-dot.unknown { background: var(--text-faint); box-shadow: none; animation: none; }
+.health-dot-lg.healthy { background: var(--success); box-shadow: 0 0 24px color-mix(in srgb, var(--success), transparent 40%); animation: pulse 2s ease-in-out infinite; }
+.health-dot-lg.degraded { background: var(--warning); box-shadow: 0 0 24px color-mix(in srgb, var(--warning), transparent 50%); }
+.health-dot-lg.unhealthy { background: var(--danger); box-shadow: 0 0 24px color-mix(in srgb, var(--danger), transparent 50%); animation: none; }
+.health-dot-lg.unknown { background: var(--text-faint); box-shadow: none; animation: none; }
+[data-square-elements="true"] .health-dot-lg { border-radius: 0; }
 @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.45;transform:scale(.8)} }
-[data-square-elements="true"] .health-badge { border-radius: 0; }
-[data-square-elements="true"] .health-dot { border-radius: 0; }
-
-/* ── Title menu ── */
-.title-menu-wrap { position: relative; }
-.title-menu-btn {
-  display: flex; align-items: center; gap: 6px;
-  background: none; border: none; cursor: pointer;
-  padding: 0; color: var(--text); border-radius: 8px; transition: opacity 0.15s;
-}
-.title-menu-btn:hover { opacity: 0.7; }
-.title-menu-btn h1 {
+.health-card-status {
   font-family: var(--font-display); font-weight: var(--font-weight-display);
-  font-size: 26px; letter-spacing: -0.04em; line-height: 1;
-  pointer-events: none; transition: all 0.5s;
+  font-size: 22px; text-transform: uppercase; letter-spacing: 0.02em;
+  color: var(--text); line-height: 1; transition: all 0.5s;
 }
-[data-glow-text="true"] .title-menu-btn h1 { text-shadow: 0 0 10px var(--accent-glow); font-size: 16px; letter-spacing: 3px; text-transform: uppercase; }
-[data-gradient-logo="true"] .title-menu-btn h1 {
-  background: linear-gradient(135deg, #3d7aed, #8b5cf6, #ec4899, #f97316);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
-.title-chevron { color: var(--text-muted); transition: transform 0.25s, color 0.15s; flex-shrink: 0; margin-top: 2px; }
-.title-menu-wrap.open .title-chevron { transform: rotate(180deg); color: var(--accent); }
+[data-glow-text="true"] .health-card-status { text-shadow: 0 0 10px var(--accent-glow); }
+.health-card-meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); margin-top: 3px; transition: color 0.5s; }
 
-.title-dropdown {
-  position: absolute; top: calc(100% + 10px); left: 0;
-  min-width: 300px; max-width: 380px;
-  background: var(--glass-bg); border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.12);
-  padding: 8px; z-index: 1000;
-  opacity: 0; transform: translateY(-6px) scale(0.97);
-  pointer-events: none; transition: opacity 0.2s, transform 0.2s;
-}
-.title-menu-wrap.open .title-dropdown { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
-
-.dropdown-nav { display: flex; flex-direction: column; gap: 2px; }
-.nav-link {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-  border-radius: var(--radius-xs);
-  background: transparent; border: 1px solid transparent;
-  text-decoration: none; color: var(--text-mid); transition: all 0.15s;
-}
-.nav-link:hover { background: var(--tile-bg); border-color: var(--tile-border); color: var(--text); }
-.nav-link-icon {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: var(--tile-bg); border: 1px solid var(--tile-border);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.3s;
-}
-[data-square-elements="true"] .nav-link-icon { border-radius: 0; }
-.nav-link-icon svg { width: 13px; height: 13px; stroke: var(--text-muted); transition: stroke 0.15s; }
-.nav-link:hover .nav-link-icon svg { stroke: var(--accent); }
-.nav-link-text { flex: 1; min-width: 0; }
-.nav-link-title { font-family: var(--font-body); font-size: 13px; font-weight: 600; color: inherit; }
-.nav-link-desc { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-.nav-link-arrow { font-size: 16px; font-weight: 300; color: var(--text-faint); transition: transform 0.15s, color 0.15s; }
-.nav-link:hover .nav-link-arrow { transform: translateX(3px); color: var(--accent); }
-
-/* ── Recorder dots ── */
-.header-recorders { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: auto; margin-right: 14px; max-width: 50%; }
-.rec-dot { width: 8px; height: 8px; border-radius: 50%; cursor: default; transition: transform 0.15s; flex-shrink: 0; }
-.rec-dot:hover { transform: scale(1.6); }
-.rec-dot.recording { background: var(--success); box-shadow: 0 0 6px color-mix(in srgb, var(--success), transparent 45%); animation: dotPulse 2.5s ease-in-out infinite; }
+/* ═══════════════════════════════════════════════
+   RECORDER CARD
+   ═══════════════════════════════════════════════ */
+.col-recorders { grid-column: span 8; }
+.rec-grid { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 30px; }
+.rec-summary { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); font-weight: 600; }
+.rec-dot { width: 14px; height: 14px; border-radius: 50%; cursor: default; transition: transform 0.15s; flex-shrink: 0; }
+.rec-dot:hover { transform: scale(1.4); }
+.rec-dot.recording { background: var(--success); box-shadow: 0 0 8px color-mix(in srgb, var(--success), transparent 45%); animation: dotPulse 2.5s ease-in-out infinite; }
 .rec-dot.available { background: var(--accent); opacity: 0.55; }
 .rec-dot.idle { background: var(--text-faint); opacity: 0.4; }
 [data-square-elements="true"] .rec-dot { border-radius: 0; }
 @keyframes dotPulse { 0%,100%{box-shadow:0 0 4px color-mix(in srgb, var(--success), transparent 60%)} 50%{box-shadow:0 0 10px color-mix(in srgb, var(--success), transparent 35%)} }
+.rec-legend { display: flex; gap: 16px; margin-top: 12px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--border), transparent 50%); }
+.rec-legend-item { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.rec-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+[data-square-elements="true"] .rec-legend-dot { border-radius: 0; }
+.rec-legend-dot.recording { background: var(--success); }
+.rec-legend-dot.available { background: var(--accent); opacity: 0.55; }
+.rec-legend-dot.idle { background: var(--text-faint); opacity: 0.4; }
 
 /* ═══════════════════════════════════════════════
    GRID & PANELS
@@ -355,20 +262,33 @@ body::after {
 .placeholder { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); text-align: center; padding: 24px 0; opacity: 0.5; }
 
 @media (max-width: 900px) {
-  .col-stats,.col-health,.col-systems,.col-feed { grid-column: span 12; }
+  .col-stats,.col-health,.col-systems,.col-feed,.col-health-status,.col-recorders { grid-column: span 12; }
   .stats-row { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 520px) {
-  .stats-row { grid-template-columns: 1fr; }
-  .header { flex-wrap: wrap; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .stats-row .stat-value { font-size: 22px; }
+  .stats-row .stat-value[style*="font-size"] { font-size: 18px !important; }
   .shell { padding: 20px 14px 36px; }
+  .sys-table th:nth-child(n+4), .sys-table td:nth-child(n+4) { display: none; }
+  .sys-table { table-layout: fixed; }
+  .sys-table th:nth-child(1) { width: 35%; }
+  .sys-table th:nth-child(2) { width: 40%; }
+  .sys-table th:nth-child(3) { width: 25%; }
+  .sys-table th, .sys-table td { padding: 8px 6px; font-size: 11px; }
+  .sys-name-cell { font-size: 12px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tg-group { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .sys-table td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 0; }
+  .activity-bar-wrap { width: 32px; }
+  .rate-row { grid-template-columns: 60px 1fr 36px; gap: 6px; }
+  .rate-scale { grid-template-columns: 60px 1fr 36px; gap: 6px; }
+  .rec-legend { flex-wrap: wrap; gap: 8px; }
 }
 </style>
 </head>
 <body>
 
 <div class="vignette-overlay"></div>
-<div class="theme-switcher" id="themeSwitcher"></div>
 <div class="theme-label" id="themeLabel"></div>
 <canvas id="streak-canvas"></canvas>
 <div class="orb orb-1"></div>
@@ -376,34 +296,40 @@ body::after {
 <div class="orb orb-3"></div>
 
 <div class="shell">
-  <header class="header">
-    <div class="header-mark">
-      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round">
-        <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
-      </svg>
-    </div>
-    <div class="header-text">
-      <div class="title-menu-wrap" id="title-menu-wrap">
-        <button class="title-menu-btn" id="title-menu-btn">
-          <h1>Event Horizon</h1>
-          <svg class="title-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="title-dropdown" id="title-dropdown">
-          <nav class="dropdown-nav" id="nav-grid"><div class="placeholder">loading…</div></nav>
+  <div class="grid">
+    <div class="panel col-health-status">
+      <div class="panel-head">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span class="panel-label">System Health</span>
+      </div>
+      <div class="panel-body">
+        <div class="health-card">
+          <div class="health-dot-lg unknown" id="health-dot"></div>
+          <div>
+            <div class="health-card-status" id="health-label">—</div>
+            <div class="health-card-meta" id="version-text">tr-engine</div>
+            <div class="health-card-meta" id="uptime-text"></div>
+          </div>
         </div>
       </div>
-      <div class="sub" id="version-text">built on tr-engine</div>
     </div>
-    <div class="header-recorders" id="header-recorders"></div>
-    <div class="header-right">
-      <div class="health-badge">
-        <div class="health-dot unknown" id="health-dot"></div>
-        <span id="health-label">—</span>
+
+    <div class="panel col-recorders">
+      <div class="panel-head">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+        <span class="panel-label">Recorders</span>
+        <span class="rec-summary" id="rec-summary"></span>
+      </div>
+      <div class="panel-body">
+        <div class="rec-grid" id="rec-grid"><div class="placeholder">loading…</div></div>
+        <div class="rec-legend">
+          <span class="rec-legend-item"><span class="rec-legend-dot recording"></span> recording</span>
+          <span class="rec-legend-item"><span class="rec-legend-dot available"></span> available</span>
+          <span class="rec-legend-item"><span class="rec-legend-dot idle"></span> idle</span>
+        </div>
       </div>
     </div>
-  </header>
 
-  <div class="grid">
     <div class="panel col-stats">
       <div class="panel-head">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
@@ -499,9 +425,10 @@ function hideTip() { tip.classList.remove('show'); }
 async function loadHealth() {
   try {
     const d = await (await fetch(API+'/health')).json();
-    if (d.version) $('version-text').textContent = 'built on tr-engine ' + d.version;
-    $('health-dot').className = 'health-dot ' + (d.status || 'unknown');
+    if (d.version) $('version-text').textContent = 'tr-engine ' + d.version;
+    $('health-dot').className = 'health-dot-lg ' + (d.status || 'unknown');
     $('health-label').textContent = d.status || 'unknown';
+    if (d.uptime_seconds) $('uptime-text').textContent = 'uptime ' + fmtUp(d.uptime_seconds);
     let h = '';
     if (d.checks) for (const [k,v] of Object.entries(d.checks))
       h += `<div class="subsys-row"><span class="subsys-name">${k}</span><span class="subsys-status ${v}">${v}</span></div>`;
@@ -512,7 +439,7 @@ async function loadHealth() {
       el.innerHTML = d.trunk_recorders.map(t => `<div class="instance-row"><div class="instance-dot ${t.status==='connected'?'ok':'err'}"></div><span class="instance-name">${t.instance_id}</span><span class="instance-time">${t.last_seen?ago(t.last_seen):''}</span></div>`).join('');
     else el.innerHTML = '<div class="placeholder">no instances</div>';
     if (d.uptime_seconds) $('footer').textContent = 'uptime ' + fmtUp(d.uptime_seconds);
-  } catch { $('health-dot').className = 'health-dot unknown'; $('health-label').textContent = 'unreachable'; }
+  } catch { $('health-dot').className = 'health-dot-lg unknown'; $('health-label').textContent = 'unreachable'; }
 }
 
 /* ═══ Stats ═══ */
@@ -560,8 +487,11 @@ async function loadTalkgroups() {
 async function loadRecorders() {
   try {
     const d = await (await fetch(API+'/recorders')).json();
-    const el = $('header-recorders'), recs = d.recorders || [];
-    if (!recs.length) { el.innerHTML = ''; return; }
+    const el = $('rec-grid'), recs = d.recorders || [];
+    if (!recs.length) { el.innerHTML = '<div class="placeholder">no recorders</div>'; $('rec-summary').textContent = ''; return; }
+    recs.sort((a, b) => (a.rec_num ?? 0) - (b.rec_num ?? 0));
+    const recording = recs.filter(r => r.rec_state === 1 || r.rec_state === 'RECORDING').length;
+    $('rec-summary').textContent = `${recording} / ${recs.length} active`;
     el.innerHTML = recs.map(r => {
       const on = r.rec_state === 1 || r.rec_state === 'RECORDING';
       const cls = on ? 'recording' : (r.rec_state === 0 || r.rec_state === 'AVAILABLE' ? 'available' : 'idle');
@@ -575,38 +505,6 @@ async function loadRecorders() {
     });
   } catch {}
 }
-
-/* ═══ Page Navigation — dynamic from /api/v1/pages ═══ */
-const NAV_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
-
-async function loadPages() {
-  try {
-    const pages = await (await fetch(API + '/pages')).json();
-    const nav = $('nav-grid');
-    const self = window.location.pathname.split('/').pop();
-    const others = pages.filter(p => {
-      const file = p.path.split('/').pop();
-      return file !== self;
-    });
-    if (!others.length) { nav.innerHTML = '<div class="placeholder">no other pages</div>'; return; }
-    nav.innerHTML = others.map(p =>
-      `<a href="${p.path}" class="nav-link">` +
-        `<div class="nav-link-icon">${NAV_ICON}</div>` +
-        `<div class="nav-link-text">` +
-          `<div class="nav-link-title">${p.title}</div>` +
-          (p.description ? `<div class="nav-link-desc">${p.description}</div>` : '') +
-        `</div>` +
-        `<span class="nav-link-arrow">›</span>` +
-      `</a>`
-    ).join('');
-  } catch { $('nav-grid').innerHTML = '<div class="placeholder">could not load pages</div>'; }
-}
-
-/* ═══ Menu toggle ═══ */
-const menuWrap = $('title-menu-wrap');
-$('title-menu-btn').addEventListener('click', () => menuWrap.classList.toggle('open'));
-document.addEventListener('click', e => { if (!menuWrap.contains(e.target)) menuWrap.classList.remove('open'); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') menuWrap.classList.remove('open'); });
 
 /* ═══ Rate Meter ═══ */
 const EVENT_TYPES = {
@@ -714,7 +612,7 @@ function connectSSE() {
 
 /* ═══ Boot ═══ */
 (async () => {
-  await Promise.allSettled([loadHealth(), loadStats(), loadTalkgroups(), loadRecorders(), loadPages()]);
+  await Promise.allSettled([loadHealth(), loadStats(), loadTalkgroups(), loadRecorders()]);
   connectSSE();
   setInterval(loadStats, 30000);
   setInterval(loadTalkgroups, 30000);

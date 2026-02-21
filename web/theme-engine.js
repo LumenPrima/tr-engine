@@ -165,14 +165,14 @@
   -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
   border-bottom: 1px solid var(--glass-border);
   padding: 0 20px;
-  display: flex; align-items: center; gap: 12px;
-  height: 52px;
+  display: flex; align-items: center; gap: 16px;
+  height: 60px;
   transition: background 0.5s, border-color 0.4s;
 }
 
 /* Mark */
 .eh-header-mark {
-  width: 30px; height: 30px; flex-shrink: 0;
+  width: 42px; height: 42px; flex-shrink: 0;
   background: var(--mark-bg, var(--accent));
   box-shadow: var(--mark-shadow, 0 0 10px var(--accent-glow));
   border-radius: var(--radius-sm);
@@ -186,7 +186,7 @@
   background: linear-gradient(180deg, rgba(255,255,255,0.3) 0%, transparent 100%);
   border-radius: 0 0 50% 50%;
 }
-.eh-header-mark svg { width: 16px; height: 16px; position: relative; z-index: 1; }
+.eh-header-mark svg { width: 20px; height: 20px; position: relative; z-index: 1; }
 [data-square-elements="true"] .eh-header-mark { border-radius: 0; }
 
 /* Nav dropdown */
@@ -200,7 +200,7 @@
 .eh-nav-title {
   font-family: var(--font-display);
   font-weight: var(--font-weight-display);
-  font-size: 15px; letter-spacing: 0.02em; line-height: 1;
+  font-size: 20px; letter-spacing: -0.02em; line-height: 1;
   color: var(--accent);
   transition: color 0.4s, font-family 0.3s, text-shadow 0.4s;
 }
@@ -264,7 +264,7 @@
 
 /* Subtitle */
 .eh-header-sub {
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em;
   color: var(--text-muted); margin-left: 2px;
   transition: color 0.4s;
 }
@@ -307,6 +307,19 @@
   z-index: 10001;
 }
 .eh-picker .theme-btn:hover::after { opacity: 1; }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .eh-header { height: 50px; padding: 0 12px; gap: 10px; }
+  .eh-header-mark { width: 32px; height: 32px; }
+  .eh-header-mark svg { width: 16px; height: 16px; }
+  .eh-nav-title { font-size: 16px; }
+  .eh-header-sub { display: none; }
+  .eh-picker { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .eh-picker::-webkit-scrollbar { display: none; }
+  .eh-picker .theme-btn { width: 18px; height: 18px; }
+  .eh-nav-dropdown { max-width: calc(100vw - 24px); min-width: unset; }
+}
     `;
     document.head.appendChild(style);
 

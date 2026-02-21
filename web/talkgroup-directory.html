@@ -150,6 +150,24 @@
   }
   .empty-state h2 { font-size: 18px; color: #e6edf3; margin-bottom: 8px; }
   .empty-state p { font-size: 14px; }
+
+  @media (max-width: 520px) {
+    header { padding: 10px 12px; gap: 8px; }
+    header h1 { font-size: 14px; width: 100%; }
+    .header-controls { gap: 6px; }
+    .search-box { min-width: 0; max-width: none; }
+    select.filter-select { font-size: 12px; padding: 5px 6px; }
+    .header-right { width: 100%; }
+    .import-toggle { width: 100%; text-align: center; }
+    thead { position: static; }
+    th { font-size: 11px; padding: 6px 8px; }
+    td { padding: 5px 8px; font-size: 12px; }
+    .import-panel { padding: 12px; }
+    .import-row { flex-direction: column; gap: 8px; }
+    .or-divider { display: none; }
+    .import-btn { width: 100%; }
+    .pagination { padding: 12px; gap: 6px; }
+  }
 </style>
 </head>
 <body>
