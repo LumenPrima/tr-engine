@@ -77,10 +77,14 @@ func ParseSrcList(srcListJSON json.RawMessage, totalDuration float64) []Transmis
 // AttributeWords correlates word timestamps with transmission boundaries
 // to determine which radio unit said each word.
 //
+// fullText is the complete transcription text (with punctuation) from the STT provider.
+// When provided, segment text is sliced from fullText to preserve punctuation that
+// may be absent from individual word tokens.
+//
 // For each word, the midpoint (start+end)/2 is compared against transmission
 // boundaries [Pos, Pos+Duration). Words falling outside all transmissions
 // are attributed to the nearest transmission.
-func AttributeWords(words []Word, transmissions []Transmission) *TranscriptionWords {
+func AttributeWords(words []Word, transmissions []Transmission, fullText string) *TranscriptionWords {
 	if len(words) == 0 {
 		return &TranscriptionWords{
 			Words:    []AttributedWord{},
@@ -99,7 +103,7 @@ func AttributeWords(words []Word, transmissions []Transmission) *TranscriptionWo
 				Src:   0,
 			}
 		}
-		seg := buildSegments(attributed)
+		seg := buildSegments(attributed, fullText)
 		return &TranscriptionWords{Words: attributed, Segments: seg}
 	}
 
@@ -116,7 +120,7 @@ func AttributeWords(words []Word, transmissions []Transmission) *TranscriptionWo
 		}
 	}
 
-	segments := buildSegments(attributed)
+	segments := buildSegments(attributed, fullText)
 	return &TranscriptionWords{Words: attributed, Segments: segments}
 }
 
@@ -143,12 +147,104 @@ func findTransmission(t float64, txs []Transmission) (int, string) {
 	return txs[bestIdx].Src, txs[bestIdx].Tag
 }
 
+// mapWordPositions maps each word token to its byte offset in fullText using
+// sequential case-insensitive forward scanning. Each word is matched only once,
+// advancing past previous matches to handle repeated words correctly.
+func mapWordPositions(words []AttributedWord, fullText string) []int {
+	positions := make([]int, len(words))
+	lower := strings.ToLower(fullText)
+	searchFrom := 0
+
+	for i, w := range words {
+		wLower := strings.ToLower(strings.TrimSpace(w.Word))
+		idx := strings.Index(lower[searchFrom:], wLower)
+		if idx >= 0 {
+			positions[i] = searchFrom + idx
+			searchFrom = searchFrom + idx + len(wLower)
+		} else {
+			// Word not found — use current search position as best guess
+			positions[i] = searchFrom
+		}
+	}
+	return positions
+}
+
 // buildSegments groups consecutive attributed words by the same src into segments.
-func buildSegments(words []AttributedWord) []Segment {
+// When fullText is provided, segment text is sliced from it to preserve punctuation.
+// Falls back to joining word tokens when fullText is empty.
+func buildSegments(words []AttributedWord, fullText string) []Segment {
 	if len(words) == 0 {
 		return []Segment{}
 	}
 
+	if fullText == "" {
+		return buildSegmentsFallback(words)
+	}
+
+	positions := mapWordPositions(words, fullText)
+
+	// Identify segment boundaries: groups of consecutive words with the same src
+	type group struct {
+		src      int
+		srcTag   string
+		start    float64 // audio start time
+		end      float64 // audio end time
+		firstIdx int     // index of first word in group
+		lastIdx  int     // index of last word in group
+	}
+
+	var groups []group
+	g := group{
+		src:      words[0].Src,
+		srcTag:   words[0].SrcTag,
+		start:    words[0].Start,
+		end:      words[0].End,
+		firstIdx: 0,
+		lastIdx:  0,
+	}
+
+	for i := 1; i < len(words); i++ {
+		if words[i].Src == g.src {
+			g.end = words[i].End
+			g.lastIdx = i
+		} else {
+			groups = append(groups, g)
+			g = group{
+				src:      words[i].Src,
+				srcTag:   words[i].SrcTag,
+				start:    words[i].Start,
+				end:      words[i].End,
+				firstIdx: i,
+				lastIdx:  i,
+			}
+		}
+	}
+	groups = append(groups, g)
+
+	segments := make([]Segment, len(groups))
+	for i, grp := range groups {
+		textStart := positions[grp.firstIdx]
+		var textEnd int
+		if i+1 < len(groups) {
+			textEnd = positions[groups[i+1].firstIdx]
+		} else {
+			textEnd = len(fullText)
+		}
+		segments[i] = Segment{
+			Src:    grp.src,
+			SrcTag: grp.srcTag,
+			Start:  grp.start,
+			End:    grp.end,
+			Text:   strings.TrimSpace(fullText[textStart:textEnd]),
+		}
+	}
+
+	return segments
+}
+
+// buildSegmentsFallback groups consecutive words by src, joining word tokens with spaces.
+// Used when fullText is not available.
+func buildSegmentsFallback(words []AttributedWord) []Segment {
 	var segments []Segment
 	cur := Segment{
 		Src:    words[0].Src,
@@ -161,11 +257,9 @@ func buildSegments(words []AttributedWord) []Segment {
 	for i := 1; i < len(words); i++ {
 		w := words[i]
 		if w.Src == cur.Src {
-			// Same unit — extend segment
 			cur.End = w.End
 			cur.Text += " " + strings.TrimSpace(w.Word)
 		} else {
-			// New unit — finalize current segment, start new one
 			cur.Text = strings.TrimSpace(cur.Text)
 			segments = append(segments, cur)
 			cur = Segment{
@@ -179,7 +273,6 @@ func buildSegments(words []AttributedWord) []Segment {
 	}
 	cur.Text = strings.TrimSpace(cur.Text)
 	segments = append(segments, cur)
-
 	return segments
 }
 

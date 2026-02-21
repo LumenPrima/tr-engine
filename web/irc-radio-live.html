@@ -690,6 +690,10 @@ const typingState = new Map();
 // Active calls tracker: Map<call_id, { tgid, system_id, units, start }>
 const activeCalls = new Map();
 
+// Pending transcriptions: transcription SSE events that arrived before messages were rendered.
+// Map<call_id, { system_id, tgid, text, ... }> — applied when messages appear.
+const pendingTranscriptions = new Map();
+
 // Activity tracking for channel tree collapse
 const channelHasActivity = new Set();   // channels with real messages
 const groupCollapsed = new Map();       // group collapse state (true = show all, false = collapsed)
@@ -892,6 +896,14 @@ function fmtDuration(sec) {
   if (!sec && sec !== 0) return '';
   if (sec < 60) return sec.toFixed(1) + 's';
   return Math.floor(sec / 60) + 'm' + Math.floor(sec % 60) + 's';
+}
+
+/** Format transcription text for IRC display — clean spacing. */
+function fmtTranscript(text) {
+  if (!text) return '';
+  return text
+    .replace(/\s+/g, ' ')   // collapse whitespace runs
+    .trim();
 }
 
 /** Fuzzy channel match: exact → substring → stripped alphanumeric substring */
@@ -1903,10 +1915,17 @@ function setConnectionState(state) {
 async function handleTranscription(data) {
   const callId = data.call_id;
   const chanName = resolveChannel(data.system_id, data.tgid);
-  if (!chanName) return;
+  if (!chanName) {
+    // Channel not created yet — cache with SSE text for later
+    pendingTranscriptions.set(callId, { fullText: data.text || '', segments: [], chanName: null });
+    return;
+  }
 
   const ch = channels.get(chanName);
-  if (!ch) return;
+  if (!ch) {
+    pendingTranscriptions.set(callId, { fullText: data.text || '', segments: [], chanName });
+    return;
+  }
 
   // Fetch full transcription with segments for per-unit text
   let segments = [];
@@ -1927,7 +1946,12 @@ async function handleTranscription(data) {
  *  each message has pos/txDuration (seconds from audio start). Match by overlap. */
 function applyTranscriptionToChannel(ch, chanName, callId, fullText, segments) {
   const callMsgs = ch.messages.filter(m => m.callId === callId);
-  if (callMsgs.length === 0) return;
+  if (callMsgs.length === 0) {
+    // Messages not rendered yet — cache for when they appear
+    pendingTranscriptions.set(callId, { fullText, segments, chanName });
+    return;
+  }
+  pendingTranscriptions.delete(callId);
 
   if (segments.length > 0) {
     const assigned = new Set();
@@ -1959,7 +1983,7 @@ function applyTranscriptionToChannel(ch, chanName, callId, fullText, segments) {
       }
 
       if (bestIdx >= 0) {
-        callMsgs[bestIdx].text = seg.text;
+        callMsgs[bestIdx].text = fmtTranscript(seg.text);
         assigned.add(bestIdx);
       }
     }
@@ -1967,18 +1991,18 @@ function applyTranscriptionToChannel(ch, chanName, callId, fullText, segments) {
     // If nothing matched at all, fall back to simple assignment
     if (assigned.size === 0) {
       if (callMsgs.length === 1) {
-        callMsgs[0].text = fullText;
+        callMsgs[0].text = fmtTranscript(fullText);
       } else {
         for (let i = 0; i < callMsgs.length && i < segments.length; i++) {
-          callMsgs[i].text = segments[i].text;
+          callMsgs[i].text = fmtTranscript(segments[i].text);
         }
       }
     }
   } else if (callMsgs.length === 1) {
-    callMsgs[0].text = fullText;
+    callMsgs[0].text = fmtTranscript(fullText);
   } else {
     // No segments, multiple messages — put full text on first
-    callMsgs[0].text = fullText;
+    callMsgs[0].text = fmtTranscript(fullText);
   }
 
   if (chanName === activeChannel) {
@@ -1995,6 +2019,33 @@ function reRenderChannel(chanName) {
   lastRenderedDateStr = '';
   for (const m of ch.messages) appendMsgDOM(m);
   if (wasAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/** Apply any pending transcriptions that arrived before messages were rendered, then
+ *  fetch from DB as a safety net (covers source transcriptions already stored). */
+function drainPendingTranscriptions(callIds, chanName) {
+  const ch = channels.get(chanName);
+  if (!ch) return;
+
+  for (const callId of callIds) {
+    const pending = pendingTranscriptions.get(callId);
+    if (pending) {
+      pendingTranscriptions.delete(callId);
+      const callMsgs = ch.messages.filter(m => m.callId === callId);
+      if (callMsgs.length > 0) {
+        applyTranscriptionToChannel(ch, chanName, callId, pending.fullText, pending.segments);
+      }
+    }
+  }
+
+  // Evict stale entries if cache grows too large (shouldn't happen in practice)
+  if (pendingTranscriptions.size > 200) {
+    const keys = [...pendingTranscriptions.keys()];
+    for (let i = 0; i < keys.length - 100; i++) pendingTranscriptions.delete(keys[i]);
+  }
+
+  // Also fetch from DB — covers transcriptions already stored but not yet received via SSE
+  fetchTranscriptionsForCalls(callIds);
 }
 
 /** Batch-fetch transcriptions for a list of call IDs and apply to channel messages. */
@@ -2171,37 +2222,48 @@ function handleCallEnd(call) {
     // src_list available — render per-unit messages immediately
     renderCallTransmissions(chanName, call.call_id, call.system_id, srcList, isEmergency);
   } else {
-    // src_list not in call_end SSE — fetch full call after audio processing
-    setTimeout(() => fetchAndRenderCall(call.call_id, chanName, call.system_id, isEmergency, call), 2500);
+    // Render a placeholder message immediately, then try to upgrade with per-unit detail
+    const dur = call.duration ? fmtDuration(call.duration) : '';
+    const nick = call.tg_alpha_tag || `TG ${call.tgid}`;
+    addMsg(chanName, {
+      ts: ts(), nick,
+      callId: call.call_id,
+      duration: dur,
+      channel: chanName,
+      emergency: isEmergency,
+    });
+    drainPendingTranscriptions([call.call_id], chanName);
+
+    // Background fetch: if audio handler has already populated src_list, upgrade to per-unit messages
+    upgradeCallWithSrcList(call.call_id, chanName, call.system_id, isEmergency);
   }
 }
 
-/** Fetch the full call record from the API and render per-unit messages. */
-async function fetchAndRenderCall(callId, chanName, systemId, isEmergency, fallbackCall) {
-  const ch = channels.get(chanName);
-  if (!ch) return;
-
+/** Try to upgrade a fallback call message to per-transmission messages.
+ *  If the audio handler has already populated src_list, replace the single
+ *  placeholder with one message per key-up. Otherwise leave the placeholder. */
+async function upgradeCallWithSrcList(callId, chanName, systemId, isEmergency) {
   try {
     const data = await fetchJSON(`/calls/${callId}`);
     const srcList = data.src_list || [];
-    if (srcList.length > 0) {
-      renderCallTransmissions(chanName, callId, data.system_id || systemId, srcList, data.emergency || isEmergency);
-      return;
-    }
-  } catch (err) {
-    // API fetch failed — fall through to fallback
-  }
+    if (srcList.length === 0) return; // audio not processed yet — keep placeholder
 
-  // Fallback: no src_list even after fetch
-  const dur = fallbackCall.duration ? fmtDuration(fallbackCall.duration) : '';
-  const nick = fallbackCall.tg_alpha_tag || `TG ${fallbackCall.tgid}`;
-  addMsg(chanName, {
-    ts: ts(), nick,
-    callId: fallbackCall.call_id,
-    duration: dur,
-    channel: chanName,
-    emergency: isEmergency,
-  });
+    const ch = channels.get(chanName);
+    if (!ch) return;
+
+    // Remove the placeholder message for this call
+    const idx = ch.messages.findIndex(m => m.callId === callId);
+    if (idx !== -1) ch.messages.splice(idx, 1);
+
+    // Render per-transmission messages in its place
+    renderCallTransmissions(chanName, callId, data.system_id || systemId, srcList, data.emergency || isEmergency);
+
+    // Re-render if active (renderCallTransmissions only appends DOM for active channel,
+    // but we removed a message so a full re-render is cleaner)
+    if (chanName === activeChannel) reRenderChannel(chanName);
+  } catch (err) {
+    // Fetch failed — keep placeholder, transcription will still be applied via SSE/cache
+  }
 }
 
 /** Render per-transmission voice messages from a call's src_list. */
@@ -2228,6 +2290,9 @@ function renderCallTransmissions(chanName, callId, systemId, srcList, isEmergenc
       emergency: isEmergency || txEmergency,
     });
   }
+
+  // Apply any transcriptions that arrived before these messages were rendered
+  drainPendingTranscriptions([callId], chanName);
 }
 
 function handleUnitEvent(evt) {

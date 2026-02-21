@@ -230,7 +230,7 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 		totalDuration = resp.Duration
 	}
 	transmissions := ParseSrcList(job.SrcList, totalDuration)
-	tw := AttributeWords(resp.Words, transmissions)
+	tw := AttributeWords(resp.Words, transmissions, text)
 
 	wordsJSON, err := json.Marshal(tw)
 	if err != nil {
