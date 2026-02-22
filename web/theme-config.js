@@ -381,5 +381,116 @@ const THEME_CONFIG = {
     features: { scanlines:true, glowText:true, squareElements:true, gradientLogo:false, invertedLabels:true },
     switcher: { bg:'#1a1206', accent:'#ffb000' },
   },
+  // ── 11. NIGHT CITY ─────────────────────────────────────────
+  // Cyberpunk 2077 — the signature yellow UI, red threat indicators,
+  // cyan data streams, Militech sharp edges, and the electric haze
+  // of Night City's neon-soaked streets.
+  nightCity: {
+    name: 'Night City',
+    vars: {
+      // ─── Backgrounds: deep blue-black like the game's UI panels ───
+      'bg':'#0a0a12',
+      'bg-warm':'#0e0e1a',
+      'bg-surface':'rgba(252,227,0,0.03)',
+      'bg-tile':'rgba(252,227,0,0.04)',
+      'bg-elevated':'#12121e',
+
+      // ─── Borders: thin, hard, that CP2077 yellow edge ─────────────
+      'border':'rgba(252,227,0,0.12)',
+      'border-hover':'rgba(252,227,0,0.35)',
+
+      // ─── Text: warm white primary, yellow mid, muted steel ────────
+      'text':'#ede8d4',
+      'text-mid':'#c8c0a0',
+      'text-muted':'#6a6550',
+      'text-faint':'#2e2c22',
+
+      // ─── Accent: the iconic CP2077 yellow ─────────────────────────
+      'accent':'#fce300',
+      'accent-light':'#fcee0a',
+      'accent-dim':'#b8a600',
+      'accent-glow':'rgba(252,227,0,0.18)',
+
+      // ─── Semantic: red threats, cyan info, amber warnings ─────────
+      'success':'#00f0ff',
+      'warning':'#f09030',
+      'danger':'#ff003c',
+      'info':'#00f0ff',
+
+      // ─── Named palette ────────────────────────────────────────────
+      'electric':'#fce300',
+      'electric-bright':'#fcee0a',
+      'cyan':'#00f0ff',
+      'lime':'#00f0ff',         // cyan replaces lime in CP2077's palette
+      'lime-bright':'#40f8ff',
+      'lime-deep':'#009db3',
+      'magenta':'#ff003c',      // the signature CP2077 red
+      'magenta-bright':'#ff3366',
+      'magenta-deep':'#b80028',
+      'orange':'#f09030',
+      'rose':'#ff003c',
+      'green':'#00f0ff',
+
+      // ─── Typography: Rajdhani is CP2077's actual UI font ──────────
+      'font-display':"'Rajdhani', sans-serif",
+      'font-body':"'Rajdhani', sans-serif",
+      'font-mono':"'Share Tech Mono', monospace",
+      'font-weight-display':'700',
+      'font-weight-body':'500',
+
+      // ─── Geometry: sharp Militech edges, no softness ──────────────
+      'radius':'2px',
+      'radius-sm':'1px',
+      'radius-xs':'0px',
+
+      // ─── Glass: dark tinted panels with yellow edge bleed ─────────
+      'glass-bg':'rgba(10,10,18,0.82)',
+      'glass-border':'rgba(252,227,0,0.15)',
+      'glass-shine':'rgba(252,227,0,0.03)',
+      'glass-blur':'16px',
+
+      // ─── Tiles: subtle yellow-tinted surfaces ─────────────────────
+      'tile-bg':'rgba(252,227,0,0.04)',
+      'tile-border':'rgba(252,227,0,0.10)',
+      'tile-shine':'rgba(252,227,0,0.02)',
+
+      // ─── Shadows: yellow-tinted ambient glow ──────────────────────
+      'shadow-panel':'0 0 20px rgba(252,227,0,0.04), 0 4px 16px rgba(0,0,0,0.3)',
+      'shadow-panel-hover':'0 0 30px rgba(252,227,0,0.08), 0 8px 32px rgba(0,0,0,0.4)',
+
+      // ─── Overlays: scanlines + subtle grid (breach protocol feel) ─
+      'scanlines':'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.12) 2px, rgba(0,0,0,0.12) 4px)',
+      'grid-bg':'linear-gradient(rgba(252,227,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(252,227,0,0.02) 1px, transparent 1px)',
+      'grid-size':'48px',
+      'vignette':'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.55) 100%)',
+
+      // ─── Orbs: yellow and red atmospheric haze ────────────────────
+      'orb1-color':'rgba(252,227,0,0.08)',
+      'orb2-color':'rgba(255,0,60,0.05)',
+      'orb3-color':'rgba(0,240,255,0.04)',
+      'orb-blur':'100px',
+
+      // ─── Stat gradients ───────────────────────────────────────────
+      'stat-blue':'linear-gradient(135deg, #fce300, #b8a600)',
+      'stat-magenta':'linear-gradient(135deg, #ff003c, #ff3366)',
+      'stat-orange':'linear-gradient(135deg, #f09030, #f0b060)',
+      'stat-lime':'linear-gradient(135deg, #00f0ff, #40f8ff)',
+
+      // ─── Mark / highlight ─────────────────────────────────────────
+      'mark-bg':'linear-gradient(135deg, #fce300 0%, #ff003c 50%, #00f0ff 100%)',
+      'mark-shadow':'0 0 24px rgba(252,227,0,0.4)',
+    },
+    features: {
+      scanlines: true,
+      glowText: true,
+      squareElements: true,
+      gradientLogo: false,
+      invertedLabels: true,
+    },
+    switcher: {
+      bg:'linear-gradient(135deg, #0a0a12, #12121e)',
+      accent:'#fce300',
+    },
+  },
 
 };
