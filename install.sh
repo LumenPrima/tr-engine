@@ -37,7 +37,7 @@ echo "Setting up tr-engine..."
 TR_DIR="$(pwd)"
 
 # -- Create directory and download files --
-mkdir -p tr-engine/pgdata
+mkdir -p tr-engine
 
 echo "Downloading files..."
 curl -sf https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sql \
@@ -71,7 +71,7 @@ services:
       POSTGRES_PASSWORD: trengine
       POSTGRES_DB: trengine
     volumes:
-      - ./pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trengine"]
@@ -89,6 +89,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+volumes:
+  pgdata:
 YAML
 
 # -- Detect LAN IP for the success message --
@@ -123,9 +126,10 @@ echo "  Edit this file to enable MQTT, authentication, transcription, etc."
 echo "  Then restart:  docker compose up -d"
 echo ""
 echo "Useful commands (run from the tr-engine/ directory):"
-echo "  docker compose logs -f       View logs"
-echo "  docker compose down          Stop"
-echo "  docker compose up -d         Start"
+echo "  docker compose logs -f                  View logs"
+echo "  docker compose down                     Stop"
+echo "  docker compose up -d                    Start"
+echo "  docker compose pull && docker compose up -d   Update to latest version"
 echo ""
 echo "To remove completely:"
 echo "  cd tr-engine && docker compose down -v && cd .. && rm -rf tr-engine"
