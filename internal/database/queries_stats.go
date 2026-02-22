@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -78,6 +79,121 @@ func (db *DB) GetStats(ctx context.Context) (*StatsResponse, error) {
 	}
 
 	return &s, rows.Err()
+}
+
+// TalkgroupActivityFilter specifies filters for the talkgroup activity summary.
+type TalkgroupActivityFilter struct {
+	SystemIDs []int
+	SiteIDs   []int
+	Tgids     []int
+	After     *time.Time
+	Before    *time.Time
+	Limit     int
+	Offset    int
+	SortField string // "calls", "duration", "tgid"
+}
+
+// TalkgroupActivity represents call counts grouped by talkgroup.
+type TalkgroupActivity struct {
+	SystemID       int       `json:"system_id"`
+	SystemName     string    `json:"system_name"`
+	Tgid           int       `json:"tgid"`
+	TgAlphaTag     string    `json:"tg_alpha_tag,omitempty"`
+	TgDescription  string    `json:"tg_description,omitempty"`
+	TgTag          string    `json:"tg_tag,omitempty"`
+	TgGroup        string    `json:"tg_group,omitempty"`
+	CallCount      int       `json:"call_count"`
+	TotalDuration  float64   `json:"total_duration"`
+	EmergencyCount int       `json:"emergency_count"`
+	FirstCall      time.Time `json:"first_call"`
+	LastCall       time.Time `json:"last_call"`
+}
+
+// GetTalkgroupActivity returns call counts grouped by talkgroup for a time range.
+func (db *DB) GetTalkgroupActivity(ctx context.Context, filter TalkgroupActivityFilter) ([]TalkgroupActivity, int, error) {
+	qb := newQueryBuilder()
+	qb.AddRaw("c.call_state = 'COMPLETED'")
+
+	if len(filter.SystemIDs) > 0 {
+		qb.Add("c.system_id = ANY(%s)", filter.SystemIDs)
+	}
+	if len(filter.SiteIDs) > 0 {
+		qb.Add("c.site_id = ANY(%s)", filter.SiteIDs)
+	}
+	if len(filter.Tgids) > 0 {
+		qb.Add("c.tgid = ANY(%s)", filter.Tgids)
+	}
+	if filter.After != nil {
+		qb.Add("c.start_time >= %s", *filter.After)
+	}
+	if filter.Before != nil {
+		qb.Add("c.start_time < %s", *filter.Before)
+	}
+
+	whereClause := qb.WhereClause()
+
+	// Count distinct talkgroups
+	var total int
+	countQuery := "SELECT count(DISTINCT (c.system_id, c.tgid)) FROM calls c" + whereClause
+	if err := db.Pool.QueryRow(ctx, countQuery, qb.Args()...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Sort
+	orderBy := "count(*) DESC"
+	switch filter.SortField {
+	case "duration":
+		orderBy = "COALESCE(sum(c.duration), 0) DESC"
+	case "tgid":
+		orderBy = "c.tgid ASC"
+	}
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+
+	dataQuery := fmt.Sprintf(`
+		SELECT c.system_id, COALESCE(c.system_name, ''),
+			c.tgid, COALESCE(c.tg_alpha_tag, ''), COALESCE(c.tg_description, ''),
+			COALESCE(c.tg_tag, ''), COALESCE(c.tg_group, ''),
+			count(*), COALESCE(sum(c.duration), 0),
+			count(*) FILTER (WHERE c.emergency),
+			min(c.start_time), max(c.start_time)
+		FROM calls c
+		%s
+		GROUP BY c.system_id, COALESCE(c.system_name, ''),
+			c.tgid, COALESCE(c.tg_alpha_tag, ''), COALESCE(c.tg_description, ''),
+			COALESCE(c.tg_tag, ''), COALESCE(c.tg_group, '')
+		ORDER BY %s
+		LIMIT %d OFFSET %d
+	`, whereClause, orderBy, limit, filter.Offset)
+
+	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var results []TalkgroupActivity
+	for rows.Next() {
+		var a TalkgroupActivity
+		if err := rows.Scan(
+			&a.SystemID, &a.SystemName,
+			&a.Tgid, &a.TgAlphaTag, &a.TgDescription,
+			&a.TgTag, &a.TgGroup,
+			&a.CallCount, &a.TotalDuration,
+			&a.EmergencyCount,
+			&a.FirstCall, &a.LastCall,
+		); err != nil {
+			return nil, 0, err
+		}
+		results = append(results, a)
+	}
+	if results == nil {
+		results = []TalkgroupActivity{}
+	}
+	return results, total, rows.Err()
 }
 
 // DecodeRateFilter specifies time range for decode rate queries.

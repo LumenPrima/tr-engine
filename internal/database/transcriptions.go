@@ -61,6 +61,7 @@ type CallTranscriptionInfo struct {
 // TranscriptionSearchFilter specifies filters for full-text search.
 type TranscriptionSearchFilter struct {
 	SystemIDs []int
+	SiteIDs   []int
 	Tgids     []int
 	StartTime *time.Time
 	EndTime   *time.Time
@@ -228,6 +229,9 @@ func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter Tra
 	}
 	if len(filter.SystemIDs) > 0 {
 		qb.Add("c.system_id = ANY(%s)", filter.SystemIDs)
+	}
+	if len(filter.SiteIDs) > 0 {
+		qb.Add("c.site_id = ANY(%s)", filter.SiteIDs)
 	}
 	if len(filter.Tgids) > 0 {
 		qb.Add("c.tgid = ANY(%s)", filter.Tgids)

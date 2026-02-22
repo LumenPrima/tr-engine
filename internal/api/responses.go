@@ -202,6 +202,27 @@ func QueryIntList(r *http.Request, name string) []int {
 	return result
 }
 
+// QueryIntListAliased tries each name in order, returning the first non-empty result.
+// This lets endpoints accept both singular and plural param names (e.g. tgid and tgids).
+func QueryIntListAliased(r *http.Request, names ...string) []int {
+	for _, name := range names {
+		if result := QueryIntList(r, name); len(result) > 0 {
+			return result
+		}
+	}
+	return nil
+}
+
+// QueryStringListAliased tries each name in order, returning the first non-empty result.
+func QueryStringListAliased(r *http.Request, names ...string) []string {
+	for _, name := range names {
+		if result := QueryStringList(r, name); len(result) > 0 {
+			return result
+		}
+	}
+	return nil
+}
+
 // QueryStringList extracts a comma-separated list of strings from a query param.
 func QueryStringList(r *http.Request, name string) []string {
 	v := r.URL.Query().Get(name)

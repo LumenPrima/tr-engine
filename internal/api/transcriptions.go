@@ -199,8 +199,9 @@ func (h *TranscriptionsHandler) SearchTranscriptions(w http.ResponseWriter, r *h
 	}
 
 	filter := database.TranscriptionSearchFilter{
-		SystemIDs: QueryIntList(r, "system_id"),
-		Tgids:     QueryIntList(r, "tgid"),
+		SystemIDs: QueryIntListAliased(r, "system_id", "systems"),
+		SiteIDs:   QueryIntListAliased(r, "site_id", "sites"),
+		Tgids:     QueryIntListAliased(r, "tgid", "tgids"),
 		Limit:     p.Limit,
 		Offset:    p.Offset,
 	}

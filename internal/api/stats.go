@@ -117,10 +117,45 @@ func (h *StatsHandler) ListConsoleMessages(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// GetTalkgroupActivity returns call counts grouped by talkgroup for a time range.
+func (h *StatsHandler) GetTalkgroupActivity(w http.ResponseWriter, r *http.Request) {
+	filter := database.TalkgroupActivityFilter{}
+	filter.SystemIDs = QueryIntListAliased(r, "system_id", "systems")
+	filter.SiteIDs = QueryIntListAliased(r, "site_id", "sites")
+	filter.Tgids = QueryIntListAliased(r, "tgid", "tgids")
+
+	if t, ok := QueryTime(r, "after"); ok {
+		filter.After = &t
+	}
+	if t, ok := QueryTime(r, "before"); ok {
+		filter.Before = &t
+	}
+	if v, ok := QueryInt(r, "limit"); ok {
+		filter.Limit = v
+	}
+	if v, ok := QueryInt(r, "offset"); ok {
+		filter.Offset = v
+	}
+	if v, ok := QueryString(r, "sort"); ok {
+		filter.SortField = v
+	}
+
+	activity, total, err := h.db.GetTalkgroupActivity(r.Context(), filter)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to get talkgroup activity")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"activity": activity,
+		"total":    total,
+	})
+}
+
 // Routes registers stats routes on the given router.
 func (h *StatsHandler) Routes(r chi.Router) {
 	r.Get("/stats", h.GetStats)
 	r.Get("/stats/rates", h.GetDecodeRates)
+	r.Get("/stats/talkgroup-activity", h.GetTalkgroupActivity)
 	r.Get("/trunking-messages", h.ListTrunkingMessages)
 	r.Get("/console-messages", h.ListConsoleMessages)
 }

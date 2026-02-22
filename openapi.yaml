@@ -823,18 +823,18 @@ paths:
       parameters:
         - name: system_id
           in: query
-          description: Filter by internal system ID (comma-separated for multiple)
+          description: Filter by internal system ID (comma-separated for multiple). Alias "systems" also accepted.
           schema:
             type: string
             example: "1,2"
         - name: sysid
           in: query
-          description: Filter by P25 sysid hex (comma-separated for multiple)
+          description: Filter by P25 sysid hex (comma-separated for multiple). Alias "sysids" also accepted.
           schema:
             type: string
         - name: unit_id
           in: query
-          description: Filter by unit radio ID (comma-separated for multiple)
+          description: Filter by unit radio ID (comma-separated for multiple). Aliases "units", "unit_ids" also accepted.
           schema:
             type: string
             example: "924003,104"
@@ -847,7 +847,7 @@ paths:
             type: string
         - name: tgid
           in: query
-          description: Filter by talkgroup ID (comma-separated for multiple)
+          description: Filter by talkgroup ID (comma-separated for multiple). Alias "tgids" also accepted.
           schema:
             type: string
             example: "9178,5344"
@@ -971,30 +971,30 @@ paths:
       parameters:
         - name: sysid
           in: query
-          description: Filter by P25 SYSID (comma-separated for multiple, e.g., "348,34D")
+          description: Filter by P25 SYSID (comma-separated for multiple, e.g., "348,34D"). Alias "sysids" also accepted.
           schema:
             type: string
         - name: system_id
           in: query
-          description: Filter by system database ID (comma-separated for multiple)
+          description: Filter by system database ID (comma-separated for multiple). Alias "systems" also accepted.
           schema:
             type: string
             example: "1,2"
         - name: site_id
           in: query
-          description: Filter by recording site ID (comma-separated for multiple)
+          description: Filter by recording site ID (comma-separated for multiple). Alias "sites" also accepted.
           schema:
             type: string
             example: "1,3"
         - name: tgid
           in: query
-          description: Filter by talkgroup ID (comma-separated for multiple)
+          description: Filter by talkgroup ID (comma-separated for multiple). Alias "tgids" also accepted.
           schema:
             type: string
             example: "9178,5344"
         - name: unit_id
           in: query
-          description: Filter by unit radio ID (comma-separated for multiple)
+          description: Filter by unit radio ID (comma-separated for multiple). Aliases "units", "unit_ids" also accepted.
           schema:
             type: string
             example: "924003,104"
@@ -1402,12 +1402,17 @@ paths:
             type: string
         - name: system_id
           in: query
-          description: Filter by system ID(s), comma-separated
+          description: Filter by system ID(s), comma-separated. Alias "systems" also accepted.
           schema:
             type: string
         - name: tgid
           in: query
-          description: Filter by talkgroup ID(s), comma-separated
+          description: Filter by talkgroup ID(s), comma-separated. Alias "tgids" also accepted.
+          schema:
+            type: string
+        - name: site_id
+          in: query
+          description: Filter by site ID(s), comma-separated. Alias "sites" also accepted.
           schema:
             type: string
         - name: start_time
@@ -1554,6 +1559,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DecodeRatesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /stats/talkgroup-activity:
+    get:
+      operationId: getTalkgroupActivity
+      summary: Talkgroup activity summary
+      description: |
+        Returns call counts grouped by talkgroup for a time range.
+        Useful for quickly identifying the busiest talkgroups without
+        fetching individual call records.
+      tags: [stats]
+      parameters:
+        - name: system_id
+          in: query
+          description: Filter by system ID(s), comma-separated. Alias "systems" also accepted.
+          schema:
+            type: string
+        - name: site_id
+          in: query
+          description: Filter by site ID(s), comma-separated. Alias "sites" also accepted.
+          schema:
+            type: string
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID(s), comma-separated. Alias "tgids" also accepted.
+          schema:
+            type: string
+        - name: after
+          in: query
+          description: Start of time range (RFC 3339). Defaults to 24 hours ago.
+          schema:
+            type: string
+            format: date-time
+        - name: before
+          in: query
+          description: End of time range (RFC 3339). Defaults to now.
+          schema:
+            type: string
+            format: date-time
+        - name: sort
+          in: query
+          description: Sort field — "calls" (default), "duration", "tgid"
+          schema:
+            type: string
+            enum: [calls, duration, tgid]
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  activity:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TalkgroupActivity"
+                  total:
+                    type: integer
+                    description: Total number of distinct talkgroups matching the filter
         "400":
           $ref: "#/components/responses/BadRequest"
         "500":
@@ -3671,6 +3741,47 @@ components:
           type: integer
           description: Total messages in this measurement period
           example: 5000
+
+    TalkgroupActivity:
+      type: object
+      properties:
+        system_id:
+          type: integer
+          example: 3
+        system_name:
+          type: string
+          example: "MARCS"
+        tgid:
+          type: integer
+          example: 9178
+        tg_alpha_tag:
+          type: string
+          example: "09-8L Main"
+        tg_description:
+          type: string
+          example: "Middletown Police Dispatch"
+        tg_tag:
+          type: string
+          example: "Law Dispatch"
+        tg_group:
+          type: string
+          example: "Butler County (09) Law"
+        call_count:
+          type: integer
+          example: 923
+        total_duration:
+          type: number
+          description: Total call duration in seconds
+          example: 5842.3
+        emergency_count:
+          type: integer
+          example: 2
+        first_call:
+          type: string
+          format: date-time
+        last_call:
+          type: string
+          format: date-time
 
     EncryptionStatsResponse:
       type: object
