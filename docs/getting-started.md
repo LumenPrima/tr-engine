@@ -60,19 +60,19 @@ mosquitto_pub -t 'test' -m 'hello'
 
 ## 2. PostgreSQL
 
-tr-engine requires PostgreSQL 18. It uses partitioned tables, JSONB, and GIN indexes.
+tr-engine requires PostgreSQL 17+. It uses partitioned tables, JSONB, and GIN indexes.
 
 ### Install
 
 ```bash
 # Debian/Ubuntu (via official PostgreSQL apt repo)
-sudo apt install postgresql-18
+sudo apt install postgresql-17
 
 # macOS
-brew install postgresql@18
+brew install postgresql@17
 
 # Docker
-docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=secret postgres:18
+docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=secret postgres:17
 ```
 
 ### Create database and user

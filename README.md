@@ -14,29 +14,30 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 ## Tech Stack
 
 - **Go** — multi-core utilization at high message rates
-- **PostgreSQL 18** — partitioned tables, JSONB, denormalized for read performance
+- **PostgreSQL 17+** — partitioned tables, JSONB, denormalized for read performance
 - **MQTT + File Watch** — ingests from trunk-recorder via MQTT or filesystem monitoring (or both)
 - **REST API** — 49 endpoints under `/api/v1`, defined in `openapi.yaml`
 - **SSE** — real-time event streaming with server-side filtering
 - **Web UI** — built-in dashboards demonstrating API and SSE capabilities
 
-## Getting Started
+## Quick Start
 
-- **[Docker Compose](docs/docker.md)** — single `docker compose up` with PostgreSQL, MQTT, and tr-engine
-- **[Docker with existing MQTT](docs/docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
-- **[Build from source](docs/getting-started.md)** — roll your own: compile from source, bring your own PostgreSQL
-- **[Binary releases](docs/binary-releases.md)** — download a pre-built binary, just add PostgreSQL
-
-### Quick Start
+Run this from your trunk-recorder directory (requires [Docker](https://docs.docker.com/get-docker/)):
 
 ```bash
-mkdir tr-engine && cd tr-engine
-curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker-compose.yml
-curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sql
-mkdir -p docker && curl -so docker/mosquitto.conf https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker/mosquitto.conf
-docker compose up -d
-curl http://localhost:8080/api/v1/health
+curl -sL https://raw.githubusercontent.com/LumenPrima/tr-engine/master/install.sh | sh
 ```
+
+That's it. Open http://localhost:8080 — call recordings will appear as trunk-recorder captures them.
+
+To remove: `cd tr-engine && docker compose down -v && cd .. && rm -rf tr-engine`
+
+## Other Installation Methods
+
+- **[Docker Compose](docs/docker.md)** — full setup with PostgreSQL, MQTT broker, and tr-engine
+- **[Docker with existing MQTT](docs/docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
+- **[Build from source](docs/getting-started.md)** — compile from source, bring your own PostgreSQL
+- **[Binary releases](docs/binary-releases.md)** — download a pre-built binary, just add PostgreSQL
 
 ## Configuration
 

@@ -11,7 +11,7 @@ Current dev/test uses 2 counties (Butler/Warren, NACs 340/34D).
 ## Technology Stack
 
 - **Language**: Go
-- **Database**: PostgreSQL 18 (we have changed spec to v 18, make sure all references are updated)
+- **Database**: PostgreSQL 17+
 - **MQTT**: ingests from trunk-recorder instances
 - **Real-time push**: Server-Sent Events (SSE) at `GET /api/v1/events/stream` with server-side filtering (systems, sites, tgids, units, event types). Clients reconnect with `Last-Event-ID` for gapless recovery on filter changes.
 - **API**: REST under `/api/v1`, defined in `openapi.yaml`

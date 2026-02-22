@@ -32,7 +32,7 @@ Here's what the file should look like after editing:
 ```yaml
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: trengine
       POSTGRES_PASSWORD: trengine

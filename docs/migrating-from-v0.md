@@ -8,7 +8,7 @@ The good news: v0 used database `tr_engine` and v1 uses `trengine`, so they don'
 
 | | v0 | v1 |
 |---|---|---|
-| Database | `tr_engine` (TimescaleDB required) | `trengine` (plain PostgreSQL 18, no extensions) |
+| Database | `tr_engine` (TimescaleDB required) | `trengine` (plain PostgreSQL 17+, no extensions) |
 | Config | `config.yaml` (YAML) | `.env` file + env vars + CLI flags |
 | MQTT topics | `trunk-recorder/status/#` etc. | Configurable, default `#` (catches everything) |
 | Embedded Postgres | Attempted (broken on ARM) | Not supported — use system or Docker Postgres |
@@ -40,7 +40,7 @@ Set a password if needed:
 sudo -u postgres psql -c "ALTER USER trengine PASSWORD 'yourpassword';"
 ```
 
-No TimescaleDB required. No extensions at all — plain PostgreSQL 18.
+No TimescaleDB required. No extensions at all — plain PostgreSQL 17+.
 
 Load the schema:
 

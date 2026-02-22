@@ -2,6 +2,12 @@
 
 Run tr-engine with a single command. Docker Compose handles PostgreSQL, the MQTT broker, and tr-engine — you just need trunk-recorder pointed at the broker.
 
+> **Don't have the MQTT plugin?** Run this from your trunk-recorder directory — no setup needed:
+> ```bash
+> curl -sL https://raw.githubusercontent.com/LumenPrima/tr-engine/master/install.sh | sh
+> ```
+> This installs everything (including PostgreSQL) and starts watching your call recordings automatically.
+
 > **Other installation methods:**
 > - **[Docker with existing MQTT](./docker-external-mqtt.md)** — connect to a broker you already run instead of bundling one
 > - **[Build from source](./getting-started.md)** — compile everything yourself from scratch

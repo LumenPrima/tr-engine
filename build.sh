@@ -10,6 +10,11 @@ BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 LDFLAGS="-X ${PKG}.version=${VERSION} -X ${PKG}.commit=${COMMIT} -X ${PKG}.buildTime=${BUILD_TIME}"
 
+OUTPUT="tr-engine"
+if [[ "${GOOS:-$(go env GOOS)}" == "windows" ]]; then
+  OUTPUT="tr-engine.exe"
+fi
+
 echo "Building tr-engine ${VERSION} (${COMMIT}) at ${BUILD_TIME}"
-go build -ldflags "${LDFLAGS}" -o tr-engine.exe ./cmd/tr-engine
-echo "Done: tr-engine.exe"
+go build -ldflags "${LDFLAGS}" -o "${OUTPUT}" ./cmd/tr-engine
+echo "Done: ${OUTPUT}"

@@ -9,7 +9,7 @@ Download a pre-built binary and get running in minutes. You need PostgreSQL and 
 
 ## Prerequisites
 
-- **PostgreSQL 18**
+- **PostgreSQL 17+**
 - A running **trunk-recorder** instance with one of:
   - The [MQTT Status plugin](https://github.com/TrunkRecorder/trunk-recorder-mqtt-status) and an MQTT broker
   - An accessible audio output directory (for file watch mode)
