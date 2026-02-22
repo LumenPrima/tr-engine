@@ -67,87 +67,105 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		p.log.Warn().Err(err).Int("unit", data.Unit).Msg("failed to upsert unit")
 	}
 
-	// Build unit event row
-	row := &database.UnitEventRow{
-		EventType:    eventType,
-		SystemID:     identity.SystemID,
-		UnitRID:      data.Unit,
-		Time:         ts,
-		UnitAlphaTag: data.UnitAlphaTag,
-		TgAlphaTag:   data.TalkgroupAlphaTag,
-		InstanceID:   env.InstanceID,
-		SysName:      data.SysName,
-	}
-
-	sysNum := int16(data.SysNum)
-	row.SysNum = &sysNum
-
-	if data.Talkgroup > 0 {
-		tgid := data.Talkgroup
-		row.Tgid = &tgid
-	}
-
-	if data.Freq > 0 {
-		freq := int64(data.Freq)
-		row.Freq = &freq
-	}
-
-	if data.CallNum > 0 {
-		callNum := data.CallNum
-		row.CallNum = &callNum
-	}
-
-	if data.StartTime > 0 {
-		st := time.Unix(data.StartTime, 0)
-		row.StartTime = &st
-	}
-	if data.StopTime > 0 {
-		st := time.Unix(data.StopTime, 0)
-		row.StopTime = &st
-	}
-
-	// Fields specific to "end" events
-	if eventType == "end" || eventType == "call" {
-		if data.Emergency {
-			row.Emergency = &data.Emergency
+	// Dedup check: skip DB insert + SSE publish if an equivalent event was
+	// already processed within the same 5-second window (multi-site dedup).
+	isDup := false
+	{
+		dk := unitDedupKey{
+			SystemID:   identity.SystemID,
+			UnitID:     data.Unit,
+			EventType:  eventType,
+			Tgid:       data.Talkgroup,
+			TimeBucket: ts.Unix() / 5,
 		}
-		if data.Encrypted {
-			row.Encrypted = &data.Encrypted
+		if _, loaded := p.unitEventDedup.LoadOrStore(dk, time.Now()); loaded {
+			isDup = true
 		}
 	}
 
-	if eventType == "end" || eventType == "call" {
-		pos := float32(data.Position)
-		row.Position = &pos
-		length := float32(data.Length)
-		row.Length = &length
-		row.ErrorCount = &data.ErrorCount
-		row.SpikeCount = &data.SpikeCount
-		row.SampleCount = &data.SampleCount
-		row.TransmissionFilename = data.TransmissionFilename
-	}
+	if !isDup {
+		// Build unit event row
+		row := &database.UnitEventRow{
+			EventType:    eventType,
+			SystemID:     identity.SystemID,
+			UnitRID:      data.Unit,
+			Time:         ts,
+			UnitAlphaTag: data.UnitAlphaTag,
+			TgAlphaTag:   data.TalkgroupAlphaTag,
+			InstanceID:   env.InstanceID,
+			SysName:      data.SysName,
+		}
 
-	if err := p.db.InsertUnitEvent(ctx, row); err != nil {
-		return fmt.Errorf("insert unit event: %w", err)
-	}
+		sysNum := int16(data.SysNum)
+		row.SysNum = &sysNum
 
-	p.PublishEvent(EventData{
-		Type:     "unit_event",
-		SubType:  eventType,
-		SystemID: identity.SystemID,
-		SiteID:   identity.SiteID,
-		Tgid:     data.Talkgroup,
-		UnitID:   data.Unit,
-		Payload: map[string]any{
-			"event_type":     eventType,
-			"system_id":      identity.SystemID,
-			"unit_id":        data.Unit,
-			"unit_alpha_tag": data.UnitAlphaTag,
-			"tgid":           data.Talkgroup,
-			"tg_alpha_tag":   data.TalkgroupAlphaTag,
-			"time":           ts,
-		},
-	})
+		if data.Talkgroup > 0 {
+			tgid := data.Talkgroup
+			row.Tgid = &tgid
+		}
+
+		if data.Freq > 0 {
+			freq := int64(data.Freq)
+			row.Freq = &freq
+		}
+
+		if data.CallNum > 0 {
+			callNum := data.CallNum
+			row.CallNum = &callNum
+		}
+
+		if data.StartTime > 0 {
+			st := time.Unix(data.StartTime, 0)
+			row.StartTime = &st
+		}
+		if data.StopTime > 0 {
+			st := time.Unix(data.StopTime, 0)
+			row.StopTime = &st
+		}
+
+		// Fields specific to "end" events
+		if eventType == "end" || eventType == "call" {
+			if data.Emergency {
+				row.Emergency = &data.Emergency
+			}
+			if data.Encrypted {
+				row.Encrypted = &data.Encrypted
+			}
+		}
+
+		if eventType == "end" || eventType == "call" {
+			pos := float32(data.Position)
+			row.Position = &pos
+			length := float32(data.Length)
+			row.Length = &length
+			row.ErrorCount = &data.ErrorCount
+			row.SpikeCount = &data.SpikeCount
+			row.SampleCount = &data.SampleCount
+			row.TransmissionFilename = data.TransmissionFilename
+		}
+
+		if err := p.db.InsertUnitEvent(ctx, row); err != nil {
+			return fmt.Errorf("insert unit event: %w", err)
+		}
+
+		p.PublishEvent(EventData{
+			Type:     "unit_event",
+			SubType:  eventType,
+			SystemID: identity.SystemID,
+			SiteID:   identity.SiteID,
+			Tgid:     data.Talkgroup,
+			UnitID:   data.Unit,
+			Payload: map[string]any{
+				"event_type":     eventType,
+				"system_id":      identity.SystemID,
+				"unit_id":        data.Unit,
+				"unit_alpha_tag": data.UnitAlphaTag,
+				"tgid":           data.Talkgroup,
+				"tg_alpha_tag":   data.TalkgroupAlphaTag,
+				"time":           ts,
+			},
+		})
+	}
 
 	// Update affiliation map
 	affKey := affiliationKey{SystemID: identity.SystemID, UnitID: data.Unit}

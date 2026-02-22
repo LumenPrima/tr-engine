@@ -53,6 +53,9 @@ type Pipeline struct {
 	// TR instance status cache: instance_id → trInstanceStatusEntry
 	trInstanceStatus sync.Map
 
+	// Unit event dedup buffer: unitDedupKey → time.Time (first seen)
+	unitEventDedup sync.Map
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -143,6 +146,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	}
 	go p.statsLoop()
 	go p.maintenanceLoop()
+	go p.dedupCleanupLoop()
 	if p.transcriber != nil {
 		p.transcriber.Start()
 	}
@@ -484,6 +488,36 @@ func (p *Pipeline) runMaintenance() {
 	}
 
 	log.Info().Dur("elapsed_ms", time.Since(start)).Msg("partition maintenance complete")
+}
+
+// unitDedupKey identifies a unique unit event for deduplication across sites.
+// TimeBucket = ts.Unix() / 5 groups events within 5-second windows.
+type unitDedupKey struct {
+	SystemID   int
+	UnitID     int
+	EventType  string
+	Tgid       int
+	TimeBucket int64
+}
+
+// dedupCleanupLoop sweeps expired entries from the unit event dedup buffer every 10 seconds.
+func (p *Pipeline) dedupCleanupLoop() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			p.unitEventDedup.Range(func(key, value any) bool {
+				if time.Since(value.(time.Time)) > 10*time.Second {
+					p.unitEventDedup.Delete(key)
+				}
+				return true
+			})
+		}
+	}
 }
 
 // beginningOfMonth returns the first day of the month for the given time.
