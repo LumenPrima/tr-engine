@@ -91,6 +91,19 @@ services:
         condition: service_healthy
 YAML
 
+# -- Detect LAN IP for the success message --
+LAN_IP=""
+if command -v hostname >/dev/null 2>&1; then
+  LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+if [ -z "$LAN_IP" ] && command -v ip >/dev/null 2>&1; then
+  LAN_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+fi
+if [ -z "$LAN_IP" ] && command -v ifconfig >/dev/null 2>&1; then
+  LAN_IP=$(ifconfig 2>/dev/null | awk '/inet / && !/127.0.0.1/ {print $2; exit}')
+fi
+HOST="${LAN_IP:-localhost}"
+
 # -- Start --
 echo "Pulling images (this may take a minute)..."
 cd tr-engine
@@ -100,7 +113,7 @@ docker compose up -d
 echo ""
 echo "========================================="
 echo "  tr-engine is running!"
-echo "  Open http://localhost:8080"
+echo "  Open http://${HOST}:8080"
 echo "========================================="
 echo ""
 echo "Call recordings will appear as trunk-recorder captures them."
