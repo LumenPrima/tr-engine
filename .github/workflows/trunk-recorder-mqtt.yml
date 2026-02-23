@@ -2,16 +2,59 @@ name: trunk-recorder-mqtt
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force rebuild even if TR version unchanged'
+        type: boolean
+        default: false
   schedule:
-    # Weekly on Sundays at 04:00 UTC — picks up upstream TR changes
-    - cron: '0 4 * * 0'
+    # Daily at 04:00 UTC — checks for new TR releases, skips if already built
+    - cron: '0 4 * * *'
 
 permissions:
   contents: read
   packages: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tr_version: ${{ steps.tr.outputs.version }}
+      should_build: ${{ steps.compare.outputs.should_build }}
+    steps:
+      - name: Get latest trunk-recorder release
+        id: tr
+        run: |
+          version=$(curl -sf https://api.github.com/repos/robotastic/trunk-recorder/releases/latest | jq -r '.tag_name')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Latest TR release: ${version}"
+
+      - name: Check if image already exists for this version
+        id: compare
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "Force rebuild requested"
+            exit 0
+          fi
+
+          # Check if we already have an image tagged with this TR version
+          token=$(curl -sf "https://ghcr.io/token?scope=repository:lumenprima/trunk-recorder-mqtt:pull" | jq -r '.token')
+          status=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${token}" \
+            "https://ghcr.io/v2/lumenprima/trunk-recorder-mqtt/manifests/tr-${{ steps.tr.outputs.version }}")
+
+          if [ "$status" = "200" ]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "Image already exists for TR ${{ steps.tr.outputs.version }}, skipping"
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "New TR version ${{ steps.tr.outputs.version }}, building"
+          fi
+
   docker:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,10 +73,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate date tag
-        id: date
-        run: echo "tag=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -42,6 +81,6 @@ jobs:
           push: true
           tags: |
             ghcr.io/lumenprima/trunk-recorder-mqtt:latest
-            ghcr.io/lumenprima/trunk-recorder-mqtt:${{ steps.date.outputs.tag }}
+            ghcr.io/lumenprima/trunk-recorder-mqtt:tr-${{ needs.check.outputs.tr_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
