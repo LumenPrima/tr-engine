@@ -76,6 +76,19 @@ Replace `YOUR_DOCKER_HOST` with the IP or hostname of the machine running Docker
 
 Once trunk-recorder connects, systems and talkgroups will auto-populate within seconds.
 
+### Raspberry Pi / ARM64 users
+
+The official `robotastic/trunk-recorder` Docker image supports arm64 but doesn't include the MQTT plugin. If you're running trunk-recorder in Docker on a Pi and need MQTT, use our multi-arch image that bundles the plugin:
+
+```yaml
+trunk-recorder:
+    image: ghcr.io/lumenprima/trunk-recorder-mqtt:latest
+```
+
+This is a drop-in replacement — same entrypoint, same config format. It includes trunk-recorder + the MQTT Status plugin pre-compiled for both amd64 and arm64.
+
+If you don't need MQTT, you can skip the plugin entirely and use [file watch mode](#file-watch-mode-watch_dir) instead. You'll lose real-time `call_start` events, unit activity, and recorder state, but call recordings still flow in.
+
 ## 4. Access
 
 - **Web UI:** http://localhost:8080
