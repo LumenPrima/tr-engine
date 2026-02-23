@@ -39,10 +39,17 @@ jobs:
           fi
 
           # Check if we already have an image tagged with this TR version
-          token=$(curl -sf "https://ghcr.io/token?scope=repository:lumenprima/trunk-recorder-mqtt:pull" | jq -r '.token')
-          status=$(curl -sf -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${token}" \
-            "https://ghcr.io/v2/lumenprima/trunk-recorder-mqtt/manifests/tr-${{ steps.tr.outputs.version }}")
+          # Use -s (not -sf) so curl doesn't exit non-zero on HTTP errors —
+          # we check the status code ourselves. The token request can also fail
+          # if the repo doesn't exist yet on GHCR.
+          token=$(curl -s "https://ghcr.io/token?scope=repository:lumenprima/trunk-recorder-mqtt:pull" | jq -r '.token // empty')
+          if [ -z "$token" ]; then
+            status="000"
+          else
+            status=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${token}" \
+              "https://ghcr.io/v2/lumenprima/trunk-recorder-mqtt/manifests/tr-${{ steps.tr.outputs.version }}")
+          fi
 
           if [ "$status" = "200" ]; then
             echo "should_build=false" >> "$GITHUB_OUTPUT"
