@@ -104,11 +104,16 @@ func ParseSort(r *http.Request, defaultField string, allowed map[string]string) 
 }
 
 // SQLColumn returns the SQL column for the sort field, using the allowlist mapping.
+// If the field is not in the allowlist, falls back to any valid column rather than
+// returning potentially unsafe user input.
 func (s SortParam) SQLColumn(allowed map[string]string) string {
 	if col, ok := allowed[s.Field]; ok {
 		return col
 	}
-	return s.Field
+	for _, col := range allowed {
+		return col
+	}
+	return "1"
 }
 
 // SQLDirection returns "ASC" or "DESC".

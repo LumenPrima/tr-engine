@@ -24,7 +24,7 @@ func (p *Pipeline) handleTrunkingMessage(topic string, payload []byte) error {
 	// Convert meta to jsonb-compatible bytes; empty string → null
 	var meta []byte
 	if data.Meta != "" {
-		meta = []byte(`"` + data.Meta + `"`)
+		meta, _ = json.Marshal(data.Meta)
 	}
 
 	row := database.TrunkingMessageRow{

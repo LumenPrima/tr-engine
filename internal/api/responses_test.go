@@ -130,8 +130,14 @@ func TestSortParamSQL(t *testing.T) {
 
 	t.Run("SQLColumn_fallback", func(t *testing.T) {
 		s := SortParam{Field: "unmapped"}
-		if got := s.SQLColumn(allowed); got != "unmapped" {
-			t.Errorf("SQLColumn = %q, want %q", got, "unmapped")
+		got := s.SQLColumn(allowed)
+		// Unmapped fields should fall back to a valid column from the allowlist,
+		// not return raw user input (which would be a SQL injection risk).
+		if got == "unmapped" {
+			t.Errorf("SQLColumn returned raw unmapped field %q, expected a valid allowlist column", got)
+		}
+		if got != "tg_alpha_tag" && got != "call_id" {
+			t.Errorf("SQLColumn = %q, want one of the allowed columns", got)
 		}
 	})
 
