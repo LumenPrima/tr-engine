@@ -63,7 +63,12 @@ func NewServer(opts ServerOptions) *Server {
 			NewAffiliationsHandler(opts.Live).Routes(r)
 			NewTranscriptionsHandler(opts.DB, opts.Live).Routes(r)
 			NewAdminHandler(opts.DB, opts.OnSystemMerge).Routes(r)
-			NewQueryHandler(opts.DB).Routes(r)
+
+			// Query endpoint always requires auth — disabled when AUTH_TOKEN is empty
+			r.Group(func(r chi.Router) {
+				r.Use(RequireAuth(opts.Config.AuthToken))
+				NewQueryHandler(opts.DB).Routes(r)
+			})
 		})
 	})
 

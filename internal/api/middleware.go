@@ -70,6 +70,22 @@ func CORS(next http.Handler) http.Handler {
 	})
 }
 
+// RequireAuth rejects all requests when no auth token is configured.
+// Used for sensitive endpoints (like /query) that should never be open.
+func RequireAuth(token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token == "" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				fmt.Fprintf(w, `{"error":"this endpoint requires AUTH_TOKEN to be configured"}`)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func BearerAuth(token string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

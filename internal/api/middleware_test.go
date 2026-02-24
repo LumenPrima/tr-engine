@@ -133,6 +133,26 @@ func TestBearerAuth(t *testing.T) {
 	})
 }
 
+func TestRequireAuth(t *testing.T) {
+	t.Run("empty_token_returns_403", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		RequireAuth("")(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("expected 403, got %d", rec.Code)
+		}
+	})
+
+	t.Run("configured_token_passes_through", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		RequireAuth("secret123")(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rec.Code)
+		}
+	})
+}
+
 func TestRecoverer(t *testing.T) {
 	t.Run("normal_request_passes_through", func(t *testing.T) {
 		rec := httptest.NewRecorder()

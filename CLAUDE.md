@@ -285,7 +285,7 @@ A live v1 instance runs on `tr-dashboard` alongside the existing v0.
 - **v1** runs via Docker Compose at `/data/tr-engine/v1` with its own PostgreSQL container
 - v1 connects to v0's embedded MQTT broker via `host.docker.internal:1883` — both ingest the same feed
 - **Caddy** reverse proxies all three domains, with Cloudflare in front (SSL: Full at domain level)
-- MQTT credentials: `trunk-recorder` / `yJw4eWqiPvqYoSUcFGBP`
+- MQTT credentials: see `.env` on tr-dashboard
 
 ### SSH
 
