@@ -86,13 +86,14 @@ func (eb *EventBus) ReplaySince(lastEventID string, filter api.EventFilter) []ap
 
 // EventData holds all fields needed to publish an SSE event.
 type EventData struct {
-	Type     string
-	SubType  string
-	SystemID int
-	SiteID   int
-	Tgid     int
-	UnitID   int
-	Payload  any
+	Type      string
+	SubType   string
+	SystemID  int
+	SiteID    int
+	Tgid      int
+	UnitID    int
+	Emergency bool
+	Payload   any
 }
 
 // Publish sends an event to all matching subscribers and adds it to the ring buffer.
@@ -112,6 +113,7 @@ func (eb *EventBus) Publish(e EventData) {
 		SiteID:    e.SiteID,
 		Tgid:      e.Tgid,
 		UnitID:    e.UnitID,
+		Emergency: e.Emergency,
 		Data:      data,
 	}
 
@@ -136,6 +138,9 @@ func (eb *EventBus) Publish(e EventData) {
 }
 
 func matchesFilter(e api.SSEEvent, f api.EventFilter) bool {
+	if f.EmergencyOnly && !e.Emergency {
+		return false
+	}
 	if len(f.Types) > 0 {
 		match := false
 		for _, t := range f.Types {

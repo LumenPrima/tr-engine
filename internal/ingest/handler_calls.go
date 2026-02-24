@@ -173,11 +173,12 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		Msg("call started")
 
 	p.PublishEvent(EventData{
-		Type:     "call_start",
-		SystemID: identity.SystemID,
-		SiteID:   siteID,
-		Tgid:     call.Talkgroup,
-		UnitID:   call.Unit,
+		Type:      "call_start",
+		SystemID:  identity.SystemID,
+		SiteID:    siteID,
+		Tgid:      call.Talkgroup,
+		UnitID:    call.Unit,
+		Emergency: call.Emergency,
 		Payload: map[string]any{
 			"call_id":        callID,
 			"system_id":      identity.SystemID,
@@ -281,10 +282,11 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 
 	if idErr == nil {
 		p.PublishEvent(EventData{
-			Type:     "call_end",
-			SystemID: identity.SystemID,
-			SiteID:   identity.SiteID,
-			Tgid:     call.Talkgroup,
+			Type:      "call_end",
+			SystemID:  identity.SystemID,
+			SiteID:    identity.SiteID,
+			Tgid:      call.Talkgroup,
+			Emergency: call.Emergency,
 			Payload: map[string]any{
 				"call_id":       entry.CallID,
 				"system_id":     identity.SystemID,
@@ -413,10 +415,11 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 			Msg("call_end matched audio-created call")
 
 		p.PublishEvent(EventData{
-			Type:     "call_end",
-			SystemID: identity.SystemID,
-			SiteID:   identity.SiteID,
-			Tgid:     call.Talkgroup,
+			Type:      "call_end",
+			SystemID:  identity.SystemID,
+			SiteID:    identity.SiteID,
+			Tgid:      call.Talkgroup,
+			Emergency: call.Emergency,
 			Payload: map[string]any{
 				"call_id":       existingID,
 				"system_id":     identity.SystemID,
@@ -462,10 +465,11 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		Msg("call inserted from call_end (missed call_start)")
 
 	p.PublishEvent(EventData{
-		Type:     "call_end",
-		SystemID: identity.SystemID,
-		SiteID:   identity.SiteID,
-		Tgid:     call.Talkgroup,
+		Type:      "call_end",
+		SystemID:  identity.SystemID,
+		SiteID:    identity.SiteID,
+		Tgid:      call.Talkgroup,
+		Emergency: call.Emergency,
 		Payload: map[string]any{
 			"call_id":       callID,
 			"system_id":     identity.SystemID,
@@ -562,10 +566,11 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 		}
 
 		p.PublishEvent(EventData{
-			Type:     "call_end",
-			SystemID: entry.SystemID,
-			SiteID:   siteID,
-			Tgid:     entry.Tgid,
+			Type:      "call_end",
+			SystemID:  entry.SystemID,
+			SiteID:    siteID,
+			Tgid:      entry.Tgid,
+			Emergency: entry.Emergency,
 			Payload: map[string]any{
 				"call_id":      entry.CallID,
 				"system_id":    entry.SystemID,

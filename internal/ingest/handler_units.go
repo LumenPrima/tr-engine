@@ -11,12 +11,12 @@ import (
 )
 
 func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
-	// Extract event type from topic: {prefix}/units/{sys_name}/{event_type}
+	// Extract event type from trailing topic segment (prefix-agnostic, consistent with router).
 	parts := strings.Split(topic, "/")
-	if len(parts) != 4 {
+	if len(parts) < 2 {
 		return fmt.Errorf("invalid unit event topic: %s", topic)
 	}
-	eventType := parts[3]
+	eventType := parts[len(parts)-1]
 
 	// Parse envelope
 	var env Envelope
@@ -150,12 +150,13 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		}
 
 		p.PublishEvent(EventData{
-			Type:     "unit_event",
-			SubType:  eventType,
-			SystemID: identity.SystemID,
-			SiteID:   identity.SiteID,
-			Tgid:     data.Talkgroup,
-			UnitID:   data.Unit,
+			Type:      "unit_event",
+			SubType:   eventType,
+			SystemID:  identity.SystemID,
+			SiteID:    identity.SiteID,
+			Tgid:      data.Talkgroup,
+			UnitID:    data.Unit,
+			Emergency: data.Emergency,
 			Payload: map[string]any{
 				"event_type":     eventType,
 				"system_id":      identity.SystemID,

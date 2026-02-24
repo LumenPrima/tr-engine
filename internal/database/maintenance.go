@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // CreateMonthlyPartition calls the SQL helper to create a monthly partition.
@@ -51,7 +53,7 @@ func (db *DB) DecimateStateTable(ctx context.Context, table, timeColumn string) 
 func (db *DB) PurgeOlderThan(ctx context.Context, table, timeColumn string, retention time.Duration) (int64, error) {
 	query := fmt.Sprintf(
 		`DELETE FROM %s WHERE %s < now() - $1::interval`,
-		table, timeColumn,
+		pgx.Identifier{table}.Sanitize(), pgx.Identifier{timeColumn}.Sanitize(),
 	)
 	tag, err := db.Pool.Exec(ctx, query, retention.String())
 	if err != nil {
@@ -105,7 +107,7 @@ func (db *DB) DropOldWeeklyPartitions(ctx context.Context, parentTable string, o
 			continue // skip partitions with unparseable bounds
 		}
 		if upper.Before(cutoff) {
-			_, err := db.Pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, p.name))
+			_, err := db.Pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, pgx.Identifier{p.name}.Sanitize()))
 			if err != nil {
 				return dropped, fmt.Errorf("drop %s: %w", p.name, err)
 			}

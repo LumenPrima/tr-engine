@@ -147,5 +147,6 @@ type SSEEvent struct {
 	SiteID    int    `json:"site_id,omitempty"`
 	Tgid      int    `json:"tgid,omitempty"`
 	UnitID    int    `json:"unit_id,omitempty"`
+	Emergency bool   `json:"-"` // used for server-side filtering only
 	Data      []byte `json:"-"` // pre-serialized JSON payload
 }

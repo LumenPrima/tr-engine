@@ -385,10 +385,11 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 		stopTime = time.Unix(meta.StopTime, 0)
 	}
 	p.PublishEvent(EventData{
-		Type:     "call_end",
-		SystemID: identity.SystemID,
-		SiteID:   identity.SiteID,
-		Tgid:     meta.Talkgroup,
+		Type:      "call_end",
+		SystemID:  identity.SystemID,
+		SiteID:    identity.SiteID,
+		Tgid:      meta.Talkgroup,
+		Emergency: meta.Emergency != 0,
 		Payload: map[string]any{
 			"call_id":       callID,
 			"system_id":     identity.SystemID,
