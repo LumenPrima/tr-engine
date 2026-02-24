@@ -52,14 +52,14 @@
     pointer-events: none;
   }
 
-  /* --- Toolbar (below theme header) --- */
+  /* --- Toolbar --- */
   .toolbar {
     position: sticky; top: 60px; z-index: 20;
     background: var(--glass-bg);
     backdrop-filter: blur(var(--glass-blur, 12px));
     border-bottom: 1px solid var(--glass-border);
-    padding: 10px 20px;
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 8px 16px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   }
 
   .logo {
@@ -98,6 +98,39 @@
   }
   .stats .num { color: var(--accent); font-weight: 600; }
 
+  .legend-btn {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--bg-tile);
+    color: var(--text-muted); font-size: 12px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .legend-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .dormant-toggle {
+    font-size: 11px; color: var(--text-muted);
+    display: flex; align-items: center; gap: 4px;
+    cursor: pointer; white-space: nowrap; user-select: none;
+  }
+  .dormant-toggle input { cursor: pointer; }
+
+  .color-legend {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    font-size: 11px; color: var(--text-muted);
+    padding: 2px 0; width: 100%;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
+  }
+  .legend-dot.state-active { background: var(--accent); }
+  .legend-dot.state-recent { background: color-mix(in srgb, var(--accent) 70%, var(--text-muted)); }
+  .legend-dot.state-affiliated { background: var(--info); }
+  .legend-dot.state-location { background: var(--warning); }
+  .legend-dot.state-data { background: color-mix(in srgb, var(--warning) 65%, var(--text-muted)); }
+  .legend-dot.state-idle { background: color-mix(in srgb, var(--info) 45%, var(--text-faint)); }
+  .legend-dot.state-off { background: var(--text-faint); opacity: 0.45; }
+
   /* --- Auth --- */
   .auth-prompt {
     display: none; position: fixed; inset: 0;
@@ -125,10 +158,10 @@
 
   /* --- Card Grid --- */
   #card-grid {
-    padding: 16px 20px;
+    padding: 12px 16px;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 12px;
+    gap: 8px;
     align-content: start;
     position: relative; z-index: 1;
   }
@@ -137,9 +170,9 @@
     background: var(--bg-tile);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 12px 14px;
+    padding: 10px 12px;
     transition: border-color 0.4s, box-shadow 0.4s;
-    display: flex; flex-direction: column; gap: 8px;
+    display: flex; flex-direction: column; gap: 5px;
   }
   .tg-card.active {
     border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
@@ -151,14 +184,29 @@
   }
   .tg-card.hidden { display: none; }
 
+  .tg-card.dormant {
+    padding: 6px 10px; gap: 0;
+  }
+  .tg-card.dormant .tg-meta,
+  .tg-card.dormant .tg-units { display: none; }
+
   .tg-header {
-    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+    display: flex; justify-content: space-between; align-items: center; gap: 6px;
   }
   .tg-name {
     font-size: 14px; font-weight: 600; color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     flex: 1; min-width: 0;
   }
+  a.tg-name { text-decoration: none; color: inherit; }
+  a.tg-name:hover { text-decoration: underline; text-decoration-color: var(--accent); }
+
+  .tg-count {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    color: var(--text-muted); background: rgba(255,255,255,0.06);
+    padding: 1px 5px; border-radius: var(--radius-xs); white-space: nowrap; flex-shrink: 0;
+  }
+
   .tg-id {
     font-family: var(--font-mono); font-size: 11px; font-weight: 600;
     color: var(--text-faint); background: rgba(255,255,255,0.04);
@@ -166,7 +214,7 @@
   }
 
   .tg-meta {
-    display: flex; gap: 8px; flex-wrap: wrap;
+    display: flex; gap: 5px; flex-wrap: wrap;
     font-size: 11px; color: var(--text-muted);
   }
   .tg-meta .tag {
@@ -175,50 +223,52 @@
   }
 
   .tg-units {
-    display: flex; flex-wrap: wrap; gap: 4px;
-    min-height: 26px;
+    display: flex; flex-wrap: wrap; gap: 3px;
   }
+  .tg-units:empty { display: none; }
+  #card-grid.single-system .tag-system { display: none; }
 
   /* --- Unit Icons --- */
   .unit {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 40px; height: 26px; padding: 0 6px;
+    min-width: 36px; height: 22px; padding: 0 5px;
     border-radius: var(--radius-xs); font-family: var(--font-mono);
     font-size: 10px; font-weight: 600;
-    cursor: default; position: relative;
+    cursor: pointer; position: relative;
     transition: background-color 0.6s, opacity 0.6s, box-shadow 0.6s, transform 0.3s;
   }
   .unit:hover { transform: scale(1.1); z-index: 2; }
 
   .unit.state-active {
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
     color: var(--accent);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--magenta) 40%, transparent),
+                0 0 14px color-mix(in srgb, var(--magenta) 15%, transparent);
   }
   .unit.state-recent {
-    background: color-mix(in srgb, var(--magenta) 18%, transparent);
-    color: var(--magenta);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
   }
   .unit.state-affiliated {
     background: color-mix(in srgb, var(--info) 14%, transparent);
     color: var(--info);
   }
   .unit.state-location {
-    background: color-mix(in srgb, var(--warning) 15%, transparent);
+    background: color-mix(in srgb, var(--warning) 14%, transparent);
     color: var(--warning);
   }
-  .unit.state-off {
-    background: color-mix(in srgb, var(--text-faint) 12%, transparent);
-    color: var(--text-faint);
-    opacity: 0.5;
-  }
   .unit.state-data {
-    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
-    color: var(--text-muted);
+    background: color-mix(in srgb, var(--warning) 10%, transparent);
+    color: color-mix(in srgb, var(--warning) 65%, var(--text-muted));
   }
   .unit.state-idle {
-    background: color-mix(in srgb, var(--text-faint) 10%, transparent);
+    background: color-mix(in srgb, var(--info) 7%, transparent);
+    color: color-mix(in srgb, var(--info) 45%, var(--text-faint));
+  }
+  .unit.state-off {
+    background: color-mix(in srgb, var(--text-faint) 8%, transparent);
     color: var(--text-faint);
+    opacity: 0.45;
   }
 
   /* --- Tooltip --- */
@@ -253,6 +303,137 @@
     color: var(--text-faint); font-size: 14px;
     position: relative; z-index: 1;
   }
+
+  /* --- Mobile --- */
+  @media (max-width: 768px) {
+    body::before, body::after, .vignette-overlay { display: none; }
+    .toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+    .header-controls { flex-direction: column; }
+    .filter-input { width: 100% !important; }
+    .stats { margin-left: 0; justify-content: flex-start; }
+    #card-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); padding: 8px 10px; }
+  }
+  @media (max-width: 480px) {
+    #card-grid { grid-template-columns: 1fr; padding: 6px 8px; }
+    .stats { display: none; }
+    .tg-card { padding: 8px 10px; }
+  }
+
+  /* --- Unit Modal --- */
+  .unit-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .unit-modal.visible { display: flex; }
+  .unit-modal-box {
+    background: var(--bg-tile); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 0;
+    max-width: 520px; width: 94%; max-height: 85vh;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .unit-modal-close {
+    position: absolute; top: 10px; right: 12px; z-index: 1;
+    background: none; border: none; color: var(--text-muted);
+    font-size: 22px; cursor: pointer; line-height: 1;
+    padding: 4px 8px; border-radius: var(--radius-xs);
+  }
+  .unit-modal-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  .unit-modal-header {
+    padding: 20px 20px 12px;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  }
+  .unit-modal-uid {
+    font-family: var(--font-mono); font-size: 22px; font-weight: 600;
+    color: var(--text);
+  }
+  .unit-modal-system {
+    font-size: 11px; color: var(--text-muted);
+    background: rgba(255,255,255,0.04); padding: 2px 8px;
+    border-radius: var(--radius-xs);
+  }
+  .unit-modal-tag-row {
+    padding: 0 20px 12px; display: flex; gap: 8px; align-items: center;
+  }
+  .unit-modal-tag-input {
+    flex: 1; padding: 6px 10px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text);
+    font-family: var(--font-body); font-size: 13px;
+  }
+  .unit-modal-tag-input:focus { outline: none; border-color: var(--accent); }
+  .unit-modal-tag-input::placeholder { color: var(--text-faint); }
+  .unit-modal-save {
+    padding: 6px 14px; background: var(--accent); border: none;
+    border-radius: var(--radius-sm); color: #000;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: filter 0.15s, opacity 0.15s;
+    white-space: nowrap;
+  }
+  .unit-modal-save:hover { filter: brightness(1.2); }
+  .unit-modal-save:disabled { opacity: 0.4; cursor: default; filter: none; }
+  .unit-modal-save-status { font-size: 12px; min-width: 20px; }
+  .unit-modal-meta {
+    padding: 0 20px 12px;
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;
+    font-size: 12px;
+  }
+  .unit-modal-meta-label { color: var(--text-faint); }
+  .unit-modal-meta-value { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+  .unit-modal-section {
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden; flex: 1;
+  }
+  .unit-modal-section-label {
+    padding: 10px 20px 6px; font-size: 11px; font-weight: 600;
+    color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .unit-modal-events {
+    overflow-y: auto; padding: 0 20px 16px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .unit-event-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0; font-size: 12px;
+  }
+  .unit-event-time {
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-faint);
+    min-width: 60px; text-align: right; flex-shrink: 0;
+  }
+  .unit-event-type {
+    font-size: 10px; font-weight: 600; padding: 1px 6px;
+    border-radius: var(--radius-xs); white-space: nowrap; flex-shrink: 0;
+    min-width: 36px; text-align: center;
+  }
+  .unit-event-type.state-active {
+    background: var(--accent); color: #000;
+  }
+  .unit-event-type.state-recent {
+    background: color-mix(in srgb, var(--accent) 60%, var(--bg-tile));
+    color: #000;
+  }
+  .unit-event-type.state-affiliated {
+    background: var(--info); color: #000;
+  }
+  .unit-event-type.state-location {
+    background: var(--warning); color: #000;
+  }
+  .unit-event-type.state-data {
+    background: color-mix(in srgb, var(--warning) 65%, var(--bg-tile)); color: #000;
+  }
+  .unit-event-type.state-off {
+    background: var(--text-faint); color: var(--bg-tile);
+  }
+  .unit-event-tg {
+    color: var(--text-muted); white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; flex: 1; min-width: 0;
+  }
+  .unit-modal-loading {
+    padding: 20px; text-align: center; color: var(--text-faint); font-size: 12px;
+  }
+  .unit-modal-error { color: var(--danger); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -267,11 +448,22 @@
     <select id="filter-system" class="filter-input"><option value="">All systems</option></select>
     <select id="filter-group" class="filter-input"><option value="">All groups</option></select>
     <input id="filter-search" class="filter-input" type="text" placeholder="Search talkgroups...">
+    <label class="dormant-toggle"><input type="checkbox" id="hide-dormant" checked> Hide dormant</label>
+    <button id="legend-toggle" class="legend-btn" title="Color legend">?</button>
   </div>
   <div class="stats">
     <span><span id="stat-tg" class="num">0</span> talkgroups</span>
     <span><span id="stat-units" class="num">0</span> units</span>
     <span><span id="stat-events" class="num">0</span> events</span>
+  </div>
+  <div id="color-legend" class="color-legend" style="display:none">
+    <span class="legend-item"><span class="legend-dot state-active"></span>Active</span>
+    <span class="legend-item"><span class="legend-dot state-recent"></span>Recent</span>
+    <span class="legend-item"><span class="legend-dot state-affiliated"></span>Affiliated</span>
+    <span class="legend-item"><span class="legend-dot state-location"></span>Location</span>
+    <span class="legend-item"><span class="legend-dot state-data"></span>Data</span>
+    <span class="legend-item"><span class="legend-dot state-off"></span>Off</span>
+    <span class="legend-item"><span class="legend-dot state-idle"></span>Idle</span>
   </div>
 </div>
 
@@ -288,23 +480,46 @@
   </div>
 </div>
 
+<div id="unit-modal" class="unit-modal">
+  <div class="unit-modal-box">
+    <button class="unit-modal-close">&times;</button>
+    <div class="unit-modal-header">
+      <span id="unit-modal-uid" class="unit-modal-uid"></span>
+      <span id="unit-modal-system" class="unit-modal-system"></span>
+    </div>
+    <div class="unit-modal-tag-row">
+      <input id="unit-modal-tag" class="unit-modal-tag-input" type="text" placeholder="No alpha tag">
+      <button id="unit-modal-save" class="unit-modal-save" disabled>Save</button>
+      <span id="unit-modal-save-status" class="unit-modal-save-status"></span>
+    </div>
+    <div id="unit-modal-meta" class="unit-modal-meta"></div>
+    <div class="unit-modal-section">
+      <div class="unit-modal-section-label">Recent Activity</div>
+      <div id="unit-modal-events" class="unit-modal-events">
+        <div class="unit-modal-loading">Loading events...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="vignette-overlay"></div>
 <div class="theme-label" id="theme-label"></div>
 
 <script>
 const API_BASE = '/api/v1';
 const DECAY = { active: 5000, recent: 60000, location: 30000, data: 30000 };
+const DORMANT_TIMEOUT = 5 * 60 * 1000;
 
 // --- State ---
 let authToken = localStorage.getItem('tr-engine-token') || '';
 let eventSource = null;
 let everConnected = false;
 let totalEvents = 0;
+let hideDormant = localStorage.getItem('tr-units-hide-dormant') !== 'false';
 
 // tgKey = "systemId:tgid"
-// talkgroups: Map<tgKey, {systemId, tgid, alphaTag, group, tag, description, systemName, sysid, emergency, el}>
 const talkgroups = new Map();
-// units: Map<unitKey("systemId:unitId"), {systemId, unitId, alphaTag, state, tgKey, el, timers:{}}>
+// unitKey = "systemId:unitId"
 const units = new Map();
 
 // DOM refs
@@ -322,6 +537,9 @@ const filterSearch = document.getElementById('filter-search');
 const authPrompt = document.getElementById('auth-prompt');
 const authTokenInput = document.getElementById('auth-token');
 const authSubmitBtn = document.getElementById('auth-submit');
+const hideDormantCheckbox = document.getElementById('hide-dormant');
+const legendToggle = document.getElementById('legend-toggle');
+const colorLegend = document.getElementById('color-legend');
 
 // --- Helpers ---
 function authHeaders() {
@@ -342,12 +560,78 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function formatUnitId(unitId, alphaTag) {
+  if (alphaTag) return alphaTag;
+  const s = String(unitId);
+  if (s.length >= 6) {
+    return s.slice(0, s.length - 4) + '\u2009' + s.slice(s.length - 4);
+  }
+  return s;
+}
+
 function updateStats() {
   statTg.textContent = talkgroups.size;
   let unitCount = 0;
   units.forEach(u => { if (u.state !== 'idle' || u.el) unitCount++; });
   statUnits.textContent = unitCount;
   statEvents.textContent = totalEvents;
+}
+
+const ACTIVITY_WINDOW = 20 * 60 * 1000; // 20 minutes
+
+function recordActivity(tg) {
+  const now = Date.now();
+  tg.lastActivity = now;
+  tg.activityLog.push(now);
+}
+
+function updateCardOrder(tg) {
+  if (!tg.el) return;
+  let order;
+  if (tg.emergency) {
+    order = -10000;
+  } else {
+    const cutoff = Date.now() - ACTIVITY_WINDOW;
+    tg.activityLog = tg.activityLog.filter(t => t > cutoff);
+    const count = tg.activityLog.length;
+    if (count > 0) {
+      order = -count;
+    } else if (tg.unitKeys.size > 0) {
+      order = 0;
+    } else {
+      order = 10000;
+    }
+  }
+  tg.el.style.order = order;
+}
+
+function updateCardUnitCount(tg) {
+  if (!tg.el) return;
+  const countEl = tg.el.querySelector('.tg-count');
+  if (!countEl) return;
+  const n = tg.unitKeys.size;
+  countEl.textContent = n;
+  countEl.style.display = n > 0 ? '' : 'none';
+}
+
+function checkSingleSystemMode() {
+  const isSingle = allSystems.size <= 1;
+  grid.classList.toggle('single-system', isSingle);
+  filterSystem.style.display = isSingle ? 'none' : '';
+}
+
+function applyDormant() {
+  const now = Date.now();
+  talkgroups.forEach(tg => {
+    if (!tg.el) return;
+    let hasActiveUnit = false;
+    tg.unitKeys.forEach(uk => {
+      const u = units.get(uk);
+      if (u && u.state !== 'idle' && u.state !== 'off') hasActiveUnit = true;
+    });
+    const isDormant = !hasActiveUnit && tg.lastActivity > 0 && (now - tg.lastActivity > DORMANT_TIMEOUT);
+    tg.el.classList.toggle('dormant', isDormant && hideDormant);
+  });
 }
 
 // --- Talkgroup Card ---
@@ -358,7 +642,6 @@ function ensureTalkgroup(systemId, tgid, info) {
   const key = tgKey(systemId, tgid);
   if (talkgroups.has(key)) {
     const tg = talkgroups.get(key);
-    // Update info if provided
     if (info) {
       if (info.alphaTag) tg.alphaTag = info.alphaTag;
       if (info.group) tg.group = info.group;
@@ -381,6 +664,9 @@ function ensureTalkgroup(systemId, tgid, info) {
     sysid: (info && info.sysid) || '',
     emergency: false,
     el: null,
+    unitKeys: new Set(),
+    lastActivity: 0,
+    activityLog: [],
   };
   talkgroups.set(key, tg);
   createCardEl(tg);
@@ -394,17 +680,58 @@ function createCardEl(tg) {
   const card = document.createElement('div');
   card.className = 'tg-card';
   card.dataset.key = tg.key;
-  card.innerHTML =
-    `<div class="tg-header">` +
-      `<div class="tg-name">${esc(tg.alphaTag)}</div>` +
-      `<div class="tg-id">${tg.tgid}</div>` +
-    `</div>` +
-    `<div class="tg-meta">` +
-      (tg.group ? `<span class="tag">${esc(tg.group)}</span>` : '') +
-      (tg.systemName ? `<span class="tag">${esc(tg.systemName)}</span>` : '') +
-    `</div>` +
-    `<div class="tg-units" data-units></div>`;
+
+  // Build header with clickable TG name, count badge, and TG ID
+  const header = document.createElement('div');
+  header.className = 'tg-header';
+
+  const nameLink = document.createElement('a');
+  nameLink.className = 'tg-name';
+  nameLink.href = API_BASE + '/talkgroups/' + encodeURIComponent(tg.systemId + ':' + tg.tgid) + '/calls?limit=20';
+  nameLink.target = '_blank';
+  nameLink.title = tg.description || tg.alphaTag;
+  nameLink.textContent = tg.alphaTag;
+
+  const countBadge = document.createElement('div');
+  countBadge.className = 'tg-count';
+  countBadge.style.display = 'none';
+  countBadge.textContent = '0';
+
+  const idBadge = document.createElement('div');
+  idBadge.className = 'tg-id';
+  idBadge.textContent = tg.tgid;
+
+  header.appendChild(nameLink);
+  header.appendChild(countBadge);
+  header.appendChild(idBadge);
+
+  // Build meta tags
+  const meta = document.createElement('div');
+  meta.className = 'tg-meta';
+  if (tg.group) {
+    const groupTag = document.createElement('span');
+    groupTag.className = 'tag';
+    groupTag.textContent = tg.group;
+    meta.appendChild(groupTag);
+  }
+  if (tg.systemName) {
+    const sysTag = document.createElement('span');
+    sysTag.className = 'tag tag-system';
+    sysTag.textContent = tg.systemName;
+    meta.appendChild(sysTag);
+  }
+
+  // Units container
+  const unitsDiv = document.createElement('div');
+  unitsDiv.className = 'tg-units';
+  unitsDiv.setAttribute('data-units', '');
+
+  card.appendChild(header);
+  card.appendChild(meta);
+  card.appendChild(unitsDiv);
+
   tg.el = card;
+  card.style.order = 10;
   grid.appendChild(card);
   emptyEl.style.display = 'none';
 }
@@ -413,17 +740,35 @@ function updateCardHeader(tg) {
   if (!tg.el) return;
   const nameEl = tg.el.querySelector('.tg-name');
   const metaEl = tg.el.querySelector('.tg-meta');
-  if (nameEl) nameEl.textContent = tg.alphaTag;
+  if (nameEl) {
+    nameEl.textContent = tg.alphaTag;
+    if (nameEl.tagName === 'A') {
+      nameEl.href = API_BASE + '/talkgroups/' + encodeURIComponent(tg.systemId + ':' + tg.tgid) + '/calls?limit=20';
+      nameEl.title = tg.description || tg.alphaTag;
+    }
+  }
   if (metaEl) {
-    metaEl.innerHTML =
-      (tg.group ? `<span class="tag">${esc(tg.group)}</span>` : '') +
-      (tg.systemName ? `<span class="tag">${esc(tg.systemName)}</span>` : '');
+    // Rebuild meta with DOM methods
+    metaEl.textContent = '';
+    if (tg.group) {
+      const groupTag = document.createElement('span');
+      groupTag.className = 'tag';
+      groupTag.textContent = tg.group;
+      metaEl.appendChild(groupTag);
+    }
+    if (tg.systemName) {
+      const sysTag = document.createElement('span');
+      sysTag.className = 'tag tag-system';
+      sysTag.textContent = tg.systemName;
+      metaEl.appendChild(sysTag);
+    }
   }
 }
 
 function setCardEmergency(tg, on) {
   tg.emergency = on;
   if (tg.el) tg.el.classList.toggle('emergency', on);
+  updateCardOrder(tg);
 }
 
 function setCardActive(tg, on) {
@@ -454,28 +799,55 @@ function ensureUnit(systemId, unitId, info) {
 function createUnitEl(u) {
   const el = document.createElement('div');
   el.className = 'unit state-' + u.state;
-  el.textContent = u.unitId;
+  el.textContent = formatUnitId(u.unitId, u.alphaTag);
   el.dataset.key = u.key;
-  const tip = u.alphaTag || ('Unit ' + u.unitId);
+  const tip = u.alphaTag ? u.alphaTag + ' (' + u.unitId + ')' : 'Unit ' + u.unitId + ' [' + u.state + ']';
   el.setAttribute('data-tip', tip);
+  el.addEventListener('click', () => openUnitModal(u));
   u.el = el;
   return el;
 }
 
 function placeUnit(u, newTgKey) {
+  const oldTgKey = u.tgKey;
+
   // Remove from old card
   if (u.el && u.el.parentNode) {
     u.el.parentNode.removeChild(u.el);
   }
+
+  // Update old TG tracking
+  if (oldTgKey) {
+    const oldTg = talkgroups.get(oldTgKey);
+    if (oldTg) {
+      oldTg.unitKeys.delete(u.key);
+      updateCardUnitCount(oldTg);
+    }
+  }
+
   u.tgKey = newTgKey;
   if (!newTgKey) return;
 
   const tg = talkgroups.get(newTgKey);
   if (!tg || !tg.el) return;
 
+  // Track in new TG, insert sorted by unit ID
+  tg.unitKeys.add(u.key);
   if (!u.el) createUnitEl(u);
   const container = tg.el.querySelector('[data-units]');
-  if (container) container.appendChild(u.el);
+  if (container) {
+    let inserted = false;
+    for (const child of container.children) {
+      const other = units.get(child.dataset.key);
+      if (other && other.unitId > u.unitId) {
+        container.insertBefore(u.el, child);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) container.appendChild(u.el);
+  }
+  updateCardUnitCount(tg);
 }
 
 function setUnitState(u, newState) {
@@ -486,8 +858,10 @@ function setUnitState(u, newState) {
   u.state = newState;
   if (u.el) {
     u.el.className = 'unit state-' + newState;
-    const tip = u.alphaTag || ('Unit ' + u.unitId);
-    u.el.setAttribute('data-tip', tip + ' [' + newState + ']');
+    const tip = u.alphaTag
+      ? u.alphaTag + ' (' + u.unitId + ') [' + newState + ']'
+      : 'Unit ' + u.unitId + ' [' + newState + ']';
+    u.el.setAttribute('data-tip', tip);
   }
 
   // Schedule decay
@@ -497,19 +871,228 @@ function setUnitState(u, newState) {
     u.timers[newState] = setTimeout(() => setUnitState(u, nextState), decay);
   }
 
-  // Card active glow when any unit is active
+  // Card active glow when any unit is active/recent
   if (u.tgKey) {
     const tg = talkgroups.get(u.tgKey);
     if (tg) {
-      const hasActive = Array.from(units.values()).some(
-        uu => uu.tgKey === u.tgKey && (uu.state === 'active' || uu.state === 'recent')
-      );
+      recordActivity(tg);
+      let hasActive = false;
+      tg.unitKeys.forEach(uk => {
+        const uu = units.get(uk);
+        if (uu && (uu.state === 'active' || uu.state === 'recent')) hasActive = true;
+      });
       setCardActive(tg, hasActive);
+      updateCardUnitCount(tg);
     }
   }
 
   updateStats();
 }
+
+// --- Unit Modal ---
+let currentModalUnit = null;
+
+function relativeTime(isoString) {
+  if (!isoString) return '\u2014';
+  const now = Date.now();
+  const t = new Date(isoString).getTime();
+  const diff = now - t;
+  if (diff < 0 || diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  if (diff < 172800000) return 'yesterday';
+  const d = new Date(isoString);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[d.getMonth()] + ' ' + d.getDate();
+}
+
+function eventTypeStateClass(eventType) {
+  switch (eventType) {
+    case 'call': return 'state-active';
+    case 'end': return 'state-recent';
+    case 'join': case 'on': return 'state-affiliated';
+    case 'off': return 'state-off';
+    case 'location': return 'state-location';
+    case 'ackresp': case 'data': return 'state-data';
+    default: return 'state-affiliated';
+  }
+}
+
+function setEventsLoading(container, text) {
+  container.textContent = '';
+  const el = document.createElement('div');
+  el.className = 'unit-modal-loading';
+  el.textContent = text;
+  container.appendChild(el);
+}
+
+function openUnitModal(u) {
+  currentModalUnit = u;
+  const modal = document.getElementById('unit-modal');
+  const uidEl = document.getElementById('unit-modal-uid');
+  const sysEl = document.getElementById('unit-modal-system');
+  const tagInput = document.getElementById('unit-modal-tag');
+  const saveBtn = document.getElementById('unit-modal-save');
+  const saveStatus = document.getElementById('unit-modal-save-status');
+  const metaEl = document.getElementById('unit-modal-meta');
+  const eventsEl = document.getElementById('unit-modal-events');
+
+  uidEl.textContent = u.unitId;
+  sysEl.textContent = '';
+  tagInput.value = u.alphaTag || '';
+  tagInput._originalTag = u.alphaTag || '';
+  saveBtn.disabled = true;
+  saveStatus.textContent = '';
+  saveStatus.style.color = '';
+  metaEl.textContent = '';
+  setEventsLoading(eventsEl, 'Loading events...');
+
+  modal.classList.add('visible');
+
+  tagInput.oninput = () => {
+    saveBtn.disabled = tagInput.value.trim() === tagInput._originalTag;
+    saveStatus.textContent = '';
+  };
+  saveBtn.onclick = () => saveUnitTag(u, tagInput.value.trim());
+  tagInput.onkeydown = (e) => {
+    if (e.key === 'Enter' && !saveBtn.disabled) saveBtn.click();
+  };
+
+  const unitId = encodeURIComponent(u.systemId + ':' + u.unitId);
+
+  fetch(API_BASE + '/units/' + unitId, { headers: authHeaders() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || currentModalUnit !== u) return;
+      if (data.system_name) sysEl.textContent = data.system_name;
+      if (data.alpha_tag) {
+        tagInput.value = data.alpha_tag;
+        tagInput._originalTag = data.alpha_tag;
+        saveBtn.disabled = true;
+      }
+      metaEl.textContent = '';
+      const addMeta = (label, value) => {
+        const l = document.createElement('span');
+        l.className = 'unit-modal-meta-label';
+        l.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'unit-modal-meta-value';
+        v.textContent = value || '\u2014';
+        metaEl.appendChild(l);
+        metaEl.appendChild(v);
+      };
+      addMeta('State', data.last_event_type || 'unknown');
+      if (data.last_event_tg_tag || data.last_event_tgid) {
+        addMeta('Last TG', (data.last_event_tg_tag || '') + (data.last_event_tgid ? ' (' + data.last_event_tgid + ')' : ''));
+      }
+      addMeta('First seen', relativeTime(data.first_seen));
+      addMeta('Last seen', relativeTime(data.last_seen));
+    })
+    .catch(() => {});
+
+  fetch(API_BASE + '/units/' + unitId + '/events?limit=30', { headers: authHeaders() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || currentModalUnit !== u) return;
+      const events = data.events || [];
+      eventsEl.textContent = '';
+      if (events.length === 0) {
+        setEventsLoading(eventsEl, 'No recent events');
+        return;
+      }
+      // Collapse consecutive runs of same (event_type, tgid)
+      const grouped = [];
+      events.forEach(ev => {
+        const prev = grouped[grouped.length - 1];
+        if (prev && prev.event_type === ev.event_type && (prev.tgid || 0) === (ev.tgid || 0)) {
+          prev.count++;
+        } else {
+          grouped.push({ event_type: ev.event_type, time: ev.time, tgid: ev.tgid,
+            tg_alpha_tag: ev.tg_alpha_tag, count: 1 });
+        }
+      });
+      grouped.forEach(ev => {
+        const row = document.createElement('div');
+        row.className = 'unit-event-row';
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'unit-event-time';
+        timeSpan.textContent = relativeTime(ev.time);
+
+        const typePill = document.createElement('span');
+        typePill.className = 'unit-event-type ' + eventTypeStateClass(ev.event_type);
+        typePill.textContent = ev.event_type + (ev.count > 1 ? ' \u00d7' + ev.count : '');
+
+        const tgSpan = document.createElement('span');
+        tgSpan.className = 'unit-event-tg';
+        tgSpan.textContent = ev.tg_alpha_tag || (ev.tgid ? 'TG ' + ev.tgid : '\u2014');
+
+        row.appendChild(timeSpan);
+        row.appendChild(typePill);
+        row.appendChild(tgSpan);
+        eventsEl.appendChild(row);
+      });
+    })
+    .catch(() => {
+      setEventsLoading(eventsEl, 'Failed to load events');
+    });
+}
+
+function closeUnitModal() {
+  currentModalUnit = null;
+  document.getElementById('unit-modal').classList.remove('visible');
+}
+
+function saveUnitTag(u, newTag) {
+  const saveBtn = document.getElementById('unit-modal-save');
+  const saveStatus = document.getElementById('unit-modal-save-status');
+  const tagInput = document.getElementById('unit-modal-tag');
+
+  saveBtn.disabled = true;
+  saveStatus.textContent = '...';
+  saveStatus.className = 'unit-modal-save-status';
+  saveStatus.style.color = '';
+
+  const unitId = encodeURIComponent(u.systemId + ':' + u.unitId);
+  fetch(API_BASE + '/units/' + unitId, {
+    method: 'PATCH',
+    headers: Object.assign({}, authHeaders(), { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ alpha_tag: newTag, alpha_tag_source: 'manual' }),
+  })
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(() => {
+      u.alphaTag = newTag;
+      tagInput._originalTag = newTag;
+      saveBtn.disabled = true;
+      saveStatus.textContent = '\u2713';
+      saveStatus.style.color = 'var(--success)';
+      setTimeout(() => { saveStatus.textContent = ''; }, 2000);
+      if (u.el) {
+        u.el.textContent = formatUnitId(u.unitId, u.alphaTag);
+        const tip = u.alphaTag
+          ? u.alphaTag + ' (' + u.unitId + ') [' + u.state + ']'
+          : 'Unit ' + u.unitId + ' [' + u.state + ']';
+        u.el.setAttribute('data-tip', tip);
+      }
+    })
+    .catch(() => {
+      saveBtn.disabled = false;
+      saveStatus.textContent = 'Error';
+      saveStatus.className = 'unit-modal-save-status unit-modal-error';
+    });
+}
+
+// Modal close listeners
+document.getElementById('unit-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'unit-modal') closeUnitModal();
+});
+document.querySelector('.unit-modal-close').addEventListener('click', closeUnitModal);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && currentModalUnit) closeUnitModal();
+});
 
 // --- SSE Event Handling ---
 function handleUnitEvent(evt) {
@@ -556,7 +1139,6 @@ function handleUnitEvent(evt) {
       setUnitState(u, 'affiliated');
       break;
     case 'on':
-      // 'on' often arrives with tgid=0 (unit powered on, no talkgroup yet)
       if (tgid && tgid > 0) maybePlaceUnit();
       setUnitState(u, 'affiliated');
       break;
@@ -592,6 +1174,7 @@ function handleCallStart(d) {
     sysid: d.sysid,
   });
 
+  recordActivity(tg);
   if (d.emergency) setCardEmergency(tg, true);
   setCardActive(tg, true);
 
@@ -621,15 +1204,15 @@ function handleCallEnd(d) {
     systemName: d.system_name,
   });
 
+  recordActivity(tg);
   if (d.emergency) {
-    // Clear emergency after a delay
     setTimeout(() => setCardEmergency(tg, false), 15000);
   }
 
-  // Transition all active units on this tg to recent
-  const tk = tgKey(systemId, tgid);
-  units.forEach(u => {
-    if (u.tgKey === tk && u.state === 'active') {
+  // Transition active units to recent (efficient: iterate tg.unitKeys, not all units)
+  tg.unitKeys.forEach(uk => {
+    const u = units.get(uk);
+    if (u && u.state === 'active') {
       setUnitState(u, 'recent');
     }
   });
@@ -648,21 +1231,35 @@ function populateFilterOptions() {
   const curSys = filterSystem.value;
   const curGrp = filterGroup.value;
 
-  // Rebuild system options
-  const sysOpts = ['<option value="">All systems</option>'];
+  // Rebuild system options using DOM methods
+  while (filterSystem.firstChild) filterSystem.removeChild(filterSystem.firstChild);
+  const allSysOpt = document.createElement('option');
+  allSysOpt.value = '';
+  allSysOpt.textContent = 'All systems';
+  filterSystem.appendChild(allSysOpt);
   [...allSystems].sort().forEach(s => {
-    sysOpts.push(`<option value="${esc(s)}">${esc(s)}</option>`);
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    filterSystem.appendChild(opt);
   });
-  filterSystem.innerHTML = sysOpts.join('');
   filterSystem.value = curSys;
 
-  // Rebuild group options
-  const grpOpts = ['<option value="">All groups</option>'];
+  // Rebuild group options using DOM methods
+  while (filterGroup.firstChild) filterGroup.removeChild(filterGroup.firstChild);
+  const allGrpOpt = document.createElement('option');
+  allGrpOpt.value = '';
+  allGrpOpt.textContent = 'All groups';
+  filterGroup.appendChild(allGrpOpt);
   [...allGroups].sort().forEach(g => {
-    grpOpts.push(`<option value="${esc(g)}">${esc(g)}</option>`);
+    const opt = document.createElement('option');
+    opt.value = g;
+    opt.textContent = g;
+    filterGroup.appendChild(opt);
   });
-  filterGroup.innerHTML = grpOpts.join('');
   filterGroup.value = curGrp;
+
+  checkSingleSystemMode();
 }
 
 function applyFilters() {
@@ -691,8 +1288,53 @@ filterSearch.addEventListener('input', () => {
 filterSystem.addEventListener('change', applyFilters);
 filterGroup.addEventListener('change', applyFilters);
 
+// --- Legend toggle ---
+legendToggle.addEventListener('click', () => {
+  colorLegend.style.display = colorLegend.style.display === 'none' ? 'flex' : 'none';
+});
+
+// --- Dormant toggle ---
+hideDormantCheckbox.checked = hideDormant;
+hideDormantCheckbox.addEventListener('change', () => {
+  hideDormant = hideDormantCheckbox.checked;
+  localStorage.setItem('tr-units-hide-dormant', hideDormant);
+  applyDormant();
+});
+
+// Periodic reorder (every 15s) with FLIP animation
+function reorderAllCards() {
+  // FIRST: capture current positions
+  const snapshots = [];
+  talkgroups.forEach(tg => {
+    if (!tg.el || tg.el.classList.contains('hidden')) return;
+    snapshots.push({ tg, rect: tg.el.getBoundingClientRect() });
+  });
+
+  // Update order values
+  talkgroups.forEach(tg => updateCardOrder(tg));
+
+  // LAST: force layout, get new positions
+  grid.offsetHeight;
+
+  // INVERT + PLAY: animate from old to new position
+  snapshots.forEach(({ tg, rect: oldRect }) => {
+    const newRect = tg.el.getBoundingClientRect();
+    const dx = oldRect.left - newRect.left;
+    const dy = oldRect.top - newRect.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    tg.el.animate([
+      { transform: `translate(${dx}px, ${dy}px)` },
+      { transform: 'translate(0, 0)' }
+    ], { duration: 400, easing: 'ease' });
+  });
+}
+setInterval(reorderAllCards, 15000);
+
+// Dormant check interval (every 30s)
+setInterval(applyDormant, 30000);
+
 // --- Bootstrap ---
-let bootstrapOk = false; // true once REST fetch succeeds (no auth needed)
+let bootstrapOk = false;
 
 async function apiFetch(path) {
   let resp;
@@ -715,7 +1357,6 @@ async function bootstrap() {
   emptyEl.style.display = 'none';
 
   try {
-    // Fetch active talkgroups sorted by recent call activity
     const tgData = await apiFetch('/talkgroups?sort=-calls_1h&limit=200');
     const tgList = tgData.talkgroups || [];
 
@@ -726,7 +1367,6 @@ async function bootstrap() {
       return;
     }
 
-    // Create cards for talkgroups with recent activity
     const activeTgs = tgList.filter(t => t.calls_1h > 0 || t.calls_24h > 0);
     const toShow = activeTgs.length > 0 ? activeTgs : tgList.slice(0, 30);
 
@@ -743,7 +1383,7 @@ async function bootstrap() {
 
     loadingEl.classList.add('hidden');
 
-    // Fan out unit fetches for talkgroups with recent calls (max 10 concurrent)
+    // Fan out unit fetches — graceful 404 handling (no console errors)
     const tgsWithCalls = toShow.filter(t => t.calls_1h > 0);
     const queue = tgsWithCalls.slice(0, 50);
     const concurrency = 10;
@@ -754,7 +1394,10 @@ async function bootstrap() {
         const t = queue[idx++];
         try {
           const id = t.system_id + ':' + t.tgid;
-          const unitData = await apiFetch('/talkgroups/' + encodeURIComponent(id) + '/units?window=60&limit=100');
+          const resp = await fetch(API_BASE + '/talkgroups/' + encodeURIComponent(id) + '/units?window=60&limit=100', { headers: authHeaders() });
+          if (resp.status === 401 || resp.status === 403) { showAuth(); return; }
+          if (!resp.ok) continue;
+          const unitData = await resp.json();
           const unitList = unitData.units || [];
           const tk = tgKey(t.system_id, t.tgid);
 
@@ -766,7 +1409,6 @@ async function bootstrap() {
             if (!unit.el || unit.tgKey !== tk) {
               placeUnit(unit, tk);
             }
-            // Set initial state from last event
             const evtType = u.last_event_type;
             if (evtType === 'call') setUnitState(unit, 'recent');
             else if (evtType === 'end') setUnitState(unit, 'recent');
@@ -777,8 +1419,7 @@ async function bootstrap() {
             else setUnitState(unit, 'idle');
           });
         } catch (e) {
-          if (e.message === 'auth') return;
-          console.warn('Failed to fetch units for tg', t.tgid, e);
+          continue;
         }
       }
     }
@@ -788,6 +1429,7 @@ async function bootstrap() {
       workers.push(fetchNext());
     }
     await Promise.all(workers);
+    reorderAllCards();
 
     connectSSE();
   } catch (e) {
@@ -823,7 +1465,6 @@ function connectSSE() {
     if (eventSource.readyState === EventSource.CLOSED) {
       setStatus('disconnected', 'disconnected');
       if (!everConnected && !bootstrapOk) {
-        // REST also failed — likely auth issue
         eventSource.close();
         showAuth();
       }
