@@ -227,6 +227,23 @@ schema.sql                      PostgreSQL DDL
 sample.env                      Configuration template
 ```
 
+## Changelog
+
+### v0.8.1
+
+- **Fix duplicate system creation on fresh start** — calls arriving before system registration no longer create phantom systems with `sysid=0`. A warmup gate buffers non-identity messages until the first system registration establishes real P25 identity, then replays the buffer. Skipped on restart when identity is already cached.
+- **Fix duplicate channel names in IRC Radio Live** — talkgroups sharing an `alpha_tag` across systems now disambiguate with the system name (e.g., `#ARA-Sec-arasaka` / `#ARA-Sec-corpsec`). Same-system collisions use tgid. Both sides of a collision are renamed, not just the second arrival.
+
+### v0.8.0
+
+- Proxy-aware per-IP rate limiting (`RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`)
+- CORS origin restrictions (`CORS_ORIGINS`)
+- 10 MB request body limit, response timeout for non-streaming handlers
+- Unit CSV import from trunk-recorder's `unitTagsFile`
+- `CSV_WRITEBACK` — write alpha_tag edits back to TR's CSV files on disk
+- Tag source tracking (`alpha_tag_source`) — manual edits preserved across MQTT/CSV re-imports
+- Affiliation map eviction for stale entries
+
 ## License
 
 MIT

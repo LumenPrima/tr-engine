@@ -228,6 +228,7 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 - Tag source tracking — `alpha_tag_source` on talkgroups and units (`manual`, `csv`, `mqtt`). Manual edits are preserved across MQTT and CSV re-imports.
 - Unit CSV import — loads unit tags from TR's `unitTagsFile` at startup; opt-in writeback on PATCH via `CSV_WRITEBACK`
 - Affiliation map eviction — stale entries (>24h) cleaned every 5 minutes
+- Warmup gate — buffers non-identity MQTT messages on fresh start until system registration establishes real P25 sysid/wacn, preventing duplicate system creation from early calls. 5s timeout fallback for conventional systems. Skipped on restart when identity cache loads from DB.
 
 **Not yet done:**
 - Test coverage for unit-events and affiliations endpoints
