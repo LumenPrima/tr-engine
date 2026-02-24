@@ -104,6 +104,11 @@ func main() {
 	}
 	defer db.Close()
 
+	// Run idempotent schema migrations — fatal on failure since queries depend on these columns
+	if err := db.Migrate(ctx); err != nil {
+		log.Fatal().Err(err).Msg("schema migration failed (run ALTER TABLE manually or grant ALTER privileges)")
+	}
+
 	// MQTT (optional — not needed when using watch mode)
 	var mqtt *mqttclient.Client
 	if cfg.MQTTBrokerURL != "" {

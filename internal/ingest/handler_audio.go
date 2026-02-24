@@ -146,6 +146,7 @@ func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedId
 		TgDescription: meta.TalkgroupDesc,
 		TgTag:         meta.TalkgroupGroupTag,
 		TgGroup:       meta.TalkgroupGroup,
+		IncidentData:  meta.IncidentData,
 	}
 
 	if meta.StopTime > 0 {

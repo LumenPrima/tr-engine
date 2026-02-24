@@ -5,14 +5,16 @@ INSERT INTO unit_events (
     start_time, stop_time, encrypted, emergency,
     "position", length, error_count, spike_count, sample_count,
     transmission_filename, talkgroup_patches,
-    instance_id, sys_num, sys_name
+    instance_id, sys_num, sys_name,
+    incidentdata
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9,
     $10, $11, $12, $13,
     $14, $15, $16, $17, $18,
     $19, $20,
-    $21, $22, $23
+    $21, $22, $23,
+    $24
 );
 
 -- name: LoadRecentAffiliations :many

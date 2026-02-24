@@ -94,6 +94,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 			TgAlphaTag:   data.TalkgroupAlphaTag,
 			InstanceID:   env.InstanceID,
 			SysName:      data.SysName,
+			IncidentData: data.IncidentData,
 		}
 
 		sysNum := int16(data.SysNum)
@@ -163,6 +164,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 				"tgid":           data.Talkgroup,
 				"tg_alpha_tag":   data.TalkgroupAlphaTag,
 				"time":           ts,
+				"incident_data":  data.IncidentData,
 			},
 		})
 	}

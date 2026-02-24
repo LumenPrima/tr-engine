@@ -53,6 +53,8 @@ type CallData struct {
 	Signal          float64 `json:"signal"`
 	Noise           float64 `json:"noise"`
 	CallFilename    string  `json:"call_filename"`
+	// incident data (optional, from TR plugin)
+	IncidentData json.RawMessage `json:"incidentdata,omitempty"`
 }
 
 // CallStartMsg wraps a call_start message.
@@ -103,6 +105,7 @@ type AudioMetadata struct {
 	Filename            string          `json:"filename"`
 	Transcript          string          `json:"transcript,omitempty"`        // pre-generated transcription text
 	TranscriptWords     json.RawMessage `json:"transcript_words,omitempty"` // optional pre-built word/segment data
+	IncidentData        json.RawMessage `json:"incidentdata,omitempty"`
 }
 
 // FreqItem is a frequency entry in the audio metadata.
@@ -161,7 +164,8 @@ type UnitEventData struct {
 	ErrorCount           int     `json:"error_count"`
 	SpikeCount           int     `json:"spike_count"`
 	SampleCount          int     `json:"sample_count"`
-	TransmissionFilename string  `json:"transmission_filename"`
+	TransmissionFilename string          `json:"transmission_filename"`
+	IncidentData         json.RawMessage `json:"incidentdata,omitempty"`
 }
 
 // UnitEventMsg wraps a unit event message. The event data is keyed by the event type.

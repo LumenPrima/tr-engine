@@ -11,6 +11,7 @@ INSERT INTO calls (
     src_list, freq_list, unit_ids,
     system_name, site_short_name,
     tg_alpha_tag, tg_description, tg_tag, tg_group,
+    incidentdata,
     instance_id
 ) VALUES (
     $1, $2, $3, $4, $5,
@@ -24,7 +25,8 @@ INSERT INTO calls (
     $31, $32, $33,
     $34, $35,
     $36, $37, $38, $39,
-    $40
+    $40,
+    $41
 ) RETURNING call_id;
 
 -- name: UpdateCallEnd :exec

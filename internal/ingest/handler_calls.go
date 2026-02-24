@@ -112,6 +112,7 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 			TgDescription: call.TalkgroupDescription,
 			TgTag:         call.TalkgroupTag,
 			TgGroup:       call.TalkgroupGroup,
+			IncidentData:  call.IncidentData,
 			InstanceID:    msg.InstanceID,
 		}
 
@@ -193,6 +194,7 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 			"conventional":   call.Conventional,
 			"phase2_tdma":    call.Phase2TDMA,
 			"audio_type":     call.AudioType,
+			"incident_data":  call.IncidentData,
 		},
 	})
 
@@ -295,6 +297,7 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 				"emergency":     call.Emergency,
 				"encrypted":     call.Encrypted,
 				"call_filename": call.CallFilename,
+				"incident_data": call.IncidentData,
 			},
 		})
 	}
@@ -362,6 +365,7 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		TgDescription: call.TalkgroupDescription,
 		TgTag:         call.TalkgroupTag,
 		TgGroup:       call.TalkgroupGroup,
+		IncidentData:  call.IncidentData,
 		InstanceID:    msg.InstanceID,
 	}
 
@@ -425,6 +429,7 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 				"emergency":     call.Emergency,
 				"encrypted":     call.Encrypted,
 				"call_filename": call.CallFilename,
+				"incident_data": call.IncidentData,
 			},
 		})
 
@@ -473,6 +478,7 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 			"emergency":     call.Emergency,
 			"encrypted":     call.Encrypted,
 			"call_filename": call.CallFilename,
+			"incident_data": call.IncidentData,
 		},
 	})
 

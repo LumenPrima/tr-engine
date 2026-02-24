@@ -60,6 +60,7 @@ type Call struct {
 	FreqList               []byte
 	UnitIds                []int
 	MetadataJson           []byte
+	Incidentdata           []byte
 	InstanceID             *string
 	CreatedAt              pgtype.Timestamptz
 	UpdatedAt              pgtype.Timestamptz
@@ -344,4 +345,5 @@ type UnitEvent struct {
 	SysNum               *int16
 	SysName              *string
 	MetadataJson         []byte
+	Incidentdata         []byte
 }

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -48,7 +49,8 @@ type UnitEventAPI struct {
 	Tgid          *int      `json:"tgid,omitempty"`
 	TgAlphaTag    string    `json:"tg_alpha_tag,omitempty"`
 	TgDescription string    `json:"tg_description,omitempty"`
-	InstanceID    string    `json:"instance_id,omitempty"`
+	InstanceID    string          `json:"instance_id,omitempty"`
+	IncidentData  json.RawMessage `json:"incident_data,omitempty"`
 }
 
 // ListUnitEvents returns unit events matching the filter.
@@ -80,7 +82,8 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 			ue.unit_rid, COALESCE(ue.unit_alpha_tag, ''),
 			ue.tgid, COALESCE(tg.alpha_tag, ue.tg_alpha_tag, ''),
 			COALESCE(tg.description, ''),
-			COALESCE(ue.instance_id, '')
+			COALESCE(ue.instance_id, ''),
+			ue.incidentdata
 		` + fromClause + whereClause + `
 		ORDER BY ue.time DESC
 		LIMIT $7 OFFSET $8`
@@ -98,7 +101,7 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 			&e.ID, &e.EventType, &e.Time, &e.SystemID,
 			&e.UnitRID, &e.UnitAlphaTag,
 			&e.Tgid, &e.TgAlphaTag, &e.TgDescription,
-			&e.InstanceID,
+			&e.InstanceID, &e.IncidentData,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -154,7 +157,8 @@ func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFi
 			ue.unit_rid, COALESCE(u.alpha_tag, ue.unit_alpha_tag, ''),
 			ue.tgid, COALESCE(tg.alpha_tag, ue.tg_alpha_tag, ''),
 			COALESCE(tg.description, ''),
-			COALESCE(ue.instance_id, '')
+			COALESCE(ue.instance_id, ''),
+			ue.incidentdata
 		%s %s
 		ORDER BY %s
 		LIMIT $9 OFFSET $10
@@ -173,7 +177,7 @@ func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFi
 			&e.ID, &e.EventType, &e.Time, &e.SystemID, &e.SystemName,
 			&e.UnitRID, &e.UnitAlphaTag,
 			&e.Tgid, &e.TgAlphaTag, &e.TgDescription,
-			&e.InstanceID,
+			&e.InstanceID, &e.IncidentData,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -209,6 +213,7 @@ type UnitEventRow struct {
 	InstanceID           string
 	SysNum               *int16
 	SysName              string
+	IncidentData         json.RawMessage
 }
 
 func (db *DB) InsertUnitEvent(ctx context.Context, e *UnitEventRow) error {
@@ -236,6 +241,7 @@ func (db *DB) InsertUnitEvent(ctx context.Context, e *UnitEventRow) error {
 		InstanceID:           &e.InstanceID,
 		SysNum:               e.SysNum,
 		SysName:              &e.SysName,
+		Incidentdata:         e.IncidentData,
 	})
 }
 

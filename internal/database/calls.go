@@ -80,6 +80,7 @@ type CallRow struct {
 	TgDescription string
 	TgTag         string
 	TgGroup       string
+	IncidentData  json.RawMessage
 	InstanceID    string
 }
 
@@ -125,6 +126,7 @@ func (db *DB) InsertCall(ctx context.Context, c *CallRow) (int64, error) {
 		TgDescription: &c.TgDescription,
 		TgTag:         &c.TgTag,
 		TgGroup:       &c.TgGroup,
+		Incidentdata:  c.IncidentData,
 		InstanceID:    &c.InstanceID,
 	})
 }

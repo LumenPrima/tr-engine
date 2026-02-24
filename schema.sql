@@ -302,6 +302,7 @@ CREATE TABLE calls (
     freq_list             jsonb,
     unit_ids              int[],
     metadata_json         jsonb,
+    incidentdata          jsonb,
     instance_id           text,
     created_at            timestamptz  NOT NULL DEFAULT now(),
     updated_at            timestamptz  NOT NULL DEFAULT now(),
@@ -414,6 +415,7 @@ CREATE TABLE unit_events (
     sys_num                  smallint,
     sys_name                 text,
     metadata_json            jsonb,
+    incidentdata             jsonb,
 
     PRIMARY KEY (id, "time")
 ) PARTITION BY RANGE ("time");

@@ -67,6 +67,7 @@ type CallAPI struct {
 	TranscriptionText    *string         `json:"transcription_text,omitempty"`
 	TranscriptionWordCt  *int            `json:"transcription_word_count,omitempty"`
 	MetadataJSON         json.RawMessage `json:"metadata_json,omitempty"`
+	IncidentData         json.RawMessage `json:"incident_data,omitempty"`
 	CallFilename         string          `json:"-"` // TR's original path, not exposed in JSON; used for audio resolution
 }
 
@@ -131,7 +132,7 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			c.src_list, c.freq_list, c.unit_ids,
 			COALESCE(c.has_transcription, false), COALESCE(c.transcription_status, 'none'),
 			c.transcription_text, c.transcription_word_count,
-			c.metadata_json
+			c.metadata_json, c.incidentdata
 		%s %s
 		ORDER BY %s
 		LIMIT $11 OFFSET $12
@@ -162,7 +163,7 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			&c.SrcList, &c.FreqList, &c.UnitIDs,
 			&c.HasTranscription, &c.TranscriptionStatus,
 			&c.TranscriptionText, &c.TranscriptionWordCt,
-			&c.MetadataJSON,
+			&c.MetadataJSON, &c.IncidentData,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -199,7 +200,7 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 			c.src_list, c.freq_list, c.unit_ids,
 			COALESCE(c.has_transcription, false), COALESCE(c.transcription_status, 'none'),
 			c.transcription_text, c.transcription_word_count,
-			c.metadata_json
+			c.metadata_json, c.incidentdata
 		FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		WHERE c.call_id = $1
@@ -220,7 +221,7 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 		&c.SrcList, &c.FreqList, &c.UnitIDs,
 		&c.HasTranscription, &c.TranscriptionStatus,
 		&c.TranscriptionText, &c.TranscriptionWordCt,
-		&c.MetadataJSON,
+		&c.MetadataJSON, &c.IncidentData,
 	)
 	if err != nil {
 		return nil, err
@@ -395,7 +396,7 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			c.src_list, c.freq_list, c.unit_ids,
 			COALESCE(c.has_transcription, false), COALESCE(c.transcription_status, 'none'),
 			c.transcription_text, c.transcription_word_count,
-			c.metadata_json
+			c.metadata_json, c.incidentdata
 		FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		WHERE c.call_group_id = $1
@@ -425,7 +426,7 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			&c.SrcList, &c.FreqList, &c.UnitIDs,
 			&c.HasTranscription, &c.TranscriptionStatus,
 			&c.TranscriptionText, &c.TranscriptionWordCt,
-			&c.MetadataJSON,
+			&c.MetadataJSON, &c.IncidentData,
 		); err != nil {
 			return nil, nil, err
 		}
