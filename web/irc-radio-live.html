@@ -116,6 +116,35 @@ body::after {
   transition: color 0.15s, border-color 0.15s;
 }
 .read-all-btn:hover { color: var(--cyan); border-color: var(--cyan); }
+.tree-search {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.tree-search-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 3px 6px;
+  outline: none;
+}
+.tree-search-input:focus { border-color: var(--cyan); }
+.tree-search-input::placeholder { color: var(--text-faint); }
+.tree-search-clear {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  visibility: hidden;
+  user-select: none;
+}
+.tree-search-clear.visible { visibility: visible; }
 .tree-more {
   padding: 2px 12px 2px 20px;
   font-size: 13px;
@@ -559,6 +588,11 @@ html.nerd .statusbar .nerd-btn { font-size: 9px; }
       <span class="tree-header-text">tr-engine</span>
       <button class="read-all-btn" id="read-all-btn">Read All</button>
     </div>
+    <div class="tree-search">
+      <input class="tree-search-input" id="tree-search" type="text"
+             placeholder="Search channels..." spellcheck="false" autocomplete="off">
+      <span class="tree-search-clear" id="tree-search-clear">✕</span>
+    </div>
     <div class="tree-scroll" id="tree-scroll"></div>
     <div class="tree-status" id="tree-status">
       <span class="dot connecting"></span>Connecting...
@@ -723,6 +757,23 @@ const statusUsersEl = document.getElementById('status-users');
 const statusRate = document.getElementById('status-rate');
 const statusTime = document.getElementById('status-time');
 const inputPrompt = document.getElementById('input-prompt');
+
+// Search state
+let treeSearchQuery = '';
+const treeSearchInput = document.getElementById('tree-search');
+const treeSearchClear = document.getElementById('tree-search-clear');
+
+treeSearchInput.addEventListener('input', () => {
+  treeSearchQuery = treeSearchInput.value.trim().toLowerCase();
+  treeSearchClear.classList.toggle('visible', treeSearchQuery.length > 0);
+  renderTree();
+});
+treeSearchClear.addEventListener('click', () => {
+  treeSearchInput.value = '';
+  treeSearchQuery = '';
+  treeSearchClear.classList.remove('visible');
+  renderTree();
+});
 
 
 // ══════════════════════════════════════════════════════════════
@@ -1264,6 +1315,27 @@ function renderTree() {
   }
 
   treeScroll.innerHTML = '';
+
+  // If searching, show flat filtered results
+  if (treeSearchQuery) {
+    const matches = [];
+    for (const [name, ch] of channels) {
+      if (name === STATUS_CHANNEL) continue;
+      const searchable = (name + ' ' + (ch.alpha_tag || '') + ' ' + (ch.group || '')).toLowerCase();
+      if (searchable.includes(treeSearchQuery)) matches.push(name);
+    }
+    matches.sort();
+    for (const ch of matches) {
+      treeScroll.appendChild(createChannelItem(ch));
+    }
+    if (matches.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'tree-more';
+      empty.textContent = 'No matching channels';
+      treeScroll.appendChild(empty);
+    }
+    return; // skip grouped rendering
+  }
 
   // Status channel first
   const sysSection = document.createElement('div');
