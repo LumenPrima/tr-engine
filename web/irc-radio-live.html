@@ -1905,6 +1905,9 @@ function switchChannel(ch) {
 
   renderTree();
   renderNicklist();
+
+  // Close mobile drawer on channel switch
+  if (window.innerWidth <= 768) closeDrawers();
 }
 
 /** Convert API calls into message objects for a channel. Returns messages oldest-first. Deduplicates by call_id. */
@@ -3376,6 +3379,70 @@ scannerBtn.addEventListener('click', () => {
 });
 
 updateScannerUI();
+
+
+// ══════════════════════════════════════════════════════════════
+// MOBILE DRAWERS
+// ══════════════════════════════════════════════════════════════
+
+const channelTree = document.querySelector('.channel-tree');
+const nicklist = document.querySelector('.nicklist');
+const drawerBackdrop = document.getElementById('drawer-backdrop');
+const hamburgerBtn = document.getElementById('mobile-hamburger');
+const usersBtn = document.getElementById('mobile-users-btn');
+
+function openDrawer(which) {
+  if (which === 'channels') {
+    channelTree.classList.add('open');
+    nicklist.classList.remove('open');
+  } else {
+    nicklist.classList.add('open');
+    channelTree.classList.remove('open');
+  }
+  drawerBackdrop.classList.add('visible');
+}
+
+function closeDrawers() {
+  channelTree.classList.remove('open');
+  nicklist.classList.remove('open');
+  drawerBackdrop.classList.remove('visible');
+}
+
+hamburgerBtn.addEventListener('click', () => openDrawer('channels'));
+usersBtn.addEventListener('click', () => openDrawer('users'));
+drawerBackdrop.addEventListener('click', closeDrawers);
+
+// Swipe gestures for mobile drawers
+let touchStartX = 0;
+let touchStartY = 0;
+const SWIPE_THRESHOLD = 50;
+const EDGE_ZONE = 30; // pixels from screen edge
+
+document.addEventListener('touchstart', (e) => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+
+document.addEventListener('touchend', (e) => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+
+  // Only trigger on horizontal swipes (not vertical scroll)
+  if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dy) > Math.abs(dx)) return;
+  if (window.innerWidth > 768) return;
+
+  if (dx > 0 && touchStartX < EDGE_ZONE) {
+    // Swipe right from left edge — open channels
+    openDrawer('channels');
+  } else if (dx < 0 && touchStartX > window.innerWidth - EDGE_ZONE) {
+    // Swipe left from right edge — open users
+    openDrawer('users');
+  } else if (dx < 0 && channelTree.classList.contains('open')) {
+    closeDrawers();
+  } else if (dx > 0 && nicklist.classList.contains('open')) {
+    closeDrawers();
+  }
+}, { passive: true });
 
 
 // ══════════════════════════════════════════════════════════════
