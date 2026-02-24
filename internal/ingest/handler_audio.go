@@ -41,6 +41,7 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 				Int("tgid", meta.Talkgroup).
 				Str("sys_name", meta.ShortName).
 				Msg("failed to create call from audio")
+			return nil
 		}
 	}
 

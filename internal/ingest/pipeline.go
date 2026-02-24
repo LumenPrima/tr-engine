@@ -491,13 +491,13 @@ func (p *Pipeline) runMaintenance() {
 }
 
 // unitDedupKey identifies a unique unit event for deduplication across sites.
-// TimeBucket = ts.Unix() / 5 groups events within 5-second windows.
+// No time bucket — the dedup window is controlled by the 10-second cleanup loop.
+// This avoids boundary artifacts where events 1-2s apart straddle a fixed bucket edge.
 type unitDedupKey struct {
-	SystemID   int
-	UnitID     int
-	EventType  string
-	Tgid       int
-	TimeBucket int64
+	SystemID  int
+	UnitID    int
+	EventType string
+	Tgid      int
 }
 
 // dedupCleanupLoop sweeps expired entries from the unit event dedup buffer every 10 seconds.

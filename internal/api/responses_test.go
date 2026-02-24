@@ -35,7 +35,7 @@ func TestParsePagination(t *testing.T) {
 			t.Errorf("got (%d, %d), want (25, 10)", p.Limit, p.Offset)
 		}
 	})
-	t.Run("large_limit_allowed", func(t *testing.T) {
+	t.Run("large_limit_capped", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/?limit=5000", nil)
 		p, err := ParsePagination(req)
 		if err != nil {
@@ -43,6 +43,13 @@ func TestParsePagination(t *testing.T) {
 		}
 		if p.Limit != 5000 {
 			t.Errorf("Limit = %d, want 5000", p.Limit)
+		}
+	})
+	t.Run("limit_exceeds_max_errors", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?limit=10001", nil)
+		_, err := ParsePagination(req)
+		if err == nil {
+			t.Error("expected error for limit=10001")
 		}
 	})
 	t.Run("limit_zero_errors", func(t *testing.T) {

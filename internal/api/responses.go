@@ -52,6 +52,9 @@ func ParsePagination(r *http.Request) (Pagination, error) {
 		if n < 1 {
 			return p, fmt.Errorf("invalid limit %d: must be >= 1", n)
 		}
+		if n > 10000 {
+			return p, fmt.Errorf("invalid limit %d: must be <= 10000", n)
+		}
 		p.Limit = n
 	}
 	if v := r.URL.Query().Get("offset"); v != "" {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 )
 
 // soxAvailable caches whether sox is in PATH (checked once at startup).
@@ -37,9 +36,13 @@ func Preprocess(ctx context.Context, inputPath string) (string, func(), error) {
 		return inputPath, noop, nil
 	}
 
-	// Create temp file for output
-	tmpDir := os.TempDir()
-	outPath := filepath.Join(tmpDir, fmt.Sprintf("tr-engine-preprocess-%d.wav", os.Getpid()))
+	// Create a unique temp file for output (safe for concurrent workers).
+	tmp, err := os.CreateTemp("", "tr-engine-preprocess-*.wav")
+	if err != nil {
+		return inputPath, noop, fmt.Errorf("create temp file: %w", err)
+	}
+	outPath := tmp.Name()
+	tmp.Close() // sox will overwrite it
 
 	// Sox pipeline: resample to 16kHz mono, voice bandpass 300-3000Hz, normalize
 	//
