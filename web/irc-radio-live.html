@@ -91,7 +91,7 @@ body::after {
   user-select: none;
 }
 .tree-header-row {
-  padding: 6px 12px;
+  padding: 4px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -117,7 +117,7 @@ body::after {
 }
 .read-all-btn:hover { color: var(--cyan); border-color: var(--cyan); }
 .tree-search {
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -131,8 +131,8 @@ body::after {
   border-radius: 3px;
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
-  padding: 3px 6px;
+  font-size: 12px;
+  padding: 2px 6px;
   outline: none;
 }
 .tree-search-input:focus { border-color: var(--cyan); }
@@ -146,8 +146,8 @@ body::after {
 }
 .tree-search-clear.visible { visibility: visible; }
 .tree-more {
-  padding: 2px 12px 2px 20px;
-  font-size: 13px;
+  padding: 1px 8px 1px 16px;
+  font-size: 12px;
   font-style: italic;
   color: var(--text-muted);
   cursor: pointer;
@@ -163,27 +163,27 @@ body::after {
 .tree-scroll::-webkit-scrollbar-track { background: transparent; }
 .tree-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-.tree-section { padding: 4px 0; }
+.tree-section { padding: 2px 0; }
 .tree-section-label {
-  padding: 3px 12px;
-  font-size: 13px;
+  padding: 1px 8px;
+  font-size: 12px;
   color: var(--text-muted);
   letter-spacing: 0.06em;
   cursor: pointer;
 }
 .tree-section-label .nb { white-space: nowrap; }
 .tree-section-label:hover { color: var(--text-mid); }
-.tree-section-label::before { content: '▾ '; font-size: 11px; }
+.tree-section-label::before { content: '▾ '; font-size: 10px; }
 .tree-section-label.collapsed::before { content: '▸ '; }
 
 .channel-item {
-  padding: 2px 12px 2px 20px;
+  padding: 1px 8px 1px 16px;
   cursor: pointer;
   color: var(--text-mid);
-  font-size: 14px;
+  font-size: 12px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -193,9 +193,9 @@ body::after {
 .channel-item .chan-prefix { color: var(--text-muted); }
 .channel-item .chan-label { overflow: hidden; text-overflow: ellipsis; }
 .channel-item .unread {
-  margin-left: auto; font-size: 12px; color: var(--bg);
+  margin-left: auto; font-size: 10px; color: var(--bg);
   background: var(--orange); border-radius: 3px;
-  padding: 0 4px; min-width: 14px; text-align: center; font-weight: 600;
+  padding: 0 3px; min-width: 12px; text-align: center; font-weight: 600;
   flex-shrink: 0;
 }
 .channel-icons {
@@ -209,8 +209,8 @@ body::after {
   opacity: 0;
   transition: opacity 0.15s;
   color: var(--text-muted);
-  font-size: 12px;
-  padding: 0 2px;
+  font-size: 11px;
+  padding: 0 1px;
   flex-shrink: 0;
 }
 .channel-item:hover .fav-star,
@@ -219,22 +219,22 @@ body::after {
 .group-unread {
   background: var(--orange);
   color: var(--bg);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  padding: 0 5px;
-  border-radius: 8px;
-  margin-left: 6px;
-  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 7px;
+  margin-left: 4px;
+  min-width: 14px;
   text-align: center;
   display: inline-block;
-  line-height: 16px;
+  line-height: 14px;
 }
 .scan-icon {
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   flex-shrink: 0;
 }
 .channel-item:hover .scan-icon,
@@ -263,9 +263,9 @@ body::after {
 }
 
 .tree-status {
-  padding: 8px 12px;
+  padding: 4px 8px;
   border-top: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -451,6 +451,17 @@ body::after {
   transition: width 0.1s linear;
 }
 .player-progress:hover .player-progress-fill { background: var(--text); }
+.player-segment {
+  position: absolute; top: 0; height: 100%;
+  border-radius: 2px; opacity: 0.3;
+  pointer-events: none;
+}
+.player-segment.active { opacity: 0.6; }
+.player-segment-divider {
+  position: absolute; top: -2px; width: 1px; height: calc(100% + 4px);
+  background: var(--text-muted); opacity: 0.5;
+  pointer-events: none;
+}
 
 /* ── Voice message links ── */
 .voice-play { color: var(--cyan); font-size: 15px; margin-right: 2px; cursor: pointer; }
@@ -554,7 +565,7 @@ body::after {
 /* ── Nick tooltip ── */
 .nick-tooltip {
   display: none; position: fixed; z-index: 100;
-  background: var(--bg-elevated); border: 1px solid var(--border-hover); border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border-hover); border-radius: 4px;
   padding: 6px 10px; font-size: 14px; line-height: 1.5;
   color: var(--text-mid); pointer-events: none;
   max-width: 260px; white-space: nowrap;
@@ -945,12 +956,16 @@ const activeCalls = new Map();
 // Map<call_id, { system_id, tgid, text, ... }> — applied when messages appear.
 const pendingTranscriptions = new Map();
 
+// Call src_list cache: Map<call_id, srcList[]> — for player segment display
+const callSrcLists = new Map();
+
 // Activity tracking for channel tree collapse
 const channelHasActivity = new Set();   // channels with real messages
 const groupCollapsed = new Map();       // group collapse state (true = show all, false = collapsed)
 const channelLoading = new Set();       // prevent duplicate lazy-loads
 const channelLoadedCallIds = new Map(); // chanName -> Set<callId> — deduplicate across bootstrap and lazy load
 const channelLoadedEventIds = new Map(); // chanName -> Set<eventId> — deduplicate unit events across bootstrap and lazy load
+const liveUnitDedup = new Map();         // "sysId:unitId:type:tgid" -> timestamp — dedup live SSE unit events (multi-site)
 
 // ── DOM refs ──
 const messagesEl = document.getElementById('messages');
@@ -1476,7 +1491,7 @@ function buildMsgEl(m) {
         play.textContent = '▶';
         play.addEventListener('click', (e) => {
           e.preventDefault();
-          playCall(m.callId, m.nick, m.channel, div);
+          playCall(m.callId, m.nick, m.channel, div, m.pos, m.txDuration);
         });
         controls.appendChild(play);
         const listen = document.createElement('a');
@@ -1485,7 +1500,7 @@ function buildMsgEl(m) {
         listen.href = '#';
         listen.addEventListener('click', (e) => {
           e.preventDefault();
-          playCall(m.callId, m.nick, m.channel, div);
+          playCall(m.callId, m.nick, m.channel, div, m.pos, m.txDuration);
         });
         controls.appendChild(listen);
         body.appendChild(controls);
@@ -1509,7 +1524,7 @@ function buildMsgEl(m) {
         listen.href = '#';
         listen.addEventListener('click', (e) => {
           e.preventDefault();
-          playCall(m.callId, m.nick, m.channel, div);
+          playCall(m.callId, m.nick, m.channel, div, m.pos, m.txDuration);
         });
         body.appendChild(listen);
       }
@@ -1975,6 +1990,9 @@ function callsToMessages(calls, chanName, systemId) {
     const isEmergency = call.emergency || false;
     const sid = call.system_id || systemId;
 
+    // Cache src_list for player segment display
+    if (srcList.length > 0) callSrcLists.set(call.call_id, srcList);
+
     if (call.encrypted) {
       const units = call.units || [];
       const srcNick = units.length > 0
@@ -2366,10 +2384,22 @@ function connectSSE() {
     try { handleCallEnd(JSON.parse(e.data)); } catch (err) { console.warn('bad call_end event:', err); }
   });
 
-  // ── Unit events ──
+  // ── Unit events (with multi-site dedup) ──
   es.addEventListener('unit_event', (e) => {
     lastEventId = e.lastEventId;
-    try { handleUnitEvent(JSON.parse(e.data)); } catch (err) { console.warn('bad unit_event:', err); }
+    try {
+      const evt = JSON.parse(e.data);
+      // Dedup: same system+unit+type+tgid within 10s window (mirrors backend dedup)
+      const dk = `${evt.system_id}:${evt.unit_id}:${evt.event_type}:${evt.tgid||0}`;
+      const now = Date.now();
+      if (liveUnitDedup.has(dk) && now - liveUnitDedup.get(dk) < 10000) return;
+      liveUnitDedup.set(dk, now);
+      // Prune old entries every 50 events
+      if (liveUnitDedup.size > 200) {
+        for (const [k, t] of liveUnitDedup) { if (now - t > 15000) liveUnitDedup.delete(k); }
+      }
+      handleUnitEvent(evt);
+    } catch (err) { console.warn('bad unit_event:', err); }
   });
 
   // ── Recorder updates (optional, show as server notices) ──
@@ -2808,6 +2838,9 @@ async function upgradeCallWithSrcList(callId, chanName, systemId, isEmergency) {
 function renderCallTransmissions(chanName, callId, systemId, srcList, isEmergency) {
   const ch = channels.get(chanName);
   if (!ch) return;
+
+  // Cache src_list for player segment display
+  if (srcList.length > 0) callSrcLists.set(callId, srcList);
 
   const sorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
   for (const tx of sorted) {
@@ -3257,6 +3290,7 @@ audioEl.preload = 'auto';
 let currentPlayingMsgEl = null;
 let currentCallId = null;
 let playerRaf = null;
+let playerTxEnd = null; // end position for current transmission segment (seconds), null = play full call
 
 function fmtAudioTime(sec) {
   if (!sec || !isFinite(sec)) return '0:00';
@@ -3265,14 +3299,98 @@ function fmtAudioTime(sec) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function playCall(callId, nick, channel, msgEl) {
-  // If clicking the same call that's playing, toggle pause
-  if (currentCallId === callId && !audioEl.paused) {
-    audioEl.pause();
-    playerPlayBtn.textContent = '▶';
-    return;
+/** Render segment markers on the progress bar from a call's src_list. */
+function renderPlayerSegments(callId) {
+  // Clear existing segments
+  playerProgress.querySelectorAll('.player-segment, .player-segment-divider').forEach(el => el.remove());
+  const srcList = callSrcLists.get(callId);
+  if (!srcList || srcList.length < 2 || !audioEl.duration) return;
+
+  const dur = audioEl.duration;
+  const colors = ['var(--cyan)', 'var(--green)', 'var(--magenta)', 'var(--yellow)', 'var(--red)', 'var(--blue)'];
+  const sorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
+
+  // Track unique sources for color assignment
+  const srcColorMap = new Map();
+  let colorIdx = 0;
+  for (const tx of sorted) {
+    if (!srcColorMap.has(tx.src)) srcColorMap.set(tx.src, colors[colorIdx++ % colors.length]);
   }
-  if (currentCallId === callId && audioEl.paused) {
+
+  for (let i = 0; i < sorted.length; i++) {
+    const tx = sorted[i];
+    const startPct = ((tx.pos || 0) / dur) * 100;
+    const txDur = tx.duration || (i < sorted.length - 1 ? (sorted[i + 1].pos || 0) - (tx.pos || 0) : dur - (tx.pos || 0));
+    const widthPct = (txDur / dur) * 100;
+
+    // Colored segment background
+    const seg = document.createElement('div');
+    seg.className = 'player-segment';
+    seg.style.left = startPct + '%';
+    seg.style.width = Math.max(widthPct, 0.5) + '%';
+    seg.style.background = srcColorMap.get(tx.src);
+    seg.dataset.txIndex = i;
+    playerProgress.appendChild(seg);
+
+    // Divider line between segments (skip first)
+    if (i > 0 && startPct > 0) {
+      const div = document.createElement('div');
+      div.className = 'player-segment-divider';
+      div.style.left = startPct + '%';
+      playerProgress.appendChild(div);
+    }
+  }
+}
+
+/** Highlight the active segment in the progress bar. */
+function updateActiveSegment() {
+  const t = audioEl.currentTime;
+  playerProgress.querySelectorAll('.player-segment').forEach(seg => {
+    seg.classList.remove('active');
+  });
+  const srcList = callSrcLists.get(currentCallId);
+  if (!srcList || !audioEl.duration) return;
+  const sorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (t >= (sorted[i].pos || 0)) {
+      const seg = playerProgress.querySelector(`.player-segment[data-tx-index="${i}"]`);
+      if (seg) seg.classList.add('active');
+      break;
+    }
+  }
+}
+
+function playCall(callId, nick, channel, msgEl, txPos, txDuration) {
+  const hasTxPos = txPos != null && txPos >= 0;
+  const txEnd = hasTxPos && txDuration > 0 ? txPos + txDuration : null;
+
+  // Same call — seek to segment or toggle pause
+  if (currentCallId === callId && audioEl.src) {
+    if (hasTxPos) {
+      // Clicking a different transmission in the same call — seek to it
+      playerTxEnd = txEnd;
+      audioEl.currentTime = txPos;
+      // Update highlight
+      if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
+      currentPlayingMsgEl = msgEl;
+      if (msgEl) msgEl.classList.add('now-playing');
+      playerNickEl.textContent = nick || '?';
+      playerNickEl.style.color = nickColor(nick || '');
+      if (audioEl.paused) {
+        audioEl.play().then(() => {
+          playerPlayBtn.textContent = '⏸';
+          updatePlayerProgress();
+        }).catch(() => { playerPlayBtn.textContent = '▶'; });
+      }
+      return;
+    }
+    // No specific transmission — toggle pause
+    if (!audioEl.paused) {
+      audioEl.pause();
+      playerPlayBtn.textContent = '▶';
+      return;
+    }
+    playerTxEnd = null; // resume full playback
     audioEl.play().then(() => {
       playerPlayBtn.textContent = '⏸';
       updatePlayerProgress();
@@ -3282,6 +3400,7 @@ function playCall(callId, nick, channel, msgEl) {
 
   // New call — load and play
   currentCallId = callId;
+  playerTxEnd = txEnd;
 
   // Clear previous highlight
   if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
@@ -3297,10 +3416,22 @@ function playCall(callId, nick, channel, msgEl) {
   playerBar.classList.add('active');
   playerPlayBtn.textContent = '⏳';
 
+  // Clear old segments
+  playerProgress.querySelectorAll('.player-segment, .player-segment-divider').forEach(el => el.remove());
+
   // Load audio
   const audioUrl = `${API_BASE}/calls/${callId}/audio`;
   audioEl.src = audioUrl;
   audioEl.load();
+
+  // Seek to transmission start once metadata loaded
+  const onCanPlay = () => {
+    audioEl.removeEventListener('canplay', onCanPlay);
+    if (hasTxPos) audioEl.currentTime = txPos;
+    renderPlayerSegments(callId);
+  };
+  audioEl.addEventListener('canplay', onCanPlay);
+
   audioEl.play().then(() => {
     playerPlayBtn.textContent = '⏸';
     updatePlayerProgress();
@@ -3316,9 +3447,18 @@ function updatePlayerProgress() {
 
   function tick() {
     if (!audioEl.paused && audioEl.duration) {
+      // Stop at transmission end if set
+      if (playerTxEnd != null && audioEl.currentTime >= playerTxEnd) {
+        audioEl.pause();
+        audioEl.currentTime = playerTxEnd;
+        playerPlayBtn.textContent = '▶';
+        playerTxEnd = null; // allow manual resume to play full call
+        return;
+      }
       const pct = (audioEl.currentTime / audioEl.duration) * 100;
       playerProgressFill.style.width = pct + '%';
       playerTimeEl.textContent = `${fmtAudioTime(audioEl.currentTime)} / ${fmtAudioTime(audioEl.duration)}`;
+      updateActiveSegment();
     }
     if (!audioEl.paused) playerRaf = requestAnimationFrame(tick);
   }
@@ -3344,9 +3484,11 @@ playerCloseBtn.addEventListener('click', () => {
   audioEl.pause();
   audioEl.src = '';
   currentCallId = null;
+  playerTxEnd = null;
   if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
   currentPlayingMsgEl = null;
   playerBar.classList.remove('active');
+  playerProgress.querySelectorAll('.player-segment, .player-segment-divider').forEach(el => el.remove());
   if (playerRaf) cancelAnimationFrame(playerRaf);
   // Reset scanner state so queue can resume on next enqueue
   scannerPlaying = false;
@@ -3376,6 +3518,7 @@ playerProgress.addEventListener('click', (e) => {
   const pct = (e.clientX - rect.left) / rect.width;
   audioEl.currentTime = pct * audioEl.duration;
   playerProgressFill.style.width = (pct * 100) + '%';
+  playerTxEnd = null; // manual seek clears transmission boundary
 });
 
 // Audio ended

@@ -83,7 +83,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 	}
 
 	// Dedup check: skip DB insert + SSE publish if an equivalent event was
-	// already processed within the same 5-second window (multi-site dedup).
+	// already processed within the same 10-second window (multi-site dedup).
 	isDup := false
 	{
 		dk := unitDedupKey{
