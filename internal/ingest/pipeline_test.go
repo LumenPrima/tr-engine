@@ -324,3 +324,77 @@ func TestActiveCallMapFindByTgidAndTime(t *testing.T) {
 		}
 	})
 }
+
+// ── beginningOfMonth ─────────────────────────────────────────────────
+
+func TestBeginningOfMonth(t *testing.T) {
+	tests := []struct {
+		name  string
+		input time.Time
+		want  time.Time
+	}{
+		{
+			"mid_month",
+			time.Date(2025, 6, 15, 14, 30, 45, 123, time.UTC),
+			time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			"first_of_month",
+			time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			"last_day_december",
+			time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC),
+			time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			"leap_year_feb_29",
+			time.Date(2024, 2, 29, 12, 0, 0, 0, time.UTC),
+			time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			"non_leap_year_feb",
+			time.Date(2025, 2, 28, 12, 0, 0, 0, time.UTC),
+			time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			"preserves_location",
+			time.Date(2025, 3, 15, 10, 0, 0, 0, time.FixedZone("EST", -5*3600)),
+			time.Date(2025, 3, 1, 0, 0, 0, 0, time.FixedZone("EST", -5*3600)),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := beginningOfMonth(tt.input)
+			if !got.Equal(tt.want) {
+				t.Errorf("beginningOfMonth(%v) = %v, want %v", tt.input, got, tt.want)
+			}
+			if got.Location().String() != tt.want.Location().String() {
+				t.Errorf("location = %v, want %v", got.Location(), tt.want.Location())
+			}
+		})
+	}
+}
+
+// ── unitDedupKey struct equality ─────────────────────────────────────
+
+func TestUnitDedupKeyEquality(t *testing.T) {
+	a := unitDedupKey{SystemID: 1, UnitID: 100, EventType: "call", Tgid: 200}
+	b := unitDedupKey{SystemID: 1, UnitID: 100, EventType: "call", Tgid: 200}
+
+	if a != b {
+		t.Error("identical keys should be equal")
+	}
+
+	c := unitDedupKey{SystemID: 1, UnitID: 100, EventType: "end", Tgid: 200}
+	if a == c {
+		t.Error("different EventType should not be equal")
+	}
+
+	d := unitDedupKey{SystemID: 2, UnitID: 100, EventType: "call", Tgid: 200}
+	if a == d {
+		t.Error("different SystemID should not be equal")
+	}
+}

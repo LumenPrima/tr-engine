@@ -192,16 +192,19 @@ func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedId
 	return callID, startTime, nil
 }
 
-// processSrcFreqData builds srcList/freqList JSON, updates the call's denormalized
-// JSONB columns, and inserts into the relational call_frequencies/call_transmissions tables.
-func (p *Pipeline) processSrcFreqData(ctx context.Context, callID int64, callStartTime time.Time, meta *AudioMetadata) {
-	if len(meta.SrcList) == 0 && len(meta.FreqList) == 0 {
-		return
-	}
+// srcFreqResult holds the pure data transformation output from buildSrcFreqJSON.
+type srcFreqResult struct {
+	SrcListJSON  json.RawMessage
+	FreqListJSON json.RawMessage
+	UnitIDs      []int32
+}
 
-	// Build freqList JSON
-	var freqListJSON json.RawMessage
-	if len(meta.FreqList) > 0 {
+// buildSrcFreqJSON transforms srcList/freqList metadata into denormalized JSON
+// and extracts unique unit IDs. Pure function — no DB or side effects.
+func buildSrcFreqJSON(srcList []SrcItem, freqList []FreqItem, callLength int) srcFreqResult {
+	var result srcFreqResult
+
+	if len(freqList) > 0 {
 		type freqEntry struct {
 			Freq       int64   `json:"freq"`
 			Time       int64   `json:"time"`
@@ -210,8 +213,8 @@ func (p *Pipeline) processSrcFreqData(ctx context.Context, callID int64, callSta
 			ErrorCount int     `json:"error_count"`
 			SpikeCount int     `json:"spike_count"`
 		}
-		entries := make([]freqEntry, len(meta.FreqList))
-		for i, f := range meta.FreqList {
+		entries := make([]freqEntry, len(freqList))
+		for i, f := range freqList {
 			entries[i] = freqEntry{
 				Freq:       int64(f.Freq),
 				Time:       f.Time,
@@ -221,13 +224,11 @@ func (p *Pipeline) processSrcFreqData(ctx context.Context, callID int64, callSta
 				SpikeCount: f.SpikeCount,
 			}
 		}
-		freqListJSON, _ = json.Marshal(entries)
+		result.FreqListJSON, _ = json.Marshal(entries)
 	}
 
-	// Build srcList JSON with computed duration
-	var srcListJSON json.RawMessage
 	unitSet := make(map[int32]struct{})
-	if len(meta.SrcList) > 0 {
+	if len(srcList) > 0 {
 		type srcEntry struct {
 			Src          int     `json:"src"`
 			Tag          string  `json:"tag,omitempty"`
@@ -237,13 +238,13 @@ func (p *Pipeline) processSrcFreqData(ctx context.Context, callID int64, callSta
 			Emergency    int     `json:"emergency"`
 			SignalSystem string  `json:"signal_system,omitempty"`
 		}
-		entries := make([]srcEntry, len(meta.SrcList))
-		for i, s := range meta.SrcList {
+		entries := make([]srcEntry, len(srcList))
+		for i, s := range srcList {
 			var dur float64
-			if i+1 < len(meta.SrcList) {
-				dur = meta.SrcList[i+1].Pos - s.Pos
-			} else if meta.CallLength > 0 {
-				dur = float64(meta.CallLength) - s.Pos
+			if i+1 < len(srcList) {
+				dur = srcList[i+1].Pos - s.Pos
+			} else if callLength > 0 {
+				dur = float64(callLength) - s.Pos
 			}
 			entries[i] = srcEntry{
 				Src:          s.Src,
@@ -256,15 +257,27 @@ func (p *Pipeline) processSrcFreqData(ctx context.Context, callID int64, callSta
 			}
 			unitSet[int32(s.Src)] = struct{}{}
 		}
-		srcListJSON, _ = json.Marshal(entries)
+		result.SrcListJSON, _ = json.Marshal(entries)
 	}
 
-	unitIDs := make([]int32, 0, len(unitSet))
+	result.UnitIDs = make([]int32, 0, len(unitSet))
 	for uid := range unitSet {
-		unitIDs = append(unitIDs, uid)
+		result.UnitIDs = append(result.UnitIDs, uid)
 	}
 
-	if err := p.db.UpdateCallSrcFreq(ctx, callID, callStartTime, srcListJSON, freqListJSON, unitIDs); err != nil {
+	return result
+}
+
+// processSrcFreqData builds srcList/freqList JSON, updates the call's denormalized
+// JSONB columns, and inserts into the relational call_frequencies/call_transmissions tables.
+func (p *Pipeline) processSrcFreqData(ctx context.Context, callID int64, callStartTime time.Time, meta *AudioMetadata) {
+	if len(meta.SrcList) == 0 && len(meta.FreqList) == 0 {
+		return
+	}
+
+	sf := buildSrcFreqJSON(meta.SrcList, meta.FreqList, meta.CallLength)
+
+	if err := p.db.UpdateCallSrcFreq(ctx, callID, callStartTime, sf.SrcListJSON, sf.FreqListJSON, sf.UnitIDs); err != nil {
 		p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update call src/freq data")
 	}
 
@@ -433,6 +446,30 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 	return nil
 }
 
+// buildAudioFilename returns the filename to use for saving audio.
+// If filename is empty, generates one from the start time and audio type.
+func buildAudioFilename(filename, audioType string, startTime time.Time) string {
+	if filename != "" {
+		return filename
+	}
+	ext := ".wav"
+	if audioType != "" {
+		if audioType[0] != '.' {
+			ext = "." + audioType
+		} else {
+			ext = audioType
+		}
+	}
+	return fmt.Sprintf("%d%s", startTime.Unix(), ext)
+}
+
+// buildAudioRelPath constructs the relative path for an audio file:
+// {sysName}/{YYYY-MM-DD}/{filename}
+func buildAudioRelPath(sysName string, startTime time.Time, filename string) string {
+	dateDir := startTime.Format("2006-01-02")
+	return filepath.Join(sysName, dateDir, filename)
+}
+
 // saveAudioFile writes decoded audio to the filesystem.
 // Path: {audioDir}/{sysName}/{YYYY-MM-DD}/{filename}
 func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename string, audioType string, data []byte) (string, error) {
@@ -443,20 +480,7 @@ func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename s
 		return "", fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 
-	if filename == "" {
-		// Use audio_type from metadata if available, default to .wav
-		ext := ".wav"
-		if audioType != "" {
-			// audio_type from TR is typically "m4a", "wav", "mp3" (no dot)
-			if audioType[0] != '.' {
-				ext = "." + audioType
-			} else {
-				ext = audioType
-			}
-		}
-		filename = fmt.Sprintf("%d%s", startTime.Unix(), ext)
-	}
-
+	filename = buildAudioFilename(filename, audioType, startTime)
 	path := filepath.Join(dir, filename)
 
 	// Write to a temp file then rename for atomicity — prevents concurrent
@@ -480,7 +504,5 @@ func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename s
 		return "", fmt.Errorf("rename %s -> %s: %w", tmpPath, path, err)
 	}
 
-	// Return relative path from audioDir
-	relPath := filepath.Join(sysName, dateDir, filename)
-	return relPath, nil
+	return buildAudioRelPath(sysName, startTime, filename), nil
 }

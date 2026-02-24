@@ -194,3 +194,89 @@ func TestMapWordPositions_CaseInsensitive(t *testing.T) {
 		t.Errorf("expected position 7 for World, got %d", positions[1])
 	}
 }
+
+// ── ParseSrcList ─────────────────────────────────────────────────────
+
+func TestParseSrcList(t *testing.T) {
+	t.Run("nil_input", func(t *testing.T) {
+		result := ParseSrcList(nil, 10.0)
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+
+	t.Run("empty_json", func(t *testing.T) {
+		result := ParseSrcList(json.RawMessage(``), 10.0)
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+
+	t.Run("null_json", func(t *testing.T) {
+		result := ParseSrcList(json.RawMessage(`null`), 10.0)
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+
+	t.Run("malformed_json", func(t *testing.T) {
+		result := ParseSrcList(json.RawMessage(`{bad json`), 10.0)
+		if result != nil {
+			t.Errorf("expected nil for malformed JSON, got %v", result)
+		}
+	})
+
+	t.Run("single_transmission", func(t *testing.T) {
+		src := json.RawMessage(`[{"src":100,"tag":"Engine 1","pos":0.0}]`)
+		result := ParseSrcList(src, 5.0)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 transmission, got %d", len(result))
+		}
+		if result[0].Src != 100 {
+			t.Errorf("Src = %d, want 100", result[0].Src)
+		}
+		if result[0].Tag != "Engine 1" {
+			t.Errorf("Tag = %q, want %q", result[0].Tag, "Engine 1")
+		}
+		if result[0].Pos != 0.0 {
+			t.Errorf("Pos = %f, want 0.0", result[0].Pos)
+		}
+		// Single entry: duration = totalDuration - pos = 5.0 - 0.0 = 5.0
+		if result[0].Duration != 5.0 {
+			t.Errorf("Duration = %f, want 5.0", result[0].Duration)
+		}
+	})
+
+	t.Run("multiple_transmissions", func(t *testing.T) {
+		src := json.RawMessage(`[
+			{"src":100,"tag":"Engine 1","pos":0.0},
+			{"src":200,"tag":"Dispatch","pos":2.5},
+			{"src":100,"tag":"Engine 1","pos":4.0}
+		]`)
+		result := ParseSrcList(src, 6.0)
+		if len(result) != 3 {
+			t.Fatalf("expected 3 transmissions, got %d", len(result))
+		}
+		// First: duration = 2.5 - 0.0 = 2.5
+		if result[0].Duration != 2.5 {
+			t.Errorf("[0] Duration = %f, want 2.5", result[0].Duration)
+		}
+		// Second: duration = 4.0 - 2.5 = 1.5
+		if result[1].Duration != 1.5 {
+			t.Errorf("[1] Duration = %f, want 1.5", result[1].Duration)
+		}
+		// Last: duration = 6.0 - 4.0 = 2.0
+		if result[2].Duration != 2.0 {
+			t.Errorf("[2] Duration = %f, want 2.0", result[2].Duration)
+		}
+	})
+
+	t.Run("negative_duration_clamped", func(t *testing.T) {
+		// Edge case: totalDuration < last pos (shouldn't happen but be safe)
+		src := json.RawMessage(`[{"src":100,"pos":5.0}]`)
+		result := ParseSrcList(src, 3.0)
+		if result[0].Duration != 0 {
+			t.Errorf("Duration = %f, want 0 (clamped)", result[0].Duration)
+		}
+	})
+}

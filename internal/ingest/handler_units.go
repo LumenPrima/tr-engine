@@ -10,33 +10,48 @@ import (
 	"github.com/snarg/tr-engine/internal/database"
 )
 
-func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
-	// Extract event type from trailing topic segment (prefix-agnostic, consistent with router).
+// parseUnitEventTopic extracts the event type from the trailing topic segment.
+func parseUnitEventTopic(topic string) (string, error) {
 	parts := strings.Split(topic, "/")
 	if len(parts) < 2 {
-		return fmt.Errorf("invalid unit event topic: %s", topic)
+		return "", fmt.Errorf("invalid unit event topic: %s", topic)
 	}
-	eventType := parts[len(parts)-1]
+	return parts[len(parts)-1], nil
+}
 
-	// Parse envelope
+// parseUnitEventData parses the envelope and event-type-named data from a unit event payload.
+func parseUnitEventData(payload []byte, eventType string) (Envelope, UnitEventData, error) {
 	var env Envelope
 	if err := json.Unmarshal(payload, &env); err != nil {
-		return err
+		return env, UnitEventData{}, err
 	}
 
-	// Parse the event-type-named field
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &raw); err != nil {
-		return err
+		return env, UnitEventData{}, err
 	}
 
 	eventJSON, ok := raw[eventType]
 	if !ok {
-		return fmt.Errorf("missing %q key in unit event payload", eventType)
+		return env, UnitEventData{}, fmt.Errorf("missing %q key in unit event payload", eventType)
 	}
 
 	var data UnitEventData
 	if err := json.Unmarshal(eventJSON, &data); err != nil {
+		return env, UnitEventData{}, err
+	}
+
+	return env, data, nil
+}
+
+func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
+	eventType, err := parseUnitEventTopic(topic)
+	if err != nil {
+		return err
+	}
+
+	env, data, err := parseUnitEventData(payload, eventType)
+	if err != nil {
 		return err
 	}
 

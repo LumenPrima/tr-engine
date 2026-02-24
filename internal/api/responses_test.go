@@ -491,3 +491,162 @@ func TestWriteErrorDetail(t *testing.T) {
 		t.Errorf("Detail = %q, want %q", body.Detail, "name is required")
 	}
 }
+
+// ── QueryIntListAliased ──────────────────────────────────────────────
+
+func TestQueryIntListAliased(t *testing.T) {
+	t.Run("first_alias_wins", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?tgids=1,2&tgid=3", nil)
+		got := QueryIntListAliased(req, "tgids", "tgid")
+		if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+			t.Errorf("got %v, want [1 2]", got)
+		}
+	})
+
+	t.Run("fallback_to_second", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?tgid=42", nil)
+		got := QueryIntListAliased(req, "tgids", "tgid")
+		if len(got) != 1 || got[0] != 42 {
+			t.Errorf("got %v, want [42]", got)
+		}
+	})
+
+	t.Run("none_present", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/", nil)
+		got := QueryIntListAliased(req, "tgids", "tgid")
+		if got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+
+	t.Run("first_has_only_invalid", func(t *testing.T) {
+		// If first alias exists but all values are non-numeric, result is empty
+		// so it falls through to second alias
+		req := httptest.NewRequest("GET", "/?tgids=abc&tgid=42", nil)
+		got := QueryIntListAliased(req, "tgids", "tgid")
+		if len(got) != 1 || got[0] != 42 {
+			t.Errorf("got %v, want [42] (fallback when first is all invalid)", got)
+		}
+	})
+}
+
+// ── QueryStringList ──────────────────────────────────────────────────
+
+func TestQueryStringList(t *testing.T) {
+	t.Run("comma_separated", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?types=call_start,call_end,unit_event", nil)
+		got := QueryStringList(req, "types")
+		if len(got) != 3 {
+			t.Fatalf("got %d items, want 3", len(got))
+		}
+		if got[0] != "call_start" || got[1] != "call_end" || got[2] != "unit_event" {
+			t.Errorf("got %v, want [call_start call_end unit_event]", got)
+		}
+	})
+
+	t.Run("whitespace_trimmed", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?types=+a+,+b+", nil)
+		got := QueryStringList(req, "types")
+		if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+			t.Errorf("got %v, want [a b]", got)
+		}
+	})
+
+	t.Run("empty_segments_skipped", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?types=a,,b,", nil)
+		got := QueryStringList(req, "types")
+		if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+			t.Errorf("got %v, want [a b]", got)
+		}
+	})
+
+	t.Run("missing_returns_nil", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/", nil)
+		got := QueryStringList(req, "types")
+		if got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+
+	t.Run("single_value", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?types=call_start", nil)
+		got := QueryStringList(req, "types")
+		if len(got) != 1 || got[0] != "call_start" {
+			t.Errorf("got %v, want [call_start]", got)
+		}
+	})
+}
+
+// ── QueryStringListAliased ───────────────────────────────────────────
+
+func TestQueryStringListAliased(t *testing.T) {
+	t.Run("first_alias_wins", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?types=a,b&type=c", nil)
+		got := QueryStringListAliased(req, "types", "type")
+		if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+			t.Errorf("got %v, want [a b]", got)
+		}
+	})
+
+	t.Run("fallback_to_second", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?type=call_start", nil)
+		got := QueryStringListAliased(req, "types", "type")
+		if len(got) != 1 || got[0] != "call_start" {
+			t.Errorf("got %v, want [call_start]", got)
+		}
+	})
+
+	t.Run("none_present", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/", nil)
+		got := QueryStringListAliased(req, "types", "type")
+		if got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+}
+
+// ── intSliceContains / stringSliceContains ───────────────────────────
+
+func TestIntSliceContains(t *testing.T) {
+	tests := []struct {
+		name  string
+		slice []int
+		value int
+		want  bool
+	}{
+		{"found", []int{1, 2, 3}, 2, true},
+		{"not_found", []int{1, 2, 3}, 4, false},
+		{"empty_slice", []int{}, 1, false},
+		{"nil_slice", nil, 1, false},
+		{"single_match", []int{42}, 42, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := intSliceContains(tt.slice, tt.value); got != tt.want {
+				t.Errorf("intSliceContains(%v, %d) = %v, want %v", tt.slice, tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStringSliceContains(t *testing.T) {
+	tests := []struct {
+		name  string
+		slice []string
+		value string
+		want  bool
+	}{
+		{"found", []string{"a", "b", "c"}, "b", true},
+		{"not_found", []string{"a", "b", "c"}, "d", false},
+		{"empty_slice", []string{}, "a", false},
+		{"nil_slice", nil, "a", false},
+		{"case_sensitive", []string{"Hello"}, "hello", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stringSliceContains(tt.slice, tt.value); got != tt.want {
+				t.Errorf("stringSliceContains(%v, %q) = %v, want %v", tt.slice, tt.value, got, tt.want)
+			}
+		})
+	}
+}
