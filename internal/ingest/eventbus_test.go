@@ -154,13 +154,15 @@ func TestEventBusReplaySince(t *testing.T) {
 		}
 	})
 
-	t.Run("unknown_lastID_returns_empty", func(t *testing.T) {
+	t.Run("unknown_lastID_replays_all", func(t *testing.T) {
 		eb := NewEventBus(64)
 		eb.Publish(EventData{Type: "call_start", Payload: "a"})
 
+		// When lastEventID is not found (overwritten by ring wrap), all available
+		// events are returned so the client doesn't silently miss everything.
 		events := eb.ReplaySince("nonexistent-id", api.EventFilter{})
-		if len(events) != 0 {
-			t.Fatalf("got %d events, want 0 (unknown ID)", len(events))
+		if len(events) != 1 {
+			t.Fatalf("got %d events, want 1 (fallback replay all)", len(events))
 		}
 	})
 }

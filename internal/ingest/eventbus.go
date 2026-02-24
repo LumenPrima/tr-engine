@@ -52,12 +52,15 @@ func (eb *EventBus) Subscribe(filter api.EventFilter) (<-chan api.SSEEvent, func
 	cancel := func() {
 		eb.mu.Lock()
 		delete(eb.subscribers, id)
+		close(ch)
 		eb.mu.Unlock()
 	}
 	return ch, cancel
 }
 
 // ReplaySince returns buffered events since the given event ID.
+// If lastEventID has been overwritten (ring buffer wrapped), all available events
+// are returned so the client doesn't silently miss everything.
 func (eb *EventBus) ReplaySince(lastEventID string, filter api.EventFilter) []api.SSEEvent {
 	eb.ringMu.RLock()
 	defer eb.ringMu.RUnlock()
@@ -81,6 +84,19 @@ func (eb *EventBus) ReplaySince(lastEventID string, filter api.EventFilter) []ap
 			events = append(events, e)
 		}
 	}
+
+	// If the lastEventID was not found (overwritten by ring wrap), replay all
+	// available events rather than returning nothing.
+	if !found && lastEventID != "" {
+		for i := 0; i < eb.ringSize; i++ {
+			idx := (eb.ringHead + i) % eb.ringSize
+			e := eb.ring[idx]
+			if e.ID != "" && matchesFilter(e, filter) {
+				events = append(events, e)
+			}
+		}
+	}
+
 	return events
 }
 

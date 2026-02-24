@@ -8,11 +8,12 @@ import (
 )
 
 type AdminHandler struct {
-	db *database.DB
+	db            *database.DB
+	onSystemMerge func(sourceID, targetID int)
 }
 
-func NewAdminHandler(db *database.DB) *AdminHandler {
-	return &AdminHandler{db: db}
+func NewAdminHandler(db *database.DB, onSystemMerge func(int, int)) *AdminHandler {
+	return &AdminHandler{db: db, onSystemMerge: onSystemMerge}
 }
 
 // MergeSystems merges two systems.
@@ -40,6 +41,11 @@ func (h *AdminHandler) MergeSystems(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "merge failed: "+err.Error())
 		return
+	}
+
+	// Invalidate in-memory identity cache so new messages resolve to the target system
+	if h.onSystemMerge != nil {
+		h.onSystemMerge(req.SourceID, req.TargetID)
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{

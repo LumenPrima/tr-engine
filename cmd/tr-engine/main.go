@@ -244,15 +244,16 @@ func main() {
 	// HTTP Server
 	httpLog := log.With().Str("component", "http").Logger()
 	srv := api.NewServer(api.ServerOptions{
-		Config:      cfg,
-		DB:          db,
-		MQTT:        mqtt,
-		Live:        pipeline,
-		WebFiles:    trengine.WebFiles,
-		OpenAPISpec: trengine.OpenAPISpec,
-		Version:     fmt.Sprintf("%s (commit=%s, built=%s)", version, commit, buildTime),
-		StartTime:   startTime,
-		Log:         httpLog,
+		Config:        cfg,
+		DB:            db,
+		MQTT:          mqtt,
+		Live:          pipeline,
+		WebFiles:      trengine.WebFiles,
+		OpenAPISpec:   trengine.OpenAPISpec,
+		Version:       fmt.Sprintf("%s (commit=%s, built=%s)", version, commit, buildTime),
+		StartTime:     startTime,
+		Log:           httpLog,
+		OnSystemMerge: pipeline.RewriteSystemID,
 	})
 
 	// Start HTTP server in background

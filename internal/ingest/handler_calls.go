@@ -225,7 +225,7 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 	if !ok {
 		// Call started before we were running, or duplicate. Try DB lookup.
 		var err error
-		entry.CallID, entry.StartTime, err = p.db.FindCallByTrCallID(ctx, call.ID)
+		entry.CallID, entry.StartTime, err = p.db.FindCallByTrCallID(ctx, call.ID, &startTime)
 		if err != nil {
 			// Not found by tr_call_id — maybe audio handler already created it.
 			identity, idErr := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)

@@ -343,8 +343,12 @@ func (db *DB) PurgeOrphanCallGroups(ctx context.Context) (int64, error) {
 }
 
 // FindCallByTrCallID finds a call by its trunk-recorder call ID.
-func (db *DB) FindCallByTrCallID(ctx context.Context, trCallID string) (int64, time.Time, error) {
-	row, err := db.Q.FindCallByTrCallID(ctx, &trCallID)
+// startTimeHint enables partition pruning (±30s window); pass nil to scan all partitions.
+func (db *DB) FindCallByTrCallID(ctx context.Context, trCallID string, startTimeHint *time.Time) (int64, time.Time, error) {
+	row, err := db.Q.FindCallByTrCallID(ctx, sqlcdb.FindCallByTrCallIDParams{
+		TrCallID: &trCallID,
+		Column2:  pgtzPtr(startTimeHint),
+	})
 	if err != nil {
 		return 0, time.Time{}, err
 	}

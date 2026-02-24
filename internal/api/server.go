@@ -20,15 +20,16 @@ type Server struct {
 }
 
 type ServerOptions struct {
-	Config      *config.Config
-	DB          *database.DB
-	MQTT        *mqttclient.Client
-	Live        LiveDataSource
-	WebFiles    fs.FS  // embedded web/ directory
-	OpenAPISpec []byte // embedded openapi.yaml
-	Version     string
-	StartTime   time.Time
-	Log         zerolog.Logger
+	Config        *config.Config
+	DB            *database.DB
+	MQTT          *mqttclient.Client
+	Live          LiveDataSource
+	WebFiles      fs.FS  // embedded web/ directory
+	OpenAPISpec   []byte // embedded openapi.yaml
+	Version       string
+	StartTime     time.Time
+	Log           zerolog.Logger
+	OnSystemMerge func(sourceID, targetID int) // called after successful system merge to invalidate caches
 }
 
 func NewServer(opts ServerOptions) *Server {
@@ -61,7 +62,7 @@ func NewServer(opts ServerOptions) *Server {
 			NewUnitEventsHandler(opts.DB).Routes(r)
 			NewAffiliationsHandler(opts.Live).Routes(r)
 			NewTranscriptionsHandler(opts.DB, opts.Live).Routes(r)
-			NewAdminHandler(opts.DB).Routes(r)
+			NewAdminHandler(opts.DB, opts.OnSystemMerge).Routes(r)
 			NewQueryHandler(opts.DB).Routes(r)
 		})
 	})

@@ -962,6 +962,12 @@ func (p *Pipeline) ReplaySince(lastEventID string, filter api.EventFilter) []api
 	return p.eventBus.ReplaySince(lastEventID, filter)
 }
 
+// RewriteSystemID updates the identity cache after a system merge,
+// rewriting all entries that point at oldSystemID to use newSystemID.
+func (p *Pipeline) RewriteSystemID(oldSystemID, newSystemID int) {
+	p.identity.RewriteSystemID(oldSystemID, newSystemID)
+}
+
 // PublishEvent is a convenience method to publish an event through the event bus.
 func (p *Pipeline) PublishEvent(e EventData) {
 	if p.eventBus != nil {

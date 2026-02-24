@@ -14,17 +14,25 @@ import (
 const findCallByTrCallID = `-- name: FindCallByTrCallID :one
 SELECT call_id, start_time FROM calls
 WHERE tr_call_id = $1
+    AND ($2::timestamptz IS NULL OR start_time BETWEEN $2 - interval '30 seconds' AND $2 + interval '30 seconds')
 ORDER BY start_time DESC
 LIMIT 1
 `
+
+type FindCallByTrCallIDParams struct {
+	TrCallID *string
+	Column2  pgtype.Timestamptz
+}
 
 type FindCallByTrCallIDRow struct {
 	CallID    int64
 	StartTime pgtype.Timestamptz
 }
 
-func (q *Queries) FindCallByTrCallID(ctx context.Context, trCallID *string) (FindCallByTrCallIDRow, error) {
-	row := q.db.QueryRow(ctx, findCallByTrCallID, trCallID)
+// Uses start_time hint ($2) for partition pruning when available.
+// Pass NULL to skip pruning and scan all partitions.
+func (q *Queries) FindCallByTrCallID(ctx context.Context, arg FindCallByTrCallIDParams) (FindCallByTrCallIDRow, error) {
+	row := q.db.QueryRow(ctx, findCallByTrCallID, arg.TrCallID, arg.Column2)
 	var i FindCallByTrCallIDRow
 	err := row.Scan(&i.CallID, &i.StartTime)
 	return i, err

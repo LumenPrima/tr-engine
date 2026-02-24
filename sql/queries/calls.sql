@@ -132,8 +132,11 @@ DELETE FROM call_groups cg
 WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.call_group_id = cg.id);
 
 -- name: FindCallByTrCallID :one
+-- Uses start_time hint ($2) for partition pruning when available.
+-- Pass NULL to skip pruning and scan all partitions.
 SELECT call_id, start_time FROM calls
 WHERE tr_call_id = $1
+    AND ($2::timestamptz IS NULL OR start_time BETWEEN $2 - interval '30 seconds' AND $2 + interval '30 seconds')
 ORDER BY start_time DESC
 LIMIT 1;
 
