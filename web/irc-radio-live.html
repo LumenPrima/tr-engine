@@ -980,10 +980,12 @@ let treeSearchQuery = '';
 const treeSearchInput = document.getElementById('tree-search');
 const treeSearchClear = document.getElementById('tree-search-clear');
 
+let searchTimer = 0;
 treeSearchInput.addEventListener('input', () => {
   treeSearchQuery = treeSearchInput.value.trim().toLowerCase();
   treeSearchClear.classList.toggle('visible', treeSearchQuery.length > 0);
-  renderTree();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(renderTree, 150);
 });
 treeSearchClear.addEventListener('click', () => {
   treeSearchInput.value = '';
@@ -993,7 +995,11 @@ treeSearchClear.addEventListener('click', () => {
 });
 
 // Favorites: Set of "system_id:tgid" keys
-const favorites = new Set(JSON.parse(localStorage.getItem('irc_favorites') || '[]'));
+function loadSet(key) {
+  try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); }
+  catch { localStorage.removeItem(key); return new Set(); }
+}
+const favorites = loadSet('irc_favorites');
 
 function saveFavorites() {
   localStorage.setItem('irc_favorites', JSON.stringify([...favorites]));
@@ -1016,7 +1022,7 @@ function toggleFavorite(chanName) {
 }
 
 // Scanner mode
-const scanChannels = new Set(JSON.parse(localStorage.getItem('irc_scan_channels') || '[]'));
+const scanChannels = loadSet('irc_scan_channels');
 let scannerEnabled = localStorage.getItem('irc_scanner_enabled') === '1';
 let scannerAutoSwitch = localStorage.getItem('irc_scanner_auto_switch') !== '0'; // default ON
 
@@ -1051,6 +1057,9 @@ function scannerEnqueue(callId, nick, chanName, emergency) {
 
   // Emergency calls go to front of queue (after currently playing)
   if (emergency) {
+    if (scannerQueue.length >= SCANNER_MAX_QUEUE) {
+      scannerQueue.pop(); // drop oldest non-emergency from end
+    }
     scannerQueue.splice(0, 0, { callId, nick, chanName, emergency });
   } else {
     // Overflow protection
@@ -3339,13 +3348,25 @@ playerCloseBtn.addEventListener('click', () => {
   currentPlayingMsgEl = null;
   playerBar.classList.remove('active');
   if (playerRaf) cancelAnimationFrame(playerRaf);
+  // Reset scanner state so queue can resume on next enqueue
+  scannerPlaying = false;
+  updateScannerQueueUI();
 });
 
 // Skip button — advance to next scanner item
 document.getElementById('player-skip').addEventListener('click', () => {
   audioEl.pause();
-  audioEl.currentTime = audioEl.duration || 0;
-  // The 'ended' event handler will call scannerPlayNext()
+  audioEl.src = '';
+  playerPlayBtn.textContent = '\u25B6';
+  if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
+  currentPlayingMsgEl = null;
+  currentCallId = null;
+  if (scannerEnabled && scannerQueue.length > 0) {
+    setTimeout(scannerPlayNext, 300);
+  } else {
+    scannerPlaying = false;
+    updateScannerQueueUI();
+  }
 });
 
 // Seek on progress bar click
@@ -3368,6 +3389,20 @@ audioEl.addEventListener('ended', () => {
   // Scanner: play next in queue
   if (scannerEnabled && scannerQueue.length > 0) {
     setTimeout(scannerPlayNext, 300); // small gap between transmissions
+  } else {
+    scannerPlaying = false;
+    updateScannerQueueUI();
+  }
+});
+
+// Audio error — skip failed audio so scanner doesn't stall
+audioEl.addEventListener('error', () => {
+  playerPlayBtn.textContent = '\u25B6';
+  if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
+  currentPlayingMsgEl = null;
+  currentCallId = null;
+  if (scannerEnabled && scannerQueue.length > 0) {
+    setTimeout(scannerPlayNext, 300);
   } else {
     scannerPlaying = false;
     updateScannerQueueUI();
