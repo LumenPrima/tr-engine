@@ -5,16 +5,18 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog/hlog"
 	"github.com/snarg/tr-engine/internal/database"
 	"github.com/snarg/tr-engine/internal/trconfig"
 )
 
 type TalkgroupsHandler struct {
-	db *database.DB
+	db       *database.DB
+	csvPaths map[int]string // system_id → CSV file path for writeback
 }
 
-func NewTalkgroupsHandler(db *database.DB) *TalkgroupsHandler {
-	return &TalkgroupsHandler{db: db}
+func NewTalkgroupsHandler(db *database.DB, csvPaths map[int]string) *TalkgroupsHandler {
+	return &TalkgroupsHandler{db: db, csvPaths: csvPaths}
 }
 
 var talkgroupSortFields = map[string]string{
@@ -115,11 +117,12 @@ func (h *TalkgroupsHandler) UpdateTalkgroup(w http.ResponseWriter, r *http.Reque
 	}
 
 	var patch struct {
-		AlphaTag    *string `json:"alpha_tag"`
-		Description *string `json:"description"`
-		Group       *string `json:"group"`
-		Tag         *string `json:"tag"`
-		Priority    *int    `json:"priority"`
+		AlphaTag       *string `json:"alpha_tag"`
+		AlphaTagSource *string `json:"alpha_tag_source"`
+		Description    *string `json:"description"`
+		Group          *string `json:"group"`
+		Tag            *string `json:"tag"`
+		Priority       *int    `json:"priority"`
 	}
 	if err := DecodeJSON(r, &patch); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid request body")
@@ -127,7 +130,7 @@ func (h *TalkgroupsHandler) UpdateTalkgroup(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.db.UpdateTalkgroupFields(r.Context(), cid.SystemID, cid.EntityID,
-		patch.AlphaTag, patch.Description, patch.Group, patch.Tag, patch.Priority); err != nil {
+		patch.AlphaTag, patch.AlphaTagSource, patch.Description, patch.Group, patch.Tag, patch.Priority); err != nil {
 		WriteError(w, http.StatusInternalServerError, "failed to update talkgroup")
 		return
 	}
@@ -137,6 +140,39 @@ func (h *TalkgroupsHandler) UpdateTalkgroup(w http.ResponseWriter, r *http.Reque
 		WriteError(w, http.StatusNotFound, "talkgroup not found")
 		return
 	}
+
+	// Best-effort sync: update talkgroup_directory and CSV file on disk
+	if patch.AlphaTag != nil {
+		log := hlog.FromRequest(r)
+
+		// Sync talkgroup_directory reference table
+		mode := ""
+		if tg.Mode != nil {
+			mode = *tg.Mode
+		}
+		priority := 0
+		if tg.Priority != nil {
+			priority = *tg.Priority
+		}
+		if dirErr := h.db.UpsertTalkgroupDirectory(r.Context(), cid.SystemID, cid.EntityID,
+			tg.AlphaTag, mode, tg.Description, tg.Tag, tg.Group, priority,
+		); dirErr != nil {
+			log.Warn().Err(dirErr).Int("system_id", cid.SystemID).Int("tgid", cid.EntityID).
+				Msg("failed to sync talkgroup_directory")
+		}
+
+		// Write back to TR's talkgroup CSV if path is known
+		if csvPath, ok := h.csvPaths[cid.SystemID]; ok {
+			if csvErr := trconfig.UpdateTalkgroupCSV(csvPath, cid.EntityID, *patch.AlphaTag); csvErr != nil {
+				log.Warn().Err(csvErr).Str("csv_path", csvPath).Int("tgid", cid.EntityID).
+					Msg("failed to write back talkgroup CSV")
+			} else {
+				log.Info().Str("csv_path", csvPath).Int("tgid", cid.EntityID).Str("alpha_tag", *patch.AlphaTag).
+					Msg("talkgroup CSV updated")
+			}
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, tg)
 }
 

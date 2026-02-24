@@ -20,7 +20,8 @@ WHERE t.tgid = $1;
 
 -- name: UpdateTalkgroupFields :exec
 UPDATE talkgroups SET
-    alpha_tag   = CASE WHEN @alpha_tag::text <> '' THEN @alpha_tag ELSE alpha_tag END,
+    alpha_tag        = CASE WHEN @alpha_tag::text <> '' THEN @alpha_tag ELSE alpha_tag END,
+    alpha_tag_source = CASE WHEN @alpha_tag_source::text <> '' THEN @alpha_tag_source ELSE alpha_tag_source END,
     description = CASE WHEN @description::text <> '' THEN @description ELSE description END,
     "group"     = CASE WHEN @tg_group::text <> '' THEN @tg_group ELSE "group" END,
     tag         = CASE WHEN @tag::text <> '' THEN @tag ELSE tag END,
@@ -31,7 +32,8 @@ WHERE system_id = @system_id AND tgid = @tgid;
 INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, first_seen, last_seen)
 VALUES (@system_id, @tgid, @alpha_tag, @tag, @tg_group, @description, @event_time, @event_time)
 ON CONFLICT (system_id, tgid) DO UPDATE SET
-    alpha_tag   = COALESCE(NULLIF(@alpha_tag, ''), talkgroups.alpha_tag),
+    alpha_tag   = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') = 'manual' THEN talkgroups.alpha_tag
+                       ELSE COALESCE(NULLIF(@alpha_tag, ''), talkgroups.alpha_tag) END,
     tag         = COALESCE(NULLIF(@tag, ''), talkgroups.tag),
     "group"     = COALESCE(NULLIF(@tg_group, ''), talkgroups."group"),
     description = COALESCE(NULLIF(@description, ''), talkgroups.description),

@@ -26,6 +26,11 @@ var migrations = []migration{
 		sql:   `ALTER TABLE unit_events ADD COLUMN IF NOT EXISTS incidentdata jsonb`,
 		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'unit_events' AND column_name = 'incidentdata')`,
 	},
+	{
+		name:  "add talkgroups.alpha_tag_source",
+		sql:   `ALTER TABLE talkgroups ADD COLUMN IF NOT EXISTS alpha_tag_source text`,
+		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'talkgroups' AND column_name = 'alpha_tag_source')`,
+	},
 }
 
 // Migrate runs all pending schema migrations.

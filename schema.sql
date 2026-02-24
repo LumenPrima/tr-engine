@@ -111,6 +111,7 @@ CREATE TABLE talkgroups (
     system_id     int          NOT NULL REFERENCES systems (system_id),
     tgid          int          NOT NULL,
     alpha_tag     text,
+    alpha_tag_source text,
     tag           text,
     "group"       text,
     description   text,

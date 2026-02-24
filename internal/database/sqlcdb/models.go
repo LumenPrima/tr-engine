@@ -244,19 +244,20 @@ type SystemMergeLog struct {
 }
 
 type Talkgroup struct {
-	SystemID     int
-	Tgid         int
-	AlphaTag     *string
-	Tag          *string
-	Group        *string
-	Description  *string
-	Mode         *string
-	Priority     *int32
-	FirstSeen    pgtype.Timestamptz
-	LastSeen     pgtype.Timestamptz
-	SearchVector interface{}
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	SystemID       int
+	Tgid           int
+	AlphaTag       *string
+	AlphaTagSource *string
+	Tag            *string
+	Group          *string
+	Description    *string
+	Mode           *string
+	Priority       *int32
+	FirstSeen      pgtype.Timestamptz
+	LastSeen       pgtype.Timestamptz
+	SearchVector   interface{}
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
 }
 
 type TalkgroupDirectory struct {

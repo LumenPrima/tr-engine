@@ -109,27 +109,30 @@ func (q *Queries) GetTalkgroupByComposite(ctx context.Context, arg GetTalkgroupB
 
 const updateTalkgroupFields = `-- name: UpdateTalkgroupFields :exec
 UPDATE talkgroups SET
-    alpha_tag   = CASE WHEN $1::text <> '' THEN $1 ELSE alpha_tag END,
-    description = CASE WHEN $2::text <> '' THEN $2 ELSE description END,
-    "group"     = CASE WHEN $3::text <> '' THEN $3 ELSE "group" END,
-    tag         = CASE WHEN $4::text <> '' THEN $4 ELSE tag END,
-    priority    = CASE WHEN $5::int >= 0 THEN $5 ELSE priority END
-WHERE system_id = $6 AND tgid = $7
+    alpha_tag        = CASE WHEN $1::text <> '' THEN $1 ELSE alpha_tag END,
+    alpha_tag_source = CASE WHEN $2::text <> '' THEN $2 ELSE alpha_tag_source END,
+    description = CASE WHEN $3::text <> '' THEN $3 ELSE description END,
+    "group"     = CASE WHEN $4::text <> '' THEN $4 ELSE "group" END,
+    tag         = CASE WHEN $5::text <> '' THEN $5 ELSE tag END,
+    priority    = CASE WHEN $6::int >= 0 THEN $6 ELSE priority END
+WHERE system_id = $7 AND tgid = $8
 `
 
 type UpdateTalkgroupFieldsParams struct {
-	AlphaTag    string
-	Description string
-	TgGroup     string
-	Tag         string
-	Priority    int
-	SystemID    int
-	Tgid        int
+	AlphaTag       string
+	AlphaTagSource string
+	Description    string
+	TgGroup        string
+	Tag            string
+	Priority       int
+	SystemID       int
+	Tgid           int
 }
 
 func (q *Queries) UpdateTalkgroupFields(ctx context.Context, arg UpdateTalkgroupFieldsParams) error {
 	_, err := q.db.Exec(ctx, updateTalkgroupFields,
 		arg.AlphaTag,
+		arg.AlphaTagSource,
 		arg.Description,
 		arg.TgGroup,
 		arg.Tag,
@@ -144,7 +147,8 @@ const upsertTalkgroup = `-- name: UpsertTalkgroup :exec
 INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, first_seen, last_seen)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 ON CONFLICT (system_id, tgid) DO UPDATE SET
-    alpha_tag   = COALESCE(NULLIF($3, ''), talkgroups.alpha_tag),
+    alpha_tag   = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') = 'manual' THEN talkgroups.alpha_tag
+                       ELSE COALESCE(NULLIF($3, ''), talkgroups.alpha_tag) END,
     tag         = COALESCE(NULLIF($4, ''), talkgroups.tag),
     "group"     = COALESCE(NULLIF($5, ''), talkgroups."group"),
     description = COALESCE(NULLIF($6, ''), talkgroups.description),

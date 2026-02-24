@@ -124,7 +124,8 @@ const upsertUnit = `-- name: UpsertUnit :exec
 INSERT INTO units (system_id, unit_id, alpha_tag, first_seen, last_seen, last_event_type, last_event_time, last_event_tgid)
 VALUES ($1, $2, $3, $4, $4, $5, $4, $6)
 ON CONFLICT (system_id, unit_id) DO UPDATE SET
-    alpha_tag       = COALESCE(NULLIF($3, ''), units.alpha_tag),
+    alpha_tag       = CASE WHEN COALESCE(units.alpha_tag_source, '') = 'manual' THEN units.alpha_tag
+                           ELSE COALESCE(NULLIF($3, ''), units.alpha_tag) END,
     first_seen      = LEAST(units.first_seen, $4),
     last_seen       = GREATEST(units.last_seen, $4),
     last_event_type = CASE WHEN $4 >= units.last_event_time THEN $5 ELSE units.last_event_type END,

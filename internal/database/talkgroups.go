@@ -150,11 +150,15 @@ func (db *DB) FindTalkgroupSystems(ctx context.Context, tgid int) ([]AmbiguousMa
 
 // UpdateTalkgroupFields updates mutable talkgroup fields.
 func (db *DB) UpdateTalkgroupFields(ctx context.Context, systemID, tgid int,
-	alphaTag, description, group, tag *string, priority *int) error {
+	alphaTag, alphaTagSource, description, group, tag *string, priority *int) error {
 
 	atVal := ""
 	if alphaTag != nil {
 		atVal = *alphaTag
+	}
+	atsVal := ""
+	if alphaTagSource != nil {
+		atsVal = *alphaTagSource
 	}
 	descVal := ""
 	if description != nil {
@@ -174,13 +178,14 @@ func (db *DB) UpdateTalkgroupFields(ctx context.Context, systemID, tgid int,
 	}
 
 	return db.Q.UpdateTalkgroupFields(ctx, sqlcdb.UpdateTalkgroupFieldsParams{
-		AlphaTag:    atVal,
-		Description: descVal,
-		TgGroup:     groupVal,
-		Tag:         tagVal,
-		Priority:    prioVal,
-		SystemID:    systemID,
-		Tgid:        tgid,
+		AlphaTag:       atVal,
+		AlphaTagSource: atsVal,
+		Description:    descVal,
+		TgGroup:        groupVal,
+		Tag:            tagVal,
+		Priority:       prioVal,
+		SystemID:       systemID,
+		Tgid:           tgid,
 	})
 }
 
