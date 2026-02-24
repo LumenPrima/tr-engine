@@ -1088,6 +1088,7 @@ const channelUnread = new Map();
 const tgidToChannel = new Map();   // `${system_id}:${tgid}` → chanName
 const unitNickCache = new Map();   // `${system_id}:${unit_id}` → alpha_tag
 const systemNames = new Map();     // system_id → system_name
+const collidedNames = new Set();   // base channel names that have had collisions
 
 // Active channel
 let activeChannel = '*status';
@@ -1743,6 +1744,43 @@ function initStatusChannel() {
   channelUnread.set(STATUS_CHANNEL, 0);
 }
 
+/** Rename a channel in all maps/sets, preserving state */
+function renameChannel(oldName, newName) {
+  if (oldName === newName || !channels.has(oldName)) return;
+  const state = channels.get(oldName);
+  channels.delete(oldName);
+  channels.set(newName, state);
+  channelUnread.set(newName, channelUnread.get(oldName) || 0);
+  channelUnread.delete(oldName);
+  if (channelHasActivity.has(oldName)) {
+    channelHasActivity.delete(oldName);
+    channelHasActivity.add(newName);
+  }
+  if (channelLoadedCallIds.has(oldName)) {
+    channelLoadedCallIds.set(newName, channelLoadedCallIds.get(oldName));
+    channelLoadedCallIds.delete(oldName);
+  }
+  if (channelLoadedEventIds.has(oldName)) {
+    channelLoadedEventIds.set(newName, channelLoadedEventIds.get(oldName));
+    channelLoadedEventIds.delete(oldName);
+  }
+  // Update tgidToChannel reverse lookup
+  const key = tgKey(state.system_id, state.tgid);
+  tgidToChannel.set(key, newName);
+  if (activeChannel === oldName) activeChannel = newName;
+}
+
+/** Build a disambiguated channel suffix for a talkgroup */
+function disambiguatedName(baseName, systemId, tgid) {
+  const sysName = systemNames.get(systemId);
+  if (sysName) {
+    const withSys = baseName + '-' + toChannelName(sysName).slice(1); // strip leading #
+    if (!channels.has(withSys)) return withSys;
+  }
+  // Same system or system name still collides — use tgid
+  return baseName + '-' + tgid;
+}
+
 function ensureChannel(tg) {
   const key = tgKey(tg.system_id, tg.tgid);
   if (tgidToChannel.has(key)) return tgidToChannel.get(key);
@@ -1750,13 +1788,26 @@ function ensureChannel(tg) {
   if (tg.system_name && !systemNames.has(tg.system_id)) systemNames.set(tg.system_id, tg.system_name);
   const chanName = toChannelName(tg.alpha_tag || tg.tg_alpha_tag);
 
-  // Handle collisions — append tgid if needed
+  // Handle collisions — disambiguate both the existing and new channel
   let finalName = chanName;
   if (channels.has(finalName)) {
     const existing = channels.get(finalName);
     if (existing.tgid !== tg.tgid || existing.system_id !== tg.system_id) {
-      finalName = chanName + '-' + tg.tgid;
+      collidedNames.add(chanName);
+      const sameSystem = existing.system_id === tg.system_id;
+      // Rename the existing channel to also be disambiguated
+      const existingNewName = sameSystem
+        ? chanName + '-' + existing.tgid
+        : disambiguatedName(chanName, existing.system_id, existing.tgid);
+      renameChannel(finalName, existingNewName);
+      // Now pick a name for the new channel
+      finalName = sameSystem
+        ? chanName + '-' + tg.tgid
+        : disambiguatedName(chanName, tg.system_id, tg.tgid);
     }
+  } else if (collidedNames.has(chanName)) {
+    // This base name has collided before — always disambiguate
+    finalName = disambiguatedName(chanName, tg.system_id, tg.tgid);
   }
 
   if (!channels.has(finalName)) {
@@ -2391,30 +2442,11 @@ function saveChannelTag(newTag) {
       const newChanName = toChannelName(newTag);
       let finalName = newChanName;
       if (channels.has(finalName) && channels.get(finalName) !== state) {
-        finalName = newChanName + '-' + state.tgid;
+        finalName = disambiguatedName(newChanName, state.system_id, state.tgid);
       }
 
       if (finalName !== oldChanName) {
-        channels.delete(oldChanName);
-        channels.set(finalName, state);
-        tgidToChannel.set(key, finalName);
-        // Move unread count
-        channelUnread.set(finalName, channelUnread.get(oldChanName) || 0);
-        channelUnread.delete(oldChanName);
-        // Move activity tracking
-        if (channelHasActivity.has(oldChanName)) {
-          channelHasActivity.delete(oldChanName);
-          channelHasActivity.add(finalName);
-        }
-        if (channelLoadedCallIds.has(oldChanName)) {
-          channelLoadedCallIds.set(finalName, channelLoadedCallIds.get(oldChanName));
-          channelLoadedCallIds.delete(oldChanName);
-        }
-        if (channelLoadedEventIds.has(oldChanName)) {
-          channelLoadedEventIds.set(finalName, channelLoadedEventIds.get(oldChanName));
-          channelLoadedEventIds.delete(oldChanName);
-        }
-        activeChannel = finalName;
+        renameChannel(oldChanName, finalName);
       }
 
       // Cancel edit UI and refresh display
