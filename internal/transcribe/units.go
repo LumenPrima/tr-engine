@@ -109,8 +109,10 @@ func AttributeWords(words []Word, transmissions []Transmission, fullText string)
 
 	attributed := make([]AttributedWord, len(words))
 	for i, w := range words {
-		mid := (w.Start + w.End) / 2
-		src, tag := findTransmission(mid, transmissions)
+		// Use word START time rather than midpoint — more accurately reflects
+		// which transmission the word belongs to, especially at boundaries
+		// where Whisper timestamps can straddle two transmissions.
+		src, tag := findTransmission(w.Start, transmissions)
 		attributed[i] = AttributedWord{
 			Word:   w.Word,
 			Start:  w.Start,
@@ -119,6 +121,11 @@ func AttributeWords(words []Word, transmissions []Transmission, fullText string)
 			SrcTag: tag,
 		}
 	}
+
+	// Post-process: fix boundary artifacts where trunk-recorder's control
+	// channel timing lags actual voice, causing Whisper to place the first
+	// word of a new speaker slightly before the transmission boundary.
+	fixBoundaryWords(attributed, transmissions)
 
 	segments := buildSegments(attributed, fullText)
 	return &TranscriptionWords{Words: attributed, Segments: segments}
@@ -274,6 +281,94 @@ func buildSegmentsFallback(words []AttributedWord) []Segment {
 	cur.Text = strings.TrimSpace(cur.Text)
 	segments = append(segments, cur)
 	return segments
+}
+
+// fixBoundaryWords corrects words near transmission boundaries that were
+// attributed to the wrong unit. In P25 radio, trunk-recorder's transmission
+// timing comes from the control channel, which can lag the actual voice by
+// up to ~500ms. This causes Whisper to occasionally timestamp the first word
+// of a new speaker within the previous transmission's time range.
+//
+// Detection: a word followed by a silence gap (>300ms) where the next word
+// belongs to a different unit, and the word is near the end of its attributed
+// transmission. Zero-duration words (common Whisper artifacts at boundaries)
+// get a more generous tolerance.
+func fixBoundaryWords(words []AttributedWord, txs []Transmission) {
+	if len(words) < 2 || len(txs) < 2 {
+		return
+	}
+
+	const (
+		silenceGap         = 0.3  // minimum gap (seconds) between words to indicate a transmission boundary
+		briefTolerance     = 0.5  // max distance from tx end for zero/near-zero-duration words
+		briefWordThreshold = 0.05 // words shorter than this are considered "brief" (likely boundary artifacts)
+		clusterGap         = 0.15 // max gap between consecutive words within a speech cluster
+	)
+
+	for i := 0; i < len(words)-1; i++ {
+		gap := words[i+1].Start - words[i].End
+		if gap < silenceGap {
+			continue
+		}
+
+		// Different source after the gap?
+		if words[i].Src == words[i+1].Src {
+			continue
+		}
+
+		nextSrc := words[i+1].Src
+		nextTag := words[i+1].SrcTag
+
+		// Walk backward from the gap, reassigning boundary artifact words.
+		for j := i; j >= 0; j-- {
+			if words[j].Src == nextSrc {
+				break // already matches target
+			}
+
+			// Find the transmission containing this word
+			tx := findContainingTx(words[j].Start, txs)
+			if tx == nil {
+				break
+			}
+
+			// Only fix zero/near-zero-duration words — these are the common
+			// P25 boundary artifacts where Whisper detects a brief blip at the
+			// transition. Normal-duration words near boundaries are handled
+			// correctly by start-time attribution and should not be moved.
+			wordDur := words[j].End - words[j].Start
+			if wordDur >= briefWordThreshold {
+				break
+			}
+
+			txEnd := tx.Pos + tx.Duration
+			distToEnd := txEnd - words[j].Start
+
+			if distToEnd > briefTolerance {
+				break // too far from transmission end
+			}
+
+			// Ensure continuity within the speech cluster — don't cross silence gaps
+			if j < i {
+				internalGap := words[j+1].Start - words[j].End
+				if internalGap > clusterGap {
+					break
+				}
+			}
+
+			words[j].Src = nextSrc
+			words[j].SrcTag = nextTag
+		}
+	}
+}
+
+// findContainingTx returns the transmission whose time range contains the given timestamp.
+func findContainingTx(t float64, txs []Transmission) *Transmission {
+	for i := range txs {
+		if t >= txs[i].Pos && t < txs[i].Pos+txs[i].Duration {
+			return &txs[i]
+		}
+	}
+	return nil
 }
 
 func abs(x float64) float64 {

@@ -280,3 +280,130 @@ func TestParseSrcList(t *testing.T) {
 		}
 	})
 }
+
+// ── fixBoundaryWords ─────────────────────────────────────────────────
+
+func TestAttributeWords_BoundaryWordReassignment(t *testing.T) {
+	// Real-world pattern: dispatch calls "1 Paul 31", unit responds "1 Paul 31".
+	// Whisper places the first word of the response ("1") slightly before the
+	// transmission boundary, within the previous transmission's time range.
+	// The boundary word should be reassigned to the next transmission.
+	srcList := json.RawMessage(`[
+		{"src":100,"tag":"Dispatch","pos":0.0},
+		{"src":200,"tag":"Unit","pos":1.08},
+		{"src":100,"tag":"Dispatch","pos":2.70}
+	]`)
+	transmissions := ParseSrcList(srcList, 6.0)
+
+	words := []Word{
+		// Tx1: "1 Paul 31" (dispatch calling)
+		{Word: "1", Start: 0.32, End: 0.40},
+		{Word: "Paul", Start: 0.40, End: 0.64},
+		{Word: "31", Start: 0.64, End: 1.04},
+		// Boundary artifact: first word of tx2, timestamped at 1.04 (before boundary 1.08)
+		{Word: "1", Start: 1.04, End: 1.04},
+		// Tx2: "Paul 31" (unit responding)
+		{Word: "Paul", Start: 1.92, End: 2.08},
+		{Word: "31", Start: 2.08, End: 2.32},
+		// Boundary artifact: first word of tx3, timestamped at 2.32 (before boundary 2.70)
+		{Word: "1", Start: 2.32, End: 2.32},
+		// Tx3: "Paul 31 info..."
+		{Word: "Paul", Start: 3.28, End: 3.60},
+		{Word: "31", Start: 3.76, End: 4.32},
+	}
+	fullText := "1 Paul 31. 1 Paul 31. 1 Paul 31 info."
+
+	tw := AttributeWords(words, transmissions, fullText)
+
+	// Word 3 ("1" at 1.04) should be reassigned from Dispatch to Unit
+	if tw.Words[3].Src != 200 {
+		t.Errorf("boundary word 3: expected src=200 (Unit), got src=%d", tw.Words[3].Src)
+	}
+	// Word 6 ("1" at 2.32) should be reassigned from Unit to Dispatch
+	if tw.Words[6].Src != 100 {
+		t.Errorf("boundary word 6: expected src=100 (Dispatch), got src=%d", tw.Words[6].Src)
+	}
+
+	// Segments should now have correct text splits
+	if len(tw.Segments) != 3 {
+		t.Fatalf("expected 3 segments, got %d", len(tw.Segments))
+	}
+	if tw.Segments[0].Src != 100 {
+		t.Errorf("segment 0: expected src=100, got %d", tw.Segments[0].Src)
+	}
+	if tw.Segments[0].Text != "1 Paul 31." {
+		t.Errorf("segment 0: expected %q, got %q", "1 Paul 31.", tw.Segments[0].Text)
+	}
+	if tw.Segments[1].Src != 200 {
+		t.Errorf("segment 1: expected src=200, got %d", tw.Segments[1].Src)
+	}
+	if tw.Segments[1].Text != "1 Paul 31." {
+		t.Errorf("segment 1: expected %q, got %q", "1 Paul 31.", tw.Segments[1].Text)
+	}
+	if tw.Segments[2].Src != 100 {
+		t.Errorf("segment 2: expected src=100, got %d", tw.Segments[2].Src)
+	}
+}
+
+func TestAttributeWords_StartTimeNotMidpoint(t *testing.T) {
+	// Word that straddles a transmission boundary: start in tx1, midpoint in tx2.
+	// Using start time should keep it in tx1.
+	srcList := json.RawMessage(`[
+		{"src":100,"tag":"Unit A","pos":0.0},
+		{"src":200,"tag":"Unit B","pos":4.50}
+	]`)
+	transmissions := ParseSrcList(srcList, 10.0)
+
+	words := []Word{
+		{Word: "go", Start: 4.32, End: 4.48},      // well within tx1
+		{Word: "ahead", Start: 4.48, End: 4.60},    // starts in tx1, midpoint at 4.54 would be in tx2
+		{Word: "copy", Start: 5.10, End: 5.40},     // clearly in tx2
+	}
+	fullText := "Go ahead. Copy."
+
+	tw := AttributeWords(words, transmissions, fullText)
+
+	// "ahead" should stay in tx1 (src=100) since it starts at 4.48 < 4.50
+	if tw.Words[1].Src != 100 {
+		t.Errorf("word 'ahead': expected src=100 (start-time attribution), got src=%d", tw.Words[1].Src)
+	}
+	if tw.Words[2].Src != 200 {
+		t.Errorf("word 'copy': expected src=200, got src=%d", tw.Words[2].Src)
+	}
+}
+
+func TestAttributeWords_LegitimateEndWordNotReassigned(t *testing.T) {
+	// A legitimate last word of a long transmission should NOT be reassigned
+	// even though it's followed by a gap and a different-source word.
+	srcList := json.RawMessage(`[
+		{"src":100,"tag":"Dispatch","pos":0.0},
+		{"src":200,"tag":"Unit","pos":15.0}
+	]`)
+	transmissions := ParseSrcList(srcList, 20.0)
+
+	words := []Word{
+		{Word: "weaving", Start: 13.80, End: 14.20}, // well within tx1, 0.8s from end
+		// Gap of 1.5s (silence between transmissions)
+		{Word: "copy", Start: 15.70, End: 16.00},    // in tx2
+	}
+	fullText := "Weaving. Copy."
+
+	tw := AttributeWords(words, transmissions, fullText)
+
+	// "weaving" should stay in tx1 — it's 0.8s from tx1's end, well beyond tolerance
+	if tw.Words[0].Src != 100 {
+		t.Errorf("word 'weaving': expected src=100 (legitimate end word), got src=%d", tw.Words[0].Src)
+	}
+}
+
+func TestFixBoundaryWords_NoTransmissions(t *testing.T) {
+	// Edge case: fewer than 2 transmissions — no boundary fixing needed
+	words := []AttributedWord{
+		{Word: "hello", Start: 0.0, End: 0.5, Src: 1},
+	}
+	txs := []Transmission{{Src: 1, Pos: 0, Duration: 1.0}}
+	fixBoundaryWords(words, txs)
+	if words[0].Src != 1 {
+		t.Errorf("expected src=1, got src=%d", words[0].Src)
+	}
+}
