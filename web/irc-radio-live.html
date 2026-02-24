@@ -1994,10 +1994,11 @@ function callsToMessages(calls, chanName, systemId) {
     if (srcList.length > 0) callSrcLists.set(call.call_id, srcList);
 
     if (call.encrypted) {
-      const units = call.units || [];
-      const srcNick = units.length > 0
-        ? resolveNick(sid, units[0].unit_id, units[0].alpha_tag)
+      const unitIds = call.unit_ids || [];
+      const srcNick = unitIds.length > 0
+        ? resolveNick(sid, unitIds[0], '')
         : (call.tg_alpha_tag || `TG ${call.tgid}`);
+      if (unitIds.length > 0) ensureUserInChannel(ch, chanName, sid, unitIds[0], '');
       const callTime = call.start_time ? new Date(call.start_time) : new Date();
       const dur = call.duration ? fmtDuration(call.duration) : '';
       msgs.push({
@@ -2657,6 +2658,9 @@ function handleCallStart(call) {
   } else if (units.length > 0) {
     srcNick = resolveNick(call.system_id, units[0].unit_id, units[0].alpha_tag);
     ensureUserInChannel(ch, chanName, call.system_id, units[0].unit_id, units[0].alpha_tag);
+  } else if (call.unit) {
+    srcNick = resolveNick(call.system_id, call.unit, call.unit_alpha_tag);
+    ensureUserInChannel(ch, chanName, call.system_id, call.unit, call.unit_alpha_tag);
   }
 
   // Track active call — store src count so call_update can detect new transmissions
@@ -2679,10 +2683,10 @@ function handleCallStart(call) {
 
   // Encrypted call — show immediately since we won't get transcript content
   if (call.encrypted) {
-    const dur = srcList.length > 0 && srcList[0].duration ? fmtDuration(srcList[0].duration) : '';
     addMsg(chanName, {
       ts: ts(), nick: srcNick || chanName, encrypted: true,
-      text: `[encrypted${dur ? ', ' + dur : ''}]`,
+      callId: call.call_id,
+      text: `[encrypted]`,
     });
     clearTyping(chanName);
   }
@@ -2756,7 +2760,17 @@ function handleCallEnd(call) {
   const isEmergency = call.emergency || false;
 
   if (call.encrypted) {
-    // Already showed encrypted notice on call_start
+    // Update the call_start placeholder with duration now that we know it
+    if (ch && call.duration) {
+      const dur = fmtDuration(call.duration);
+      for (let i = ch.messages.length - 1; i >= 0; i--) {
+        if (ch.messages[i].callId === call.call_id && ch.messages[i].encrypted) {
+          ch.messages[i].text = `[encrypted, ${dur}]`;
+          if (chanName === activeChannel) renderMessages();
+          break;
+        }
+      }
+    }
     return;
   }
 

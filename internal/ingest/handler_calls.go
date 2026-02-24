@@ -116,6 +116,12 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 			InstanceID:    msg.InstanceID,
 		}
 
+		// For encrypted calls, store the initiating unit in unit_ids since
+		// the audio handler (which normally populates this) will never run.
+		if call.Encrypted && call.Unit > 0 {
+			row.UnitIDs = []int32{int32(call.Unit)}
+		}
+
 		if call.StopTime > 0 {
 			st := time.Unix(call.StopTime, 0)
 			row.StopTime = &st
@@ -145,6 +151,8 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		TgDescription: call.TalkgroupDescription,
 		TgTag:         call.TalkgroupTag,
 		TgGroup:       call.TalkgroupGroup,
+		Unit:          call.Unit,
+		UnitAlphaTag:  call.UnitAlphaTag,
 		Freq:          freq,
 		Emergency:     call.Emergency,
 		Encrypted:     call.Encrypted,
@@ -180,22 +188,24 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		UnitID:    call.Unit,
 		Emergency: call.Emergency,
 		Payload: map[string]any{
-			"call_id":        callID,
-			"system_id":      identity.SystemID,
-			"tgid":           call.Talkgroup,
-			"tg_alpha_tag":   call.TalkgroupAlphaTag,
-			"tg_tag":         call.TalkgroupTag,
-			"tg_group":       call.TalkgroupGroup,
-			"tg_description": call.TalkgroupDescription,
-			"freq":           freq,
-			"start_time":     startTime,
-			"emergency":      call.Emergency,
-			"encrypted":      call.Encrypted,
-			"analog":         call.Analog,
-			"conventional":   call.Conventional,
-			"phase2_tdma":    call.Phase2TDMA,
-			"audio_type":     call.AudioType,
-			"incident_data":  call.IncidentData,
+			"call_id":         callID,
+			"system_id":       identity.SystemID,
+			"tgid":            call.Talkgroup,
+			"tg_alpha_tag":    call.TalkgroupAlphaTag,
+			"tg_tag":          call.TalkgroupTag,
+			"tg_group":        call.TalkgroupGroup,
+			"tg_description":  call.TalkgroupDescription,
+			"unit":            call.Unit,
+			"unit_alpha_tag":  call.UnitAlphaTag,
+			"freq":            freq,
+			"start_time":      startTime,
+			"emergency":       call.Emergency,
+			"encrypted":       call.Encrypted,
+			"analog":          call.Analog,
+			"conventional":    call.Conventional,
+			"phase2_tdma":     call.Phase2TDMA,
+			"audio_type":      call.AudioType,
+			"incident_data":   call.IncidentData,
 		},
 	})
 
@@ -296,18 +306,20 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 			Tgid:      call.Talkgroup,
 			Emergency: call.Emergency,
 			Payload: map[string]any{
-				"call_id":       entry.CallID,
-				"system_id":     identity.SystemID,
-				"tgid":          call.Talkgroup,
-				"tg_alpha_tag":  call.TalkgroupAlphaTag,
-				"freq":          int64(call.Freq),
-				"start_time":    startTime,
-				"stop_time":     stopTime,
-				"duration":      call.Length,
-				"emergency":     call.Emergency,
-				"encrypted":     call.Encrypted,
-				"call_filename": call.CallFilename,
-				"incident_data": call.IncidentData,
+				"call_id":        entry.CallID,
+				"system_id":      identity.SystemID,
+				"tgid":           call.Talkgroup,
+				"tg_alpha_tag":   call.TalkgroupAlphaTag,
+				"unit":           call.Unit,
+				"unit_alpha_tag": call.UnitAlphaTag,
+				"freq":           int64(call.Freq),
+				"start_time":     startTime,
+				"stop_time":      stopTime,
+				"duration":       call.Length,
+				"emergency":      call.Emergency,
+				"encrypted":      call.Encrypted,
+				"call_filename":  call.CallFilename,
+				"incident_data":  call.IncidentData,
 			},
 		})
 	}
@@ -379,6 +391,10 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		InstanceID:    msg.InstanceID,
 	}
 
+	if call.Encrypted && call.Unit > 0 {
+		row.UnitIDs = []int32{int32(call.Unit)}
+	}
+
 	// Upsert talkgroup
 	if call.Talkgroup > 0 {
 		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
@@ -429,18 +445,20 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 			Tgid:      call.Talkgroup,
 			Emergency: call.Emergency,
 			Payload: map[string]any{
-				"call_id":       existingID,
-				"system_id":     identity.SystemID,
-				"tgid":          call.Talkgroup,
-				"tg_alpha_tag":  call.TalkgroupAlphaTag,
-				"freq":          freq,
-				"start_time":    startTime,
-				"stop_time":     stopTime,
-				"duration":      call.Length,
-				"emergency":     call.Emergency,
-				"encrypted":     call.Encrypted,
-				"call_filename": call.CallFilename,
-				"incident_data": call.IncidentData,
+				"call_id":        existingID,
+				"system_id":      identity.SystemID,
+				"tgid":           call.Talkgroup,
+				"tg_alpha_tag":   call.TalkgroupAlphaTag,
+				"unit":           call.Unit,
+				"unit_alpha_tag": call.UnitAlphaTag,
+				"freq":           freq,
+				"start_time":     startTime,
+				"stop_time":      stopTime,
+				"duration":       call.Length,
+				"emergency":      call.Emergency,
+				"encrypted":      call.Encrypted,
+				"call_filename":  call.CallFilename,
+				"incident_data":  call.IncidentData,
 			},
 		})
 
@@ -479,18 +497,20 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		Tgid:      call.Talkgroup,
 		Emergency: call.Emergency,
 		Payload: map[string]any{
-			"call_id":       callID,
-			"system_id":     identity.SystemID,
-			"tgid":          call.Talkgroup,
-			"tg_alpha_tag":  call.TalkgroupAlphaTag,
-			"freq":          freq,
-			"start_time":    startTime,
-			"stop_time":     stopTime,
-			"duration":      call.Length,
-			"emergency":     call.Emergency,
-			"encrypted":     call.Encrypted,
-			"call_filename": call.CallFilename,
-			"incident_data": call.IncidentData,
+			"call_id":        callID,
+			"system_id":      identity.SystemID,
+			"tgid":           call.Talkgroup,
+			"tg_alpha_tag":   call.TalkgroupAlphaTag,
+			"unit":           call.Unit,
+			"unit_alpha_tag": call.UnitAlphaTag,
+			"freq":           freq,
+			"start_time":     startTime,
+			"stop_time":      stopTime,
+			"duration":       call.Length,
+			"emergency":      call.Emergency,
+			"encrypted":      call.Encrypted,
+			"call_filename":  call.CallFilename,
+			"incident_data":  call.IncidentData,
 		},
 	})
 
@@ -579,18 +599,21 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 			SystemID:  entry.SystemID,
 			SiteID:    siteID,
 			Tgid:      entry.Tgid,
+			UnitID:    entry.Unit,
 			Emergency: entry.Emergency,
 			Payload: map[string]any{
-				"call_id":      entry.CallID,
-				"system_id":    entry.SystemID,
-				"tgid":         entry.Tgid,
-				"tg_alpha_tag": entry.TgAlphaTag,
-				"freq":         entry.Freq,
-				"start_time":   entry.StartTime,
-				"stop_time":    stopTime,
-				"duration":     duration,
-				"emergency":    entry.Emergency,
-				"encrypted":    entry.Encrypted,
+				"call_id":        entry.CallID,
+				"system_id":      entry.SystemID,
+				"tgid":           entry.Tgid,
+				"tg_alpha_tag":   entry.TgAlphaTag,
+				"unit":           entry.Unit,
+				"unit_alpha_tag": entry.UnitAlphaTag,
+				"freq":           entry.Freq,
+				"start_time":     entry.StartTime,
+				"stop_time":      stopTime,
+				"duration":       duration,
+				"emergency":      entry.Emergency,
+				"encrypted":      entry.Encrypted,
 			},
 		})
 	}

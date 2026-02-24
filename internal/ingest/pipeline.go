@@ -740,6 +740,8 @@ type activeCallEntry struct {
 	TgDescription string
 	TgTag         string
 	TgGroup       string
+	Unit          int
+	UnitAlphaTag  string
 	Freq          int64
 	Emergency     bool
 	Encrypted     bool
