@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 type System struct {
@@ -19,59 +20,40 @@ type System struct {
 // FindOrCreateSystem finds an existing system by (instance_id, sys_name) via the sites table,
 // or creates a new one. Returns the system_id and sysid (P25 system identifier).
 func (db *DB) FindOrCreateSystem(ctx context.Context, instanceID, sysName string) (int, string, error) {
-	// Try to find via sites table first
-	var systemID int
-	var sysid string
-	err := db.Pool.QueryRow(ctx, `
-		SELECT s.system_id, COALESCE(sys.sysid, '') FROM sites s
-		JOIN systems sys ON sys.system_id = s.system_id
-		WHERE s.instance_id = $1 AND s.short_name = $2
-		LIMIT 1
-	`, instanceID, sysName).Scan(&systemID, &sysid)
-
+	row, err := db.Q.FindSystemViaSite(ctx, sqlcdb.FindSystemViaSiteParams{
+		InstanceID: instanceID,
+		ShortName:  sysName,
+	})
 	if err == nil {
-		return systemID, sysid, nil
+		return row.SystemID, row.Sysid, nil
 	}
 
-	// Create new system — we don't have sysid/wacn from MQTT, so use defaults
-	err = db.Pool.QueryRow(ctx, `
-		INSERT INTO systems (system_type, name, sysid, wacn)
-		VALUES ('p25', $1, '0', '0')
-		RETURNING system_id
-	`, sysName).Scan(&systemID)
+	// Create new system
+	systemID, err := db.Q.CreateSystem(ctx, &sysName)
 	if err != nil {
 		return 0, "", fmt.Errorf("create system %q: %w", sysName, err)
 	}
-
 	return systemID, "0", nil
 }
 
 // UpdateSystemIdentity updates a system's P25 identity fields.
-// Only updates fields that have non-zero/non-empty values (progressive refinement).
 func (db *DB) UpdateSystemIdentity(ctx context.Context, systemID int, systemType, sysid, wacn, name string) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE systems SET
-			system_type = COALESCE(NULLIF($2, ''), system_type),
-			sysid       = CASE WHEN $3 <> '' AND $3 <> '0' THEN $3 ELSE sysid END,
-			wacn        = CASE WHEN $4 <> '' AND $4 <> '0' THEN $4 ELSE wacn END,
-			name        = COALESCE(NULLIF($5, ''), name)
-		WHERE system_id = $1 AND deleted_at IS NULL
-	`, systemID, systemType, sysid, wacn, name)
-	return err
+	return db.Q.UpdateSystemIdentity(ctx, sqlcdb.UpdateSystemIdentityParams{
+		SystemID:   systemID,
+		SystemType: systemType,
+		Sysid:      sysid,
+		Wacn:       wacn,
+		Name:       name,
+	})
 }
 
 // FindSystemBySysidWacn finds an active system by (sysid, wacn), excluding a given system_id.
-// Returns the system_id or 0 if not found.
 func (db *DB) FindSystemBySysidWacn(ctx context.Context, sysid, wacn string, excludeSystemID int) (int, error) {
-	var systemID int
-	err := db.Pool.QueryRow(ctx, `
-		SELECT system_id FROM systems
-		WHERE sysid = $1 AND wacn = $2
-		  AND sysid <> '0'
-		  AND system_id <> $3
-		  AND deleted_at IS NULL
-		LIMIT 1
-	`, sysid, wacn, excludeSystemID).Scan(&systemID)
+	systemID, err := db.Q.FindSystemBySysidWacn(ctx, sqlcdb.FindSystemBySysidWacnParams{
+		Sysid:    sysid,
+		Wacn:     wacn,
+		SystemID: excludeSystemID,
+	})
 	if err == pgx.ErrNoRows {
 		return 0, nil
 	}
@@ -94,9 +76,7 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performe
 	}
 	callsMoved = int(tag.RowsAffected())
 
-	// Move call_groups
-	// First, handle conflicts: if target already has a group for (system_id, tgid, start_time),
-	// reassign calls from the source group to the target group, then delete the source group.
+	// Move call_groups — handle conflicts first
 	rows, err := tx.Query(ctx, `
 		SELECT sg.id as source_group_id, tg.id as target_group_id
 		FROM call_groups sg
@@ -118,14 +98,18 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performe
 	rows.Close()
 
 	for _, c := range cgConflicts {
-		tx.Exec(ctx, `UPDATE calls SET call_group_id = $1 WHERE call_group_id = $2`, c.dst, c.src)
-		tx.Exec(ctx, `DELETE FROM call_groups WHERE id = $1`, c.src)
+		if _, err := tx.Exec(ctx, `UPDATE calls SET call_group_id = $1 WHERE call_group_id = $2`, c.dst, c.src); err != nil {
+			return 0, 0, 0, 0, 0, 0, fmt.Errorf("reassign call group calls: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM call_groups WHERE id = $1`, c.src); err != nil {
+			return 0, 0, 0, 0, 0, 0, fmt.Errorf("delete conflicting call group: %w", err)
+		}
 	}
-	// Move remaining non-conflicting call_groups
-	tx.Exec(ctx, `UPDATE call_groups SET system_id = $1 WHERE system_id = $2`, targetID, sourceID)
+	if _, err := tx.Exec(ctx, `UPDATE call_groups SET system_id = $1 WHERE system_id = $2`, targetID, sourceID); err != nil {
+		return 0, 0, 0, 0, 0, 0, fmt.Errorf("move call groups: %w", err)
+	}
 
-	// Merge talkgroups (ON CONFLICT: keep best data from both)
-	// Collect all rows first to avoid "conn busy" — pgx can't interleave queries on one conn.
+	// Merge talkgroups
 	type tgRow struct {
 		tgid                        int
 		alpha, tag, group, desc string
@@ -160,10 +144,12 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performe
 		}
 		tgMoved++
 		if result.RowsAffected() == 0 {
-			tgMerged++ // was an update, not insert
+			tgMerged++
 		}
 	}
-	tx.Exec(ctx, `DELETE FROM talkgroups WHERE system_id = $1`, sourceID)
+	if _, err := tx.Exec(ctx, `DELETE FROM talkgroups WHERE system_id = $1`, sourceID); err != nil {
+		return 0, 0, 0, 0, 0, 0, fmt.Errorf("delete source talkgroups: %w", err)
+	}
 
 	// Merge units
 	type unitRow struct {
@@ -200,7 +186,9 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performe
 			unitsMerged++
 		}
 	}
-	tx.Exec(ctx, `DELETE FROM units WHERE system_id = $1`, sourceID)
+	if _, err := tx.Exec(ctx, `DELETE FROM units WHERE system_id = $1`, sourceID); err != nil {
+		return 0, 0, 0, 0, 0, 0, fmt.Errorf("delete source units: %w", err)
+	}
 
 	// Move unit_events
 	tag, err = tx.Exec(ctx, `UPDATE unit_events SET system_id = $1 WHERE system_id = $2`, targetID, sourceID)
@@ -210,28 +198,38 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performe
 	eventsMoved = int(tag.RowsAffected())
 
 	// Move decode_rates
-	tx.Exec(ctx, `UPDATE decode_rates SET system_id = $1 WHERE system_id = $2`, targetID, sourceID)
+	if _, err := tx.Exec(ctx, `UPDATE decode_rates SET system_id = $1 WHERE system_id = $2`, targetID, sourceID); err != nil {
+		return 0, 0, 0, 0, 0, 0, fmt.Errorf("move decode_rates: %w", err)
+	}
 
 	// Move sites to target system
-	tx.Exec(ctx, `UPDATE sites SET system_id = $1 WHERE system_id = $2`, targetID, sourceID)
+	if _, err := tx.Exec(ctx, `UPDATE sites SET system_id = $1 WHERE system_id = $2`, targetID, sourceID); err != nil {
+		return 0, 0, 0, 0, 0, 0, fmt.Errorf("move sites: %w", err)
+	}
 
-	// Combine system names: "butco" + "warco" → "butco/warco"
+	// Combine system names
 	var targetName, sourceName string
 	_ = tx.QueryRow(ctx, `SELECT COALESCE(name,'') FROM systems WHERE system_id = $1`, targetID).Scan(&targetName)
 	_ = tx.QueryRow(ctx, `SELECT COALESCE(name,'') FROM systems WHERE system_id = $1`, sourceID).Scan(&sourceName)
 	if sourceName != "" && !strings.Contains(targetName, sourceName) {
 		combined := targetName + "/" + sourceName
-		tx.Exec(ctx, `UPDATE systems SET name = $1 WHERE system_id = $2`, combined, targetID)
+		if _, err := tx.Exec(ctx, `UPDATE systems SET name = $1 WHERE system_id = $2`, combined, targetID); err != nil {
+			return 0, 0, 0, 0, 0, 0, fmt.Errorf("combine names: %w", err)
+		}
 	}
 
 	// Soft-delete source system
-	tx.Exec(ctx, `UPDATE systems SET deleted_at = now() WHERE system_id = $1`, sourceID)
+	if _, err := tx.Exec(ctx, `UPDATE systems SET deleted_at = now() WHERE system_id = $1`, sourceID); err != nil {
+		return 0, 0, 0, 0, 0, 0, fmt.Errorf("soft-delete source: %w", err)
+	}
 
 	// Log the merge
-	tx.Exec(ctx, `
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO system_merge_log (source_id, target_id, calls_moved, talkgroups_moved, talkgroups_merged, units_moved, units_merged, events_moved, performed_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, sourceID, targetID, callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved, performedBy)
+	`, sourceID, targetID, callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved, performedBy); err != nil {
+		return 0, 0, 0, 0, 0, 0, fmt.Errorf("log merge: %w", err)
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return 0, 0, 0, 0, 0, 0, fmt.Errorf("commit merge: %w", err)
@@ -252,45 +250,41 @@ type SystemAPI struct {
 
 // GetSystemByID returns a single system with its sites.
 func (db *DB) GetSystemByID(ctx context.Context, systemID int) (*SystemAPI, error) {
-	var s SystemAPI
-	err := db.Pool.QueryRow(ctx, `
-		SELECT system_id, system_type, COALESCE(name, ''), sysid, wacn
-		FROM systems WHERE system_id = $1 AND deleted_at IS NULL
-	`, systemID).Scan(&s.SystemID, &s.SystemType, &s.Name, &s.Sysid, &s.Wacn)
+	row, err := db.Q.GetSystemByID(ctx, systemID)
 	if err != nil {
 		return nil, err
 	}
-
+	s := &SystemAPI{
+		SystemID:   row.SystemID,
+		SystemType: row.SystemType,
+		Name:       row.Name,
+		Sysid:      row.Sysid,
+		Wacn:       row.Wacn,
+	}
 	sites, err := db.ListSitesForSystem(ctx, systemID)
 	if err != nil {
 		return nil, err
 	}
 	s.Sites = sites
-	return &s, nil
+	return s, nil
 }
 
 // ListSystemsWithSites returns all active systems with their sites.
 func (db *DB) ListSystemsWithSites(ctx context.Context) ([]SystemAPI, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT system_id, system_type, COALESCE(name, ''), sysid, wacn
-		FROM systems WHERE deleted_at IS NULL
-		ORDER BY system_id
-	`)
+	sysRows, err := db.Q.ListActiveSystems(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var systems []SystemAPI
-	for rows.Next() {
-		var s SystemAPI
-		if err := rows.Scan(&s.SystemID, &s.SystemType, &s.Name, &s.Sysid, &s.Wacn); err != nil {
-			return nil, err
+	systems := make([]SystemAPI, len(sysRows))
+	for i, r := range sysRows {
+		systems[i] = SystemAPI{
+			SystemID:   r.SystemID,
+			SystemType: r.SystemType,
+			Name:       r.Name,
+			Sysid:      r.Sysid,
+			Wacn:       r.Wacn,
 		}
-		systems = append(systems, s)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	// Load sites for each system
@@ -326,31 +320,22 @@ type P25SystemAPI struct {
 
 // ListP25Systems returns P25 systems with stats.
 func (db *DB) ListP25Systems(ctx context.Context) ([]P25SystemAPI, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT s.system_id, COALESCE(s.name, ''), s.sysid, s.wacn,
-			(SELECT count(*) FROM talkgroups t WHERE t.system_id = s.system_id),
-			(SELECT count(*) FROM units u WHERE u.system_id = s.system_id),
-			(SELECT count(*) FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '24 hours')
-		FROM systems s
-		WHERE s.system_type IN ('p25', 'smartnet') AND s.deleted_at IS NULL
-		ORDER BY s.system_id
-	`)
+	sysRows, err := db.Q.ListP25Systems(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var systems []P25SystemAPI
-	for rows.Next() {
-		var s P25SystemAPI
-		if err := rows.Scan(&s.SystemID, &s.Name, &s.Sysid, &s.Wacn,
-			&s.TalkgroupCount, &s.UnitCount, &s.Calls24h); err != nil {
-			return nil, err
+	systems := make([]P25SystemAPI, len(sysRows))
+	for i, r := range sysRows {
+		systems[i] = P25SystemAPI{
+			SystemID:       r.SystemID,
+			Name:           r.Name,
+			Sysid:         r.Sysid,
+			Wacn:           r.Wacn,
+			TalkgroupCount: int(r.TalkgroupCount),
+			UnitCount:      int(r.UnitCount),
+			Calls24h:       int(r.Calls24h),
 		}
-		systems = append(systems, s)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	// Load sites
@@ -387,35 +372,29 @@ func (db *DB) UpdateSystemFields(ctx context.Context, systemID int, name, sysid,
 		wacnVal = *wacn
 	}
 
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE systems SET
-			name  = CASE WHEN $2 <> '' THEN $2 ELSE name END,
-			sysid = CASE WHEN $3 <> '' THEN $3 ELSE sysid END,
-			wacn  = CASE WHEN $4 <> '' THEN $4 ELSE wacn END
-		WHERE system_id = $1 AND deleted_at IS NULL
-	`, systemID, nameVal, sysidVal, wacnVal)
-	return err
+	return db.Q.UpdateSystemFields(ctx, sqlcdb.UpdateSystemFieldsParams{
+		SystemID: systemID,
+		Name:     nameVal,
+		Sysid:    sysidVal,
+		Wacn:     wacnVal,
+	})
 }
 
 // LoadAllSystems returns all active systems.
 func (db *DB) LoadAllSystems(ctx context.Context) ([]System, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT system_id, system_type, COALESCE(name, ''), sysid, wacn
-		FROM systems
-		WHERE deleted_at IS NULL
-	`)
+	rows, err := db.Q.LoadAllSystems(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var systems []System
-	for rows.Next() {
-		var s System
-		if err := rows.Scan(&s.SystemID, &s.SystemType, &s.Name, &s.Sysid, &s.Wacn); err != nil {
-			return nil, err
+	systems := make([]System, len(rows))
+	for i, r := range rows {
+		systems[i] = System{
+			SystemID:   r.SystemID,
+			SystemType: r.SystemType,
+			Name:       r.Name,
+			Sysid:      r.Sysid,
+			Wacn:       r.Wacn,
 		}
-		systems = append(systems, s)
 	}
-	return systems, rows.Err()
+	return systems, nil
 }

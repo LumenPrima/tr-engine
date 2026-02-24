@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 // TalkgroupFilter specifies filters for listing talkgroups.
@@ -39,36 +42,183 @@ type TalkgroupAPI struct {
 	RelevanceScore *int       `json:"relevance_score,omitempty"`
 }
 
+// AmbiguousMatch represents a system where an ambiguous entity was found.
+// Shared by talkgroups and units for composite ID resolution.
+type AmbiguousMatch struct {
+	SystemID   int    `json:"system_id"`
+	SystemName string `json:"system_name"`
+	Sysid      string `json:"sysid"`
+}
+
+// EncryptionStatAPI represents encryption stats per talkgroup.
+type EncryptionStatAPI struct {
+	SystemID       int     `json:"system_id"`
+	SystemName     string  `json:"system_name,omitempty"`
+	Sysid          string  `json:"sysid,omitempty"`
+	Tgid           int     `json:"tgid"`
+	TgAlphaTag     string  `json:"tg_alpha_tag,omitempty"`
+	TgDescription  string  `json:"tg_description,omitempty"`
+	TgTag          string  `json:"tg_tag,omitempty"`
+	TgGroup        string  `json:"tg_group,omitempty"`
+	EncryptedCount int     `json:"encrypted_count"`
+	ClearCount     int     `json:"clear_count"`
+	TotalCount     int     `json:"total_count"`
+	EncryptedPct   float64 `json:"encrypted_pct"`
+}
+
+// TalkgroupDirectoryRow represents a row in the talkgroup_directory reference table.
+type TalkgroupDirectoryRow struct {
+	SystemID    int    `json:"system_id"`
+	SystemName  string `json:"system_name,omitempty"`
+	Tgid        int    `json:"tgid"`
+	AlphaTag    string `json:"alpha_tag,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	Description string `json:"description,omitempty"`
+	Tag         string `json:"tag,omitempty"`
+	Category    string `json:"category,omitempty"`
+	Priority    *int   `json:"priority,omitempty"`
+}
+
+// TalkgroupDirectoryFilter specifies filters for listing talkgroup directory entries.
+type TalkgroupDirectoryFilter struct {
+	SystemIDs []int
+	Search    *string
+	Category  *string
+	Mode      *string
+	Limit     int
+	Offset    int
+}
+
+func talkgroupRowToAPI(r sqlcdb.GetTalkgroupByCompositeRow) TalkgroupAPI {
+	tg := TalkgroupAPI{
+		SystemID:    r.SystemID,
+		SystemName:  r.SystemName,
+		Sysid:       r.Sysid,
+		Tgid:        r.Tgid,
+		AlphaTag:    r.AlphaTag,
+		Tag:         r.Tag,
+		Group:       r.Group,
+		Description: r.Description,
+		Mode:        r.Mode,
+		CallCount:   r.CallCount,
+		Calls1h:     r.Calls1h,
+		Calls24h:    r.Calls24h,
+		UnitCount:   r.UnitCount,
+	}
+	if r.Priority != nil {
+		v := int(*r.Priority)
+		tg.Priority = &v
+	}
+	if r.FirstSeen.Valid {
+		tg.FirstSeen = &r.FirstSeen.Time
+	}
+	if r.LastSeen.Valid {
+		tg.LastSeen = &r.LastSeen.Time
+	}
+	return tg
+}
+
+// GetTalkgroupByComposite returns a single talkgroup by system_id and tgid.
+func (db *DB) GetTalkgroupByComposite(ctx context.Context, systemID, tgid int) (*TalkgroupAPI, error) {
+	row, err := db.Q.GetTalkgroupByComposite(ctx, sqlcdb.GetTalkgroupByCompositeParams{
+		SystemID: systemID,
+		Tgid:     tgid,
+	})
+	if err != nil {
+		return nil, err
+	}
+	tg := talkgroupRowToAPI(row)
+	return &tg, nil
+}
+
+// FindTalkgroupSystems returns systems where a talkgroup ID exists (for ambiguity resolution).
+func (db *DB) FindTalkgroupSystems(ctx context.Context, tgid int) ([]AmbiguousMatch, error) {
+	rows, err := db.Q.FindTalkgroupSystems(ctx, tgid)
+	if err != nil {
+		return nil, err
+	}
+	matches := make([]AmbiguousMatch, len(rows))
+	for i, r := range rows {
+		matches[i] = AmbiguousMatch{
+			SystemID:   r.SystemID,
+			SystemName: r.SystemName,
+			Sysid:      r.Sysid,
+		}
+	}
+	return matches, nil
+}
+
+// UpdateTalkgroupFields updates mutable talkgroup fields.
+func (db *DB) UpdateTalkgroupFields(ctx context.Context, systemID, tgid int,
+	alphaTag, description, group, tag *string, priority *int) error {
+
+	atVal := ""
+	if alphaTag != nil {
+		atVal = *alphaTag
+	}
+	descVal := ""
+	if description != nil {
+		descVal = *description
+	}
+	groupVal := ""
+	if group != nil {
+		groupVal = *group
+	}
+	tagVal := ""
+	if tag != nil {
+		tagVal = *tag
+	}
+	prioVal := -1
+	if priority != nil {
+		prioVal = *priority
+	}
+
+	return db.Q.UpdateTalkgroupFields(ctx, sqlcdb.UpdateTalkgroupFieldsParams{
+		AlphaTag:    atVal,
+		Description: descVal,
+		TgGroup:     groupVal,
+		Tag:         tagVal,
+		Priority:    prioVal,
+		SystemID:    systemID,
+		Tgid:        tgid,
+	})
+}
+
+// UpsertTalkgroup inserts or updates a talkgroup, never overwriting good data with empty strings.
+func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, tag, group, description string, eventTime time.Time) error {
+	return db.Q.UpsertTalkgroup(ctx, sqlcdb.UpsertTalkgroupParams{
+		SystemID:    systemID,
+		Tgid:        tgid,
+		AlphaTag:    &alphaTag,
+		Tag:         &tag,
+		TgGroup:     &group,
+		Description: &description,
+		EventTime:   pgtype.Timestamptz{Time: eventTime, Valid: true},
+	})
+}
+
+// UpsertTalkgroupDirectory inserts or updates a talkgroup directory entry.
+func (db *DB) UpsertTalkgroupDirectory(ctx context.Context, systemID, tgid int, alphaTag, mode, description, tag, category string, priority int) error {
+	var prio *int32
+	if priority > 0 {
+		v := int32(priority)
+		prio = &v
+	}
+	return db.Q.UpsertTalkgroupDirectory(ctx, sqlcdb.UpsertTalkgroupDirectoryParams{
+		SystemID:    systemID,
+		Tgid:        tgid,
+		AlphaTag:    &alphaTag,
+		Mode:        &mode,
+		Description: &description,
+		Tag:         &tag,
+		Category:    &category,
+		Priority:    prio,
+	})
+}
+
 // ListTalkgroups returns talkgroups with embedded stats.
 func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]TalkgroupAPI, int, error) {
-	qb := newQueryBuilder()
-
-	if len(filter.SystemIDs) > 0 {
-		qb.Add("t.system_id = ANY(%s)", filter.SystemIDs)
-	}
-	if len(filter.Sysids) > 0 {
-		qb.Add("s.sysid = ANY(%s)", filter.Sysids)
-	}
-	if filter.Group != nil {
-		qb.Add(`t."group" = %s`, *filter.Group)
-	}
-	if filter.Search != nil {
-		qb.Add("(t.alpha_tag ILIKE '%%' || %s || '%%' OR t.description ILIKE '%%' || %s || '%%' OR t.tag ILIKE '%%' || %s || '%%' OR t.\"group\" ILIKE '%%' || %s || '%%' OR t.tgid::text = %s)", *filter.Search)
-		// This is complex — let's simplify by using a single-param search approach
-		// Re-do: remove the last Add and use a simpler approach
-		qb.where = qb.where[:len(qb.where)-1]
-		qb.args = qb.args[:len(qb.args)-1]
-		qb.argIdx--
-
-		paramIdx := qb.argIdx
-		qb.args = append(qb.args, *filter.Search)
-		qb.where = append(qb.where, fmt.Sprintf(
-			`(t.alpha_tag ILIKE '%%' || $%d || '%%' OR t.description ILIKE '%%' || $%d || '%%' OR t.tag ILIKE '%%' || $%d || '%%' OR t."group" ILIKE '%%' || $%d || '%%' OR t.tgid::text = $%d)`,
-			paramIdx, paramIdx, paramIdx, paramIdx, paramIdx))
-		qb.argIdx++
-	}
-
-	fromClause := `
+	const fromClause = `
 		FROM talkgroups t
 		JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL
 		LEFT JOIN LATERAL (
@@ -84,11 +234,21 @@ func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]Tal
 			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days'
 		) us ON true
 	`
-	whereClause := qb.WhereClause()
+	const whereClause = `
+		WHERE ($1::int[] IS NULL OR t.system_id = ANY($1))
+		  AND ($2::text[] IS NULL OR s.sysid = ANY($2))
+		  AND ($3::text IS NULL OR t."group" = $3)
+		  AND ($4::text IS NULL OR t.alpha_tag ILIKE '%' || $4 || '%' OR t.description ILIKE '%' || $4 || '%' OR t.tag ILIKE '%' || $4 || '%' OR t."group" ILIKE '%' || $4 || '%' OR t.tgid::text = $4)`
+	args := []any{pqIntArray(filter.SystemIDs), pqStringArray(filter.Sysids), filter.Group, filter.Search}
 
-	// Count
+	// Count (simpler FROM without LATERAL joins)
+	const countWhereClause = `
+		WHERE ($1::int[] IS NULL OR t.system_id = ANY($1))
+		  AND ($2::text[] IS NULL OR s.sysid = ANY($2))
+		  AND ($3::text IS NULL OR t."group" = $3)
+		  AND ($4::text IS NULL OR t.alpha_tag ILIKE '%' || $4 || '%' OR t.description ILIKE '%' || $4 || '%' OR t.tag ILIKE '%' || $4 || '%' OR t."group" ILIKE '%' || $4 || '%' OR t.tgid::text = $4)`
 	var total int
-	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM talkgroups t JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL`+whereClause, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM talkgroups t JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL`+countWhereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -107,10 +267,10 @@ func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]Tal
 			COALESCE(us.unit_count, 0)
 		%s %s
 		ORDER BY %s
-		LIMIT %d OFFSET %d
-	`, fromClause, whereClause, orderBy, filter.Limit, filter.Offset)
+		LIMIT $5 OFFSET $6
+	`, fromClause, whereClause, orderBy)
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -148,106 +308,9 @@ func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]Tal
 	return talkgroups, total, rows.Err()
 }
 
-// GetTalkgroupByComposite returns a single talkgroup by system_id and tgid.
-func (db *DB) GetTalkgroupByComposite(ctx context.Context, systemID, tgid int) (*TalkgroupAPI, error) {
-	var tg TalkgroupAPI
-	err := db.Pool.QueryRow(ctx, `
-		SELECT t.system_id, COALESCE(s.name, ''), s.sysid,
-			t.tgid, COALESCE(t.alpha_tag, ''), COALESCE(t.tag, ''),
-			COALESCE(t."group", ''), COALESCE(t.description, ''),
-			t.mode, t.priority, t.first_seen, t.last_seen,
-			(SELECT count(*) FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days'),
-			(SELECT count(*) FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '1 hour'),
-			(SELECT count(*) FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '24 hours'),
-			(SELECT count(DISTINCT u) FROM calls c, unnest(c.unit_ids) AS u
-				WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days')
-		FROM talkgroups t
-		JOIN systems s ON s.system_id = t.system_id
-		WHERE t.system_id = $1 AND t.tgid = $2
-	`, systemID, tgid).Scan(
-		&tg.SystemID, &tg.SystemName, &tg.Sysid,
-		&tg.Tgid, &tg.AlphaTag, &tg.Tag, &tg.Group, &tg.Description,
-		&tg.Mode, &tg.Priority, &tg.FirstSeen, &tg.LastSeen,
-		&tg.CallCount, &tg.Calls1h, &tg.Calls24h, &tg.UnitCount,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &tg, nil
-}
-
-// FindTalkgroupSystems returns systems where a talkgroup ID exists (for ambiguity resolution).
-func (db *DB) FindTalkgroupSystems(ctx context.Context, tgid int) ([]AmbiguousMatch, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT t.system_id, COALESCE(s.name, ''), s.sysid
-		FROM talkgroups t
-		JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL
-		WHERE t.tgid = $1
-	`, tgid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var matches []AmbiguousMatch
-	for rows.Next() {
-		var m AmbiguousMatch
-		if err := rows.Scan(&m.SystemID, &m.SystemName, &m.Sysid); err != nil {
-			return nil, err
-		}
-		matches = append(matches, m)
-	}
-	return matches, rows.Err()
-}
-
-// AmbiguousMatch represents a system where an ambiguous entity was found.
-// Shared by talkgroups and units for composite ID resolution.
-type AmbiguousMatch struct {
-	SystemID   int    `json:"system_id"`
-	SystemName string `json:"system_name"`
-	Sysid      string `json:"sysid"`
-}
-
-// UpdateTalkgroupFields updates mutable talkgroup fields.
-func (db *DB) UpdateTalkgroupFields(ctx context.Context, systemID, tgid int,
-	alphaTag, description, group, tag *string, priority *int) error {
-
-	atVal := ""
-	if alphaTag != nil {
-		atVal = *alphaTag
-	}
-	descVal := ""
-	if description != nil {
-		descVal = *description
-	}
-	groupVal := ""
-	if group != nil {
-		groupVal = *group
-	}
-	tagVal := ""
-	if tag != nil {
-		tagVal = *tag
-	}
-	prioVal := -1
-	if priority != nil {
-		prioVal = *priority
-	}
-
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE talkgroups SET
-			alpha_tag   = CASE WHEN $3 <> '' THEN $3 ELSE alpha_tag END,
-			description = CASE WHEN $4 <> '' THEN $4 ELSE description END,
-			"group"     = CASE WHEN $5 <> '' THEN $5 ELSE "group" END,
-			tag         = CASE WHEN $6 <> '' THEN $6 ELSE tag END,
-			priority    = CASE WHEN $7 >= 0 THEN $7 ELSE priority END
-		WHERE system_id = $1 AND tgid = $2
-	`, systemID, tgid, atVal, descVal, groupVal, tagVal, prioVal)
-	return err
-}
-
 // ListTalkgroupUnits returns units affiliated with a talkgroup within a time window.
 func (db *DB) ListTalkgroupUnits(ctx context.Context, systemID, tgid, windowMinutes, limit, offset int) ([]UnitAPI, int, error) {
-	window := fmt.Sprintf("%d minutes", windowMinutes)
+	window := strconv.Itoa(windowMinutes) + " minutes"
 
 	var total int
 	err := db.Pool.QueryRow(ctx, `
@@ -259,7 +322,7 @@ func (db *DB) ListTalkgroupUnits(ctx context.Context, systemID, tgid, windowMinu
 		return nil, 0, err
 	}
 
-	rows, err := db.Pool.Query(ctx, fmt.Sprintf(`
+	rows, err := db.Pool.Query(ctx, `
 		SELECT u.system_id, COALESCE(s.name, ''), s.sysid,
 			u.unit_id, COALESCE(u.alpha_tag, ''), COALESCE(u.alpha_tag_source, ''),
 			u.first_seen, u.last_seen,
@@ -272,8 +335,8 @@ func (db *DB) ListTalkgroupUnits(ctx context.Context, systemID, tgid, windowMinu
 			WHERE c.system_id = $1 AND c.tgid = $2 AND c.start_time > now() - $3::interval
 		)
 		ORDER BY u.unit_id
-		LIMIT %d OFFSET %d
-	`, limit, offset), systemID, tgid, window)
+		LIMIT $4 OFFSET $5
+	`, systemID, tgid, window, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -298,31 +361,11 @@ func (db *DB) ListTalkgroupUnits(ctx context.Context, systemID, tgid, windowMinu
 	return units, total, rows.Err()
 }
 
-// EncryptionStatAPI represents encryption stats per talkgroup.
-type EncryptionStatAPI struct {
-	SystemID      int     `json:"system_id"`
-	SystemName    string  `json:"system_name,omitempty"`
-	Sysid         string  `json:"sysid,omitempty"`
-	Tgid          int     `json:"tgid"`
-	TgAlphaTag    string  `json:"tg_alpha_tag,omitempty"`
-	TgDescription string  `json:"tg_description,omitempty"`
-	TgTag         string  `json:"tg_tag,omitempty"`
-	TgGroup       string  `json:"tg_group,omitempty"`
-	EncryptedCount int    `json:"encrypted_count"`
-	ClearCount    int     `json:"clear_count"`
-	TotalCount    int     `json:"total_count"`
-	EncryptedPct  float64 `json:"encrypted_pct"`
-}
-
 // GetEncryptionStats returns encryption stats per talkgroup.
 func (db *DB) GetEncryptionStats(ctx context.Context, hours int, sysid string) ([]EncryptionStatAPI, error) {
-	qb := newQueryBuilder()
-	qb.Add("c.start_time > now() - (%s || ' hours')::interval", strconv.Itoa(hours))
-	if sysid != "" {
-		qb.Add("s.sysid = %s", sysid)
-	}
+	hoursInterval := strconv.Itoa(hours) + " hours"
 
-	query := fmt.Sprintf(`
+	query := `
 		SELECT c.system_id, COALESCE(s.name, ''), s.sysid,
 			c.tgid, COALESCE(t.alpha_tag, ''), COALESCE(t.description, ''),
 			COALESCE(t.tag, ''), COALESCE(t."group", ''),
@@ -332,12 +375,12 @@ func (db *DB) GetEncryptionStats(ctx context.Context, hours int, sysid string) (
 		FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		LEFT JOIN talkgroups t ON t.system_id = c.system_id AND t.tgid = c.tgid
-		%s
+		WHERE c.start_time > now() - $1::interval
+		  AND ($2::text IS NULL OR s.sysid = $2)
 		GROUP BY c.system_id, s.name, s.sysid, c.tgid, t.alpha_tag, t.description, t.tag, t."group"
-		ORDER BY total_count DESC
-	`, qb.WhereClause())
+		ORDER BY total_count DESC`
 
-	rows, err := db.Pool.Query(ctx, query, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, query, hoursInterval, pqString(sysid))
 	if err != nil {
 		return nil, err
 	}
@@ -364,90 +407,30 @@ func (db *DB) GetEncryptionStats(ctx context.Context, hours int, sysid string) (
 	return stats, rows.Err()
 }
 
-// UpsertTalkgroup inserts or updates a talkgroup, never overwriting good data with empty strings.
-func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, tag, group, description string, eventTime time.Time) error {
-	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, first_seen, last_seen)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-		ON CONFLICT (system_id, tgid) DO UPDATE SET
-			alpha_tag   = COALESCE(NULLIF($3, ''), talkgroups.alpha_tag),
-			tag         = COALESCE(NULLIF($4, ''), talkgroups.tag),
-			"group"     = COALESCE(NULLIF($5, ''), talkgroups."group"),
-			description = COALESCE(NULLIF($6, ''), talkgroups.description),
-			first_seen  = LEAST(talkgroups.first_seen, $7),
-			last_seen   = GREATEST(talkgroups.last_seen, $7)
-	`, systemID, tgid, alphaTag, tag, group, description, eventTime)
-	return err
-}
-
-// TalkgroupDirectoryRow represents a row in the talkgroup_directory reference table.
-type TalkgroupDirectoryRow struct {
-	SystemID    int     `json:"system_id"`
-	SystemName  string  `json:"system_name,omitempty"`
-	Tgid        int     `json:"tgid"`
-	AlphaTag    string  `json:"alpha_tag,omitempty"`
-	Mode        string  `json:"mode,omitempty"`
-	Description string  `json:"description,omitempty"`
-	Tag         string  `json:"tag,omitempty"`
-	Category    string  `json:"category,omitempty"`
-	Priority    *int    `json:"priority,omitempty"`
-}
-
-// UpsertTalkgroupDirectory inserts or updates a talkgroup directory entry.
-func (db *DB) UpsertTalkgroupDirectory(ctx context.Context, systemID, tgid int, alphaTag, mode, description, tag, category string, priority int) error {
-	var prio *int
-	if priority > 0 {
-		prio = &priority
-	}
-	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO talkgroup_directory (system_id, tgid, alpha_tag, mode, description, tag, category, priority)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (system_id, tgid) DO UPDATE SET
-			alpha_tag   = COALESCE(NULLIF($3, ''), talkgroup_directory.alpha_tag),
-			mode        = COALESCE(NULLIF($4, ''), talkgroup_directory.mode),
-			description = COALESCE(NULLIF($5, ''), talkgroup_directory.description),
-			tag         = COALESCE(NULLIF($6, ''), talkgroup_directory.tag),
-			category    = COALESCE(NULLIF($7, ''), talkgroup_directory.category),
-			priority    = COALESCE($8, talkgroup_directory.priority),
-			imported_at = now()
-	`, systemID, tgid, alphaTag, mode, description, tag, category, prio)
-	return err
-}
-
-// TalkgroupDirectoryFilter specifies filters for listing talkgroup directory entries.
-type TalkgroupDirectoryFilter struct {
-	SystemIDs []int
-	Search    *string
-	Category  *string
-	Mode      *string
-	Limit     int
-	Offset    int
-}
-
 // SearchTalkgroupDirectory searches the talkgroup directory reference table.
 func (db *DB) SearchTalkgroupDirectory(ctx context.Context, filter TalkgroupDirectoryFilter) ([]TalkgroupDirectoryRow, int, error) {
-	qb := newQueryBuilder()
-
-	if len(filter.SystemIDs) > 0 {
-		qb.Add("td.system_id = ANY(%s)", filter.SystemIDs)
-	}
+	// Convert empty-string filters to nil so IS NULL OR skips them
+	var search, category, mode any
 	if filter.Search != nil && *filter.Search != "" {
-		qb.Add("td.search_vector @@ plainto_tsquery('english', %s)", *filter.Search)
+		search = *filter.Search
 	}
 	if filter.Category != nil && *filter.Category != "" {
-		qb.Add("td.category = %s", *filter.Category)
+		category = *filter.Category
 	}
 	if filter.Mode != nil && *filter.Mode != "" {
-		qb.Add("td.mode = %s", *filter.Mode)
+		mode = *filter.Mode
 	}
 
-	where := qb.WhereClause()
-	args := qb.Args()
+	const whereClause = `
+		WHERE ($1::int[] IS NULL OR td.system_id = ANY($1))
+		  AND ($2::text IS NULL OR td.search_vector @@ plainto_tsquery('english', $2))
+		  AND ($3::text IS NULL OR td.category = $3)
+		  AND ($4::text IS NULL OR td.mode = $4)`
+	args := []any{pqIntArray(filter.SystemIDs), search, category, mode}
 
 	// Count
 	var total int
-	countQuery := `SELECT count(*) FROM talkgroup_directory td` + where
-	if err := db.Pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM talkgroup_directory td`+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -464,11 +447,11 @@ func (db *DB) SearchTalkgroupDirectory(ctx context.Context, filter TalkgroupDire
 			COALESCE(td.category, ''), td.priority
 		FROM talkgroup_directory td
 		LEFT JOIN systems s ON s.system_id = td.system_id
-	` + where + `
+	` + whereClause + `
 		ORDER BY td.system_id, td.tgid
-		LIMIT ` + strconv.Itoa(limit) + ` OFFSET ` + strconv.Itoa(filter.Offset)
+		LIMIT $5 OFFSET $6`
 
-	rows, err := db.Pool.Query(ctx, query, args...)
+	rows, err := db.Pool.Query(ctx, query, append(args, limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -32,53 +32,41 @@ type SystemActivity struct {
 
 // GetStats returns overall system statistics.
 func (db *DB) GetStats(ctx context.Context) (*StatsResponse, error) {
-	var s StatsResponse
-	err := db.Pool.QueryRow(ctx, `
-		SELECT
-			(SELECT count(*) FROM systems WHERE deleted_at IS NULL),
-			(SELECT count(*) FROM talkgroups),
-			(SELECT count(*) FROM units),
-			(SELECT count(*) FROM calls),
-			(SELECT count(*) FROM calls WHERE start_time > now() - interval '30 days'),
-			(SELECT count(*) FROM calls WHERE start_time > now() - interval '24 hours'),
-			(SELECT count(*) FROM calls WHERE start_time > now() - interval '1 hour'),
-			COALESCE((SELECT sum(duration) / 3600.0 FROM calls WHERE duration IS NOT NULL), 0)
-	`).Scan(&s.Systems, &s.Talkgroups, &s.Units, &s.TotalCalls, &s.Calls30d, &s.Calls24h, &s.Calls1h, &s.TotalDurationHours)
+	stats, err := db.Q.GetOverallStats(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Per-system activity
-	rows, err := db.Pool.Query(ctx, `
-		SELECT
-			s.system_id, COALESCE(s.name, ''), s.sysid,
-			(SELECT count(*) FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour'),
-			(SELECT count(*) FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '24 hours'),
-			(SELECT count(DISTINCT tgid) FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour'),
-			(SELECT count(DISTINCT u) FROM calls c, unnest(c.unit_ids) AS u
-				WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour')
-		FROM systems s
-		WHERE s.deleted_at IS NULL
-		ORDER BY s.system_id
-	`)
+	s := &StatsResponse{
+		Systems:            stats.Systems,
+		Talkgroups:         stats.Talkgroups,
+		Units:              stats.Units,
+		TotalCalls:         stats.TotalCalls,
+		Calls30d:           stats.Calls30d,
+		Calls24h:           stats.Calls24h,
+		Calls1h:            stats.Calls1h,
+		TotalDurationHours: stats.TotalDurationHours,
+	}
+
+	activities, err := db.Q.GetSystemActivity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var sa SystemActivity
-		if err := rows.Scan(&sa.SystemID, &sa.SystemName, &sa.Sysid,
-			&sa.Calls1h, &sa.Calls24h, &sa.ActiveTalkgroups, &sa.ActiveUnits); err != nil {
-			return nil, err
+	s.SystemActivity = make([]SystemActivity, len(activities))
+	for i, a := range activities {
+		s.SystemActivity[i] = SystemActivity{
+			SystemID:         a.SystemID,
+			SystemName:       a.SystemName,
+			Sysid:            a.Sysid,
+			Calls1h:          a.Calls1h,
+			Calls24h:         a.Calls24h,
+			ActiveTalkgroups: a.ActiveTalkgroups,
+			ActiveUnits:      a.ActiveUnits,
 		}
-		s.SystemActivity = append(s.SystemActivity, sa)
-	}
-	if s.SystemActivity == nil {
-		s.SystemActivity = []SystemActivity{}
 	}
 
-	return &s, rows.Err()
+	return s, nil
 }
 
 // TalkgroupActivityFilter specifies filters for the talkgroup activity summary.
@@ -111,31 +99,21 @@ type TalkgroupActivity struct {
 
 // GetTalkgroupActivity returns call counts grouped by talkgroup for a time range.
 func (db *DB) GetTalkgroupActivity(ctx context.Context, filter TalkgroupActivityFilter) ([]TalkgroupActivity, int, error) {
-	qb := newQueryBuilder()
-	qb.AddRaw("c.call_state = 'COMPLETED'")
-
-	if len(filter.SystemIDs) > 0 {
-		qb.Add("c.system_id = ANY(%s)", filter.SystemIDs)
+	const whereClause = `
+		WHERE c.call_state = 'COMPLETED'
+		  AND ($1::int[] IS NULL OR c.system_id = ANY($1))
+		  AND ($2::int[] IS NULL OR c.site_id = ANY($2))
+		  AND ($3::int[] IS NULL OR c.tgid = ANY($3))
+		  AND ($4::timestamptz IS NULL OR c.start_time >= $4)
+		  AND ($5::timestamptz IS NULL OR c.start_time < $5)`
+	args := []any{
+		pqIntArray(filter.SystemIDs), pqIntArray(filter.SiteIDs), pqIntArray(filter.Tgids),
+		filter.After, filter.Before,
 	}
-	if len(filter.SiteIDs) > 0 {
-		qb.Add("c.site_id = ANY(%s)", filter.SiteIDs)
-	}
-	if len(filter.Tgids) > 0 {
-		qb.Add("c.tgid = ANY(%s)", filter.Tgids)
-	}
-	if filter.After != nil {
-		qb.Add("c.start_time >= %s", *filter.After)
-	}
-	if filter.Before != nil {
-		qb.Add("c.start_time < %s", *filter.Before)
-	}
-
-	whereClause := qb.WhereClause()
 
 	// Count distinct talkgroups
 	var total int
-	countQuery := "SELECT count(DISTINCT (c.system_id, c.tgid)) FROM calls c" + whereClause
-	if err := db.Pool.QueryRow(ctx, countQuery, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(DISTINCT (c.system_id, c.tgid)) FROM calls c"+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -166,10 +144,10 @@ func (db *DB) GetTalkgroupActivity(ctx context.Context, filter TalkgroupActivity
 			c.tgid, COALESCE(c.tg_alpha_tag, ''), COALESCE(c.tg_description, ''),
 			COALESCE(c.tg_tag, ''), COALESCE(c.tg_group, '')
 		ORDER BY %s
-		LIMIT %d OFFSET %d
-	`, whereClause, orderBy, limit, filter.Offset)
+		LIMIT $6 OFFSET $7
+	`, whereClause, orderBy)
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -214,26 +192,22 @@ type DecodeRateAPI struct {
 
 // GetDecodeRates returns decode rate measurements.
 func (db *DB) GetDecodeRates(ctx context.Context, filter DecodeRateFilter) ([]DecodeRateAPI, error) {
-	qb := newQueryBuilder()
+	startTime := filter.StartTime
+	if startTime == nil {
+		t := time.Now().Add(-24 * time.Hour)
+		startTime = &t
+	}
 
 	query := `
 		SELECT d.time, d.system_id, COALESCE(s.name, ''), COALESCE(s.sysid, ''),
 			d.decode_rate, d.control_channel
 		FROM decode_rates d
 		LEFT JOIN systems s ON s.system_id = d.system_id
-	`
+		WHERE d.time >= $1
+		  AND ($2::timestamptz IS NULL OR d.time <= $2)
+		ORDER BY d.time DESC LIMIT 1000`
 
-	if filter.StartTime != nil {
-		qb.Add("d.time >= %s", *filter.StartTime)
-	} else {
-		qb.Add("d.time >= %s", time.Now().Add(-24*time.Hour))
-	}
-	if filter.EndTime != nil {
-		qb.Add("d.time <= %s", *filter.EndTime)
-	}
-
-	query += qb.WhereClause() + " ORDER BY d.time DESC LIMIT 1000"
-	rows, err := db.Pool.Query(ctx, query, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, query, *startTime, filter.EndTime)
 	if err != nil {
 		return nil, err
 	}

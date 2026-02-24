@@ -2,8 +2,10 @@ package database
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 // ConsoleMessageFilter specifies filters for listing console messages.
@@ -27,40 +29,32 @@ type ConsoleMessageAPI struct {
 
 // ListConsoleMessages returns console messages matching the filter.
 func (db *DB) ListConsoleMessages(ctx context.Context, filter ConsoleMessageFilter) ([]ConsoleMessageAPI, int, error) {
-	qb := newQueryBuilder()
-
-	if filter.InstanceID != nil {
-		qb.Add("cm.instance_id = %s", *filter.InstanceID)
-	}
-	if filter.Severity != nil {
-		qb.Add("cm.severity = %s", *filter.Severity)
-	}
-	if filter.StartTime != nil {
-		qb.Add("cm.log_time >= %s", *filter.StartTime)
-	} else {
-		qb.Add("cm.log_time >= %s", time.Now().Add(-1*time.Hour))
-	}
-	if filter.EndTime != nil {
-		qb.Add("cm.log_time < %s", *filter.EndTime)
+	startTime := filter.StartTime
+	if startTime == nil {
+		t := time.Now().Add(-1 * time.Hour)
+		startTime = &t
 	}
 
-	fromClause := "FROM console_messages cm"
-	whereClause := qb.WhereClause()
+	const whereClause = `
+		WHERE ($1::text IS NULL OR cm.instance_id = $1)
+		  AND ($2::text IS NULL OR cm.severity = $2)
+		  AND cm.log_time >= $3
+		  AND ($4::timestamptz IS NULL OR cm.log_time < $4)`
+	args := []any{filter.InstanceID, filter.Severity, *startTime, filter.EndTime}
 
 	var total int
-	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) FROM console_messages cm"+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	dataQuery := fmt.Sprintf(`
+	dataQuery := `
 		SELECT cm.id, COALESCE(cm.instance_id, ''), COALESCE(cm.severity, ''),
 			COALESCE(cm.log_msg, ''), cm.log_time
-		%s %s
+		FROM console_messages cm` + whereClause + `
 		ORDER BY cm.log_time DESC
-		LIMIT %d OFFSET %d
-	`, fromClause, whereClause, filter.Limit, filter.Offset)
+		LIMIT $5 OFFSET $6`
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -69,10 +63,7 @@ func (db *DB) ListConsoleMessages(ctx context.Context, filter ConsoleMessageFilt
 	var messages []ConsoleMessageAPI
 	for rows.Next() {
 		var m ConsoleMessageAPI
-		if err := rows.Scan(
-			&m.ID, &m.InstanceID, &m.Severity,
-			&m.LogMsg, &m.LogTime,
-		); err != nil {
+		if err := rows.Scan(&m.ID, &m.InstanceID, &m.Severity, &m.LogMsg, &m.LogTime); err != nil {
 			return nil, 0, err
 		}
 		messages = append(messages, m)
@@ -84,9 +75,11 @@ func (db *DB) ListConsoleMessages(ctx context.Context, filter ConsoleMessageFilt
 }
 
 func (db *DB) InsertConsoleMessage(ctx context.Context, instanceID string, logTime time.Time, severity, logMsg string, mqttTimestamp time.Time) error {
-	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO console_messages (instance_id, log_time, severity, log_msg, mqtt_timestamp)
-		VALUES ($1, $2, $3, $4, $5)
-	`, instanceID, logTime, severity, logMsg, mqttTimestamp)
-	return err
+	return db.Q.InsertConsoleMessage(ctx, sqlcdb.InsertConsoleMessageParams{
+		InstanceID:    &instanceID,
+		LogTime:       pgtype.Timestamptz{Time: logTime, Valid: true},
+		Severity:      &severity,
+		LogMsg:        &logMsg,
+		MqttTimestamp: pgtype.Timestamptz{Time: mqttTimestamp, Valid: true},
+	})
 }

@@ -1,0 +1,44 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "sql/queries"
+    schema: "schema.sql"
+    gen:
+      go:
+        package: "sqlcdb"
+        out: "internal/database/sqlcdb"
+        sql_package: "pgx/v5"
+        emit_json_tags: false
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: "integer"
+            go_type: "int"
+          - db_type: "int4"
+            go_type: "int"
+          - db_type: "pg_catalog.int4"
+            go_type: "int"
+          - db_type: "serial"
+            go_type: "int"
+          - db_type: "bigint"
+            go_type: "int64"
+          - db_type: "int8"
+            go_type: "int64"
+          - db_type: "pg_catalog.int8"
+            go_type: "int64"
+          - db_type: "bigserial"
+            go_type: "int64"
+          - db_type: "smallint"
+            go_type: "int16"
+          - db_type: "int2"
+            go_type: "int16"
+          - db_type: "pg_catalog.int2"
+            go_type: "int16"
+          - db_type: "real"
+            go_type: "float32"
+          - db_type: "pg_catalog.float4"
+            go_type: "float32"
+          - db_type: "pg_catalog.jsonb"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"

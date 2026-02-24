@@ -4,46 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 )
-
-// queryBuilder builds parameterized WHERE clauses for dynamic queries.
-type queryBuilder struct {
-	where  []string
-	args   []any
-	argIdx int
-}
-
-func newQueryBuilder() *queryBuilder {
-	return &queryBuilder{argIdx: 1}
-}
-
-// Add appends a WHERE condition. The clause should contain %s which will be replaced with $N.
-func (qb *queryBuilder) Add(clause string, val any) {
-	parameterized := strings.Replace(clause, "%s", fmt.Sprintf("$%d", qb.argIdx), 1)
-	qb.where = append(qb.where, parameterized)
-	qb.args = append(qb.args, val)
-	qb.argIdx++
-}
-
-// AddRaw appends a WHERE condition with no parameters.
-func (qb *queryBuilder) AddRaw(clause string) {
-	qb.where = append(qb.where, clause)
-}
-
-// WhereClause returns the full WHERE clause (including "WHERE") or empty string if no conditions.
-func (qb *queryBuilder) WhereClause() string {
-	if len(qb.where) == 0 {
-		return ""
-	}
-	return " WHERE " + strings.Join(qb.where, " AND ")
-}
-
-// Args returns all accumulated arguments.
-func (qb *queryBuilder) Args() []any {
-	return qb.args
-}
 
 // CallFilter specifies filters for listing calls.
 type CallFilter struct {
@@ -110,52 +72,38 @@ type CallAPI struct {
 
 // ListCalls returns calls matching the filter with a total count.
 func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int, error) {
-	qb := newQueryBuilder()
-
-	// Default time bounds for partition pruning
-	if filter.StartTime != nil {
-		qb.Add("c.start_time >= %s", *filter.StartTime)
-	} else {
-		qb.Add("c.start_time >= %s", time.Now().Add(-24*time.Hour))
-	}
-	if filter.EndTime != nil {
-		qb.Add("c.start_time < %s", *filter.EndTime)
+	startTime := filter.StartTime
+	if startTime == nil {
+		t := time.Now().Add(-24 * time.Hour)
+		startTime = &t
 	}
 
-	if len(filter.SystemIDs) > 0 {
-		qb.Add("c.system_id = ANY(%s)", filter.SystemIDs)
+	// Always include the LEFT JOIN; the dedup condition skips it when not active.
+	const fromClause = `FROM calls c
+		JOIN systems s ON s.system_id = c.system_id
+		LEFT JOIN call_groups cg ON cg.id = c.call_group_id`
+	const whereClause = `
+		WHERE c.start_time >= $1
+		  AND ($2::timestamptz IS NULL OR c.start_time < $2)
+		  AND ($3::int[] IS NULL OR c.system_id = ANY($3))
+		  AND ($4::int[] IS NULL OR c.site_id = ANY($4))
+		  AND ($5::text[] IS NULL OR s.sysid = ANY($5))
+		  AND ($6::int[] IS NULL OR c.tgid = ANY($6))
+		  AND ($7::int[] IS NULL OR c.unit_ids && $7)
+		  AND ($8::boolean IS NULL OR c.emergency = $8)
+		  AND ($9::boolean IS NULL OR c.encrypted = $9)
+		  AND ($10::boolean IS NOT TRUE OR c.call_group_id IS NULL OR c.call_id = cg.primary_call_id OR cg.primary_call_id IS NULL)`
+	args := []any{
+		*startTime, filter.EndTime,
+		pqIntArray(filter.SystemIDs), pqIntArray(filter.SiteIDs),
+		pqStringArray(filter.Sysids), pqIntArray(filter.Tgids),
+		pqIntArray(filter.UnitIDs), filter.Emergency, filter.Encrypted,
+		filter.Deduplicate,
 	}
-	if len(filter.SiteIDs) > 0 {
-		qb.Add("c.site_id = ANY(%s)", filter.SiteIDs)
-	}
-	if len(filter.Sysids) > 0 {
-		qb.Add("s.sysid = ANY(%s)", filter.Sysids)
-	}
-	if len(filter.Tgids) > 0 {
-		qb.Add("c.tgid = ANY(%s)", filter.Tgids)
-	}
-	if len(filter.UnitIDs) > 0 {
-		qb.Add("c.unit_ids && %s", filter.UnitIDs)
-	}
-	if filter.Emergency != nil {
-		qb.Add("c.emergency = %s", *filter.Emergency)
-	}
-	if filter.Encrypted != nil {
-		qb.Add("c.encrypted = %s", *filter.Encrypted)
-	}
-
-	fromClause := "FROM calls c JOIN systems s ON s.system_id = c.system_id"
-	if filter.Deduplicate {
-		fromClause += " LEFT JOIN call_groups cg ON cg.id = c.call_group_id"
-		qb.AddRaw("(c.call_group_id IS NULL OR c.call_id = cg.primary_call_id OR cg.primary_call_id IS NULL)")
-	}
-
-	whereClause := qb.WhereClause()
 
 	// Count query
-	countQuery := "SELECT count(*) " + fromClause + whereClause
 	var total int
-	if err := db.Pool.QueryRow(ctx, countQuery, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -186,10 +134,10 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			c.metadata_json
 		%s %s
 		ORDER BY %s
-		LIMIT %d OFFSET %d
-	`, fromClause, whereClause, orderBy, filter.Limit, filter.Offset)
+		LIMIT $11 OFFSET $12
+	`, fromClause, whereClause, orderBy)
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -284,26 +232,6 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 	return &c, nil
 }
 
-// GetCallAudioPath returns the audio file path and call_filename for a call.
-// audio_file_path is the tr-engine managed path; call_filename is TR's original absolute path.
-func (db *DB) GetCallAudioPath(ctx context.Context, callID int64) (audioPath string, callFilename string, err error) {
-	var ap, cf *string
-	err = db.Pool.QueryRow(ctx, `
-		SELECT audio_file_path, call_filename FROM calls WHERE call_id = $1
-		ORDER BY start_time DESC LIMIT 1
-	`, callID).Scan(&ap, &cf)
-	if err != nil {
-		return "", "", err
-	}
-	if ap != nil {
-		audioPath = *ap
-	}
-	if cf != nil {
-		callFilename = *cf
-	}
-	return audioPath, callFilename, nil
-}
-
 // CallFrequencyAPI represents a frequency entry for API responses.
 type CallFrequencyAPI struct {
 	Freq       int64    `json:"freq"`
@@ -312,28 +240,6 @@ type CallFrequencyAPI struct {
 	Len        *float32 `json:"len,omitempty"`
 	ErrorCount *int     `json:"error_count,omitempty"`
 	SpikeCount *int     `json:"spike_count,omitempty"`
-}
-
-// GetCallFrequencies returns frequency entries for a call by reading the freq_list JSONB column.
-func (db *DB) GetCallFrequencies(ctx context.Context, callID int64) ([]CallFrequencyAPI, error) {
-	var raw json.RawMessage
-	err := db.Pool.QueryRow(ctx, `
-		SELECT freq_list FROM calls WHERE call_id = $1 ORDER BY start_time DESC LIMIT 1
-	`, callID).Scan(&raw)
-	if err != nil {
-		return nil, err
-	}
-	if len(raw) == 0 || string(raw) == "null" {
-		return []CallFrequencyAPI{}, nil
-	}
-	var freqs []CallFrequencyAPI
-	if err := json.Unmarshal(raw, &freqs); err != nil {
-		return nil, err
-	}
-	if freqs == nil {
-		freqs = []CallFrequencyAPI{}
-	}
-	return freqs, nil
 }
 
 // CallTransmissionAPI represents a transmission entry for API responses.
@@ -345,28 +251,6 @@ type CallTransmissionAPI struct {
 	Duration     *float32 `json:"duration,omitempty"`
 	Emergency    int16    `json:"emergency"`
 	SignalSystem string   `json:"signal_system,omitempty"`
-}
-
-// GetCallTransmissions returns transmission entries for a call by reading the src_list JSONB column.
-func (db *DB) GetCallTransmissions(ctx context.Context, callID int64) ([]CallTransmissionAPI, error) {
-	var raw json.RawMessage
-	err := db.Pool.QueryRow(ctx, `
-		SELECT src_list FROM calls WHERE call_id = $1 ORDER BY start_time DESC LIMIT 1
-	`, callID).Scan(&raw)
-	if err != nil {
-		return nil, err
-	}
-	if len(raw) == 0 || string(raw) == "null" {
-		return []CallTransmissionAPI{}, nil
-	}
-	var txs []CallTransmissionAPI
-	if err := json.Unmarshal(raw, &txs); err != nil {
-		return nil, err
-	}
-	if txs == nil {
-		txs = []CallTransmissionAPI{}
-	}
-	return txs, nil
 }
 
 // CallGroupFilter specifies filters for listing call groups.
@@ -404,34 +288,28 @@ type CallGroupAPI struct {
 
 // ListCallGroups returns call groups matching the filter.
 func (db *DB) ListCallGroups(ctx context.Context, filter CallGroupFilter) ([]CallGroupAPI, int, error) {
-	qb := newQueryBuilder()
-
-	if filter.StartTime != nil {
-		qb.Add("cg.start_time >= %s", *filter.StartTime)
-	} else {
-		qb.Add("cg.start_time >= %s", time.Now().Add(-24*time.Hour))
-	}
-	if filter.EndTime != nil {
-		qb.Add("cg.start_time < %s", *filter.EndTime)
-	}
-	if len(filter.Sysids) > 0 {
-		qb.Add("s.sysid = ANY(%s)", filter.Sysids)
-	}
-	if len(filter.Tgids) > 0 {
-		qb.Add("cg.tgid = ANY(%s)", filter.Tgids)
+	startTime := filter.StartTime
+	if startTime == nil {
+		t := time.Now().Add(-24 * time.Hour)
+		startTime = &t
 	}
 
-	fromClause := `FROM call_groups cg
+	const fromClause = `FROM call_groups cg
 		JOIN systems s ON s.system_id = cg.system_id
 		LEFT JOIN calls pc ON pc.call_id = cg.primary_call_id AND pc.start_time >= cg.start_time - interval '10 seconds'`
-	whereClause := qb.WhereClause()
+	const whereClause = `
+		WHERE cg.start_time >= $1
+		  AND ($2::timestamptz IS NULL OR cg.start_time < $2)
+		  AND ($3::text[] IS NULL OR s.sysid = ANY($3))
+		  AND ($4::int[] IS NULL OR cg.tgid = ANY($4))`
+	args := []any{*startTime, filter.EndTime, pqStringArray(filter.Sysids), pqIntArray(filter.Tgids)}
 
 	var total int
-	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	dataQuery := fmt.Sprintf(`
+	dataQuery := `
 		SELECT cg.id, cg.system_id, COALESCE(s.name, ''), COALESCE(s.sysid, ''),
 			pc.site_id, COALESCE(pc.site_short_name, ''),
 			cg.tgid, COALESCE(cg.tg_alpha_tag, ''), COALESCE(cg.tg_description, ''),
@@ -441,12 +319,11 @@ func (db *DB) ListCallGroups(ctx context.Context, filter CallGroupFilter) ([]Cal
 			COALESCE(cg.transcription_text IS NOT NULL, false),
 			COALESCE(cg.transcription_status, 'none'),
 			cg.transcription_text
-		%s %s
+		` + fromClause + whereClause + `
 		ORDER BY cg.start_time DESC
-		LIMIT %d OFFSET %d
-	`, fromClause, whereClause, filter.Limit, filter.Offset)
+		LIMIT $5 OFFSET $6`
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -3,12 +3,16 @@ package database
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 func (db *DB) InsertPluginStatus(ctx context.Context, clientID, instanceID, status string, t time.Time) error {
-	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO plugin_statuses (client_id, instance_id, status, "time")
-		VALUES ($1, $2, $3, $4)
-	`, clientID, instanceID, status, t)
-	return err
+	return db.Q.InsertPluginStatus(ctx, sqlcdb.InsertPluginStatusParams{
+		ClientID:   &clientID,
+		InstanceID: &instanceID,
+		Status:     &status,
+		Time:       pgtype.Timestamptz{Time: t, Valid: true},
+	})
 }

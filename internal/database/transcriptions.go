@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 // TranscriptionRow is the input for inserting a transcription.
@@ -12,7 +15,7 @@ type TranscriptionRow struct {
 	CallID        int64
 	CallStartTime time.Time
 	Text          string
-	Source        string  // "auto", "human", "llm"
+	Source        string // "auto", "human", "llm"
 	IsPrimary     bool
 	Confidence    *float32
 	Language      string
@@ -25,19 +28,19 @@ type TranscriptionRow struct {
 
 // TranscriptionAPI is the transcription representation for API responses.
 type TranscriptionAPI struct {
-	ID         int              `json:"id"`
-	CallID     int64            `json:"call_id"`
-	Text       string           `json:"text"`
-	Source     string           `json:"source"`
-	IsPrimary  bool             `json:"is_primary"`
-	Confidence *float32         `json:"confidence,omitempty"`
-	Language   string           `json:"language,omitempty"`
-	Model      string           `json:"model,omitempty"`
-	Provider   string           `json:"provider,omitempty"`
-	WordCount  int              `json:"word_count"`
-	DurationMs int              `json:"duration_ms"`
-	Words      json.RawMessage  `json:"words,omitempty"`
-	CreatedAt  time.Time        `json:"created_at"`
+	ID         int             `json:"id"`
+	CallID     int64           `json:"call_id"`
+	Text       string          `json:"text"`
+	Source     string          `json:"source"`
+	IsPrimary  bool            `json:"is_primary"`
+	Confidence *float32        `json:"confidence,omitempty"`
+	Language   string          `json:"language,omitempty"`
+	Model      string          `json:"model,omitempty"`
+	Provider   string          `json:"provider,omitempty"`
+	WordCount  int             `json:"word_count"`
+	DurationMs int             `json:"duration_ms"`
+	Words      json.RawMessage `json:"words,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 // CallTranscriptionInfo is a lightweight view of a call for the transcription worker.
@@ -72,13 +75,79 @@ type TranscriptionSearchFilter struct {
 // TranscriptionSearchHit is a search result with relevance score and call context.
 type TranscriptionSearchHit struct {
 	TranscriptionAPI
-	Rank          float32   `json:"rank"`
-	CallSystemID  int       `json:"system_id"`
-	CallSystemName string   `json:"system_name,omitempty"`
-	CallTgid      int       `json:"tgid"`
-	CallTgAlphaTag string   `json:"tg_alpha_tag,omitempty"`
-	CallStartTime time.Time `json:"call_start_time"`
-	CallDuration  *float32  `json:"call_duration,omitempty"`
+	Rank           float32   `json:"rank"`
+	CallSystemID   int       `json:"system_id"`
+	CallSystemName string    `json:"system_name,omitempty"`
+	CallTgid       int       `json:"tgid"`
+	CallTgAlphaTag string    `json:"tg_alpha_tag,omitempty"`
+	CallStartTime  time.Time `json:"call_start_time"`
+	CallDuration   *float32  `json:"call_duration,omitempty"`
+}
+
+func primaryTranscriptionToAPI(r sqlcdb.GetPrimaryTranscriptionRow) TranscriptionAPI {
+	t := TranscriptionAPI{
+		ID:         r.ID,
+		CallID:     r.CallID,
+		Source:     r.Source,
+		IsPrimary:  r.IsPrimary,
+		Confidence: r.Confidence,
+		Words:      r.Words,
+	}
+	if r.Text != nil {
+		t.Text = *r.Text
+	}
+	if r.Language != nil {
+		t.Language = *r.Language
+	}
+	if r.Model != nil {
+		t.Model = *r.Model
+	}
+	if r.Provider != nil {
+		t.Provider = *r.Provider
+	}
+	if r.WordCount != nil {
+		t.WordCount = int(*r.WordCount)
+	}
+	if r.DurationMs != nil {
+		t.DurationMs = int(*r.DurationMs)
+	}
+	if r.CreatedAt.Valid {
+		t.CreatedAt = r.CreatedAt.Time
+	}
+	return t
+}
+
+func listTranscriptionToAPI(r sqlcdb.ListTranscriptionsByCallRow) TranscriptionAPI {
+	t := TranscriptionAPI{
+		ID:         r.ID,
+		CallID:     r.CallID,
+		Source:     r.Source,
+		IsPrimary:  r.IsPrimary,
+		Confidence: r.Confidence,
+		Words:      r.Words,
+	}
+	if r.Text != nil {
+		t.Text = *r.Text
+	}
+	if r.Language != nil {
+		t.Language = *r.Language
+	}
+	if r.Model != nil {
+		t.Model = *r.Model
+	}
+	if r.Provider != nil {
+		t.Provider = *r.Provider
+	}
+	if r.WordCount != nil {
+		t.WordCount = int(*r.WordCount)
+	}
+	if r.DurationMs != nil {
+		t.DurationMs = int(*r.DurationMs)
+	}
+	if r.CreatedAt.Valid {
+		t.CreatedAt = r.CreatedAt.Time
+	}
+	return t
 }
 
 // InsertTranscription inserts a new transcription in a transaction:
@@ -93,64 +162,58 @@ func (db *DB) InsertTranscription(ctx context.Context, row *TranscriptionRow) (i
 	}
 	defer tx.Rollback(ctx)
 
-	// Clear is_primary on existing transcriptions for this call
+	qtx := db.Q.WithTx(tx)
+
 	if row.IsPrimary {
-		_, err = tx.Exec(ctx, `
-			UPDATE transcriptions SET is_primary = false
-			WHERE call_id = $1 AND call_start_time = $2 AND is_primary = true
-		`, row.CallID, row.CallStartTime)
-		if err != nil {
+		if err := qtx.ClearPrimaryTranscription(ctx, sqlcdb.ClearPrimaryTranscriptionParams{
+			CallID:        row.CallID,
+			CallStartTime: pgtype.Timestamptz{Time: row.CallStartTime, Valid: true},
+		}); err != nil {
 			return 0, fmt.Errorf("clear is_primary: %w", err)
 		}
 	}
 
-	// Insert the new transcription
-	var id int
-	err = tx.QueryRow(ctx, `
-		INSERT INTO transcriptions (
-			call_id, call_start_time, text, source, is_primary,
-			confidence, language, model, provider,
-			word_count, duration_ms, words
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		RETURNING id
-	`,
-		row.CallID, row.CallStartTime, row.Text, row.Source, row.IsPrimary,
-		row.Confidence, row.Language, row.Model, row.Provider,
-		row.WordCount, row.DurationMs, row.Words,
-	).Scan(&id)
+	wc := int32(row.WordCount)
+	dm := int32(row.DurationMs)
+	id, err := qtx.InsertTranscriptionRow(ctx, sqlcdb.InsertTranscriptionRowParams{
+		CallID:        row.CallID,
+		CallStartTime: pgtype.Timestamptz{Time: row.CallStartTime, Valid: true},
+		Text:          &row.Text,
+		Source:        row.Source,
+		IsPrimary:     row.IsPrimary,
+		Confidence:    row.Confidence,
+		Language:      &row.Language,
+		Model:         &row.Model,
+		Provider:      &row.Provider,
+		WordCount:     &wc,
+		DurationMs:    &dm,
+		Words:         row.Words,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("insert transcription: %w", err)
 	}
 
-	// Update calls denormalized fields
 	if row.IsPrimary {
 		status := row.Source
 		if status == "human" {
 			status = "verified"
 		}
-		_, err = tx.Exec(ctx, `
-			UPDATE calls SET
-				has_transcription = true,
-				transcription_status = $3,
-				transcription_text = $4,
-				transcription_word_count = $5
-			WHERE call_id = $1 AND start_time = $2
-		`, row.CallID, row.CallStartTime, status, row.Text, row.WordCount)
-		if err != nil {
+		if err := qtx.UpdateCallTranscriptionDenorm(ctx, sqlcdb.UpdateCallTranscriptionDenormParams{
+			CallID:                 row.CallID,
+			StartTime:              pgtype.Timestamptz{Time: row.CallStartTime, Valid: true},
+			TranscriptionStatus:    status,
+			TranscriptionText:      &row.Text,
+			TranscriptionWordCount: &wc,
+		}); err != nil {
 			return 0, fmt.Errorf("update calls denorm: %w", err)
 		}
 
-		// Update call_groups transcription fields (if call belongs to a group)
-		_, err = tx.Exec(ctx, `
-			UPDATE call_groups SET
-				transcription_text = $3,
-				transcription_status = $4
-			WHERE id = (
-				SELECT call_group_id FROM calls
-				WHERE call_id = $1 AND start_time = $2 AND call_group_id IS NOT NULL
-			)
-		`, row.CallID, row.CallStartTime, row.Text, status)
-		if err != nil {
+		if err := qtx.UpdateCallGroupTranscriptionDenorm(ctx, sqlcdb.UpdateCallGroupTranscriptionDenormParams{
+			CallID:              row.CallID,
+			StartTime:           pgtype.Timestamptz{Time: row.CallStartTime, Valid: true},
+			TranscriptionText:   &row.Text,
+			TranscriptionStatus: &status,
+		}); err != nil {
 			return 0, fmt.Errorf("update call_groups denorm: %w", err)
 		}
 	}
@@ -163,115 +226,65 @@ func (db *DB) InsertTranscription(ctx context.Context, row *TranscriptionRow) (i
 
 // GetPrimaryTranscription returns the primary transcription for a call.
 func (db *DB) GetPrimaryTranscription(ctx context.Context, callID int64) (*TranscriptionAPI, error) {
-	var t TranscriptionAPI
-	err := db.Pool.QueryRow(ctx, `
-		SELECT id, call_id, text, source, is_primary,
-			confidence, language, model, provider,
-			word_count, duration_ms, words, created_at
-		FROM transcriptions
-		WHERE call_id = $1 AND is_primary = true
-		ORDER BY created_at DESC
-		LIMIT 1
-	`, callID).Scan(
-		&t.ID, &t.CallID, &t.Text, &t.Source, &t.IsPrimary,
-		&t.Confidence, &t.Language, &t.Model, &t.Provider,
-		&t.WordCount, &t.DurationMs, &t.Words, &t.CreatedAt,
-	)
+	row, err := db.Q.GetPrimaryTranscription(ctx, callID)
 	if err != nil {
 		return nil, err
 	}
+	t := primaryTranscriptionToAPI(row)
 	return &t, nil
 }
 
 // ListTranscriptionsByCall returns all transcription variants for a call.
 func (db *DB) ListTranscriptionsByCall(ctx context.Context, callID int64) ([]TranscriptionAPI, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT id, call_id, text, source, is_primary,
-			confidence, language, model, provider,
-			word_count, duration_ms, words, created_at
-		FROM transcriptions
-		WHERE call_id = $1
-		ORDER BY created_at DESC
-	`, callID)
+	rows, err := db.Q.ListTranscriptionsByCall(ctx, callID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var result []TranscriptionAPI
-	for rows.Next() {
-		var t TranscriptionAPI
-		if err := rows.Scan(
-			&t.ID, &t.CallID, &t.Text, &t.Source, &t.IsPrimary,
-			&t.Confidence, &t.Language, &t.Model, &t.Provider,
-			&t.WordCount, &t.DurationMs, &t.Words, &t.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		result = append(result, t)
+	result := make([]TranscriptionAPI, len(rows))
+	for i, r := range rows {
+		result[i] = listTranscriptionToAPI(r)
 	}
-	if result == nil {
-		result = []TranscriptionAPI{}
-	}
-	return result, rows.Err()
+	return result, nil
 }
 
 // SearchTranscriptions performs full-text search across transcriptions with call context.
 func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter TranscriptionSearchFilter) ([]TranscriptionSearchHit, int, error) {
-	qb := newQueryBuilder()
-	qb.Add("t.search_vector @@ plainto_tsquery('english', %s)", query)
-
-	if filter.StartTime != nil {
-		qb.Add("t.call_start_time >= %s", *filter.StartTime)
-	}
-	if filter.EndTime != nil {
-		qb.Add("t.call_start_time < %s", *filter.EndTime)
-	}
-	if len(filter.SystemIDs) > 0 {
-		qb.Add("c.system_id = ANY(%s)", filter.SystemIDs)
-	}
-	if len(filter.SiteIDs) > 0 {
-		qb.Add("c.site_id = ANY(%s)", filter.SiteIDs)
-	}
-	if len(filter.Tgids) > 0 {
-		qb.Add("c.tgid = ANY(%s)", filter.Tgids)
-	}
-	qb.AddRaw("t.is_primary = true")
-
-	whereClause := qb.WhereClause()
-	fromClause := "FROM transcriptions t JOIN calls c ON c.call_id = t.call_id AND c.start_time = t.call_start_time"
+	const fromClause = `FROM transcriptions t JOIN calls c ON c.call_id = t.call_id AND c.start_time = t.call_start_time`
+	const whereClause = `
+		WHERE t.search_vector @@ plainto_tsquery('english', $1)
+		  AND t.is_primary = true
+		  AND ($2::timestamptz IS NULL OR t.call_start_time >= $2)
+		  AND ($3::timestamptz IS NULL OR t.call_start_time < $3)
+		  AND ($4::int[] IS NULL OR c.system_id = ANY($4))
+		  AND ($5::int[] IS NULL OR c.site_id = ANY($5))
+		  AND ($6::int[] IS NULL OR c.tgid = ANY($6))`
+	args := []any{query, filter.StartTime, filter.EndTime,
+		pqIntArray(filter.SystemIDs), pqIntArray(filter.SiteIDs), pqIntArray(filter.Tgids)}
 
 	// Count
 	var total int
-	countQuery := "SELECT count(*) " + fromClause + whereClause
-	if err := db.Pool.QueryRow(ctx, countQuery, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	// Results with rank
+	// Results with rank — reuse $1 for the rank expression
 	limit := filter.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	offset := filter.Offset
 
-	rankExpr := fmt.Sprintf("ts_rank(t.search_vector, plainto_tsquery('english', $%d))", qb.argIdx)
-	qb.args = append(qb.args, query)
-	qb.argIdx++
-
-	dataQuery := fmt.Sprintf(`
+	dataQuery := `
 		SELECT t.id, t.call_id, t.text, t.source, t.is_primary,
 			t.confidence, t.language, t.model, t.provider,
 			t.word_count, t.duration_ms, t.words, t.created_at,
-			%s AS rank,
+			ts_rank(t.search_vector, plainto_tsquery('english', $1)) AS rank,
 			c.system_id, COALESCE(c.system_name, ''), c.tgid,
 			COALESCE(c.tg_alpha_tag, ''), c.start_time, c.duration
-		%s%s
+		` + fromClause + whereClause + `
 		ORDER BY rank DESC
-		LIMIT %d OFFSET %d
-	`, rankExpr, fromClause, whereClause, limit, offset)
+		LIMIT $7 OFFSET $8`
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -300,27 +313,30 @@ func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter Tra
 
 // GetCallForTranscription returns a lightweight call view for the transcription worker.
 func (db *DB) GetCallForTranscription(ctx context.Context, callID int64) (*CallTranscriptionInfo, error) {
-	var c CallTranscriptionInfo
-	err := db.Pool.QueryRow(ctx, `
-		SELECT call_id, start_time, system_id, tgid, duration,
-			COALESCE(audio_file_path, ''), COALESCE(call_filename, ''),
-			src_list, encrypted, has_transcription,
-			COALESCE(tg_alpha_tag, ''), COALESCE(tg_description, ''),
-			COALESCE(tg_tag, ''), COALESCE(tg_group, '')
-		FROM calls
-		WHERE call_id = $1
-		ORDER BY start_time DESC
-		LIMIT 1
-	`, callID).Scan(
-		&c.CallID, &c.StartTime, &c.SystemID, &c.Tgid, &c.Duration,
-		&c.AudioFilePath, &c.CallFilename,
-		&c.SrcList, &c.Encrypted, &c.HasTranscription,
-		&c.TgAlphaTag, &c.TgDescription, &c.TgTag, &c.TgGroup,
-	)
+	row, err := db.Q.GetCallForTranscription(ctx, callID)
 	if err != nil {
 		return nil, err
 	}
-	return &c, nil
+	encrypted := false
+	if row.Encrypted != nil {
+		encrypted = *row.Encrypted
+	}
+	return &CallTranscriptionInfo{
+		CallID:           row.CallID,
+		StartTime:        row.StartTime.Time,
+		SystemID:         row.SystemID,
+		Tgid:             row.Tgid,
+		Duration:         row.Duration,
+		AudioFilePath:    row.AudioFilePath,
+		CallFilename:     row.CallFilename,
+		SrcList:          row.SrcList,
+		Encrypted:        encrypted,
+		HasTranscription: row.HasTranscription,
+		TgAlphaTag:       row.TgAlphaTag,
+		TgDescription:    row.TgDescription,
+		TgTag:            row.TgTag,
+		TgGroup:          row.TgGroup,
+	}, nil
 }
 
 // UpdateCallTranscriptionStatus updates the transcription_status on a call and its group.
@@ -336,25 +352,23 @@ func (db *DB) UpdateCallTranscriptionStatus(ctx context.Context, callID int64, s
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, `
-		UPDATE calls SET transcription_status = $3
-		WHERE call_id = $1 AND start_time = $2
-	`, callID, startTime, status)
-	if err != nil {
+	qtx := db.Q.WithTx(tx)
+
+	if err := qtx.UpdateCallTranscriptionStatus(ctx, sqlcdb.UpdateCallTranscriptionStatusParams{
+		CallID:              callID,
+		StartTime:           pgtype.Timestamptz{Time: startTime, Valid: true},
+		TranscriptionStatus: status,
+	}); err != nil {
 		return err
 	}
 
-	_, err = tx.Exec(ctx, `
-		UPDATE call_groups SET transcription_status = $3
-		WHERE id = (
-			SELECT call_group_id FROM calls
-			WHERE call_id = $1 AND start_time = $2 AND call_group_id IS NOT NULL
-		)
-	`, callID, startTime, status)
-	if err != nil {
+	if err := qtx.UpdateCallGroupTranscriptionStatus(ctx, sqlcdb.UpdateCallGroupTranscriptionStatusParams{
+		CallID:              callID,
+		StartTime:           pgtype.Timestamptz{Time: startTime, Valid: true},
+		TranscriptionStatus: &status,
+	}); err != nil {
 		return err
 	}
 
 	return tx.Commit(ctx)
 }
-

@@ -20,7 +20,7 @@ tr-engine-linux
 .env
 
 # Runtime data
-audio/
+/audio/
 
 # Claude Code
 .claude/

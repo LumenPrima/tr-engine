@@ -5,98 +5,128 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
+// Conversion helpers for the calls domain.
+func ptrIntToInt32(v *int) *int32 {
+	if v == nil {
+		return nil
+	}
+	i := int32(*v)
+	return &i
+}
+
+func int32sToInts(s []int32) []int {
+	if s == nil {
+		return nil
+	}
+	r := make([]int, len(s))
+	for i, v := range s {
+		r[i] = int(v)
+	}
+	return r
+}
+
+func pgtz(t time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: t, Valid: true}
+}
+
+func pgtzPtr(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
+}
+
 type CallRow struct {
-	SystemID       int
-	SiteID         *int
-	Tgid           int
-	TrCallID       string
-	CallNum        *int
-	StartTime      time.Time
-	StopTime       *time.Time
-	Duration       *float32
-	Freq           *int64
-	FreqError      *int
-	SignalDB       *float32
-	NoiseDB        *float32
-	ErrorCount     *int
-	SpikeCount     *int
-	AudioType      string
-	Phase2TDMA     bool
-	TDMASlot       *int16
-	Analog         bool
-	Conventional   bool
-	Encrypted      bool
-	Emergency      bool
-	CallState      *int16
-	CallStateType  string
-	MonState       *int16
-	MonStateType   string
-	RecState       *int16
-	RecStateType   string
-	RecNum         *int16
-	SrcNum         *int16
-	PatchedTgids   []int32
-	SrcList        json.RawMessage
-	FreqList       json.RawMessage
-	UnitIDs        []int32
-	SystemName     string
-	SiteShortName  string
-	TgAlphaTag     string
-	TgDescription  string
-	TgTag          string
-	TgGroup        string
-	InstanceID     string
+	SystemID      int
+	SiteID        *int
+	Tgid          int
+	TrCallID      string
+	CallNum       *int
+	StartTime     time.Time
+	StopTime      *time.Time
+	Duration      *float32
+	Freq          *int64
+	FreqError     *int
+	SignalDB      *float32
+	NoiseDB       *float32
+	ErrorCount    *int
+	SpikeCount    *int
+	AudioType     string
+	Phase2TDMA    bool
+	TDMASlot      *int16
+	Analog        bool
+	Conventional  bool
+	Encrypted     bool
+	Emergency     bool
+	CallState     *int16
+	CallStateType string
+	MonState      *int16
+	MonStateType  string
+	RecState      *int16
+	RecStateType  string
+	RecNum        *int16
+	SrcNum        *int16
+	PatchedTgids  []int32
+	SrcList       json.RawMessage
+	FreqList      json.RawMessage
+	UnitIDs       []int32
+	SystemName    string
+	SiteShortName string
+	TgAlphaTag    string
+	TgDescription string
+	TgTag         string
+	TgGroup       string
+	InstanceID    string
 }
 
 // InsertCall inserts a new call and returns its call_id.
 func (db *DB) InsertCall(ctx context.Context, c *CallRow) (int64, error) {
-	var callID int64
-	err := db.Pool.QueryRow(ctx, `
-		INSERT INTO calls (
-			system_id, site_id, tgid, tr_call_id, call_num,
-			start_time, stop_time, duration, freq, freq_error,
-			signal_db, noise_db, error_count, spike_count,
-			audio_type, phase2_tdma, tdma_slot, analog, conventional,
-			encrypted, emergency,
-			call_state, call_state_type, mon_state, mon_state_type,
-			rec_state, rec_state_type, rec_num, src_num,
-			patched_tgids,
-			src_list, freq_list, unit_ids,
-			system_name, site_short_name,
-			tg_alpha_tag, tg_description, tg_tag, tg_group,
-			instance_id
-		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8, $9, $10,
-			$11, $12, $13, $14,
-			$15, $16, $17, $18, $19,
-			$20, $21,
-			$22, $23, $24, $25,
-			$26, $27, $28, $29,
-			$30,
-			$31, $32, $33,
-			$34, $35,
-			$36, $37, $38, $39,
-			$40
-		) RETURNING call_id
-	`,
-		c.SystemID, c.SiteID, c.Tgid, c.TrCallID, c.CallNum,
-		c.StartTime, c.StopTime, c.Duration, c.Freq, c.FreqError,
-		c.SignalDB, c.NoiseDB, c.ErrorCount, c.SpikeCount,
-		c.AudioType, c.Phase2TDMA, c.TDMASlot, c.Analog, c.Conventional,
-		c.Encrypted, c.Emergency,
-		c.CallState, c.CallStateType, c.MonState, c.MonStateType,
-		c.RecState, c.RecStateType, c.RecNum, c.SrcNum,
-		c.PatchedTgids,
-		c.SrcList, c.FreqList, c.UnitIDs,
-		c.SystemName, c.SiteShortName,
-		c.TgAlphaTag, c.TgDescription, c.TgTag, c.TgGroup,
-		c.InstanceID,
-	).Scan(&callID)
-	return callID, err
+	return db.Q.InsertCall(ctx, sqlcdb.InsertCallParams{
+		SystemID:      c.SystemID,
+		SiteID:        ptrIntToInt32(c.SiteID),
+		Tgid:          c.Tgid,
+		TrCallID:      &c.TrCallID,
+		CallNum:       ptrIntToInt32(c.CallNum),
+		StartTime:     pgtz(c.StartTime),
+		StopTime:      pgtzPtr(c.StopTime),
+		Duration:      c.Duration,
+		Freq:          c.Freq,
+		FreqError:     ptrIntToInt32(c.FreqError),
+		SignalDb:       c.SignalDB,
+		NoiseDb:        c.NoiseDB,
+		ErrorCount:    ptrIntToInt32(c.ErrorCount),
+		SpikeCount:    ptrIntToInt32(c.SpikeCount),
+		AudioType:     &c.AudioType,
+		Phase2Tdma:    &c.Phase2TDMA,
+		TdmaSlot:      c.TDMASlot,
+		Analog:        &c.Analog,
+		Conventional:  &c.Conventional,
+		Encrypted:     &c.Encrypted,
+		Emergency:     &c.Emergency,
+		CallState:     c.CallState,
+		CallStateType: &c.CallStateType,
+		MonState:      c.MonState,
+		MonStateType:  &c.MonStateType,
+		RecState:      c.RecState,
+		RecStateType:  &c.RecStateType,
+		RecNum:        c.RecNum,
+		SrcNum:        c.SrcNum,
+		PatchedTgids:  int32sToInts(c.PatchedTgids),
+		SrcList:       c.SrcList,
+		FreqList:      c.FreqList,
+		UnitIds:       int32sToInts(c.UnitIDs),
+		SystemName:    &c.SystemName,
+		SiteShortName: &c.SiteShortName,
+		TgAlphaTag:    &c.TgAlphaTag,
+		TgDescription: &c.TgDescription,
+		TgTag:         &c.TgTag,
+		TgGroup:       &c.TgGroup,
+		InstanceID:    &c.InstanceID,
+	})
 }
 
 // UpdateCallEnd updates a call with end-of-call data.
@@ -106,144 +136,126 @@ func (db *DB) UpdateCallEnd(ctx context.Context, callID int64, startTime time.Ti
 	recState int16, recStateType string, callState int16, callStateType string,
 	callFilename string, retryAttempt int16, processCallTime float32,
 ) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE calls SET
-			stop_time = $3,
-			duration = $4,
-			freq = $5,
-			freq_error = $6,
-			signal_db = $7,
-			noise_db = $8,
-			error_count = $9,
-			spike_count = $10,
-			rec_state = $11,
-			rec_state_type = $12,
-			call_state = $13,
-			call_state_type = $14,
-			call_filename = $15,
-			retry_attempt = $16,
-			process_call_time = $17
-		WHERE call_id = $1 AND start_time = $2
-	`,
-		callID, startTime,
-		stopTime, duration, freq, freqError,
-		signalDB, noiseDB, errorCount, spikeCount,
-		recState, recStateType, callState, callStateType,
-		callFilename, retryAttempt, processCallTime,
-	)
-	return err
+	fe := int32(freqError)
+	ec := int32(errorCount)
+	sc := int32(spikeCount)
+	return db.Q.UpdateCallEnd(ctx, sqlcdb.UpdateCallEndParams{
+		CallID:          callID,
+		StartTime:       pgtz(startTime),
+		StopTime:        pgtz(stopTime),
+		Duration:        &duration,
+		Freq:            &freq,
+		FreqError:       &fe,
+		SignalDb:        &signalDB,
+		NoiseDb:         &noiseDB,
+		ErrorCount:      &ec,
+		SpikeCount:      &sc,
+		RecState:        &recState,
+		RecStateType:    &recStateType,
+		CallState:       &callState,
+		CallStateType:   &callStateType,
+		CallFilename:    &callFilename,
+		RetryAttempt:    &retryAttempt,
+		ProcessCallTime: &processCallTime,
+	})
 }
 
 // UpdateCallElapsed updates a call's running duration from calls_active elapsed data.
 func (db *DB) UpdateCallElapsed(ctx context.Context, callID int64, startTime time.Time, stopTime *time.Time, duration *float32) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE calls SET
-			stop_time = COALESCE($3, stop_time),
-			duration = COALESCE($4, duration),
-			updated_at = now()
-		WHERE call_id = $1 AND start_time = $2
-			AND (duration IS NULL OR duration = 0)
-	`,
-		callID, startTime, stopTime, duration,
-	)
-	return err
+	return db.Q.UpdateCallElapsed(ctx, sqlcdb.UpdateCallElapsedParams{
+		CallID:    callID,
+		StartTime: pgtz(startTime),
+		StopTime:  pgtzPtr(stopTime),
+		Duration:  duration,
+	})
 }
 
 // UpdateCallStartFields enriches an audio-created call with fields from call_start.
-// This prevents duplicate calls when audio MQTT messages arrive before call_start.
 func (db *DB) UpdateCallStartFields(ctx context.Context, callID int64, startTime time.Time,
 	trCallID string, callNum int, instanceID string,
 	callState int16, callStateType string,
 	monState int16, monStateType string,
 	recState int16, recStateType string,
 ) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE calls SET
-			tr_call_id = $3,
-			call_num = $4,
-			instance_id = $5,
-			call_state = $6,
-			call_state_type = $7,
-			mon_state = $8,
-			mon_state_type = $9,
-			rec_state = $10,
-			rec_state_type = $11
-		WHERE call_id = $1 AND start_time = $2
-	`,
-		callID, startTime,
-		trCallID, callNum, instanceID,
-		callState, callStateType,
-		monState, monStateType,
-		recState, recStateType,
-	)
-	return err
+	cn := int32(callNum)
+	return db.Q.UpdateCallStartFields(ctx, sqlcdb.UpdateCallStartFieldsParams{
+		CallID:        callID,
+		StartTime:     pgtz(startTime),
+		TrCallID:      &trCallID,
+		CallNum:       &cn,
+		InstanceID:    &instanceID,
+		CallState:     &callState,
+		CallStateType: &callStateType,
+		MonState:      &monState,
+		MonStateType:  &monStateType,
+		RecState:      &recState,
+		RecStateType:  &recStateType,
+	})
 }
 
 // UpdateCallAudio updates a call with audio file path and size.
 func (db *DB) UpdateCallAudio(ctx context.Context, callID int64, startTime time.Time, audioPath string, audioSize int) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE calls SET
-			audio_file_path = $3,
-			audio_file_size = $4
-		WHERE call_id = $1 AND start_time = $2
-	`, callID, startTime, audioPath, audioSize)
-	return err
+	as := int32(audioSize)
+	return db.Q.UpdateCallAudio(ctx, sqlcdb.UpdateCallAudioParams{
+		CallID:        callID,
+		StartTime:     pgtz(startTime),
+		AudioFilePath: &audioPath,
+		AudioFileSize: &as,
+	})
 }
 
 // UpdateCallFilename sets the call_filename field (TR's original audio file path).
 func (db *DB) UpdateCallFilename(ctx context.Context, callID int64, startTime time.Time, callFilename string) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE calls SET call_filename = $3
-		WHERE call_id = $1 AND start_time = $2
-	`, callID, startTime, callFilename)
-	return err
+	return db.Q.UpdateCallFilename(ctx, sqlcdb.UpdateCallFilenameParams{
+		CallID:       callID,
+		StartTime:    pgtz(startTime),
+		CallFilename: &callFilename,
+	})
 }
 
 // UpsertCallGroup creates or finds a call group and returns its id.
 func (db *DB) UpsertCallGroup(ctx context.Context, systemID, tgid int, startTime time.Time,
 	tgAlphaTag, tgDescription, tgTag, tgGroup string,
 ) (int, error) {
-	var id int
-	err := db.Pool.QueryRow(ctx, `
-		INSERT INTO call_groups (system_id, tgid, start_time, tg_alpha_tag, tg_description, tg_tag, tg_group)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (system_id, tgid, start_time) DO UPDATE SET
-			tg_alpha_tag   = COALESCE(NULLIF($4, ''), call_groups.tg_alpha_tag),
-			tg_description = COALESCE(NULLIF($5, ''), call_groups.tg_description)
-		RETURNING id
-	`, systemID, tgid, startTime, tgAlphaTag, tgDescription, tgTag, tgGroup).Scan(&id)
-	return id, err
+	return db.Q.UpsertCallGroup(ctx, sqlcdb.UpsertCallGroupParams{
+		SystemID:      systemID,
+		Tgid:          tgid,
+		StartTime:     pgtz(startTime),
+		TgAlphaTag:    &tgAlphaTag,
+		TgDescription: &tgDescription,
+		TgTag:         &tgTag,
+		TgGroup:       &tgGroup,
+	})
 }
 
 // SetCallGroupID sets the call_group_id on a call.
 func (db *DB) SetCallGroupID(ctx context.Context, callID int64, startTime time.Time, callGroupID int) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE calls SET call_group_id = $3
-		WHERE call_id = $1 AND start_time = $2
-	`, callID, startTime, callGroupID)
-	return err
+	cg := int32(callGroupID)
+	return db.Q.SetCallGroupID(ctx, sqlcdb.SetCallGroupIDParams{
+		CallID:      callID,
+		StartTime:   pgtz(startTime),
+		CallGroupID: &cg,
+	})
 }
 
 // SetCallGroupPrimary sets the primary_call_id on a call group.
 func (db *DB) SetCallGroupPrimary(ctx context.Context, callGroupID int, callID int64) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE call_groups SET primary_call_id = $2
-		WHERE id = $1 AND primary_call_id IS NULL
-	`, callGroupID, callID)
-	return err
+	return db.Q.SetCallGroupPrimary(ctx, sqlcdb.SetCallGroupPrimaryParams{
+		ID:            callGroupID,
+		PrimaryCallID: &callID,
+	})
 }
 
 // UpdateCallSrcFreq updates a call with srcList, freqList, and unit_ids JSONB columns.
 func (db *DB) UpdateCallSrcFreq(ctx context.Context, callID int64, startTime time.Time,
 	srcList json.RawMessage, freqList json.RawMessage, unitIDs []int32) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE calls SET
-			src_list = $3,
-			freq_list = $4,
-			unit_ids = $5
-		WHERE call_id = $1 AND start_time = $2
-	`, callID, startTime, srcList, freqList, unitIDs)
-	return err
+	return db.Q.UpdateCallSrcFreq(ctx, sqlcdb.UpdateCallSrcFreqParams{
+		CallID:    callID,
+		StartTime: pgtz(startTime),
+		SrcList:   srcList,
+		FreqList:  freqList,
+		UnitIds:   int32sToInts(unitIDs),
+	})
 }
 
 type CallFrequencyRow struct {
@@ -259,24 +271,20 @@ type CallFrequencyRow struct {
 
 // InsertCallFrequencies batch-inserts call frequency records.
 func (db *DB) InsertCallFrequencies(ctx context.Context, rows []CallFrequencyRow) (int64, error) {
-	copyRows := make([][]any, len(rows))
+	params := make([]sqlcdb.InsertCallFrequenciesParams, len(rows))
 	for i, r := range rows {
-		copyRows[i] = []any{
-			r.CallID, r.CallStartTime, r.Freq,
-			r.Time, r.Pos, r.Len,
-			r.ErrorCount, r.SpikeCount,
+		params[i] = sqlcdb.InsertCallFrequenciesParams{
+			CallID:        r.CallID,
+			CallStartTime: pgtz(r.CallStartTime),
+			Freq:          r.Freq,
+			Time:          pgtzPtr(r.Time),
+			Pos:           r.Pos,
+			Len:           r.Len,
+			ErrorCount:    ptrIntToInt32(r.ErrorCount),
+			SpikeCount:    ptrIntToInt32(r.SpikeCount),
 		}
 	}
-
-	return db.Pool.CopyFrom(ctx,
-		pgx.Identifier{"call_frequencies"},
-		[]string{
-			"call_id", "call_start_time", "freq",
-			"time", "pos", "len",
-			"error_count", "spike_count",
-		},
-		pgx.CopyFromRows(copyRows),
-	)
+	return db.Q.InsertCallFrequencies(ctx, params)
 }
 
 type CallTransmissionRow struct {
@@ -293,89 +301,113 @@ type CallTransmissionRow struct {
 
 // InsertCallTransmissions batch-inserts call transmission records.
 func (db *DB) InsertCallTransmissions(ctx context.Context, rows []CallTransmissionRow) (int64, error) {
-	copyRows := make([][]any, len(rows))
+	params := make([]sqlcdb.InsertCallTransmissionsParams, len(rows))
 	for i, r := range rows {
-		copyRows[i] = []any{
-			r.CallID, r.CallStartTime, r.Src,
-			r.Time, r.Pos, r.Duration, r.Emergency,
-			r.SignalSystem, r.Tag,
+		params[i] = sqlcdb.InsertCallTransmissionsParams{
+			CallID:        r.CallID,
+			CallStartTime: pgtz(r.CallStartTime),
+			Src:           r.Src,
+			Time:          pgtzPtr(r.Time),
+			Pos:           r.Pos,
+			Duration:      r.Duration,
+			Emergency:     &r.Emergency,
+			SignalSystem:  &r.SignalSystem,
+			Tag:           &r.Tag,
 		}
 	}
-
-	return db.Pool.CopyFrom(ctx,
-		pgx.Identifier{"call_transmissions"},
-		[]string{
-			"call_id", "call_start_time", "src",
-			"time", "pos", "duration", "emergency",
-			"signal_system", "tag",
-		},
-		pgx.CopyFromRows(copyRows),
-	)
+	return db.Q.InsertCallTransmissions(ctx, params)
 }
 
 // InsertActiveCallCheckpoint stores a snapshot of active calls for crash recovery.
 func (db *DB) InsertActiveCallCheckpoint(ctx context.Context, instanceID string, activeCalls []byte, callCount int) error {
-	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO call_active_checkpoints (instance_id, active_calls, call_count)
-		VALUES ($1, $2, $3)
-	`, instanceID, activeCalls, callCount)
-	return err
+	cc := int32(callCount)
+	return db.Q.InsertActiveCallCheckpoint(ctx, sqlcdb.InsertActiveCallCheckpointParams{
+		InstanceID:  &instanceID,
+		ActiveCalls: activeCalls,
+		CallCount:   &cc,
+	})
 }
 
 // PurgeStaleCalls deletes RECORDING calls older than maxAge that never received
 // audio or a call_end. These are orphaned call_start records. Returns the number deleted.
 func (db *DB) PurgeStaleCalls(ctx context.Context, maxAge time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-maxAge)
-	tag, err := db.Pool.Exec(ctx, `
-		DELETE FROM calls
-		WHERE rec_state_type = 'RECORDING'
-			AND audio_file_path IS NULL
-			AND (stop_time IS NULL OR duration IS NULL OR duration = 0)
-			AND start_time < $1
-	`, cutoff)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
+	return db.Q.PurgeStaleCalls(ctx, pgtz(cutoff))
 }
 
 // PurgeOrphanCallGroups deletes call_groups with no remaining calls. Returns count deleted.
 func (db *DB) PurgeOrphanCallGroups(ctx context.Context) (int64, error) {
-	tag, err := db.Pool.Exec(ctx, `
-		DELETE FROM call_groups cg
-		WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.call_group_id = cg.id)
-	`)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
+	return db.Q.PurgeOrphanCallGroups(ctx)
 }
 
 // FindCallByTrCallID finds a call by its trunk-recorder call ID.
 func (db *DB) FindCallByTrCallID(ctx context.Context, trCallID string) (int64, time.Time, error) {
-	var callID int64
-	var startTime time.Time
-	err := db.Pool.QueryRow(ctx, `
-		SELECT call_id, start_time FROM calls
-		WHERE tr_call_id = $1
-		ORDER BY start_time DESC
-		LIMIT 1
-	`, trCallID).Scan(&callID, &startTime)
-	return callID, startTime, err
+	row, err := db.Q.FindCallByTrCallID(ctx, &trCallID)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	return row.CallID, row.StartTime.Time, nil
 }
 
 // FindCallForAudio finds a call matching the audio metadata.
 // Uses fuzzy start_time matching (±5s) to handle trunk-recorder shifting
 // start_time by 1-2s between call_start/call_end and audio messages.
 func (db *DB) FindCallForAudio(ctx context.Context, systemID, tgid int, startTime time.Time) (int64, time.Time, error) {
-	var callID int64
-	var st time.Time
-	err := db.Pool.QueryRow(ctx, `
-		SELECT call_id, start_time FROM calls
-		WHERE system_id = $1 AND tgid = $2
-			AND start_time BETWEEN $3::timestamptz - interval '5 seconds' AND $3::timestamptz + interval '5 seconds'
-		ORDER BY ABS(EXTRACT(EPOCH FROM (start_time - $3::timestamptz)))
-		LIMIT 1
-	`, systemID, tgid, startTime).Scan(&callID, &st)
-	return callID, st, err
+	row, err := db.Q.FindCallForAudio(ctx, sqlcdb.FindCallForAudioParams{
+		SystemID: systemID,
+		Tgid:     tgid,
+		Column3:  pgtz(startTime),
+	})
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	return row.CallID, row.StartTime.Time, nil
+}
+
+// GetCallAudioPath returns the audio file path and call_filename for a call.
+// audio_file_path is the tr-engine managed path; call_filename is TR's original absolute path.
+func (db *DB) GetCallAudioPath(ctx context.Context, callID int64) (audioPath string, callFilename string, err error) {
+	row, err := db.Q.GetCallAudioPath(ctx, callID)
+	if err != nil {
+		return "", "", err
+	}
+	return row.AudioFilePath, row.CallFilename, nil
+}
+
+// GetCallFrequencies returns frequency entries for a call by reading the freq_list JSONB column.
+func (db *DB) GetCallFrequencies(ctx context.Context, callID int64) ([]CallFrequencyAPI, error) {
+	raw, err := db.Q.GetCallFreqList(ctx, callID)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return []CallFrequencyAPI{}, nil
+	}
+	var freqs []CallFrequencyAPI
+	if err := json.Unmarshal(raw, &freqs); err != nil {
+		return nil, err
+	}
+	if freqs == nil {
+		freqs = []CallFrequencyAPI{}
+	}
+	return freqs, nil
+}
+
+// GetCallTransmissions returns transmission entries for a call by reading the src_list JSONB column.
+func (db *DB) GetCallTransmissions(ctx context.Context, callID int64) ([]CallTransmissionAPI, error) {
+	raw, err := db.Q.GetCallSrcList(ctx, callID)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return []CallTransmissionAPI{}, nil
+	}
+	var txs []CallTransmissionAPI
+	if err := json.Unmarshal(raw, &txs); err != nil {
+		return nil, err
+	}
+	if txs == nil {
+		txs = []CallTransmissionAPI{}
+	}
+	return txs, nil
 }

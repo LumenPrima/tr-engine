@@ -2,10 +2,10 @@ package database
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 type TrunkingMessageRow struct {
@@ -50,45 +50,35 @@ type TrunkingMessageAPI struct {
 
 // ListTrunkingMessages returns trunking messages matching the filter.
 func (db *DB) ListTrunkingMessages(ctx context.Context, filter TrunkingMessageFilter) ([]TrunkingMessageAPI, int, error) {
-	qb := newQueryBuilder()
-
-	if len(filter.SystemIDs) > 0 {
-		qb.Add("tm.system_id = ANY(%s)", filter.SystemIDs)
-	}
-	if filter.Opcode != nil {
-		qb.Add("tm.opcode = %s", *filter.Opcode)
-	}
-	if filter.OpcodeType != nil {
-		qb.Add("tm.opcode_type = %s", *filter.OpcodeType)
-	}
-	if filter.StartTime != nil {
-		qb.Add(`tm."time" >= %s`, *filter.StartTime)
-	} else {
-		qb.Add(`tm."time" >= %s`, time.Now().Add(-1*time.Hour))
-	}
-	if filter.EndTime != nil {
-		qb.Add(`tm."time" < %s`, *filter.EndTime)
+	startTime := filter.StartTime
+	if startTime == nil {
+		t := time.Now().Add(-1 * time.Hour)
+		startTime = &t
 	}
 
-	fromClause := "FROM trunking_messages tm"
-	whereClause := qb.WhereClause()
+	const whereClause = `
+		WHERE ($1::int[] IS NULL OR tm.system_id = ANY($1))
+		  AND ($2::text IS NULL OR tm.opcode = $2)
+		  AND ($3::text IS NULL OR tm.opcode_type = $3)
+		  AND tm."time" >= $4
+		  AND ($5::timestamptz IS NULL OR tm."time" < $5)`
+	args := []any{pqIntArray(filter.SystemIDs), filter.Opcode, filter.OpcodeType, *startTime, filter.EndTime}
 
 	var total int
-	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) FROM trunking_messages tm"+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	dataQuery := fmt.Sprintf(`
+	dataQuery := `
 		SELECT tm.id, tm.system_id, COALESCE(tm.sys_name, ''), tm.trunk_msg,
 			COALESCE(tm.trunk_msg_type, ''), COALESCE(tm.opcode, ''),
 			COALESCE(tm.opcode_type, ''), COALESCE(tm.opcode_desc, ''),
 			tm.meta, tm."time", COALESCE(tm.instance_id, '')
-		%s %s
+		FROM trunking_messages tm` + whereClause + `
 		ORDER BY tm."time" DESC
-		LIMIT %d OFFSET %d
-	`, fromClause, whereClause, filter.Limit, filter.Offset)
+		LIMIT $6 OFFSET $7`
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -115,22 +105,27 @@ func (db *DB) ListTrunkingMessages(ctx context.Context, filter TrunkingMessageFi
 
 // InsertTrunkingMessages batch-inserts trunking messages using CopyFrom.
 func (db *DB) InsertTrunkingMessages(ctx context.Context, rows []TrunkingMessageRow) (int64, error) {
-	copyRows := make([][]any, len(rows))
+	params := make([]sqlcdb.InsertTrunkingMessagesParams, len(rows))
 	for i, r := range rows {
-		copyRows[i] = []any{
-			r.SystemID, r.SysNum, r.SysName, r.TrunkMsg, r.TrunkMsgType,
-			r.Opcode, r.OpcodeType, r.OpcodeDesc, r.Meta, r.Time,
-			r.InstanceID,
+		var sysID *int32
+		if r.SystemID != nil {
+			v := int32(*r.SystemID)
+			sysID = &v
+		}
+		trunkMsg := int32(r.TrunkMsg)
+		params[i] = sqlcdb.InsertTrunkingMessagesParams{
+			SystemID:     sysID,
+			SysNum:       &r.SysNum,
+			SysName:      &r.SysName,
+			TrunkMsg:     &trunkMsg,
+			TrunkMsgType: &r.TrunkMsgType,
+			Opcode:       &r.Opcode,
+			OpcodeType:   &r.OpcodeType,
+			OpcodeDesc:   &r.OpcodeDesc,
+			Meta:         r.Meta,
+			Time:         pgtype.Timestamptz{Time: r.Time, Valid: true},
+			InstanceID:   &r.InstanceID,
 		}
 	}
-
-	return db.Pool.CopyFrom(ctx,
-		pgx.Identifier{"trunking_messages"},
-		[]string{
-			"system_id", "sys_num", "sys_name", "trunk_msg", "trunk_msg_type",
-			"opcode", "opcode_type", "opcode_desc", "meta", "time",
-			"instance_id",
-		},
-		pgx.CopyFromRows(copyRows),
-	)
+	return db.Q.InsertTrunkingMessages(ctx, params)
 }

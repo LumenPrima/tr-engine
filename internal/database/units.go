@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 // UnitFilter specifies filters for listing units.
@@ -35,35 +38,52 @@ type UnitAPI struct {
 	RelevanceScore *int       `json:"relevance_score,omitempty"`
 }
 
+func unitRowToAPI(r sqlcdb.GetUnitByCompositeRow) UnitAPI {
+	u := UnitAPI{
+		SystemID:       r.SystemID,
+		SystemName:     r.SystemName,
+		Sysid:          r.Sysid,
+		UnitID:         r.UnitID,
+		AlphaTag:       r.AlphaTag,
+		AlphaTagSource: r.AlphaTagSource,
+		LastEventType:  r.LastEventType,
+		LastEventTgTag: r.LastEventTgTag,
+	}
+	if r.FirstSeen.Valid {
+		u.FirstSeen = &r.FirstSeen.Time
+	}
+	if r.LastSeen.Valid {
+		u.LastSeen = &r.LastSeen.Time
+	}
+	if r.LastEventTime.Valid {
+		u.LastEventTime = &r.LastEventTime.Time
+	}
+	if r.LastEventTgid != nil {
+		v := int(*r.LastEventTgid)
+		u.LastEventTgid = &v
+	}
+	return u
+}
+
 // ListUnits returns units matching the filter.
 func (db *DB) ListUnits(ctx context.Context, filter UnitFilter) ([]UnitAPI, int, error) {
-	qb := newQueryBuilder()
-
-	if filter.Sysid != nil {
-		qb.Add("s.sysid = %s", *filter.Sysid)
-	}
-	if filter.Search != nil {
-		paramIdx := qb.argIdx
-		qb.args = append(qb.args, *filter.Search)
-		qb.where = append(qb.where, fmt.Sprintf(
-			`(u.alpha_tag ILIKE '%%' || $%d || '%%' OR u.unit_id::text = $%d)`,
-			paramIdx, paramIdx))
-		qb.argIdx++
-	}
+	var activeWithin any
 	if filter.ActiveWithin != nil {
-		qb.Add("u.last_seen > now() - (%s || ' minutes')::interval", strconv.Itoa(*filter.ActiveWithin))
-	}
-	if len(filter.Talkgroups) > 0 {
-		qb.Add("u.last_event_tgid = ANY(%s)", filter.Talkgroups)
+		activeWithin = strconv.Itoa(*filter.ActiveWithin) + " minutes"
 	}
 
-	fromClause := `FROM units u
+	const fromClause = `FROM units u
 		JOIN systems s ON s.system_id = u.system_id AND s.deleted_at IS NULL
 		LEFT JOIN talkgroups tg ON tg.system_id = u.system_id AND tg.tgid = u.last_event_tgid`
-	whereClause := qb.WhereClause()
+	const whereClause = `
+		WHERE ($1::text IS NULL OR s.sysid = $1)
+		  AND ($2::text IS NULL OR u.alpha_tag ILIKE '%' || $2 || '%' OR u.unit_id::text = $2)
+		  AND ($3::text IS NULL OR u.last_seen > now() - $3::interval)
+		  AND ($4::int[] IS NULL OR u.last_event_tgid = ANY($4))`
+	args := []any{filter.Sysid, filter.Search, activeWithin, pqIntArray(filter.Talkgroups)}
 
 	var total int
-	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -80,10 +100,10 @@ func (db *DB) ListUnits(ctx context.Context, filter UnitFilter) ([]UnitAPI, int,
 			COALESCE(tg.alpha_tag, '')
 		%s %s
 		ORDER BY %s
-		LIMIT %d OFFSET %d
-	`, fromClause, whereClause, orderBy, filter.Limit, filter.Offset)
+		LIMIT $5 OFFSET $6
+	`, fromClause, whereClause, orderBy)
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -123,52 +143,32 @@ func (db *DB) ListUnits(ctx context.Context, filter UnitFilter) ([]UnitAPI, int,
 
 // GetUnitByComposite returns a single unit by system_id and unit_id.
 func (db *DB) GetUnitByComposite(ctx context.Context, systemID, unitID int) (*UnitAPI, error) {
-	var u UnitAPI
-	err := db.Pool.QueryRow(ctx, `
-		SELECT u.system_id, COALESCE(s.name, ''), s.sysid,
-			u.unit_id, COALESCE(u.alpha_tag, ''), COALESCE(u.alpha_tag_source, ''),
-			u.first_seen, u.last_seen,
-			u.last_event_type, u.last_event_time, u.last_event_tgid,
-			COALESCE(tg.alpha_tag, '')
-		FROM units u
-		JOIN systems s ON s.system_id = u.system_id
-		LEFT JOIN talkgroups tg ON tg.system_id = u.system_id AND tg.tgid = u.last_event_tgid
-		WHERE u.system_id = $1 AND u.unit_id = $2
-	`, systemID, unitID).Scan(
-		&u.SystemID, &u.SystemName, &u.Sysid,
-		&u.UnitID, &u.AlphaTag, &u.AlphaTagSource,
-		&u.FirstSeen, &u.LastSeen,
-		&u.LastEventType, &u.LastEventTime, &u.LastEventTgid,
-		&u.LastEventTgTag,
-	)
+	row, err := db.Q.GetUnitByComposite(ctx, sqlcdb.GetUnitByCompositeParams{
+		SystemID: systemID,
+		UnitID:   unitID,
+	})
 	if err != nil {
 		return nil, err
 	}
+	u := unitRowToAPI(row)
 	return &u, nil
 }
 
 // FindUnitSystems returns systems where a unit ID exists (for ambiguity resolution).
 func (db *DB) FindUnitSystems(ctx context.Context, unitID int) ([]AmbiguousMatch, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT u.system_id, COALESCE(s.name, ''), s.sysid
-		FROM units u
-		JOIN systems s ON s.system_id = u.system_id AND s.deleted_at IS NULL
-		WHERE u.unit_id = $1
-	`, unitID)
+	rows, err := db.Q.FindUnitSystems(ctx, unitID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var matches []AmbiguousMatch
-	for rows.Next() {
-		var m AmbiguousMatch
-		if err := rows.Scan(&m.SystemID, &m.SystemName, &m.Sysid); err != nil {
-			return nil, err
+	matches := make([]AmbiguousMatch, len(rows))
+	for i, r := range rows {
+		matches[i] = AmbiguousMatch{
+			SystemID:   r.SystemID,
+			SystemName: r.SystemName,
+			Sysid:      r.Sysid,
 		}
-		matches = append(matches, m)
 	}
-	return matches, rows.Err()
+	return matches, nil
 }
 
 // UpdateUnitFields updates mutable unit fields.
@@ -181,28 +181,23 @@ func (db *DB) UpdateUnitFields(ctx context.Context, systemID, unitID int, alphaT
 	if alphaTagSource != nil {
 		srcVal = *alphaTagSource
 	}
-
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE units SET
-			alpha_tag        = CASE WHEN $3 <> '' THEN $3 ELSE alpha_tag END,
-			alpha_tag_source = CASE WHEN $4 <> '' THEN $4 ELSE alpha_tag_source END
-		WHERE system_id = $1 AND unit_id = $2
-	`, systemID, unitID, atVal, srcVal)
-	return err
+	return db.Q.UpdateUnitFields(ctx, sqlcdb.UpdateUnitFieldsParams{
+		AlphaTag:       atVal,
+		AlphaTagSource: srcVal,
+		SystemID:       systemID,
+		UnitID:         unitID,
+	})
 }
 
 // UpsertUnit inserts or updates a unit, never overwriting good data with empty strings.
 func (db *DB) UpsertUnit(ctx context.Context, systemID, unitID int, alphaTag, eventType string, eventTime time.Time, tgid int) error {
-	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO units (system_id, unit_id, alpha_tag, first_seen, last_seen, last_event_type, last_event_time, last_event_tgid)
-		VALUES ($1, $2, $3, $5, $5, $4, $5, $6)
-		ON CONFLICT (system_id, unit_id) DO UPDATE SET
-			alpha_tag       = COALESCE(NULLIF($3, ''), units.alpha_tag),
-			first_seen      = LEAST(units.first_seen, $5),
-			last_seen       = GREATEST(units.last_seen, $5),
-			last_event_type = CASE WHEN $5 >= units.last_event_time THEN $4 ELSE units.last_event_type END,
-			last_event_time = GREATEST(units.last_event_time, $5),
-			last_event_tgid = CASE WHEN $5 >= units.last_event_time AND $6 > 0 THEN $6 ELSE units.last_event_tgid END
-	`, systemID, unitID, alphaTag, eventType, eventTime, tgid)
-	return err
+	tgid32 := int32(tgid)
+	return db.Q.UpsertUnit(ctx, sqlcdb.UpsertUnitParams{
+		SystemID:  systemID,
+		UnitID:    unitID,
+		AlphaTag:  &alphaTag,
+		EventType: &eventType,
+		EventTime: pgtype.Timestamptz{Time: eventTime, Valid: true},
+		Tgid:      &tgid32,
+	})
 }

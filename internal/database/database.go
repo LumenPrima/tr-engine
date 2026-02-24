@@ -7,10 +7,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
+
+//go:generate sqlc generate -f ../../sqlc.yaml
 
 type DB struct {
 	Pool *pgxpool.Pool
+	Q    *sqlcdb.Queries
 	log  zerolog.Logger
 }
 
@@ -39,7 +43,7 @@ func Connect(ctx context.Context, databaseURL string, log zerolog.Logger) (*DB, 
 		Int32("min_conns", cfg.MinConns).
 		Msg("database connected")
 
-	return &DB{Pool: pool, log: log}, nil
+	return &DB{Pool: pool, Q: sqlcdb.New(pool), log: log}, nil
 }
 
 func (db *DB) HealthCheck(ctx context.Context) error {

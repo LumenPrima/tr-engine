@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"fmt"
+
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 type Site struct {
@@ -15,31 +17,23 @@ type Site struct {
 
 // FindOrCreateSite ensures a site exists for the given system, instance, and short_name.
 func (db *DB) FindOrCreateSite(ctx context.Context, systemID int, instanceID, shortName string) (int, error) {
-	var siteID int
-	err := db.Pool.QueryRow(ctx, `
-		INSERT INTO sites (system_id, instance_id, short_name, first_seen, last_seen)
-		VALUES ($1, $2, $3, now(), now())
-		ON CONFLICT (instance_id, short_name) DO UPDATE
-			SET last_seen = now()
-		RETURNING site_id
-	`, systemID, instanceID, shortName).Scan(&siteID)
-	return siteID, err
+	return db.Q.FindOrCreateSite(ctx, sqlcdb.FindOrCreateSiteParams{
+		SystemID:   systemID,
+		InstanceID: instanceID,
+		ShortName:  shortName,
+	})
 }
 
 // UpdateSite updates a site's P25 identity fields from system info messages.
-// Only updates fields that have non-zero/non-empty values (progressive refinement).
 func (db *DB) UpdateSite(ctx context.Context, siteID int, sysNum int, nac string, rfss int, p25SiteID int, systemTypeRaw string) error {
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE sites SET
-			sys_num         = CASE WHEN $2 > 0 THEN $2 ELSE sys_num END,
-			nac             = CASE WHEN $3 <> '' AND $3 <> '0' THEN $3 ELSE nac END,
-			rfss            = CASE WHEN $4 > 0 THEN $4 ELSE rfss END,
-			p25_site_id     = CASE WHEN $5 > 0 THEN $5 ELSE p25_site_id END,
-			system_type_raw = COALESCE(NULLIF($6, ''), system_type_raw),
-			updated_at      = now()
-		WHERE site_id = $1
-	`, siteID, sysNum, nac, rfss, p25SiteID, systemTypeRaw)
-	return err
+	return db.Q.UpdateSite(ctx, sqlcdb.UpdateSiteParams{
+		SiteID:        siteID,
+		SysNum:        int16(sysNum),
+		Nac:           nac,
+		Rfss:          int16(rfss),
+		P25SiteID:     int16(p25SiteID),
+		SystemTypeRaw: systemTypeRaw,
+	})
 }
 
 // SiteAPI represents a site for API responses.
@@ -54,75 +48,114 @@ type SiteAPI struct {
 	SysNum     *int   `json:"sys_num,omitempty"`
 }
 
+func siteRowToAPI(r sqlcdb.GetSiteByIDRow) SiteAPI {
+	s := SiteAPI{
+		SiteID:     r.SiteID,
+		SystemID:   r.SystemID,
+		ShortName:  r.ShortName,
+		InstanceID: r.InstanceID,
+		Nac:        r.Nac,
+	}
+	if r.Rfss != nil {
+		v := int(*r.Rfss)
+		s.Rfss = &v
+	}
+	if r.P25SiteID != nil {
+		v := int(*r.P25SiteID)
+		s.P25SiteID = &v
+	}
+	if r.SysNum != nil {
+		v := int(*r.SysNum)
+		s.SysNum = &v
+	}
+	return s
+}
+
+func listSiteRowToAPI(r sqlcdb.ListSitesForSystemRow) SiteAPI {
+	s := SiteAPI{
+		SiteID:     r.SiteID,
+		SystemID:   r.SystemID,
+		ShortName:  r.ShortName,
+		InstanceID: r.InstanceID,
+		Nac:        r.Nac,
+	}
+	if r.Rfss != nil {
+		v := int(*r.Rfss)
+		s.Rfss = &v
+	}
+	if r.P25SiteID != nil {
+		v := int(*r.P25SiteID)
+		s.P25SiteID = &v
+	}
+	if r.SysNum != nil {
+		v := int(*r.SysNum)
+		s.SysNum = &v
+	}
+	return s
+}
+
+func allSiteRowToAPI(r sqlcdb.LoadAllSitesAPIRow) SiteAPI {
+	s := SiteAPI{
+		SiteID:     r.SiteID,
+		SystemID:   r.SystemID,
+		ShortName:  r.ShortName,
+		InstanceID: r.InstanceID,
+		Nac:        r.Nac,
+	}
+	if r.Rfss != nil {
+		v := int(*r.Rfss)
+		s.Rfss = &v
+	}
+	if r.P25SiteID != nil {
+		v := int(*r.P25SiteID)
+		s.P25SiteID = &v
+	}
+	if r.SysNum != nil {
+		v := int(*r.SysNum)
+		s.SysNum = &v
+	}
+	return s
+}
+
 // GetSiteByID returns a single site.
 func (db *DB) GetSiteByID(ctx context.Context, siteID int) (*SiteAPI, error) {
-	var s SiteAPI
-	err := db.Pool.QueryRow(ctx, `
-		SELECT site_id, system_id, short_name, instance_id,
-			COALESCE(nac, ''), rfss, p25_site_id, sys_num
-		FROM sites WHERE site_id = $1
-	`, siteID).Scan(&s.SiteID, &s.SystemID, &s.ShortName, &s.InstanceID,
-		&s.Nac, &s.Rfss, &s.P25SiteID, &s.SysNum)
+	row, err := db.Q.GetSiteByID(ctx, siteID)
 	if err != nil {
 		return nil, err
 	}
+	s := siteRowToAPI(row)
 	return &s, nil
 }
 
 // ListSitesForSystem returns all sites for a given system.
 func (db *DB) ListSitesForSystem(ctx context.Context, systemID int) ([]SiteAPI, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT site_id, system_id, short_name, instance_id,
-			COALESCE(nac, ''), rfss, p25_site_id, sys_num
-		FROM sites WHERE system_id = $1
-		ORDER BY site_id
-	`, systemID)
+	rows, err := db.Q.ListSitesForSystem(ctx, systemID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var sites []SiteAPI
-	for rows.Next() {
-		var s SiteAPI
-		if err := rows.Scan(&s.SiteID, &s.SystemID, &s.ShortName, &s.InstanceID,
-			&s.Nac, &s.Rfss, &s.P25SiteID, &s.SysNum); err != nil {
-			return nil, err
-		}
-		sites = append(sites, s)
+	sites := make([]SiteAPI, len(rows))
+	for i, r := range rows {
+		sites[i] = listSiteRowToAPI(r)
 	}
-	return sites, rows.Err()
+	return sites, nil
 }
 
 // LoadAllSitesAPI returns all sites as SiteAPI structs.
 func (db *DB) LoadAllSitesAPI(ctx context.Context) ([]SiteAPI, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT site_id, system_id, short_name, instance_id,
-			COALESCE(nac, ''), rfss, p25_site_id, sys_num
-		FROM sites ORDER BY site_id
-	`)
+	rows, err := db.Q.LoadAllSitesAPI(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var sites []SiteAPI
-	for rows.Next() {
-		var s SiteAPI
-		if err := rows.Scan(&s.SiteID, &s.SystemID, &s.ShortName, &s.InstanceID,
-			&s.Nac, &s.Rfss, &s.P25SiteID, &s.SysNum); err != nil {
-			return nil, err
-		}
-		sites = append(sites, s)
+	sites := make([]SiteAPI, len(rows))
+	for i, r := range rows {
+		sites[i] = allSiteRowToAPI(r)
 	}
-	return sites, rows.Err()
+	return sites, nil
 }
 
 // UpdateSiteFields updates mutable site fields. Only non-nil fields are updated.
 func (db *DB) UpdateSiteFields(ctx context.Context, siteID int, shortName, instanceID, nac *string, rfss, p25SiteID *int) error {
-	// Check existence first
-	var exists bool
-	err := db.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sites WHERE site_id = $1)`, siteID).Scan(&exists)
+	exists, err := db.Q.SiteExists(ctx, siteID)
 	if err != nil || !exists {
 		return fmt.Errorf("site not found")
 	}
@@ -139,46 +172,40 @@ func (db *DB) UpdateSiteFields(ctx context.Context, siteID int, shortName, insta
 	if nac != nil {
 		nacVal = *nac
 	}
-	rfssVal := 0
+	var rfssVal int16
 	if rfss != nil {
-		rfssVal = *rfss
+		rfssVal = int16(*rfss)
 	}
-	p25Val := 0
+	var p25Val int16
 	if p25SiteID != nil {
-		p25Val = *p25SiteID
+		p25Val = int16(*p25SiteID)
 	}
 
-	_, err = db.Pool.Exec(ctx, `
-		UPDATE sites SET
-			short_name  = CASE WHEN $2 <> '' THEN $2 ELSE short_name END,
-			instance_id = CASE WHEN $3 <> '' THEN $3 ELSE instance_id END,
-			nac         = CASE WHEN $4 <> '' THEN $4 ELSE nac END,
-			rfss        = CASE WHEN $5 > 0 THEN $5 ELSE rfss END,
-			p25_site_id = CASE WHEN $6 > 0 THEN $6 ELSE p25_site_id END
-		WHERE site_id = $1
-	`, siteID, snVal, instVal, nacVal, rfssVal, p25Val)
-	return err
+	return db.Q.UpdateSiteFields(ctx, sqlcdb.UpdateSiteFieldsParams{
+		SiteID:        siteID,
+		ShortName:     snVal,
+		NewInstanceID: instVal,
+		Nac:           nacVal,
+		Rfss:          rfssVal,
+		P25SiteID:     p25Val,
+	})
 }
 
 // LoadAllSites returns all sites.
 func (db *DB) LoadAllSites(ctx context.Context) ([]Site, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT s.site_id, s.system_id, s.instance_id, s.short_name, COALESCE(sys.sysid, '')
-		FROM sites s
-		JOIN systems sys ON sys.system_id = s.system_id
-	`)
+	rows, err := db.Q.LoadAllSites(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var sites []Site
-	for rows.Next() {
-		var s Site
-		if err := rows.Scan(&s.SiteID, &s.SystemID, &s.InstanceID, &s.ShortName, &s.Sysid); err != nil {
-			return nil, err
+	sites := make([]Site, len(rows))
+	for i, r := range rows {
+		sites[i] = Site{
+			SiteID:     r.SiteID,
+			SystemID:   r.SystemID,
+			InstanceID: r.InstanceID,
+			ShortName:  r.ShortName,
+			Sysid:      r.Sysid,
 		}
-		sites = append(sites, s)
 	}
-	return sites, rows.Err()
+	return sites, nil
 }

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
 // UnitEventFilter specifies filters for listing unit events.
@@ -35,61 +38,54 @@ type GlobalUnitEventFilter struct {
 
 // UnitEventAPI represents a unit event for API responses.
 type UnitEventAPI struct {
-	ID            int64      `json:"id"`
-	EventType     string     `json:"event_type"`
-	Time          time.Time  `json:"time"`
-	SystemID      int        `json:"system_id"`
-	SystemName    string     `json:"system_name,omitempty"`
-	UnitRID       int        `json:"unit_rid"`
-	UnitAlphaTag  string     `json:"unit_alpha_tag,omitempty"`
-	Tgid          *int       `json:"tgid,omitempty"`
-	TgAlphaTag    string     `json:"tg_alpha_tag,omitempty"`
-	TgDescription string     `json:"tg_description,omitempty"`
-	InstanceID    string     `json:"instance_id,omitempty"`
+	ID            int64     `json:"id"`
+	EventType     string    `json:"event_type"`
+	Time          time.Time `json:"time"`
+	SystemID      int       `json:"system_id"`
+	SystemName    string    `json:"system_name,omitempty"`
+	UnitRID       int       `json:"unit_rid"`
+	UnitAlphaTag  string    `json:"unit_alpha_tag,omitempty"`
+	Tgid          *int      `json:"tgid,omitempty"`
+	TgAlphaTag    string    `json:"tg_alpha_tag,omitempty"`
+	TgDescription string    `json:"tg_description,omitempty"`
+	InstanceID    string    `json:"instance_id,omitempty"`
 }
 
 // ListUnitEvents returns unit events matching the filter.
 func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]UnitEventAPI, int, error) {
-	qb := newQueryBuilder()
-	qb.Add("ue.system_id = %s", filter.SystemID)
-	qb.Add("ue.unit_rid = %s", filter.UnitID)
-
-	if filter.EventType != nil {
-		qb.Add("ue.event_type = %s", *filter.EventType)
-	}
-	if filter.Tgid != nil {
-		qb.Add("ue.tgid = %s", *filter.Tgid)
-	}
-	if filter.StartTime != nil {
-		qb.Add("ue.time >= %s", *filter.StartTime)
-	} else {
-		qb.Add("ue.time >= %s", time.Now().Add(-24*time.Hour))
-	}
-	if filter.EndTime != nil {
-		qb.Add("ue.time < %s", *filter.EndTime)
+	startTime := filter.StartTime
+	if startTime == nil {
+		t := time.Now().Add(-24 * time.Hour)
+		startTime = &t
 	}
 
-	fromClause := `FROM unit_events ue
+	const fromClause = `FROM unit_events ue
 		LEFT JOIN talkgroups tg ON tg.system_id = ue.system_id AND tg.tgid = ue.tgid`
-	whereClause := qb.WhereClause()
+	const whereClause = `
+		WHERE ue.system_id = $1
+		  AND ue.unit_rid = $2
+		  AND ($3::text IS NULL OR ue.event_type = $3)
+		  AND ($4::int IS NULL OR ue.tgid = $4)
+		  AND ue.time >= $5
+		  AND ($6::timestamptz IS NULL OR ue.time < $6)`
+	args := []any{filter.SystemID, filter.UnitID, filter.EventType, filter.Tgid, *startTime, filter.EndTime}
 
 	var total int
-	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	dataQuery := fmt.Sprintf(`
+	dataQuery := `
 		SELECT ue.id, ue.event_type, ue.time, ue.system_id,
 			ue.unit_rid, COALESCE(ue.unit_alpha_tag, ''),
 			ue.tgid, COALESCE(tg.alpha_tag, ue.tg_alpha_tag, ''),
 			COALESCE(tg.description, ''),
 			COALESCE(ue.instance_id, '')
-		%s %s
+		` + fromClause + whereClause + `
 		ORDER BY ue.time DESC
-		LIMIT %d OFFSET %d
-	`, fromClause, whereClause, filter.Limit, filter.Offset)
+		LIMIT $7 OFFSET $8`
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -117,43 +113,34 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 // ListUnitEventsGlobal returns unit events across a system with JOINs for display names.
 // Caller must ensure SystemID or Sysid is set.
 func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFilter) ([]UnitEventAPI, int, error) {
-	qb := newQueryBuilder()
-
-	if len(filter.SystemIDs) > 0 {
-		qb.Add("ue.system_id = ANY(%s)", filter.SystemIDs)
-	}
-	if len(filter.Sysids) > 0 {
-		qb.Add("s.sysid = ANY(%s)", filter.Sysids)
-	}
-	if len(filter.UnitIDs) > 0 {
-		qb.Add("ue.unit_rid = ANY(%s)", filter.UnitIDs)
-	}
-	if len(filter.EventTypes) > 0 {
-		qb.Add("ue.event_type = ANY(%s)", filter.EventTypes)
-	}
-	if len(filter.Tgids) > 0 {
-		qb.Add("ue.tgid = ANY(%s)", filter.Tgids)
-	}
-	if filter.Emergency != nil {
-		qb.Add("ue.emergency = %s", *filter.Emergency)
-	}
-	if filter.StartTime != nil {
-		qb.Add("ue.time >= %s", *filter.StartTime)
-	} else {
-		qb.Add("ue.time >= %s", time.Now().Add(-1*time.Hour))
-	}
-	if filter.EndTime != nil {
-		qb.Add("ue.time < %s", *filter.EndTime)
+	startTime := filter.StartTime
+	if startTime == nil {
+		t := time.Now().Add(-1 * time.Hour)
+		startTime = &t
 	}
 
-	fromClause := `FROM unit_events ue
+	const fromClause = `FROM unit_events ue
 		JOIN systems s ON s.system_id = ue.system_id
 		LEFT JOIN units u ON u.system_id = ue.system_id AND u.unit_id = ue.unit_rid
 		LEFT JOIN talkgroups tg ON tg.system_id = ue.system_id AND tg.tgid = ue.tgid`
-	whereClause := qb.WhereClause()
+	const whereClause = `
+		WHERE ($1::int[] IS NULL OR ue.system_id = ANY($1))
+		  AND ($2::text[] IS NULL OR s.sysid = ANY($2))
+		  AND ($3::int[] IS NULL OR ue.unit_rid = ANY($3))
+		  AND ($4::text[] IS NULL OR ue.event_type = ANY($4))
+		  AND ($5::int[] IS NULL OR ue.tgid = ANY($5))
+		  AND ($6::boolean IS NULL OR ue.emergency = $6)
+		  AND ue.time >= $7
+		  AND ($8::timestamptz IS NULL OR ue.time < $8)`
+	args := []any{
+		pqIntArray(filter.SystemIDs), pqStringArray(filter.Sysids),
+		pqIntArray(filter.UnitIDs), pqStringArray(filter.EventTypes),
+		pqIntArray(filter.Tgids), filter.Emergency,
+		*startTime, filter.EndTime,
+	}
 
 	var total int
-	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, qb.Args()...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -170,10 +157,10 @@ func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFi
 			COALESCE(ue.instance_id, '')
 		%s %s
 		ORDER BY %s
-		LIMIT %d OFFSET %d
-	`, fromClause, whereClause, orderBy, filter.Limit, filter.Offset)
+		LIMIT $9 OFFSET $10
+	`, fromClause, whereClause, orderBy)
 
-	rows, err := db.Pool.Query(ctx, dataQuery, qb.Args()...)
+	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -225,31 +212,31 @@ type UnitEventRow struct {
 }
 
 func (db *DB) InsertUnitEvent(ctx context.Context, e *UnitEventRow) error {
-	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO unit_events (
-			event_type, system_id, unit_rid, "time", tgid,
-			unit_alpha_tag, tg_alpha_tag, call_num, freq,
-			start_time, stop_time, encrypted, emergency,
-			"position", length, error_count, spike_count, sample_count,
-			transmission_filename, talkgroup_patches,
-			instance_id, sys_num, sys_name
-		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8, $9,
-			$10, $11, $12, $13,
-			$14, $15, $16, $17, $18,
-			$19, $20,
-			$21, $22, $23
-		)
-	`,
-		e.EventType, e.SystemID, e.UnitRID, e.Time, e.Tgid,
-		e.UnitAlphaTag, e.TgAlphaTag, e.CallNum, e.Freq,
-		e.StartTime, e.StopTime, e.Encrypted, e.Emergency,
-		e.Position, e.Length, e.ErrorCount, e.SpikeCount, e.SampleCount,
-		e.TransmissionFilename, e.TalkgroupPatches,
-		e.InstanceID, e.SysNum, e.SysName,
-	)
-	return err
+	return db.Q.InsertUnitEvent(ctx, sqlcdb.InsertUnitEventParams{
+		EventType:            e.EventType,
+		SystemID:             e.SystemID,
+		UnitRid:              e.UnitRID,
+		Time:                 pgtype.Timestamptz{Time: e.Time, Valid: true},
+		Tgid:                 ptrIntToInt32(e.Tgid),
+		UnitAlphaTag:         &e.UnitAlphaTag,
+		TgAlphaTag:           &e.TgAlphaTag,
+		CallNum:              ptrIntToInt32(e.CallNum),
+		Freq:                 e.Freq,
+		StartTime:            pgtzPtr(e.StartTime),
+		StopTime:             pgtzPtr(e.StopTime),
+		Encrypted:            e.Encrypted,
+		Emergency:            e.Emergency,
+		Position:             e.Position,
+		Length:               e.Length,
+		ErrorCount:           ptrIntToInt32(e.ErrorCount),
+		SpikeCount:           ptrIntToInt32(e.SpikeCount),
+		SampleCount:          ptrIntToInt32(e.SampleCount),
+		TransmissionFilename: &e.TransmissionFilename,
+		TalkgroupPatches:     int32sToInts(e.TalkgroupPatches),
+		InstanceID:           &e.InstanceID,
+		SysNum:               e.SysNum,
+		SysName:              &e.SysName,
+	})
 }
 
 // AffiliationBackfillRow holds the data needed to populate an affiliation map entry from the DB.
@@ -269,62 +256,32 @@ type AffiliationBackfillRow struct {
 }
 
 // LoadRecentAffiliations returns the most recent "join" event per (system_id, unit_rid)
-// from the last 24 hours, with display names from JOINed tables. Also checks whether
-// the unit subsequently went OFF or had location events on a different tgid (WentOff flag).
+// from the last 24 hours, with display names from JOINed tables.
 func (db *DB) LoadRecentAffiliations(ctx context.Context) ([]AffiliationBackfillRow, error) {
-	rows, err := db.Pool.Query(ctx, `
-		WITH latest_joins AS (
-			SELECT DISTINCT ON (ue.system_id, ue.unit_rid)
-				ue.system_id, ue.unit_rid, ue.tgid,
-				COALESCE(u.alpha_tag, ue.unit_alpha_tag, ''),
-				COALESCE(tg.alpha_tag, ue.tg_alpha_tag, ''),
-				COALESCE(tg.description, ''),
-				COALESCE(tg.tag, ''),
-				COALESCE(tg."group", ''),
-				COALESCE(s.name, ''), COALESCE(s.sysid, ''),
-				ue."time"
-			FROM unit_events ue
-			JOIN systems s ON s.system_id = ue.system_id
-			LEFT JOIN units u ON u.system_id = ue.system_id AND u.unit_id = ue.unit_rid
-			LEFT JOIN talkgroups tg ON tg.system_id = ue.system_id AND tg.tgid = ue.tgid
-			WHERE ue.event_type = 'join'
-			  AND ue."time" > now() - interval '24 hours'
-			  AND ue.tgid IS NOT NULL
-			ORDER BY ue.system_id, ue.unit_rid, ue."time" DESC
-		)
-		SELECT lj.*, EXISTS(
-			SELECT 1 FROM unit_events ev
-			WHERE ev.system_id = lj.system_id
-			  AND ev.unit_rid = lj.unit_rid
-			  AND ev."time" > lj."time"
-			  AND ev."time" > now() - interval '24 hours'
-			  AND (
-			    ev.event_type = 'off'
-			    OR (ev.event_type IN ('call', 'end', 'location')
-			        AND ev.tgid IS NOT NULL AND ev.tgid != lj.tgid)
-			  )
-		) AS went_off
-		FROM latest_joins lj
-	`)
+	rows, err := db.Q.LoadRecentAffiliations(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var result []AffiliationBackfillRow
-	for rows.Next() {
-		var r AffiliationBackfillRow
-		if err := rows.Scan(
-			&r.SystemID, &r.UnitRID, &r.Tgid,
-			&r.UnitAlphaTag, &r.TgAlphaTag,
-			&r.TgDescription, &r.TgTag, &r.TgGroup,
-			&r.SystemName, &r.Sysid,
-			&r.Time,
-			&r.WentOff,
-		); err != nil {
-			return nil, err
+	result := make([]AffiliationBackfillRow, len(rows))
+	for i, r := range rows {
+		tgid := 0
+		if r.Tgid != nil {
+			tgid = int(*r.Tgid)
 		}
-		result = append(result, r)
+		result[i] = AffiliationBackfillRow{
+			SystemID:      r.SystemID,
+			UnitRID:       r.UnitRid,
+			Tgid:          tgid,
+			UnitAlphaTag:  r.UnitAlphaTag,
+			TgAlphaTag:    r.TgAlphaTag,
+			TgDescription: r.TgDescription,
+			TgTag:         r.TgTag,
+			TgGroup:       r.TgGroup,
+			SystemName:    r.SystemName,
+			Sysid:         r.Sysid,
+			Time:          r.Time.Time,
+			WentOff:       r.WentOff,
+		}
 	}
-	return result, rows.Err()
+	return result, nil
 }
