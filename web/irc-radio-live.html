@@ -211,6 +211,19 @@ body::after {
 .channel-item:hover .fav-star,
 .fav-star.active { opacity: 1; }
 .fav-star.active { color: var(--warning); }
+.group-unread {
+  background: var(--orange);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 8px;
+  margin-left: 6px;
+  min-width: 16px;
+  text-align: center;
+  display: inline-block;
+  line-height: 16px;
+}
 
 .tree-status {
   padding: 8px 12px;
@@ -1449,13 +1462,18 @@ function renderTree() {
     const isExpanded = groupCollapsed.get(groupName) === true; // explicitly expanded
     const allInactive = activeChans.length === 0;
 
+    // Compute group-level unread total
+    const groupUnread = chans.reduce((sum, ch) => sum + (channelUnread.get(ch) || 0), 0);
+    const unreadBadge = groupUnread > 0
+      ? `<span class="group-unread">${groupUnread > 99 ? '99+' : groupUnread}</span>` : '';
+
     const label = document.createElement('div');
     label.className = 'tree-section-label';
 
     if (allInactive && !isExpanded) {
       if (chans.length <= 3) {
         // Small inactive group — show all channels directly
-        label.innerHTML = groupLabelHtml(groupName);
+        label.innerHTML = groupLabelHtml(groupName) + unreadBadge;
         label.addEventListener('click', () => {
           groupCollapsed.set(groupName, false);
           renderTree();
@@ -1467,7 +1485,7 @@ function renderTree() {
       } else {
         // Large inactive group — collapse with "N more..."
         label.classList.add('collapsed');
-        label.innerHTML = groupLabelHtml(groupName);
+        label.innerHTML = groupLabelHtml(groupName) + unreadBadge;
         label.addEventListener('click', () => {
           groupCollapsed.set(groupName, true);
           renderTree();
@@ -1486,7 +1504,7 @@ function renderTree() {
       }
     } else if (isExpanded) {
       // Fully expanded — show all channels
-      label.innerHTML = groupLabelHtml(groupName);
+      label.innerHTML = groupLabelHtml(groupName) + unreadBadge;
       label.addEventListener('click', () => {
         groupCollapsed.set(groupName, false);
         renderTree();
@@ -1498,7 +1516,7 @@ function renderTree() {
       }
     } else {
       // Mixed: show active channels + "N more..." expander for inactive
-      label.innerHTML = groupLabelHtml(groupName);
+      label.innerHTML = groupLabelHtml(groupName) + unreadBadge;
       label.addEventListener('click', () => {
         groupCollapsed.set(groupName, true);
         renderTree();
