@@ -198,6 +198,19 @@ body::after {
   padding: 0 4px; min-width: 14px; text-align: center; font-weight: 600;
   flex-shrink: 0;
 }
+.fav-star {
+  margin-left: auto;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.channel-item:hover .fav-star,
+.fav-star.active { opacity: 1; }
+.fav-star.active { color: var(--warning); }
 
 .tree-status {
   padding: 8px 12px;
@@ -775,6 +788,29 @@ treeSearchClear.addEventListener('click', () => {
   renderTree();
 });
 
+// Favorites: Set of "system_id:tgid" keys
+const favorites = new Set(JSON.parse(localStorage.getItem('irc_favorites') || '[]'));
+
+function saveFavorites() {
+  localStorage.setItem('irc_favorites', JSON.stringify([...favorites]));
+}
+
+function isFavorite(chanName) {
+  const ch = channels.get(chanName);
+  if (!ch) return false;
+  return favorites.has(`${ch.system_id}:${ch.tgid}`);
+}
+
+function toggleFavorite(chanName) {
+  const ch = channels.get(chanName);
+  if (!ch) return;
+  const key = `${ch.system_id}:${ch.tgid}`;
+  if (favorites.has(key)) favorites.delete(key);
+  else favorites.add(key);
+  saveFavorites();
+  renderTree();
+}
+
 
 // ══════════════════════════════════════════════════════════════
 // HELPERS
@@ -1292,10 +1328,34 @@ function createChannelItem(ch) {
   const el = document.createElement('div');
   const unread = channelUnread.get(ch) || 0;
   el.className = 'channel-item' + (ch === activeChannel ? ' active' : '') + (unread > 0 && ch !== activeChannel ? ' has-activity' : '');
-  el.innerHTML = `<span class="chan-prefix">#</span><span class="chan-label">${esc(ch.slice(1))}</span>`;
+
+  const prefix = document.createElement('span');
+  prefix.className = 'chan-prefix';
+  prefix.textContent = '#';
+  el.appendChild(prefix);
+
+  const label = document.createElement('span');
+  label.className = 'chan-label';
+  label.textContent = ch.slice(1);
+  el.appendChild(label);
+
   if (unread > 0 && ch !== activeChannel) {
-    el.innerHTML += `<span class="unread">${unread > 99 ? '99+' : unread}</span>`;
+    const badge = document.createElement('span');
+    badge.className = 'unread';
+    badge.textContent = unread > 99 ? '99+' : unread;
+    el.appendChild(badge);
   }
+
+  // Favorite star
+  const star = document.createElement('span');
+  star.className = 'fav-star' + (isFavorite(ch) ? ' active' : '');
+  star.textContent = isFavorite(ch) ? '\u2605' : '\u2606';
+  star.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleFavorite(ch);
+  });
+  el.appendChild(star);
+
   el.addEventListener('click', () => switchChannel(ch));
   return el;
 }
@@ -1354,6 +1414,23 @@ function renderTree() {
   statusItem.addEventListener('click', () => switchChannel(STATUS_CHANNEL));
   sysSection.appendChild(statusItem);
   treeScroll.appendChild(sysSection);
+
+  // Favorites section
+  const favChans = [...channels.keys()].filter(ch => ch !== STATUS_CHANNEL && isFavorite(ch));
+  if (favChans.length > 0) {
+    const favSection = document.createElement('div');
+    favSection.className = 'tree-section';
+    const favLabel = document.createElement('div');
+    favLabel.className = 'tree-section-label fav-label';
+    favLabel.textContent = '\u2605 Favorites';
+    favSection.appendChild(favLabel);
+
+    favChans.sort();
+    for (const ch of favChans) {
+      favSection.appendChild(createChannelItem(ch));
+    }
+    treeScroll.appendChild(favSection);
+  }
 
   // Sort groups alphabetically
   const sortedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
@@ -2672,6 +2749,20 @@ function handleCommand(cmd) {
       break;
     }
 
+    case '/fav':
+    case '/favorite': {
+      if (activeChannel === STATUS_CHANNEL) {
+        addMsg(activeChannel, { ts: ts(), kind: 'notice', text: 'Cannot favorite *status' });
+        break;
+      }
+      toggleFavorite(activeChannel);
+      addMsg(activeChannel, { ts: ts(), kind: 'notice',
+        text: isFavorite(activeChannel)
+          ? `Added ${activeChannel} to favorites`
+          : `Removed ${activeChannel} from favorites` });
+      break;
+    }
+
     case '/ops': {
       const opArgs = parts.slice(1).join(' ').trim();
       if (!opArgs) {
@@ -2753,6 +2844,7 @@ function handleCommand(cmd) {
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /whois <nick>       — User info' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /topic              — Show channel topic' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /stats              — Connection & channel stats' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /fav                — Toggle favorite on current channel' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /ops [patterns]     — View/set op nick patterns (comma-sep regex)' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /readall            — Mark all channels as read' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /reconnect          — Reconnect SSE stream' });
