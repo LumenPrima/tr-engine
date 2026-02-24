@@ -55,7 +55,7 @@ func (db *DB) PurgeOlderThan(ctx context.Context, table, timeColumn string, rete
 		`DELETE FROM %s WHERE %s < now() - $1::interval`,
 		pgx.Identifier{table}.Sanitize(), pgx.Identifier{timeColumn}.Sanitize(),
 	)
-	tag, err := db.Pool.Exec(ctx, query, retention.String())
+	tag, err := db.Pool.Exec(ctx, query, retention)
 	if err != nil {
 		return 0, err
 	}
