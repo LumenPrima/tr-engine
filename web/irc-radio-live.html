@@ -631,19 +631,136 @@ html.nerd .nick-item.talked::after { font-size: 7px; }
 html.nerd .nick-tooltip { font-size: 11px; }
 html.nerd .statusbar { font-size: 10px; }
 html.nerd .statusbar .nerd-btn { font-size: 9px; }
+
+/* ══════════════════════════════════════════════════════════════ */
+/* MOBILE RESPONSIVE — below 768px                               */
+/* ══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  /* Hide CRT effects on mobile for performance */
+  body::before, body::after, .vignette-overlay { display: none; }
+
+  /* Titlebar becomes mobile nav */
+  .titlebar {
+    height: 44px;
+    padding: 0 8px;
+    justify-content: space-between;
+  }
+  .titlebar .topic { display: none; }
+
+  /* Hamburger button */
+  .mobile-hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--text);
+    border: none;
+    background: none;
+  }
+
+  /* Channel tree becomes slide-out drawer */
+  .channel-tree {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: none;
+  }
+  .channel-tree.open {
+    transform: translateX(0);
+    box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+  }
+
+  /* Nicklist becomes slide-out drawer from right */
+  .nicklist {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 240px;
+    z-index: 1000;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    box-shadow: none;
+  }
+  .nicklist.open {
+    transform: translateX(0);
+    box-shadow: -4px 0 20px rgba(0,0,0,0.3);
+  }
+
+  /* Drawer backdrop */
+  .drawer-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+  }
+  .drawer-backdrop.visible { display: block; }
+
+  /* Messages take full width */
+  .chat-area { flex: 1; min-width: 0; }
+  .messages { font-size: 14px; }
+
+  /* Channel bar simplification */
+  .channel-bar {
+    height: 36px;
+    font-size: 13px;
+  }
+
+  /* Input area */
+  .input-area { font-size: 14px; }
+  .input-field { font-size: 14px; }
+
+  /* Status bar */
+  .statusbar { font-size: 11px; padding: 0 6px; }
+
+  /* Nick width smaller on mobile */
+  .nick { max-width: 80px !important; }
+
+  /* Larger touch targets for audio play buttons */
+  .voice-play {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Favorite stars and scan icons always visible (no hover on touch) */
+  .fav-star, .scan-icon { opacity: 1; }
+}
+
+/* Desktop: hide mobile-only elements */
+@media (min-width: 769px) {
+  .mobile-hamburger { display: none; }
+  .mobile-users-btn { display: none; }
+  .drawer-backdrop { display: none !important; }
+}
 </style>
 </head>
 <body>
 
 <div class="titlebar">
+  <button class="mobile-hamburger" id="mobile-hamburger" aria-label="Open channels">☰</button>
   <span class="server">tr-engine</span>
   <span>—</span>
   <span id="titlebar-chan">*status</span>
   <span class="topic" id="titlebar-topic">Connecting...</span>
+  <button class="mobile-hamburger mobile-users-btn" id="mobile-users-btn" aria-label="Open users">👥</button>
   <span class="lag" id="titlebar-lag"></span>
 </div>
 
 <div class="main">
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
   <div class="channel-tree">
     <div class="tree-header-row">
       <span class="tree-header-text">tr-engine</span>
