@@ -236,8 +236,11 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 			}
 			entry.CallID, entry.StartTime, err = p.db.FindCallForAudio(ctx, identity.SystemID, call.Talkgroup, startTime)
 			if err != nil {
-				// Truly not found — insert it fresh
-				return p.handleCallStartFromEnd(ctx, &msg)
+				// Truly not found — insert it fresh with a new context since the
+				// current one has been partially consumed by lookup attempts.
+				freshCtx, freshCancel := context.WithTimeout(p.ctx, 15*time.Second)
+				defer freshCancel()
+				return p.handleCallStartFromEnd(freshCtx, &msg)
 			}
 		}
 		matchedKey = "" // came from DB, nothing to delete from active map
@@ -498,8 +501,9 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 		return err
 	}
 
-	// Store as checkpoint for crash recovery
-	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+	// Store as checkpoint for crash recovery. Use a longer timeout because this
+	// handler iterates over all active calls with individual DB updates.
+	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
 	defer cancel()
 
 	if err := p.db.InsertActiveCallCheckpoint(ctx, msg.InstanceID, payload, len(msg.Calls)); err != nil {

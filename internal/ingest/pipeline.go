@@ -781,6 +781,11 @@ func (m *activeCallMap) Delete(trCallID string) {
 // time within tolerance. Returns the map key, entry, and whether found. This
 // handles trunk-recorder shifting start_time by 1-2s between call_start and
 // call_end, which changes the ID since it embeds start_time.
+//
+// When multiple calls match, prefers the one whose start_time is at or before
+// the reported startTime (the original call), breaking ties by closest time
+// difference. This prevents matching a newer back-to-back call on the same
+// talkgroup when the original call's start_time shifted forward.
 func (m *activeCallMap) FindByTgidAndTime(tgid int, startTime time.Time, tolerance time.Duration) (string, activeCallEntry, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -788,19 +793,37 @@ func (m *activeCallMap) FindByTgidAndTime(tgid int, startTime time.Time, toleran
 	var bestKey string
 	var bestEntry activeCallEntry
 	bestDiff := tolerance + 1
+	bestIsBeforeOrAt := false
 
 	for key, entry := range m.calls {
 		if entry.Tgid != tgid {
 			continue
 		}
 		diff := entry.StartTime.Sub(startTime)
-		if diff < 0 {
-			diff = -diff
+		absDiff := diff
+		if absDiff < 0 {
+			absDiff = -absDiff
 		}
-		if diff <= tolerance && diff < bestDiff {
+		if absDiff > tolerance {
+			continue
+		}
+
+		// Prefer calls that started at or before the reported time (the
+		// original call shifted forward), over calls that started after
+		// (a newer back-to-back call on the same talkgroup).
+		isBeforeOrAt := diff <= 0
+		better := false
+		if isBeforeOrAt && !bestIsBeforeOrAt {
+			better = true // before-or-at always beats after
+		} else if isBeforeOrAt == bestIsBeforeOrAt {
+			better = absDiff < bestDiff // same category: pick closest
+		}
+
+		if better {
 			bestKey = key
 			bestEntry = entry
-			bestDiff = diff
+			bestDiff = absDiff
+			bestIsBeforeOrAt = isBeforeOrAt
 		}
 	}
 

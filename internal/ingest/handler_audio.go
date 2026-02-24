@@ -112,6 +112,13 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 // createCallFromAudio creates a call record from audio metadata when no call_start was received.
 // The call_end handler will later find this record via FindCallForAudio and enrich it.
 func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedIdentity, meta *AudioMetadata, startTime time.Time) (int64, time.Time, error) {
+	// Final dedup check right before INSERT — narrows the TOCTOU race window
+	// between concurrent MQTT (handleAudio) and file-watch (processWatchedFile)
+	// paths from seconds to sub-millisecond.
+	if existingID, existingST, err := p.db.FindCallForAudio(ctx, identity.SystemID, meta.Talkgroup, startTime); err == nil {
+		return existingID, existingST, nil
+	}
+
 	freq := int64(meta.Freq)
 	duration := float32(meta.CallLength)
 	signal := float32(meta.Signal)
@@ -451,8 +458,26 @@ func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename s
 	}
 
 	path := filepath.Join(dir, filename)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("write %s: %w", path, err)
+
+	// Write to a temp file then rename for atomicity — prevents concurrent
+	// HTTP audio serve from reading a partial/truncated file.
+	tmp, err := os.CreateTemp(dir, ".audio-*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("create temp file in %s: %w", dir, err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("write %s: %w", tmpPath, err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("close %s: %w", tmpPath, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("rename %s -> %s: %w", tmpPath, path, err)
 	}
 
 	// Return relative path from audioDir
