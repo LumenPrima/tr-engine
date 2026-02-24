@@ -77,14 +77,15 @@ type SortParam struct {
 // Returns the default if none specified. Validates against the allowlist.
 func ParseSort(r *http.Request, defaultField string, allowed map[string]string) SortParam {
 	s := SortParam{Field: defaultField, Desc: false}
+	// Normalize: strip direction prefix from default so the fallback is always
+	// a clean field name (prevents "-start_time" leaking into SQLColumn lookup).
+	if strings.HasPrefix(s.Field, "-") {
+		s.Field = s.Field[1:]
+		s.Desc = true
+	}
 
 	sort := r.URL.Query().Get("sort")
 	if sort == "" {
-		// Check if default has a direction prefix
-		if strings.HasPrefix(defaultField, "-") {
-			s.Field = defaultField[1:]
-			s.Desc = true
-		}
 		return s
 	}
 

@@ -197,6 +197,11 @@ func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performe
 	}
 	eventsMoved = int(tag.RowsAffected())
 
+	// Move trunking_messages
+	if _, err := tx.Exec(ctx, `UPDATE trunking_messages SET system_id = $1 WHERE system_id = $2`, targetID, sourceID); err != nil {
+		return 0, 0, 0, 0, 0, 0, fmt.Errorf("move trunking_messages: %w", err)
+	}
+
 	// Move decode_rates
 	if _, err := tx.Exec(ctx, `UPDATE decode_rates SET system_id = $1 WHERE system_id = $2`, targetID, sourceID); err != nil {
 		return 0, 0, 0, 0, 0, 0, fmt.Errorf("move decode_rates: %w", err)

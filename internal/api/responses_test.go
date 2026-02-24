@@ -97,6 +97,7 @@ func TestParseSort(t *testing.T) {
 		{"sort_dash_prefix", "sort=-start_time", "name", "start_time", true},
 		{"sort_dir_desc", "sort=name&sort_dir=desc", "id", "name", true},
 		{"invalid_field_falls_back", "sort=bogus", "name", "name", false},
+		{"invalid_field_with_dash_default", "sort=bogus", "-start_time", "start_time", true},
 		{"dash_invalid_field_uses_default", "sort=-bogus", "name", "name", true},
 	}
 	for _, tt := range tests {

@@ -229,9 +229,12 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 		if err != nil {
 			// Not found by tr_call_id — maybe audio handler already created it.
 			identity, idErr := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)
-			if idErr == nil {
-				entry.CallID, entry.StartTime, err = p.db.FindCallForAudio(ctx, identity.SystemID, call.Talkgroup, startTime)
+			if idErr != nil {
+				// Identity resolution failed (transient DB/network error). Return error
+				// rather than creating a duplicate call via handleCallStartFromEnd.
+				return fmt.Errorf("resolve identity for call_end lookup: %w", idErr)
 			}
+			entry.CallID, entry.StartTime, err = p.db.FindCallForAudio(ctx, identity.SystemID, call.Talkgroup, startTime)
 			if err != nil {
 				// Truly not found — insert it fresh
 				return p.handleCallStartFromEnd(ctx, &msg)
