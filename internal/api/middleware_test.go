@@ -35,16 +35,52 @@ func TestRequestID(t *testing.T) {
 	})
 }
 
-func TestCORS(t *testing.T) {
-	t.Run("sets_cors_headers", func(t *testing.T) {
+func TestCORSWithOrigins(t *testing.T) {
+	t.Run("empty_origins_allows_all", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "/", nil)
-		CORS(okHandler).ServeHTTP(rec, req)
+		CORSWithOrigins(nil)(okHandler).ServeHTTP(rec, req)
 		if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
-			t.Error("missing Access-Control-Allow-Origin header")
+			t.Error("missing Access-Control-Allow-Origin: *")
 		}
 		if rec.Code != http.StatusOK {
 			t.Errorf("expected 200, got %d", rec.Code)
+		}
+	})
+
+	t.Run("allowed_origin", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Origin", "https://example.com")
+		CORSWithOrigins([]string{"https://example.com"})(okHandler).ServeHTTP(rec, req)
+		if rec.Header().Get("Access-Control-Allow-Origin") != "https://example.com" {
+			t.Error("expected origin echo")
+		}
+		if rec.Header().Get("Vary") != "Origin" {
+			t.Error("expected Vary: Origin")
+		}
+	})
+
+	t.Run("disallowed_origin_no_cors_headers", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Origin", "https://evil.com")
+		CORSWithOrigins([]string{"https://example.com"})(okHandler).ServeHTTP(rec, req)
+		if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Error("should not set CORS header for disallowed origin")
+		}
+		if rec.Code != http.StatusOK {
+			t.Errorf("request should still be served, got %d", rec.Code)
+		}
+	})
+
+	t.Run("disallowed_origin_options_returns_403", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("OPTIONS", "/", nil)
+		req.Header.Set("Origin", "https://evil.com")
+		CORSWithOrigins([]string{"https://example.com"})(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("expected 403, got %d", rec.Code)
 		}
 	})
 
@@ -55,12 +91,75 @@ func TestCORS(t *testing.T) {
 		})
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("OPTIONS", "/", nil)
-		CORS(inner).ServeHTTP(rec, req)
+		CORSWithOrigins(nil)(inner).ServeHTTP(rec, req)
 		if rec.Code != http.StatusNoContent {
 			t.Errorf("expected 204, got %d", rec.Code)
 		}
 		if called {
 			t.Error("inner handler should not be called on OPTIONS preflight")
+		}
+	})
+}
+
+func TestRateLimiter(t *testing.T) {
+	t.Run("allows_normal_traffic", func(t *testing.T) {
+		handler := RateLimiter(100, 100)(okHandler)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "1.2.3.4:1234"
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rec.Code)
+		}
+	})
+
+	t.Run("blocks_excess_traffic", func(t *testing.T) {
+		// 1 req/s, burst of 2 — third request should be blocked
+		handler := RateLimiter(1, 2)(okHandler)
+		for i := 0; i < 2; i++ {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = "5.6.7.8:1234"
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Errorf("request %d: expected 200, got %d", i, rec.Code)
+			}
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "5.6.7.8:1234"
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusTooManyRequests {
+			t.Errorf("expected 429, got %d", rec.Code)
+		}
+		if rec.Header().Get("Retry-After") != "1" {
+			t.Error("expected Retry-After header")
+		}
+	})
+
+	t.Run("different_ips_independent", func(t *testing.T) {
+		handler := RateLimiter(1, 1)(okHandler)
+		// Exhaust IP A
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "10.0.0.1:1234"
+		handler.ServeHTTP(rec, req)
+
+		rec2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest("GET", "/", nil)
+		req2.RemoteAddr = "10.0.0.1:1234"
+		handler.ServeHTTP(rec2, req2)
+		if rec2.Code != http.StatusTooManyRequests {
+			t.Errorf("IP A second request: expected 429, got %d", rec2.Code)
+		}
+
+		// IP B should still work
+		rec3 := httptest.NewRecorder()
+		req3 := httptest.NewRequest("GET", "/", nil)
+		req3.RemoteAddr = "10.0.0.2:1234"
+		handler.ServeHTTP(rec3, req3)
+		if rec3.Code != http.StatusOK {
+			t.Errorf("IP B first request: expected 200, got %d", rec3.Code)
 		}
 	})
 }

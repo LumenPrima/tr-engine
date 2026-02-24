@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -35,9 +36,20 @@ type ServerOptions struct {
 func NewServer(opts ServerOptions) *Server {
 	r := chi.NewRouter()
 
+	// Parse CORS origins from config
+	var corsOrigins []string
+	if opts.Config.CORSOrigins != "" {
+		for _, o := range strings.Split(opts.Config.CORSOrigins, ",") {
+			if s := strings.TrimSpace(o); s != "" {
+				corsOrigins = append(corsOrigins, s)
+			}
+		}
+	}
+
 	// Global middleware
 	r.Use(RequestID)
-	r.Use(CORS)
+	r.Use(CORSWithOrigins(corsOrigins))
+	r.Use(RateLimiter(20, 40)) // 20 req/s sustained, 40 burst per IP
 	r.Use(Recoverer)
 	r.Use(Logger(opts.Log))
 

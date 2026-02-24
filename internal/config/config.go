@@ -33,8 +33,9 @@ type Config struct {
 	WriteTimeout time.Duration `env:"HTTP_WRITE_TIMEOUT" envDefault:"30s"`
 	IdleTimeout  time.Duration `env:"HTTP_IDLE_TIMEOUT" envDefault:"120s"`
 
-	AuthToken string `env:"AUTH_TOKEN"`
-	LogLevel  string `env:"LOG_LEVEL" envDefault:"info"`
+	AuthToken   string `env:"AUTH_TOKEN"`
+	CORSOrigins string `env:"CORS_ORIGINS"` // comma-separated allowed origins; empty = allow all (*)
+	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
 
 	RawStore         bool   `env:"RAW_STORE" envDefault:"true"`
 	RawIncludeTopics string `env:"RAW_INCLUDE_TOPICS"`
