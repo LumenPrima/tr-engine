@@ -224,6 +224,39 @@ body::after {
   display: inline-block;
   line-height: 16px;
 }
+.scan-icon {
+  margin-left: 2px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.channel-item:hover .scan-icon,
+.scan-icon.active { opacity: 1; }
+.scan-icon.active { color: var(--green); }
+
+.scanner-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 0 6px;
+  cursor: pointer;
+  border-radius: 3px;
+  margin-left: 4px;
+}
+.scanner-btn.active {
+  color: var(--green);
+  border-color: var(--green);
+}
+.scanner-queue-info {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: 4px;
+}
 
 .tree-status {
   padding: 8px 12px;
@@ -671,6 +704,8 @@ html.nerd .statusbar .nerd-btn { font-size: 9px; }
   <span>Events: <span class="status-highlight" id="status-rate">0</span>/min</span>
   <span class="sep">│</span>
   <span id="status-time"></span>
+  <button class="scanner-btn" id="scanner-btn" title="Toggle scanner mode">scan</button>
+  <span class="scanner-queue-info" id="scanner-queue-info"></span>
   <button class="nerd-btn" id="nerd-btn" title="Toggle hipster nerd cool mode">nerd</button>
 </div>
 <div class="nick-tooltip" id="nick-tooltip"></div>
@@ -821,6 +856,31 @@ function toggleFavorite(chanName) {
   if (favorites.has(key)) favorites.delete(key);
   else favorites.add(key);
   saveFavorites();
+  renderTree();
+}
+
+// Scanner mode
+const scanChannels = new Set(JSON.parse(localStorage.getItem('irc_scan_channels') || '[]'));
+let scannerEnabled = localStorage.getItem('irc_scanner_enabled') === '1';
+let scannerAutoSwitch = localStorage.getItem('irc_scanner_auto_switch') !== '0'; // default ON
+
+function saveScanChannels() {
+  localStorage.setItem('irc_scan_channels', JSON.stringify([...scanChannels]));
+}
+
+function isScanned(chanName) {
+  const ch = channels.get(chanName);
+  if (!ch) return false;
+  return scanChannels.has(`${ch.system_id}:${ch.tgid}`);
+}
+
+function toggleScan(chanName) {
+  const ch = channels.get(chanName);
+  if (!ch) return;
+  const key = `${ch.system_id}:${ch.tgid}`;
+  if (scanChannels.has(key)) scanChannels.delete(key);
+  else scanChannels.add(key);
+  saveScanChannels();
   renderTree();
 }
 
@@ -1358,6 +1418,17 @@ function createChannelItem(ch) {
     badge.textContent = unread > 99 ? '99+' : unread;
     el.appendChild(badge);
   }
+
+  // Scan icon
+  const scanIcon = document.createElement('span');
+  scanIcon.className = 'scan-icon' + (isScanned(ch) ? ' active' : '');
+  scanIcon.textContent = isScanned(ch) ? '\uD83D\uDCE1' : '\uD83D\uDD07';
+  scanIcon.title = isScanned(ch) ? 'Remove from scanner' : 'Add to scanner';
+  scanIcon.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleScan(ch);
+  });
+  el.appendChild(scanIcon);
 
   // Favorite star
   const star = document.createElement('span');
@@ -2781,6 +2852,27 @@ function handleCommand(cmd) {
       break;
     }
 
+    case '/scan': {
+      if (activeChannel === STATUS_CHANNEL) {
+        addMsg(activeChannel, { ts: ts(), kind: 'notice', text: 'Cannot scan *status' });
+        break;
+      }
+      toggleScan(activeChannel);
+      addMsg(activeChannel, { ts: ts(), kind: 'notice',
+        text: isScanned(activeChannel)
+          ? `Added ${activeChannel} to scan list`
+          : `Removed ${activeChannel} from scan list` });
+      break;
+    }
+    case '/scanner': {
+      scannerEnabled = !scannerEnabled;
+      localStorage.setItem('irc_scanner_enabled', scannerEnabled ? '1' : '0');
+      updateScannerUI();
+      addMsg(activeChannel, { ts: ts(), kind: 'notice',
+        text: `Scanner ${scannerEnabled ? 'enabled' : 'disabled'}` });
+      break;
+    }
+
     case '/ops': {
       const opArgs = parts.slice(1).join(' ').trim();
       if (!opArgs) {
@@ -2863,6 +2955,8 @@ function handleCommand(cmd) {
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /topic              — Show channel topic' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /stats              — Connection & channel stats' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /fav                — Toggle favorite on current channel' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /scan               — Toggle scanner on current channel' });
+      addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /scanner            — Toggle scanner mode on/off' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /ops [patterns]     — View/set op nick patterns (comma-sep regex)' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /readall            — Mark all channels as read' });
       addMsg(activeChannel, { ts: ts(), kind: 'notice', text: '  /reconnect          — Reconnect SSE stream' });
@@ -3054,6 +3148,26 @@ document.getElementById('nerd-btn').addEventListener('click', () => {
   const enabled = document.documentElement.classList.toggle('nerd');
   localStorage.setItem('nerd_mode', enabled ? '1' : '0');
 });
+
+// ── Scanner toggle ──
+const scannerBtn = document.getElementById('scanner-btn');
+const scannerQueueInfo = document.getElementById('scanner-queue-info');
+
+function updateScannerUI() {
+  scannerBtn.classList.toggle('active', scannerEnabled);
+}
+
+scannerBtn.addEventListener('click', () => {
+  scannerEnabled = !scannerEnabled;
+  localStorage.setItem('irc_scanner_enabled', scannerEnabled ? '1' : '0');
+  updateScannerUI();
+  if (!scannerEnabled) {
+    scannerQueue.length = 0;
+    scannerQueueInfo.textContent = '';
+  }
+});
+
+updateScannerUI();
 
 
 // ══════════════════════════════════════════════════════════════
