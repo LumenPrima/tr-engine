@@ -223,7 +223,7 @@ TR_DIR=/home/radio/trunk-recorder
 This auto-discovers:
 - **`captureDir`** from `config.json` — sets `WATCH_DIR` and `TR_AUDIO_DIR` automatically
 - **System names** — from `config.json` system entries
-- **Talkgroup names** — imports TR's talkgroup CSV files into a browsable reference directory
+- **Talkgroup and unit names** — imports TR's talkgroup CSV and unit tag CSV files
 - **Docker volume mappings** — if `docker-compose.yaml` is found, translates container paths to host paths
 
 `TR_DIR` replaces `WATCH_DIR`, `TR_AUDIO_DIR`, and manual talkgroup import. All three ingest modes (MQTT, watch, TR_DIR) can run simultaneously.

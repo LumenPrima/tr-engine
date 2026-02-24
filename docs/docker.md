@@ -122,6 +122,7 @@ environment:
   AUDIO_DIR: /data/audio
   LOG_LEVEL: debug        # add any env var from sample.env
   AUTH_TOKEN: my-secret   # enable API authentication
+  # CORS_ORIGINS: https://example.com  # restrict CORS (empty = allow all)
   # TR_DIR: /tr-config    # auto-discover from TR's config.json (see below)
   # WATCH_DIR: /tr-audio  # file watch mode (alternative to MQTT)
 ```
@@ -142,7 +143,7 @@ The simplest setup if trunk-recorder's directory is accessible. Bind-mount TR's 
       # - /path/to/trunk-recorder/audio:/tr-audio:ro
 ```
 
-This auto-discovers `captureDir` from `config.json` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, and imports talkgroup CSVs into a browsable reference directory. If TR runs in Docker, container paths are translated to host paths via volume mappings in `docker-compose.yaml`.
+This auto-discovers `captureDir` from `config.json` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, and imports talkgroup and unit tag CSVs. If TR runs in Docker, container paths are translated to host paths via volume mappings in `docker-compose.yaml`.
 
 ### File watch mode (WATCH_DIR)
 

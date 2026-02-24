@@ -70,15 +70,19 @@ The `.env` file is auto-loaded from the current directory on startup. See `sampl
 | `MQTT_TOPICS` | No | `#` | MQTT topic filter (match your TR plugin prefix with `/#`) |
 | `HTTP_ADDR` | No | `:8080` | HTTP listen address |
 | `AUTH_TOKEN` | No | | Bearer token for API auth (disabled if empty) |
+| `CORS_ORIGINS` | No | `*` | Comma-separated allowed CORS origins (empty = allow all) |
+| `RATE_LIMIT_RPS` | No | `20` | Per-IP rate limit (requests/second) |
+| `RATE_LIMIT_BURST` | No | `40` | Per-IP rate limit burst size |
 | `AUDIO_DIR` | No | `./audio` | Audio file storage directory |
 | `TR_AUDIO_DIR` | No | | Serve audio from trunk-recorder's filesystem (see below) |
+| `CSV_WRITEBACK` | No | `false` | Write alpha_tag edits back to TR's CSV files on disk |
 | `WATCH_INSTANCE_ID` | No | `file-watch` | Instance ID for file-watched calls |
 | `WATCH_BACKFILL_DAYS` | No | `7` | Days of existing files to backfill on startup (0=all, -1=none) |
 | `LOG_LEVEL` | No | `info` | Log level |
 
 \* At least one of `MQTT_BROKER_URL`, `WATCH_DIR`, or `TR_DIR` must be set. All three can run simultaneously.
 
-See `sample.env` for the full list including MQTT credentials, HTTP timeouts, and raw archival settings.
+See `sample.env` for the full list including MQTT credentials, HTTP timeouts, transcription, and raw archival settings.
 
 ### Audio Modes
 
@@ -98,7 +102,7 @@ tr-engine supports three ingest modes that can run independently or simultaneous
 
 - **MQTT** — subscribes to trunk-recorder's MQTT status plugin for real-time call events, unit activity, recorder state, and decode rates. The richest data source.
 - **File Watch** (`WATCH_DIR`) — monitors trunk-recorder's audio output directory for new `.json` metadata files via fsnotify. Only produces `call_end` events (no `call_start`, unit events, or recorder state). Backfills existing files on startup (configurable via `WATCH_BACKFILL_DAYS`).
-- **TR Auto-Discovery** (`TR_DIR`) — the simplest setup. Point at the directory containing trunk-recorder's `config.json`. Auto-discovers `captureDir` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, and imports talkgroup CSVs into a browsable reference directory. If a `docker-compose.yaml` is found, container paths are translated to host paths via volume mappings.
+- **TR Auto-Discovery** (`TR_DIR`) — the simplest setup. Point at the directory containing trunk-recorder's `config.json`. Auto-discovers `captureDir` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, imports talkgroup CSVs and unit tag CSVs (`unitTagsFile`) into the database. If a `docker-compose.yaml` is found, container paths are translated to host paths via volume mappings. With `CSV_WRITEBACK=true`, alpha_tag edits are written back to the CSV files on disk.
 
 ### Auto-Discovery
 
@@ -214,7 +218,7 @@ internal/
     discover.go                 TR auto-discovery orchestrator
   api/
     server.go                   Chi router + HTTP server
-    middleware.go               RequestID, logging, recovery, auth
+    middleware.go               RequestID, logging, recovery, auth, rate limiting, body limits
     events.go                   SSE event stream endpoint
     *.go                        Handler files for each resource
 web/                            Built-in dashboards (auto-discovered by index)

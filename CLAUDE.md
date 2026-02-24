@@ -33,7 +33,7 @@ Go was chosen over Node.js for multi-core utilization and headroom at high messa
 - `internal/api/server.go` — Chi router + HTTP server lifecycle. All endpoints wired via handler `Routes()` methods.
 - `internal/api/query.go` — Ad-hoc read-only SQL query handler (`POST /query`). Read-only transaction, 30s statement timeout, row cap, semicolon rejection.
 - `internal/database/query.go` — `ExecuteReadOnlyQuery()` — runs SQL in a `BEGIN READ ONLY` transaction with `SET LOCAL statement_timeout = '30s'`.
-- `internal/api/middleware.go` — RequestID, structured request Logger (zerolog/hlog), Recoverer (JSON 500), BearerAuth (passthrough when `AUTH_TOKEN` empty).
+- `internal/api/middleware.go` — RequestID, structured request Logger (zerolog/hlog), Recoverer (JSON 500), BearerAuth (passthrough when `AUTH_TOKEN` empty), CORSWithOrigins, RateLimiter (per-IP via `X-Forwarded-For`/`X-Real-IP`, configurable `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST`), MaxBodySize (10 MB), ResponseTimeout (wraps non-SSE/audio handlers with `HTTP_WRITE_TIMEOUT`).
 
 ## Go Dependencies
 
@@ -145,7 +145,7 @@ The `.env` file is auto-loaded from the current directory on startup (silent if 
 | `--env-file` | — | `.env` | Path to .env file |
 | `--version` | — | — | Print version and exit |
 
-Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`, `RAW_STORE` (bool, default `true` — master switch to disable all raw MQTT archival), `RAW_INCLUDE_TOPICS` (comma-separated allowlist of handler names for raw archival; supports `_unknown` for unrecognized topics; takes priority over `RAW_EXCLUDE_TOPICS`), `RAW_EXCLUDE_TOPICS` (comma-separated denylist of handler names to exclude from raw archival), `WATCH_INSTANCE_ID` (instance ID for file-watched calls, default `file-watch`), `WATCH_BACKFILL_DAYS` (days of existing files to backfill on startup, default `7`; `0` = all, `-1` = none), `CSV_WRITEBACK` (bool, default `false` — when enabled, PATCH edits to talkgroup/unit alpha_tags are written back to TR's CSV files on disk; requires `TR_DIR`).
+Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`, `CORS_ORIGINS` (comma-separated allowed origins; empty = allow all `*`), `RATE_LIMIT_RPS` (per-IP requests/second, default `20`), `RATE_LIMIT_BURST` (per-IP burst size, default `40`), `RAW_STORE` (bool, default `true` — master switch to disable all raw MQTT archival), `RAW_INCLUDE_TOPICS` (comma-separated allowlist of handler names for raw archival; supports `_unknown` for unrecognized topics; takes priority over `RAW_EXCLUDE_TOPICS`), `RAW_EXCLUDE_TOPICS` (comma-separated denylist of handler names to exclude from raw archival), `WATCH_INSTANCE_ID` (instance ID for file-watched calls, default `file-watch`), `WATCH_BACKFILL_DAYS` (days of existing files to backfill on startup, default `7`; `0` = all, `-1` = none), `CSV_WRITEBACK` (bool, default `false` — when enabled, PATCH edits to talkgroup/unit alpha_tags are written back to TR's CSV files on disk; requires `TR_DIR`).
 
 **Ingest modes:** At least one of `MQTT_BROKER_URL`, `WATCH_DIR`, or `TR_DIR` must be set. Both MQTT and watch mode can run simultaneously. Watch mode only produces `call_end` events (files appear after calls complete). MQTT is the upgrade path for `call_start`, unit events, recorder state, and decode rates.
 
@@ -224,9 +224,13 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 - SSE event bus — real-time pub/sub with ring buffer replay, `Last-Event-ID` support, and event publishing wired into all ingest handlers (call_start, call_end, unit_event, recorder_update, rate_update, trunking_message, console)
 - Health endpoint — shows database, MQTT, and trunk-recorder instance status (connected/disconnected with last_seen timestamps)
 - Dev tools — `cmd/mqtt-dump` (MQTT traffic inspector), `cmd/dbcheck` (DB analysis)
+- Security hardening — proxy-aware per-IP rate limiting, 10 MB request body limit, response timeout for non-streaming handlers, CORS origin restrictions, XSS prevention in web UI
+- Tag source tracking — `alpha_tag_source` on talkgroups and units (`manual`, `csv`, `mqtt`). Manual edits are preserved across MQTT and CSV re-imports.
+- Unit CSV import — loads unit tags from TR's `unitTagsFile` at startup; opt-in writeback on PATCH via `CSV_WRITEBACK`
+- Affiliation map eviction — stale entries (>24h) cleaned every 5 minutes
 
 **Not yet done:**
-- Test coverage for new unit-events and affiliations endpoints
+- Test coverage for unit-events and affiliations endpoints
 
 ## Real-Time Event Streaming (SSE)
 

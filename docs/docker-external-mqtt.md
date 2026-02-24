@@ -136,6 +136,7 @@ Add any variable from [sample.env](https://github.com/LumenPrima/tr-engine/blob/
 
 ```yaml
       AUTH_TOKEN: my-secret              # enable API authentication
+      # CORS_ORIGINS: https://example.com  # restrict CORS (empty = allow all)
       LOG_LEVEL: debug                   # more verbose logging
       RAW_STORE: "false"                 # disable raw MQTT archival (saves disk)
       RAW_EXCLUDE_TOPICS: trunking_message  # exclude high-volume raw archival
@@ -158,7 +159,7 @@ MQTT is optional — you can ingest calls by watching TR's audio directory inste
       - /path/to/trunk-recorder:/tr-config:ro
 ```
 
-`TR_DIR` reads TR's `config.json`, auto-sets `WATCH_DIR` and `TR_AUDIO_DIR`, and imports talkgroup CSVs. See [sample.env](https://github.com/LumenPrima/tr-engine/blob/master/sample.env) for all available options.
+`TR_DIR` reads TR's `config.json`, auto-sets `WATCH_DIR` and `TR_AUDIO_DIR`, and imports talkgroup and unit tag CSVs. See [sample.env](https://github.com/LumenPrima/tr-engine/blob/master/sample.env) for all available options.
 
 ### Filesystem audio (TR_AUDIO_DIR)
 
