@@ -1044,18 +1044,8 @@ function addMsg(channel, msg) {
   eventRate.push(Date.now());
 }
 
-function appendMsgDOM(m) {
-  // Date separator between days (local midnight boundaries)
-  const msgDate = m.date || new Date();
-  const dateStr = `${msgDate.getFullYear()}-${msgDate.getMonth()}-${msgDate.getDate()}`;
-  if (lastRenderedDateStr && dateStr !== lastRenderedDateStr) {
-    const sep = document.createElement('div');
-    sep.className = 'date-separator';
-    sep.textContent = formatDateSeparator(msgDate);
-    messagesEl.appendChild(sep);
-  }
-  lastRenderedDateStr = dateStr;
-
+/** Build a DOM element for a message (content only, no append or call-group context). */
+function buildMsgEl(m) {
   const div = document.createElement('div');
   let classes = 'msg';
   if (m.kind) classes += ` ${m.kind}`;
@@ -1141,9 +1131,26 @@ function appendMsgDOM(m) {
     }
   }
 
+  if (m.callId) div.dataset.callId = m.callId;
+  return div;
+}
+
+function appendMsgDOM(m) {
+  // Date separator between days (local midnight boundaries)
+  const msgDate = m.date || new Date();
+  const dateStr = `${msgDate.getFullYear()}-${msgDate.getMonth()}-${msgDate.getDate()}`;
+  if (lastRenderedDateStr && dateStr !== lastRenderedDateStr) {
+    const sep = document.createElement('div');
+    sep.className = 'date-separator';
+    sep.textContent = formatDateSeparator(msgDate);
+    messagesEl.appendChild(sep);
+  }
+  lastRenderedDateStr = dateStr;
+
+  const div = buildMsgEl(m);
+
   // Call grouping: if consecutive messages share the same callId, bracket them
   if (m.callId) {
-    div.dataset.callId = m.callId;
     const prev = messagesEl.lastElementChild;
     if (prev && prev.dataset.callId === String(m.callId)) {
       // Previous message is part of the same call
@@ -1156,7 +1163,24 @@ function appendMsgDOM(m) {
     }
   }
 
+  m._el = div;
   messagesEl.appendChild(div);
+}
+
+/** Re-render a single message's DOM element in place (preserves call-group classes and scroll). */
+function refreshMsgEl(m) {
+  const oldEl = m._el;
+  if (!oldEl || !oldEl.parentNode) return;
+
+  const div = buildMsgEl(m);
+
+  // Preserve call-group classes from the old element
+  for (const cls of ['call-group-first', 'call-group-mid', 'call-group-last']) {
+    if (oldEl.classList.contains(cls)) div.classList.add(cls);
+  }
+
+  oldEl.replaceWith(div);
+  m._el = div;
 }
 
 function esc(s) {
@@ -2003,8 +2027,9 @@ function applyTranscriptionToChannel(ch, chanName, callId, fullText, segments) {
     callMsgs[0].text = fmtTranscript(fullText);
   }
 
+  // Targeted DOM update — only refresh messages whose text changed (no full re-render)
   if (chanName === activeChannel) {
-    reRenderChannel(chanName);
+    for (const m of callMsgs) refreshMsgEl(m);
   }
 }
 
@@ -2012,15 +2037,16 @@ function applyTranscriptionToChannel(ch, chanName, callId, fullText, segments) {
 function reRenderChannel(chanName) {
   const ch = channels.get(chanName);
   if (!ch || chanName !== activeChannel) return;
+  const savedScroll = messagesEl.scrollTop;
   const wasAtBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
   messagesEl.innerHTML = '';
   lastRenderedDateStr = '';
   for (const m of ch.messages) appendMsgDOM(m);
   if (wasAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  else messagesEl.scrollTop = savedScroll;
 }
 
-/** Apply any pending transcriptions that arrived before messages were rendered, then
- *  fetch from DB as a safety net (covers source transcriptions already stored). */
+/** Apply any pending transcriptions that arrived before messages were rendered. */
 function drainPendingTranscriptions(callIds, chanName) {
   const ch = channels.get(chanName);
   if (!ch) return;
@@ -2041,12 +2067,10 @@ function drainPendingTranscriptions(callIds, chanName) {
     const keys = [...pendingTranscriptions.keys()];
     for (let i = 0; i < keys.length - 100; i++) pendingTranscriptions.delete(keys[i]);
   }
-
-  // Also fetch from DB — covers transcriptions already stored but not yet received via SSE
-  fetchTranscriptionsForCalls(callIds);
 }
 
-/** Batch-fetch transcriptions for a list of call IDs and apply to channel messages. */
+/** Batch-fetch transcriptions for a list of call IDs and apply to channel messages.
+ *  Used by bootstrap/history-load paths for calls loaded from the API. */
 async function fetchTranscriptionsForCalls(callIds) {
   if (callIds.length === 0) return;
 
@@ -2248,7 +2272,8 @@ function handleCallEnd(call) {
 
 /** Try to upgrade a fallback call message to per-transmission messages.
  *  If the audio handler has already populated src_list, replace the single
- *  placeholder with one message per key-up. Otherwise leave the placeholder. */
+ *  placeholder with one message per key-up. Then fetch and apply transcription
+ *  to prevent race condition with handleTranscription. */
 async function upgradeCallWithSrcList(callId, chanName, systemId, isEmergency) {
   try {
     const data = await fetchJSON(`/calls/${callId}`);
@@ -2268,6 +2293,18 @@ async function upgradeCallWithSrcList(callId, chanName, systemId, isEmergency) {
     // Re-render if active (renderCallTransmissions only appends DOM for active channel,
     // but we removed a message so a full re-render is cleaner)
     if (chanName === activeChannel) reRenderChannel(chanName);
+
+    // Always fetch and apply transcription after upgrade — this covers the race
+    // where handleTranscription applied text to the now-removed placeholder
+    try {
+      const tx = await fetchJSON(`/calls/${callId}/transcription`);
+      if (tx.text) {
+        const segments = (tx.words && tx.words.segments) || [];
+        applyTranscriptionToChannel(ch, chanName, callId, tx.text, segments);
+      }
+    } catch (_) {
+      // Transcription not available yet — handleTranscription SSE will apply it later
+    }
   } catch (err) {
     // Fetch failed — keep placeholder, transcription will still be applied via SSE/cache
   }
