@@ -415,6 +415,8 @@ body::after {
   transition: border-color 0.15s, color 0.15s;
 }
 .player-btn:hover { border-color: var(--cyan); color: var(--text); }
+.player-btn.player-skip { color: var(--text-mid); font-size: 12px; width: 22px; }
+.player-btn.player-skip:hover { border-color: var(--green); color: var(--green); }
 .player-btn.player-close { color: var(--text-mid); font-size: 13px; width: 22px; }
 .player-btn.player-close:hover { color: var(--danger); border-color: var(--danger); }
 .player-info {
@@ -678,6 +680,7 @@ html.nerd .statusbar .nerd-btn { font-size: 9px; }
         <div class="player-progress" id="player-progress">
           <div class="player-progress-fill" id="player-progress-fill"></div>
         </div>
+        <button class="player-btn player-skip" id="player-skip" title="Skip to next">⏭</button>
         <button class="player-btn player-close" id="player-close" title="Close">✕</button>
       </div>
     </div>
@@ -882,6 +885,71 @@ function toggleScan(chanName) {
   else scanChannels.add(key);
   saveScanChannels();
   renderTree();
+}
+
+// Scanner audio queue
+const scannerQueue = []; // Array of { callId, nick, chanName, emergency }
+const SCANNER_MAX_QUEUE = 10;
+let scannerPlaying = false;
+
+function scannerEnqueue(callId, nick, chanName, emergency) {
+  if (!scannerEnabled) return;
+  if (!isScanned(chanName)) return;
+
+  // Emergency calls go to front of queue (after currently playing)
+  if (emergency) {
+    scannerQueue.splice(0, 0, { callId, nick, chanName, emergency });
+  } else {
+    // Overflow protection
+    if (scannerQueue.length >= SCANNER_MAX_QUEUE) {
+      const dropped = scannerQueue.length - SCANNER_MAX_QUEUE + 1;
+      scannerQueue.splice(0, dropped);
+      addMsg(STATUS_CHANNEL, { ts: ts(), kind: 'notice',
+        text: `Scanner: skipped ${dropped} transmission(s) \u2014 queue overflow` });
+    }
+    scannerQueue.push({ callId, nick, chanName, emergency });
+  }
+  updateScannerQueueUI();
+
+  // If nothing is playing, start playback
+  if (!scannerPlaying) scannerPlayNext();
+}
+
+function scannerPlayNext() {
+  if (scannerQueue.length === 0) {
+    scannerPlaying = false;
+    updateScannerQueueUI();
+    return;
+  }
+
+  scannerPlaying = true;
+  const item = scannerQueue.shift();
+  updateScannerQueueUI();
+
+  // Auto-switch channel if enabled
+  if (scannerAutoSwitch && item.chanName !== activeChannel) {
+    switchChannel(item.chanName);
+  }
+
+  // Find the message element for this call in the active channel
+  let msgEl = null;
+  if (item.chanName === activeChannel) {
+    msgEl = messagesEl.querySelector(`[data-call-id="${item.callId}"]`);
+  }
+
+  // Play the call audio
+  playCall(item.callId, item.nick, item.chanName, msgEl);
+}
+
+function updateScannerQueueUI() {
+  const info = document.getElementById('scanner-queue-info');
+  if (!info) return;
+  if (!scannerEnabled || (scannerQueue.length === 0 && !scannerPlaying)) {
+    info.textContent = '';
+  } else {
+    const total = scannerQueue.length + (scannerPlaying ? 1 : 0);
+    info.textContent = total > 1 ? `(${total} queued)` : '';
+  }
 }
 
 
@@ -2515,6 +2583,14 @@ function handleCallEnd(call) {
     // Background fetch: if audio handler has already populated src_list, upgrade to per-unit messages
     upgradeCallWithSrcList(call.call_id, chanName, call.system_id, isEmergency);
   }
+
+  // Scanner: enqueue for auto-play if this channel is scanned
+  if (call.audio_file_path || (srcList && srcList.length > 0)) {
+    const nick = (srcList && srcList.length > 0)
+      ? resolveNick(call.system_id, srcList[0].src, srcList[0].tag)
+      : (call.tg_alpha_tag || `TG ${call.tgid}`);
+    scannerEnqueue(call.call_id, nick, chanName, isEmergency);
+  }
 }
 
 /** Try to upgrade a fallback call message to per-transmission messages.
@@ -3103,6 +3179,13 @@ playerCloseBtn.addEventListener('click', () => {
   if (playerRaf) cancelAnimationFrame(playerRaf);
 });
 
+// Skip button — advance to next scanner item
+document.getElementById('player-skip').addEventListener('click', () => {
+  audioEl.pause();
+  audioEl.currentTime = audioEl.duration || 0;
+  // The 'ended' event handler will call scannerPlayNext()
+});
+
 // Seek on progress bar click
 playerProgress.addEventListener('click', (e) => {
   if (!audioEl.duration) return;
@@ -3119,6 +3202,14 @@ audioEl.addEventListener('ended', () => {
   if (currentPlayingMsgEl) currentPlayingMsgEl.classList.remove('now-playing');
   currentPlayingMsgEl = null;
   currentCallId = null;
+
+  // Scanner: play next in queue
+  if (scannerEnabled && scannerQueue.length > 0) {
+    setTimeout(scannerPlayNext, 300); // small gap between transmissions
+  } else {
+    scannerPlaying = false;
+    updateScannerQueueUI();
+  }
 });
 
 // Duration loaded
