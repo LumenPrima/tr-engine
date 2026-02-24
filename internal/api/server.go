@@ -31,6 +31,8 @@ type ServerOptions struct {
 	StartTime     time.Time
 	Log           zerolog.Logger
 	OnSystemMerge func(sourceID, targetID int) // called after successful system merge to invalidate caches
+	TGCSVPaths    map[int]string               // system_id → CSV file path for talkgroup writeback
+	UnitCSVPaths  map[int]string               // system_id → CSV file path for unit tag writeback
 }
 
 func NewServer(opts ServerOptions) *Server {
@@ -64,8 +66,8 @@ func NewServer(opts ServerOptions) *Server {
 		// All API routes under /api/v1
 		r.Route("/api/v1", func(r chi.Router) {
 			NewSystemsHandler(opts.DB).Routes(r)
-			NewTalkgroupsHandler(opts.DB).Routes(r)
-			NewUnitsHandler(opts.DB).Routes(r)
+			NewTalkgroupsHandler(opts.DB, opts.TGCSVPaths).Routes(r)
+			NewUnitsHandler(opts.DB, opts.UnitCSVPaths).Routes(r)
 			NewCallsHandler(opts.DB, opts.Config.AudioDir, opts.Config.TRAudioDir, opts.Live).Routes(r)
 			NewCallGroupsHandler(opts.DB, opts.Config.TRAudioDir).Routes(r)
 			NewStatsHandler(opts.DB).Routes(r)

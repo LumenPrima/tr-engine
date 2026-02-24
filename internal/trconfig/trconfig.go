@@ -23,6 +23,7 @@ type TRSystem struct {
 	ShortName      string `json:"shortName"`
 	Type           string `json:"type"`
 	TalkgroupsFile string `json:"talkgroupsFile"`
+	UnitTagsFile   string `json:"unitTagsFile"`
 }
 
 // LoadConfig reads and parses a trunk-recorder config.json file.
@@ -132,6 +133,75 @@ func (vm *VolumeMap) Translate(containerPath string) string {
 	return containerPath
 }
 
+// UpdateTalkgroupCSV reads a trunk-recorder talkgroup CSV file, updates the Alpha Tag
+// for the row matching tgid in the Decimal column, and writes the file back.
+// Returns an error if the file doesn't exist or the tgid is not found.
+func UpdateTalkgroupCSV(path string, tgid int, alphaTag string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+
+	r := csv.NewReader(strings.NewReader(string(data)))
+	r.TrimLeadingSpace = true
+	r.LazyQuotes = true
+
+	records, err := r.ReadAll()
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("%s: empty CSV", path)
+	}
+
+	// Find column indexes from header
+	header := records[0]
+	decIdx := -1
+	tagIdx := -1
+	for i, h := range header {
+		switch strings.ToLower(strings.TrimSpace(h)) {
+		case "decimal":
+			decIdx = i
+		case "alpha tag":
+			tagIdx = i
+		}
+	}
+	if decIdx == -1 {
+		return fmt.Errorf("%s: missing 'Decimal' column", path)
+	}
+	if tagIdx == -1 {
+		return fmt.Errorf("%s: missing 'Alpha Tag' column", path)
+	}
+
+	// Find and update the matching row
+	found := false
+	tgidStr := strconv.Itoa(tgid)
+	for i := 1; i < len(records); i++ {
+		if decIdx < len(records[i]) && strings.TrimSpace(records[i][decIdx]) == tgidStr {
+			if tagIdx < len(records[i]) {
+				records[i][tagIdx] = alphaTag
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("%s: tgid %d not found", path, tgid)
+	}
+
+	// Write back
+	var buf strings.Builder
+	w := csv.NewWriter(&buf)
+	if err := w.WriteAll(records); err != nil {
+		return fmt.Errorf("encode CSV: %w", err)
+	}
+
+	if err := os.WriteFile(path, []byte(buf.String()), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
 // TalkgroupEntry is a parsed row from trunk-recorder's talkgroup CSV file.
 type TalkgroupEntry struct {
 	Tgid        int
@@ -152,6 +222,113 @@ func LoadTalkgroupCSV(path string) ([]TalkgroupEntry, error) {
 	}
 	defer f.Close()
 	return ParseTalkgroupCSV(f)
+}
+
+// UnitEntry is a parsed row from trunk-recorder's unit tags CSV file.
+type UnitEntry struct {
+	UnitID   int
+	AlphaTag string
+}
+
+// LoadUnitCSV reads a trunk-recorder unit tags CSV file (two-column, headerless: unit_id,alpha_tag).
+// Skips the first row if the first column is non-numeric (header row).
+func LoadUnitCSV(path string) ([]UnitEntry, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	r.TrimLeadingSpace = true
+	r.LazyQuotes = true
+	r.FieldsPerRecord = -1 // allow variable fields
+
+	var entries []UnitEntry
+	first := true
+	for {
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			continue // skip malformed rows
+		}
+		if len(record) < 2 {
+			continue
+		}
+
+		unitID, parseErr := strconv.Atoi(strings.TrimSpace(record[0]))
+		if parseErr != nil {
+			if first {
+				first = false
+				continue // skip header row
+			}
+			continue
+		}
+		first = false
+
+		entries = append(entries, UnitEntry{
+			UnitID:   unitID,
+			AlphaTag: strings.TrimSpace(record[1]),
+		})
+	}
+
+	return entries, nil
+}
+
+// UpdateUnitCSV updates or appends a unit's alpha_tag in a TR unit tags CSV file.
+// If the file doesn't exist, it creates it with a single row.
+func UpdateUnitCSV(path string, unitID int, alphaTag string) error {
+	unitIDStr := strconv.Itoa(unitID)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Create new file with single row
+			var buf strings.Builder
+			w := csv.NewWriter(&buf)
+			w.Write([]string{unitIDStr, alphaTag})
+			w.Flush()
+			return os.WriteFile(path, []byte(buf.String()), 0644)
+		}
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+
+	r := csv.NewReader(strings.NewReader(string(data)))
+	r.TrimLeadingSpace = true
+	r.LazyQuotes = true
+	r.FieldsPerRecord = -1
+
+	records, err := r.ReadAll()
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	// Find and update the matching row
+	found := false
+	for i, record := range records {
+		if len(record) >= 2 && strings.TrimSpace(record[0]) == unitIDStr {
+			records[i][1] = alphaTag
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		records = append(records, []string{unitIDStr, alphaTag})
+	}
+
+	var buf strings.Builder
+	w := csv.NewWriter(&buf)
+	if err := w.WriteAll(records); err != nil {
+		return fmt.Errorf("encode CSV: %w", err)
+	}
+
+	if err := os.WriteFile(path, []byte(buf.String()), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
 }
 
 // ParseTalkgroupCSV parses trunk-recorder talkgroup CSV data from a reader.

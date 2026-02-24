@@ -401,9 +401,11 @@ paths:
     patch:
       operationId: updateTalkgroup
       summary: Update talkgroup metadata
-      description: |
+      description: >-
         Updates mutable talkgroup fields (alpha_tag, description, group,
         tag, priority). Only provided fields are changed.
+        When CSV_WRITEBACK is enabled and TR_DIR is configured with a talkgroupsFile,
+        alpha_tag changes are also written back to trunk-recorder's talkgroup CSV file on disk.
       tags: [talkgroups]
       parameters:
         - $ref: "#/components/parameters/talkgroupId"
@@ -716,7 +718,10 @@ paths:
     patch:
       operationId: updateUnit
       summary: Update unit metadata
-      description: Updates mutable unit fields (alpha_tag, alpha_tag_source).
+      description: >-
+        Updates mutable unit fields (alpha_tag, alpha_tag_source).
+        When CSV_WRITEBACK is enabled and TR_DIR is configured with a unitTagsFile,
+        alpha_tag changes are also written back to trunk-recorder's unit CSV file on disk.
       tags: [units]
       parameters:
         - $ref: "#/components/parameters/unitId"
@@ -3333,6 +3338,9 @@ components:
       properties:
         alpha_tag:
           type: string
+        alpha_tag_source:
+          type: string
+          description: Source of the alpha_tag value (e.g. "manual"). When set to "manual", MQTT ingest will not overwrite the alpha_tag.
         description:
           type: string
         group:

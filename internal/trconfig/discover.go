@@ -18,6 +18,9 @@ type DiscoveredSystem struct {
 	ShortName  string
 	Type       string
 	Talkgroups []TalkgroupEntry
+	CSVPath    string // host path to the talkgroup CSV file (empty if none)
+	Units      []UnitEntry
+	UnitCSVPath string // host path to the unit tags CSV file (empty if none)
 }
 
 // Discover reads trunk-recorder's config.json and optionally docker-compose.yaml
@@ -82,11 +85,31 @@ func Discover(trDir string, log zerolog.Logger) (*DiscoveryResult, error) {
 					Msg("failed to load talkgroup CSV")
 			} else {
 				ds.Talkgroups = tgs
+				ds.CSVPath = tgPath
 				log.Info().
 					Str("system", sys.ShortName).
 					Int("talkgroups", len(tgs)).
 					Str("path", tgPath).
 					Msg("loaded talkgroup CSV")
+			}
+		}
+
+		if sys.UnitTagsFile != "" {
+			unitPath := vm.Translate(sys.UnitTagsFile)
+			units, unitErr := LoadUnitCSV(unitPath)
+			if unitErr != nil {
+				log.Warn().Err(unitErr).
+					Str("system", sys.ShortName).
+					Str("path", unitPath).
+					Msg("failed to load unit tags CSV")
+			} else {
+				ds.Units = units
+				ds.UnitCSVPath = unitPath
+				log.Info().
+					Str("system", sys.ShortName).
+					Int("units", len(units)).
+					Str("path", unitPath).
+					Msg("loaded unit tags CSV")
 			}
 		}
 

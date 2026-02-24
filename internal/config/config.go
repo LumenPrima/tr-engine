@@ -26,7 +26,8 @@ type Config struct {
 	WatchBackfillDays int    `env:"WATCH_BACKFILL_DAYS" envDefault:"7"`
 
 	// TR auto-discovery (reads trunk-recorder's config.json + docker-compose.yaml)
-	TRDir string `env:"TR_DIR"`
+	TRDir        string `env:"TR_DIR"`
+	CSVWriteback bool   `env:"CSV_WRITEBACK" envDefault:"false"` // write edits back to TR's CSV files on disk
 
 	HTTPAddr     string        `env:"HTTP_ADDR" envDefault:":8080"`
 	ReadTimeout  time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"5s"`

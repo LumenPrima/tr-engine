@@ -205,32 +205,73 @@ func main() {
 	}
 
 	// Import talkgroup directory from TR's CSV files (if TR_DIR discovery found any)
+	// Also build CSV path maps for talkgroup and unit writeback on edit
+	tgCSVPaths := make(map[int]string)
+	unitCSVPaths := make(map[int]string)
 	if discovered != nil {
 		for _, sys := range discovered.Systems {
-			if len(sys.Talkgroups) == 0 {
-				continue
-			}
-			identity, idErr := pipeline.ResolveIdentity(ctx, cfg.WatchInstanceID, sys.ShortName)
-			if idErr != nil {
-				log.Warn().Err(idErr).Str("system", sys.ShortName).Msg("failed to resolve system for talkgroup import")
-				continue
-			}
-			imported := 0
-			for _, tg := range sys.Talkgroups {
-				if uErr := db.UpsertTalkgroupDirectory(ctx, identity.SystemID, tg.Tgid,
-					tg.AlphaTag, tg.Mode, tg.Description, tg.Tag, tg.Category, tg.Priority,
-				); uErr != nil {
-					log.Warn().Err(uErr).Int("tgid", tg.Tgid).Msg("failed to import talkgroup")
+			// Resolve identity once per system (needed for both TG and unit imports)
+			var systemID int
+			var identityResolved bool
+			if len(sys.Talkgroups) > 0 || len(sys.Units) > 0 {
+				identity, idErr := pipeline.ResolveIdentity(ctx, cfg.WatchInstanceID, sys.ShortName)
+				if idErr != nil {
+					log.Warn().Err(idErr).Str("system", sys.ShortName).Msg("failed to resolve system for CSV import")
 					continue
 				}
-				imported++
+				systemID = identity.SystemID
+				identityResolved = true
 			}
-			log.Info().
-				Str("system", sys.ShortName).
-				Int("imported", imported).
-				Int("total", len(sys.Talkgroups)).
-				Msg("talkgroup directory imported")
+			if !identityResolved {
+				continue
+			}
+
+			// Import talkgroups
+			if len(sys.Talkgroups) > 0 {
+				if cfg.CSVWriteback && sys.CSVPath != "" {
+					tgCSVPaths[systemID] = sys.CSVPath
+				}
+				imported := 0
+				for _, tg := range sys.Talkgroups {
+					if uErr := db.UpsertTalkgroupDirectory(ctx, systemID, tg.Tgid,
+						tg.AlphaTag, tg.Mode, tg.Description, tg.Tag, tg.Category, tg.Priority,
+					); uErr != nil {
+						log.Warn().Err(uErr).Int("tgid", tg.Tgid).Msg("failed to import talkgroup")
+						continue
+					}
+					imported++
+				}
+				log.Info().
+					Str("system", sys.ShortName).
+					Int("imported", imported).
+					Int("total", len(sys.Talkgroups)).
+					Msg("talkgroup directory imported")
+			}
+
+			// Import unit tags
+			if len(sys.Units) > 0 {
+				if cfg.CSVWriteback && sys.UnitCSVPath != "" {
+					unitCSVPaths[systemID] = sys.UnitCSVPath
+				}
+				imported := 0
+				for _, u := range sys.Units {
+					if uErr := db.ImportUnitTag(ctx, systemID, u.UnitID, u.AlphaTag); uErr != nil {
+						log.Warn().Err(uErr).Int("unit_id", u.UnitID).Msg("failed to import unit tag")
+						continue
+					}
+					imported++
+				}
+				log.Info().
+					Str("system", sys.ShortName).
+					Int("imported", imported).
+					Int("total", len(sys.Units)).
+					Msg("unit tags imported")
+			}
 		}
+	}
+	if cfg.CSVWriteback && (len(tgCSVPaths) > 0 || len(unitCSVPaths) > 0) {
+		log.Info().Int("talkgroup_csvs", len(tgCSVPaths)).Int("unit_csvs", len(unitCSVPaths)).
+			Msg("CSV writeback enabled — edits will be written back to TR's CSV files")
 	}
 
 	// File watcher (optional — alternative to MQTT ingest)
@@ -259,6 +300,8 @@ func main() {
 		StartTime:     startTime,
 		Log:           httpLog,
 		OnSystemMerge: pipeline.RewriteSystemID,
+		TGCSVPaths:    tgCSVPaths,
+		UnitCSVPaths:  unitCSVPaths,
 	})
 
 	// Start HTTP server in background

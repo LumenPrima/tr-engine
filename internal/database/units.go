@@ -189,6 +189,21 @@ func (db *DB) UpdateUnitFields(ctx context.Context, systemID, unitID int, alphaT
 	})
 }
 
+// ImportUnitTag imports a unit alpha_tag from a CSV file. Preserves manual tags (user edits)
+// and existing CSV tags (idempotent re-import). Overwrites auto-discovered tags from MQTT.
+func (db *DB) ImportUnitTag(ctx context.Context, systemID, unitID int, alphaTag string) error {
+	_, err := db.Pool.Exec(ctx, `
+		INSERT INTO units (system_id, unit_id, alpha_tag, alpha_tag_source)
+		VALUES ($1, $2, $3, 'csv')
+		ON CONFLICT (system_id, unit_id) DO UPDATE SET
+			alpha_tag = CASE WHEN COALESCE(units.alpha_tag_source, '') IN ('manual', 'csv') THEN units.alpha_tag
+			                 ELSE $3 END,
+			alpha_tag_source = CASE WHEN COALESCE(units.alpha_tag_source, '') = 'manual' THEN units.alpha_tag_source
+			                        ELSE 'csv' END
+	`, systemID, unitID, alphaTag)
+	return err
+}
+
 // UpsertUnit inserts or updates a unit, never overwriting good data with empty strings.
 func (db *DB) UpsertUnit(ctx context.Context, systemID, unitID int, alphaTag, eventType string, eventTime time.Time, tgid int) error {
 	tgid32 := int32(tgid)

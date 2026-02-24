@@ -4,15 +4,18 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog/hlog"
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/trconfig"
 )
 
 type UnitsHandler struct {
-	db *database.DB
+	db       *database.DB
+	csvPaths map[int]string // system_id → unit CSV file path for writeback
 }
 
-func NewUnitsHandler(db *database.DB) *UnitsHandler {
-	return &UnitsHandler{db: db}
+func NewUnitsHandler(db *database.DB, csvPaths map[int]string) *UnitsHandler {
+	return &UnitsHandler{db: db, csvPaths: csvPaths}
 }
 
 var unitSortFields = map[string]string{
@@ -131,6 +134,18 @@ func (h *UnitsHandler) UpdateUnit(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusNotFound, "unit not found")
 		return
 	}
+
+	// Best-effort writeback to TR's unit tags CSV
+	if patch.AlphaTag != nil {
+		if csvPath, ok := h.csvPaths[cid.SystemID]; ok {
+			if csvErr := trconfig.UpdateUnitCSV(csvPath, cid.EntityID, *patch.AlphaTag); csvErr != nil {
+				log := hlog.FromRequest(r)
+				log.Warn().Err(csvErr).Str("csv_path", csvPath).Int("unit_id", cid.EntityID).
+					Msg("failed to write back unit CSV")
+			}
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, unit)
 }
 
