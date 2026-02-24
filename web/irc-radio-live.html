@@ -699,6 +699,7 @@ const channelHasActivity = new Set();   // channels with real messages
 const groupCollapsed = new Map();       // group collapse state (true = show all, false = collapsed)
 const channelLoading = new Set();       // prevent duplicate lazy-loads
 const channelLoadedCallIds = new Map(); // chanName -> Set<callId> — deduplicate across bootstrap and lazy load
+const channelLoadedEventIds = new Map(); // chanName -> Set<eventId> — deduplicate unit events across bootstrap and lazy load
 
 // ── DOM refs ──
 const messagesEl = document.getElementById('messages');
@@ -981,7 +982,6 @@ function ensureChannel(tg) {
       mode: '+nt',
       users: new Map(),
       messages: [],
-      historyOffset: 0,
       historyExhausted: false,
     });
     channelUnread.set(finalName, 0);
@@ -1539,6 +1539,44 @@ function callsToMessages(calls, chanName, systemId) {
   return msgs;
 }
 
+/** Convert API unit events into IRC-style message objects. Returns messages oldest-first. Deduplicates by event id. */
+function unitEventsToMessages(events, chanName) {
+  const msgs = [];
+  const ch = channels.get(chanName);
+  if (!channelLoadedEventIds.has(chanName)) channelLoadedEventIds.set(chanName, new Set());
+  const loadedIds = channelLoadedEventIds.get(chanName);
+
+  const sorted = [...events].reverse(); // API returns newest-first; flip to oldest-first
+  for (const evt of sorted) {
+    if (loadedIds.has(evt.id)) continue;
+    loadedIds.add(evt.id);
+
+    const nick = resolveNick(evt.system_id, evt.unit_rid, evt.unit_alpha_tag);
+    const evtTime = new Date(evt.time);
+
+    if (evt.event_type === 'join') {
+      if (ch) ensureUserInChannel(ch, chanName, evt.system_id, evt.unit_rid, evt.unit_alpha_tag);
+      msgs.push({
+        ts: ts(evtTime), date: evtTime,
+        kind: 'join', text: `${nick} has joined ${chanName}`,
+      });
+    } else if (evt.event_type === 'off') {
+      msgs.push({
+        ts: ts(evtTime), date: evtTime,
+        kind: 'quit', text: `${nick} has quit (Quit)`,
+      });
+    }
+  }
+  return msgs;
+}
+
+/** Merge two message arrays by date (oldest-first). */
+function mergeByTime(a, b) {
+  const merged = [...a, ...b];
+  merged.sort((x, y) => (x.date || 0) - (y.date || 0));
+  return merged;
+}
+
 const HISTORY_PAGE_SIZE = 50;
 
 async function lazyLoadChannel(chanName, systemId, tgid) {
@@ -1547,18 +1585,27 @@ async function lazyLoadChannel(chanName, systemId, tgid) {
   if (!ch) { channelLoading.delete(chanName); return; }
 
   try {
-    const data = await fetchJSON(`/calls?tgid=${tgid}&system_id=${systemId}&sort=-stop_time&deduplicate=true&limit=${HISTORY_PAGE_SIZE}&offset=${ch.historyOffset}`);
-    const calls = data.calls || [];
+    // Time-cursor pagination: use oldest message's date as the upper bound
+    const oldest = ch.messages.length > 0 ? ch.messages[0].date : null;
+    const endParam = oldest ? `&end_time=${oldest.toISOString()}` : '';
 
-    if (calls.length < HISTORY_PAGE_SIZE) ch.historyExhausted = true;
-    ch.historyOffset += calls.length;
+    const [callData, eventData] = await Promise.all([
+      fetchJSON(`/calls?tgid=${tgid}&system_id=${systemId}&sort=-stop_time&deduplicate=true&limit=${HISTORY_PAGE_SIZE}${endParam}`),
+      fetchJSON(`/unit-events?tgid=${tgid}&system_id=${systemId}&type=join,off&sort=-time&limit=${HISTORY_PAGE_SIZE}${endParam}`),
+    ]);
+    const calls = callData.calls || [];
+    const events = eventData.events || [];
 
-    if (calls.length === 0) {
+    if (calls.length < HISTORY_PAGE_SIZE && events.length < HISTORY_PAGE_SIZE) ch.historyExhausted = true;
+
+    if (calls.length === 0 && events.length === 0) {
       channelLoading.delete(chanName);
       return;
     }
 
-    const newMsgs = callsToMessages(calls, chanName, systemId);
+    const callMsgs = callsToMessages(calls, chanName, systemId);
+    const eventMsgs = unitEventsToMessages(events, chanName);
+    const newMsgs = mergeByTime(callMsgs, eventMsgs);
 
     // Prepend older messages to the beginning of the channel's messages array
     ch.messages.unshift(...newMsgs);
@@ -1714,89 +1761,51 @@ async function bootstrapRecentCalls() {
   serverMsg('Fetching recent activity (30 min)...');
   try {
     const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    const data = await fetchJSON(`/calls?sort=-stop_time&deduplicate=true&limit=500&start_time=${since}`);
-    const calls = data.calls || [];
+    const [callData, eventData] = await Promise.all([
+      fetchJSON(`/calls?sort=-stop_time&deduplicate=true&limit=500&start_time=${since}`),
+      fetchJSON(`/unit-events?type=join,off&sort=-time&limit=500&start_time=${since}`),
+    ]);
+    const calls = callData.calls || [];
+    const events = eventData.events || [];
+
+    // Group calls by channel
+    const callsByChannel = new Map();
+    for (const call of calls) {
+      const chanName = resolveChannel(call.system_id, call.tgid);
+      if (!chanName || !channels.has(chanName)) continue;
+      if (!callsByChannel.has(chanName)) callsByChannel.set(chanName, []);
+      callsByChannel.get(chanName).push(call);
+    }
+
+    // Group unit events by channel
+    const eventsByChannel = new Map();
+    for (const evt of events) {
+      const chanName = evt.tgid ? resolveChannel(evt.system_id, evt.tgid) : null;
+      if (!chanName || !channels.has(chanName)) continue;
+      if (!eventsByChannel.has(chanName)) eventsByChannel.set(chanName, []);
+      eventsByChannel.get(chanName).push(evt);
+    }
+
+    // All channels that got either calls or events
+    const allChannels = new Set([...callsByChannel.keys(), ...eventsByChannel.keys()]);
 
     // Track which channels got backfill messages (for unread counts)
     const backfillCounts = new Map();
 
-    // Replay recent calls as message history (oldest first)
-    const sorted = [...calls].reverse();
-    for (const call of sorted) {
-      const chanName = resolveChannel(call.system_id, call.tgid);
-      if (!chanName) continue;
+    for (const chanName of allChannels) {
       const ch = channels.get(chanName);
       if (!ch) continue;
 
-      // Track call ID for dedup with lazy load
-      if (!channelLoadedCallIds.has(chanName)) channelLoadedCallIds.set(chanName, new Set());
-      channelLoadedCallIds.get(chanName).add(call.call_id);
-      ch.historyOffset++;
+      const chanCalls = callsByChannel.get(chanName) || [];
+      const chanEvents = eventsByChannel.get(chanName) || [];
 
-      const systemId = call.system_id;
-      const srcList = call.src_list || [];
-      const isEmergency = call.emergency || false;
-      let msgCount = 0;
+      const callMsgs = callsToMessages(chanCalls, chanName, ch.system_id);
+      const eventMsgs = unitEventsToMessages(chanEvents, chanName);
+      const merged = mergeByTime(callMsgs, eventMsgs);
 
-      if (call.encrypted) {
-        // Encrypted: show single line
-        const units = call.units || [];
-        const srcNick = units.length > 0
-          ? resolveNick(systemId, units[0].unit_id, units[0].alpha_tag)
-          : (call.tg_alpha_tag || `TG ${call.tgid}`);
-        const callTime = call.start_time ? new Date(call.start_time) : new Date();
-        const dur = call.duration ? fmtDuration(call.duration) : '';
-
-        ch.messages.push({
-          ts: ts(callTime), date: callTime, nick: srcNick, encrypted: true,
-          text: `[encrypted${dur ? ', ' + dur : ''}]`,
-        });
-        msgCount = 1;
-      } else if (srcList.length > 0) {
-        // Per-transmission messages sorted by position
-        const txSorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
-
-        for (const tx of txSorted) {
-          const nick = resolveNick(systemId, tx.src, tx.tag);
-          const txTime = tx.time ? new Date(tx.time * 1000) : (call.start_time ? new Date(call.start_time) : new Date());
-          const dur = tx.duration ? fmtDuration(tx.duration) : '';
-          const txEmergency = tx.emergency === 1;
-
-          // Ensure unit in nicklist
-          ensureUserInChannel(ch, chanName, systemId, tx.src, tx.tag);
-
-          ch.messages.push({
-            ts: ts(txTime), date: txTime,
-            nick, src: tx.src,
-            pos: tx.pos || 0, txDuration: tx.duration || 0,
-            callId: call.call_id,
-            duration: dur,
-            channel: chanName,
-            emergency: isEmergency || txEmergency,
-          });
-          msgCount++;
-        }
-      } else {
-        // Fallback: no src_list
-        const units = call.units || [];
-        const srcNick = units.length > 0
-          ? resolveNick(systemId, units[0].unit_id, units[0].alpha_tag)
-          : (call.tg_alpha_tag || `TG ${call.tgid}`);
-        const callTime = call.start_time ? new Date(call.start_time) : new Date();
-        const dur = call.duration ? fmtDuration(call.duration) : '';
-
-        ch.messages.push({
-          ts: ts(callTime), date: callTime, nick: srcNick,
-          callId: call.call_id,
-          duration: dur,
-          channel: chanName,
-          emergency: isEmergency,
-        });
-        msgCount = 1;
-      }
-
-      if (msgCount > 0) {
-        backfillCounts.set(chanName, (backfillCounts.get(chanName) || 0) + msgCount);
+      ch.messages.push(...merged);
+      if (merged.length > 0) {
+        backfillCounts.set(chanName, merged.length);
       }
     }
 
@@ -1809,7 +1818,7 @@ async function bootstrapRecentCalls() {
       }
     }
 
-    serverMsg(`Loaded ${calls.length} recent calls across ${backfillCounts.size} channels`);
+    serverMsg(`Loaded ${calls.length} recent calls and ${events.length} unit events across ${backfillCounts.size} channels`);
 
     // Re-render if we're on a channel that got backfill
     if (activeChannel !== STATUS_CHANNEL) {
@@ -1828,7 +1837,7 @@ async function bootstrapRecentCalls() {
     const callIds = calls.map(c => c.call_id).filter(Boolean);
     fetchTranscriptionsForCalls(callIds);
   } catch (err) {
-    serverMsg(`ERROR fetching recent calls: ${err.message}`);
+    serverMsg(`ERROR fetching recent activity: ${err.message}`);
   }
 }
 
