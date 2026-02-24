@@ -204,8 +204,6 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 		FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		WHERE c.call_id = $1
-		ORDER BY c.start_time DESC
-		LIMIT 1
 	`, callID).Scan(
 		&c.CallID, &c.CallGroupID, &c.SystemID, &c.SystemName, &c.Sysid,
 		&c.SiteID, &c.SiteShortName,

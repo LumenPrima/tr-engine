@@ -81,6 +81,7 @@ type WorkerPool struct {
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 
+	stopped   atomic.Bool
 	completed atomic.Int64
 	failed    atomic.Int64
 }
@@ -119,6 +120,7 @@ func (wp *WorkerPool) Start() {
 
 // Stop signals workers to drain and waits for completion.
 func (wp *WorkerPool) Stop() {
+	wp.stopped.Store(true)
 	close(wp.jobs)
 	wp.wg.Wait()
 	wp.cancel()
@@ -128,8 +130,12 @@ func (wp *WorkerPool) Stop() {
 		Msg("transcription worker pool stopped")
 }
 
-// Enqueue adds a job to the transcription queue. Returns false if the queue is full.
+// Enqueue adds a job to the transcription queue. Returns false if the queue is full
+// or the pool has been stopped.
 func (wp *WorkerPool) Enqueue(j Job) bool {
+	if wp.stopped.Load() {
+		return false
+	}
 	select {
 	case wp.jobs <- j:
 		return true

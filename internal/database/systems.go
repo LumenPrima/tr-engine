@@ -62,6 +62,11 @@ func (db *DB) FindSystemBySysidWacn(ctx context.Context, sysid, wacn string, exc
 
 // MergeSystems moves all child records from sourceID to targetID and soft-deletes the source.
 // Returns counts of moved records for the merge log.
+//
+// NOTE: UPDATE statements on partitioned tables (calls, unit_events, trunking_messages)
+// cannot be pruned by start_time since there is no time constraint — Postgres scans all
+// partitions. This is acceptable for rare admin operations but will be slow for systems
+// with years of data. Consider chunking by partition if this becomes a problem.
 func (db *DB) MergeSystems(ctx context.Context, sourceID, targetID int, performedBy string) (callsMoved, tgMoved, tgMerged, unitsMoved, unitsMerged, eventsMoved int, err error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {

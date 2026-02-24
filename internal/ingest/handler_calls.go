@@ -211,7 +211,9 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 	call := &msg.Call
 	startTime := time.Unix(call.StartTime, 0)
 
-	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+	// 10s budget: slow path may do FindCallByTrCallID + Resolve + FindCallForAudio
+	// before the actual UpdateCallEnd, which needs reliable time remaining.
+	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Second)
 	defer cancel()
 
 	// Find active call

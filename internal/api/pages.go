@@ -72,6 +72,10 @@ func PagesHandler(webFS fs.FS) http.HandlerFunc {
 			pages = append(pages, p)
 		}
 
+		if pages == nil {
+			pages = []pageInfo{}
+		}
+
 		sort.Slice(pages, func(i, j int) bool {
 			return pages[i].Order < pages[j].Order
 		})
