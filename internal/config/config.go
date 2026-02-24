@@ -34,7 +34,9 @@ type Config struct {
 	WriteTimeout time.Duration `env:"HTTP_WRITE_TIMEOUT" envDefault:"30s"`
 	IdleTimeout  time.Duration `env:"HTTP_IDLE_TIMEOUT" envDefault:"120s"`
 
-	AuthToken   string `env:"AUTH_TOKEN"`
+	AuthToken      string  `env:"AUTH_TOKEN"`
+	RateLimitRPS   float64 `env:"RATE_LIMIT_RPS" envDefault:"20"`
+	RateLimitBurst int     `env:"RATE_LIMIT_BURST" envDefault:"40"`
 	CORSOrigins string `env:"CORS_ORIGINS"` // comma-separated allowed origins; empty = allow all (*)
 	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
 

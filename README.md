@@ -7,8 +7,8 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 > **Note:** This is a ground-up rewrite of the original tr-engine, now archived at [LumenPrima/tr-engine-v0](https://github.com/LumenPrima/tr-engine-v0). The database schema is not compatible — there is no migration path from v0. If you're coming from v0, see the **[migration guide](docs/migrating-from-v0.md)**. If you're starting fresh, you're in the right place.
 
 > **Warning:** This project is almost entirely AI-written (Claude Code pair programming). It works, but it may also eat your computer or your pets. Specifically:
-> - **Do not expose directly to the internet.** There is no meaningful authentication and the security posture has not been audited. If you need external access, put it behind a reverse proxy (Caddy, nginx, etc.) with its own auth layer.
-> - **Denial-of-service vectors exist.** The ad-hoc SQL query endpoint, SSE streaming, and unbounded list endpoints could all be abused. This is a monitoring tool for your LAN, not a public service.
+> - **Set `AUTH_TOKEN` before exposing to the internet.** tr-engine includes bearer token auth, per-IP rate limiting, CORS origin restrictions, and request body size limits — but all are opt-in or have permissive defaults. For production use, set `AUTH_TOKEN`, configure `CORS_ORIGINS`, and put it behind a reverse proxy (Caddy, nginx, etc.) with TLS.
+> - **The ad-hoc SQL query endpoint (`/query`)** is disabled unless `AUTH_TOKEN` is set, and runs in a read-only transaction with a 30-second timeout.
 > - **Installation instructions have not been thoroughly vetted** and may cause random fires. Test in a disposable environment first.
 
 ## Tech Stack

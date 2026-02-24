@@ -147,6 +147,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	go p.statsLoop()
 	go p.maintenanceLoop()
 	go p.dedupCleanupLoop()
+	go p.affiliationEvictionLoop()
 	if p.transcriber != nil {
 		p.transcriber.Start()
 	}
@@ -516,6 +517,22 @@ func (p *Pipeline) dedupCleanupLoop() {
 				}
 				return true
 			})
+		}
+	}
+}
+
+func (p *Pipeline) affiliationEvictionLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			if n := p.affiliations.EvictStale(24 * time.Hour); n > 0 {
+				p.log.Debug().Int("evicted", n).Msg("affiliation map eviction")
+			}
 		}
 	}
 }
@@ -930,6 +947,22 @@ func (m *affiliationMap) All() []affiliationEntry {
 	}
 	m.mu.Unlock()
 	return result
+}
+
+// EvictStale removes entries whose LastEventTime is older than maxAge.
+// Returns the number of entries evicted.
+func (m *affiliationMap) EvictStale(maxAge time.Duration) int {
+	cutoff := time.Now().Add(-maxAge)
+	m.mu.Lock()
+	evicted := 0
+	for k, e := range m.items {
+		if e.LastEventTime.Before(cutoff) {
+			delete(m.items, k)
+			evicted++
+		}
+	}
+	m.mu.Unlock()
+	return evicted
 }
 
 // ----- LiveDataSource interface implementation -----

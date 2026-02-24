@@ -51,7 +51,8 @@ func NewServer(opts ServerOptions) *Server {
 	// Global middleware
 	r.Use(RequestID)
 	r.Use(CORSWithOrigins(corsOrigins))
-	r.Use(RateLimiter(20, 40)) // 20 req/s sustained, 40 burst per IP
+	r.Use(RateLimiter(opts.Config.RateLimitRPS, opts.Config.RateLimitBurst))
+	r.Use(MaxBodySize(10 << 20)) // 10 MB max request body
 	r.Use(Recoverer)
 	r.Use(Logger(opts.Log))
 
@@ -62,6 +63,7 @@ func NewServer(opts ServerOptions) *Server {
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(BearerAuth(opts.Config.AuthToken))
+		r.Use(ResponseTimeout(opts.Config.WriteTimeout))
 
 		// All API routes under /api/v1
 		r.Route("/api/v1", func(r chi.Router) {

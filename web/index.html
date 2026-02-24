@@ -438,6 +438,7 @@ const API = '/api/v1';
 const $ = id => document.getElementById(id);
 const tip = $('tip');
 
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function fmt(n) { if (n == null) return '—'; if (n >= 1e6) return (n/1e6).toFixed(1)+'M'; if (n >= 1e3) return (n/1e3).toFixed(1)+'K'; return n.toLocaleString(); }
 function fmtH(h) { return h == null ? '—' : h >= 1000 ? (h/1000).toFixed(1)+'K' : h.toFixed(0); }
 function fmtUp(s) { const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60); return d>0?`${d}d ${h}h ${m}m`:h>0?`${h}h ${m}m`:`${m}m`; }
@@ -455,12 +456,12 @@ async function loadHealth() {
     if (d.uptime_seconds) $('uptime-text').textContent = 'uptime ' + fmtUp(d.uptime_seconds);
     let h = '';
     if (d.checks) for (const [k,v] of Object.entries(d.checks))
-      h += `<div class="subsys-row"><span class="subsys-name">${k}</span><span class="subsys-status ${v}">${v}</span></div>`;
+      h += `<div class="subsys-row"><span class="subsys-name">${esc(k)}</span><span class="subsys-status ${esc(v)}">${esc(v)}</span></div>`;
     h += `<div class="subsys-row"><span class="subsys-name">sse stream</span><span class="subsys-status loading" id="sse-status">connecting</span></div>`;
     $('subsys-list').innerHTML = h;
     const el = $('instances-list');
     if (d.trunk_recorders?.length)
-      el.innerHTML = d.trunk_recorders.map(t => `<div class="instance-row"><div class="instance-dot ${t.status==='connected'?'ok':'err'}"></div><span class="instance-name">${t.instance_id}</span><span class="instance-time">${t.last_seen?ago(t.last_seen):''}</span></div>`).join('');
+      el.innerHTML = d.trunk_recorders.map(t => `<div class="instance-row"><div class="instance-dot ${t.status==='connected'?'ok':'err'}"></div><span class="instance-name">${esc(t.instance_id)}</span><span class="instance-time">${t.last_seen?ago(t.last_seen):''}</span></div>`).join('');
     else el.innerHTML = '<div class="placeholder">no instances</div>';
     const footerParts = ['Event Horizon · built on <a href="https://github.com/LumenPrima/tr-engine" style="color:inherit;text-decoration:none;border-bottom:1px solid currentColor">tr-engine</a>'];
     if (d.version) { const m = d.version.match(/v?\d+\.\d+\.\d+/); if (m) footerParts.push(m[0]); }
@@ -502,9 +503,9 @@ async function loadTalkgroups() {
     if (tgs.length) {
       const mx = Math.max(...tgs.map(t => t.calls_1h || 0), 1);
       tb.innerHTML = tgs.map(t => {
-        const p = Math.round(((t.calls_1h||0)/mx)*100), name = t.alpha_tag || ('TG '+t.tgid);
+        const p = Math.round(((t.calls_1h||0)/mx)*100), name = esc(t.alpha_tag) || ('TG '+t.tgid);
         const grp = t.group || t.tag || '', cls = grpClass(grp);
-        return `<tr><td class="sys-name-cell">${name}</td><td>${grp?`<span class="tg-group ${cls}">${grp}</span>`:''}</td><td><span class="num-accent">${fmt(t.calls_1h)}</span><div class="activity-bar-wrap"><div class="activity-bar-fill" style="width:${p}%"></div></div></td><td class="num-dim">${fmt(t.calls_24h)}</td><td class="num-dim">${t.unit_count??'—'}</td></tr>`;
+        return `<tr><td class="sys-name-cell">${name}</td><td>${grp?`<span class="tg-group ${cls}">${esc(grp)}</span>`:''}</td><td><span class="num-accent">${fmt(t.calls_1h)}</span><div class="activity-bar-wrap"><div class="activity-bar-fill" style="width:${p}%"></div></div></td><td class="num-dim">${fmt(t.calls_24h)}</td><td class="num-dim">${t.unit_count??'—'}</td></tr>`;
       }).join('');
     } else tb.innerHTML = '<tr><td colspan="5" class="placeholder">no talkgroup data</td></tr>';
   } catch {}
@@ -522,9 +523,9 @@ async function loadRecorders() {
     el.innerHTML = recs.map(r => {
       const on = r.rec_state === 1 || r.rec_state === 'RECORDING';
       const cls = on ? 'recording' : (r.rec_state === 0 || r.rec_state === 'AVAILABLE' ? 'available' : 'idle');
-      const id = r.id || `${r.src_num}_${r.rec_num}`;
-      const t = on ? `${id} ▸ ${r.tg_alpha_tag||'TG '+(r.tgid||'?')}` : `${id} · ${cls}`;
-      return `<div class="rec-dot ${cls}" data-tip="${t}"></div>`;
+      const id = esc(r.id || `${r.src_num}_${r.rec_num}`);
+      const t = on ? `${id} ▸ ${esc(r.tg_alpha_tag)||'TG '+(r.tgid||'?')}` : `${id} · ${cls}`;
+      return `<div class="rec-dot ${cls}" data-tip="${esc(t)}"></div>`;
     }).join('');
     el.querySelectorAll('.rec-dot').forEach(dot => {
       dot.addEventListener('mouseenter', () => showTip(dot, dot.dataset.tip));

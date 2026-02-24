@@ -146,10 +146,7 @@ func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				ip = r.RemoteAddr
-			}
+			ip := clientIP(r)
 			if !getLimiter(ip).Allow() {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "1")
@@ -160,6 +157,55 @@ func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// ResponseTimeout wraps non-streaming handlers with a write deadline.
+// SSE and audio endpoints are excluded since they stream indefinitely.
+func ResponseTimeout(timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip streaming endpoints
+			if strings.HasSuffix(r.URL.Path, "/events/stream") ||
+				strings.HasSuffix(r.URL.Path, "/audio") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			h := http.TimeoutHandler(next, timeout, `{"error":"request timeout"}`)
+			h.ServeHTTP(w, r)
+		})
+	}
+}
+
+// MaxBodySize limits request body size. Returns 413 if exceeded.
+func MaxBodySize(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// clientIP extracts the client IP, checking X-Forwarded-For and X-Real-IP
+// headers first (for reverse proxy setups), then falling back to RemoteAddr.
+func clientIP(r *http.Request) string {
+	// X-Forwarded-For: client, proxy1, proxy2 — take the first (leftmost)
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if ip, _, ok := strings.Cut(xff, ","); ok {
+			return strings.TrimSpace(ip)
+		}
+		return strings.TrimSpace(xff)
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
 }
 
 func BearerAuth(token string) func(http.Handler) http.Handler {
