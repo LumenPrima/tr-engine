@@ -56,11 +56,26 @@ type Pipeline struct {
 	// Unit event dedup buffer: unitDedupKey → time.Time (first seen)
 	unitEventDedup sync.Map
 
+	// Warmup gate: buffer non-identity messages until system registration
+	// establishes real sysid/wacn, preventing duplicate system creation
+	// when calls arrive before system info on fresh start.
+	warmupDone  atomic.Bool
+	warmupMu    sync.Mutex
+	warmupBuf   []bufferedMsg
+	warmupTimer *time.Timer
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
 	msgCount     atomic.Int64
 	handlerCount sync.Map // handler name → *atomic.Int64
+}
+
+// bufferedMsg holds a message deferred during warmup.
+type bufferedMsg struct {
+	route   *Route
+	topic   string
+	payload []byte
 }
 
 type PipelineOptions struct {
@@ -141,6 +156,19 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	if err := p.identity.LoadCache(ctx); err != nil {
 		return err
 	}
+
+	// Skip warmup if identity cache already has entries (not a fresh DB).
+	if p.identity.CacheLen() > 0 {
+		p.warmupDone.Store(true)
+		p.log.Info().Msg("identity cache populated, skipping warmup gate")
+	} else {
+		p.warmupTimer = time.AfterFunc(5*time.Second, func() {
+			p.log.Warn().Msg("warmup timeout — processing buffered messages without full system identity")
+			p.completeWarmup()
+		})
+		p.log.Info().Msg("warmup gate active — buffering calls until system registration arrives")
+	}
+
 	if err := p.backfillAffiliations(ctx); err != nil {
 		p.log.Warn().Err(err).Msg("affiliation backfill failed, continuing with empty map")
 	}
@@ -324,6 +352,9 @@ func derefFloat32(p *float32) float32 {
 // Stop flushes batchers and cancels the context.
 func (p *Pipeline) Stop() {
 	p.log.Info().Int64("total_messages", p.msgCount.Load()).Msg("ingest pipeline stopping")
+	if p.warmupTimer != nil {
+		p.warmupTimer.Stop()
+	}
 	if p.watcher != nil {
 		p.watcher.Stop()
 	}
@@ -590,6 +621,26 @@ func (p *Pipeline) incHandler(name string) {
 }
 
 func (p *Pipeline) dispatch(route *Route, topic string, payload []byte, env *Envelope) {
+	// Warmup gate: buffer non-identity messages until system registration arrives
+	if !p.warmupDone.Load() {
+		switch route.Handler {
+		case "systems", "system", "config", "status":
+			// Identity-establishing handlers pass through during warmup
+		default:
+			p.warmupMu.Lock()
+			if !p.warmupDone.Load() {
+				p.warmupBuf = append(p.warmupBuf, bufferedMsg{
+					route:   route,
+					topic:   topic,
+					payload: append([]byte(nil), payload...), // copy — may be reused
+				})
+				p.warmupMu.Unlock()
+				return
+			}
+			p.warmupMu.Unlock()
+		}
+	}
+
 	p.incHandler(route.Handler)
 	var err error
 
@@ -632,6 +683,30 @@ func (p *Pipeline) dispatch(route *Route, topic string, payload []byte, env *Env
 			Str("handler", route.Handler).
 			Str("topic", topic).
 			Msg("handler error")
+	}
+}
+
+// completeWarmup ends the warmup gate and replays buffered messages.
+// Safe to call multiple times — only the first call has effect.
+func (p *Pipeline) completeWarmup() {
+	p.warmupMu.Lock()
+	if p.warmupDone.Load() {
+		p.warmupMu.Unlock()
+		return
+	}
+	p.warmupDone.Store(true)
+	if p.warmupTimer != nil {
+		p.warmupTimer.Stop()
+	}
+	buf := p.warmupBuf
+	p.warmupBuf = nil
+	p.warmupMu.Unlock()
+
+	p.log.Info().Int("buffered_messages", len(buf)).Msg("warmup complete, replaying buffered messages")
+	for _, msg := range buf {
+		var env Envelope
+		_ = json.Unmarshal(msg.payload, &env)
+		p.dispatch(msg.route, msg.topic, msg.payload, &env)
 	}
 }
 

@@ -64,6 +64,13 @@ func (r *IdentityResolver) LoadCache(ctx context.Context) error {
 	return nil
 }
 
+// CacheLen returns the number of entries in the identity cache.
+func (r *IdentityResolver) CacheLen() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.cache)
+}
+
 // Resolve returns the identity for the given instance and sys_name,
 // creating DB records if needed.
 func (r *IdentityResolver) Resolve(ctx context.Context, instanceID, sysName string) (*ResolvedIdentity, error) {

@@ -56,6 +56,7 @@ func (p *Pipeline) processSystemInfo(instanceID string, sys *SystemInfoData) err
 			// Merge this system into the existing one. After merge,
 			// our system is soft-deleted — no need to update its identity.
 			p.mergeSystem(ctx, identity.SystemID, targetID, sys.SysName)
+			p.completeWarmup()
 
 			// Update site fields on the (now-moved) site
 			if err := p.db.UpdateSite(ctx, identity.SiteID, sys.SysNum, sys.Nac, sys.RFSS, sys.SiteID, sys.Type); err != nil {
@@ -75,6 +76,12 @@ func (p *Pipeline) processSystemInfo(instanceID string, sys *SystemInfoData) err
 	// No merge needed — update this system's identity (progressive refinement)
 	if err := p.db.UpdateSystemIdentity(ctx, identity.SystemID, sys.Type, sys.Sysid, sys.Wacn, ""); err != nil {
 		return fmt.Errorf("update system identity: %w", err)
+	}
+
+	// Real P25 identity established — release warmup gate so buffered
+	// calls create talkgroups/units under the correct system_id.
+	if sys.Sysid != "" && sys.Sysid != "0" {
+		p.completeWarmup()
 	}
 
 	// Update site with P25-specific fields
