@@ -737,6 +737,38 @@ html.nerd .statusbar .nerd-btn { font-size: 9px; }
 
   /* Favorite stars and scan icons always visible (no hover on touch) */
   .fav-star, .scan-icon { opacity: 1; }
+
+  /* Card-style messages for mobile */
+  .msg {
+    flex-direction: column;
+    padding: 6px 10px;
+    gap: 2px;
+    position: relative;
+  }
+  .msg .ts {
+    position: absolute;
+    right: 10px;
+    top: 6px;
+    font-size: 11px;
+    min-width: auto;
+  }
+  .msg .nick {
+    font-weight: 600;
+    max-width: none !important;
+    width: auto !important;
+    min-width: auto;
+    text-align: left;
+    padding-right: 60px; /* space for timestamp */
+  }
+  .msg .body {
+    padding-left: 0;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .msg.emergency {
+    border-left: 3px solid var(--danger);
+    background: none;
+  }
 }
 
 /* Desktop: hide mobile-only elements */
