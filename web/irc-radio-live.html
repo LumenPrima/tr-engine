@@ -198,8 +198,13 @@ body::after {
   padding: 0 4px; min-width: 14px; text-align: center; font-weight: 600;
   flex-shrink: 0;
 }
-.fav-star {
+.channel-icons {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.fav-star {
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;
@@ -225,7 +230,6 @@ body::after {
   line-height: 16px;
 }
 .scan-icon {
-  margin-left: 2px;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;
@@ -1636,6 +1640,10 @@ function createChannelItem(ch) {
     el.appendChild(badge);
   }
 
+  // Right-aligned cluster for icons (prevents double margin-left:auto issue with unread badge)
+  const rightCluster = document.createElement('span');
+  rightCluster.className = 'channel-icons';
+
   // Scan icon
   const scanIcon = document.createElement('span');
   scanIcon.className = 'scan-icon' + (isScanned(ch) ? ' active' : '');
@@ -1645,7 +1653,7 @@ function createChannelItem(ch) {
     e.stopPropagation();
     toggleScan(ch);
   });
-  el.appendChild(scanIcon);
+  rightCluster.appendChild(scanIcon);
 
   // Favorite star
   const star = document.createElement('span');
@@ -1655,7 +1663,9 @@ function createChannelItem(ch) {
     e.stopPropagation();
     toggleFavorite(ch);
   });
-  el.appendChild(star);
+  rightCluster.appendChild(star);
+
+  el.appendChild(rightCluster);
 
   el.addEventListener('click', () => switchChannel(ch));
   return el;
