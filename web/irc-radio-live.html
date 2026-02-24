@@ -296,6 +296,31 @@ body::after {
 .channel-bar .chan-mode { font-size: 13px; color: var(--text-muted); }
 .channel-bar .chan-count { font-size: 13px; color: var(--text-mid); margin-left: auto; white-space: nowrap; }
 
+/* ── Channel name edit ── */
+.chan-edit-btn {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 13px; padding: 2px 4px;
+  border-radius: 3px; line-height: 1; display: none;
+}
+.chan-edit-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.chan-edit-row {
+  display: flex; align-items: center; gap: 6px;
+}
+.chan-edit-input {
+  background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text); font-size: 14px; padding: 2px 6px;
+  border-radius: 3px; outline: none; width: 180px;
+  font-family: inherit;
+}
+.chan-edit-input:focus { border-color: var(--accent, #5865F2); }
+.chan-edit-save, .chan-edit-cancel {
+  background: none; border: 1px solid var(--border); color: var(--text-mid);
+  cursor: pointer; font-size: 12px; padding: 2px 8px;
+  border-radius: 3px; line-height: 1;
+}
+.chan-edit-save:hover { color: var(--text); border-color: var(--text-muted); }
+.chan-edit-cancel:hover { color: var(--text); border-color: var(--text-muted); }
+
 /* ── Messages ── */
 .messages {
   flex: 1;
@@ -552,7 +577,7 @@ body::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: default;
+  cursor: pointer;
 }
 .nick-item:hover { background: var(--bg-elevated); }
 .nick-item .nick-prefix { color: var(--text-muted); font-size: 13px; margin-right: 2px; }
@@ -575,8 +600,114 @@ body::after {
 .nick-tooltip .tt-label { color: var(--text-muted); }
 .nick-tooltip .tt-online { color: var(--green); }
 .nick-tooltip .tt-offline { color: var(--text-faint); }
-.msg .nick { cursor: default; }
-.nick-item { cursor: default; }
+.msg .nick { cursor: pointer; }
+.nick-item { cursor: pointer; }
+
+/* ── Unit detail modal ── */
+.unit-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7); z-index: 200;
+  align-items: center; justify-content: center;
+}
+.unit-modal.visible { display: flex; }
+.unit-modal-box {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0;
+  max-width: 520px; width: 94%; max-height: 85vh;
+  display: flex; flex-direction: column;
+  position: relative;
+}
+.unit-modal-close {
+  position: absolute; top: 10px; right: 12px; z-index: 1;
+  background: none; border: none; color: var(--text-muted);
+  font-size: 22px; cursor: pointer; line-height: 1;
+  padding: 4px 8px; border-radius: 3px;
+}
+.unit-modal-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.unit-modal-header {
+  padding: 20px 20px 12px;
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.unit-modal-uid {
+  font-family: inherit; font-size: 22px; font-weight: 600;
+  color: var(--text);
+}
+.unit-modal-nick {
+  font-size: 14px; color: var(--cyan);
+}
+.unit-modal-system {
+  font-size: 11px; color: var(--text-muted);
+  background: rgba(255,255,255,0.04); padding: 2px 8px;
+  border-radius: 3px;
+}
+.unit-modal-tag-row {
+  padding: 0 20px 12px; display: flex; gap: 8px; align-items: center;
+}
+.unit-modal-tag-input {
+  flex: 1; padding: 6px 10px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text);
+  font-family: inherit; font-size: 13px;
+}
+.unit-modal-tag-input:focus { outline: none; border-color: var(--cyan); }
+.unit-modal-tag-input::placeholder { color: var(--text-faint); }
+.unit-modal-save {
+  padding: 6px 14px; background: var(--cyan); border: none;
+  border-radius: 4px; color: #000;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: filter 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+.unit-modal-save:hover { filter: brightness(1.2); }
+.unit-modal-save:disabled { opacity: 0.4; cursor: default; filter: none; }
+.unit-modal-save-status { font-size: 12px; min-width: 20px; }
+.unit-modal-meta {
+  padding: 0 20px 12px;
+  display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;
+  font-size: 12px;
+}
+.unit-modal-meta-label { color: var(--text-faint); }
+.unit-modal-meta-value { color: var(--text-muted); font-family: inherit; font-size: 11px; }
+.unit-modal-section {
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden; flex: 1;
+}
+.unit-modal-section-label {
+  padding: 10px 20px 6px; font-size: 11px; font-weight: 600;
+  color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px;
+}
+.unit-modal-events {
+  overflow-y: auto; padding: 0 20px 16px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.unit-event-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; font-size: 12px;
+}
+.unit-event-time {
+  font-family: inherit; font-size: 10px; color: var(--text-faint);
+  min-width: 60px; text-align: right; flex-shrink: 0;
+}
+.unit-event-type {
+  font-size: 10px; font-weight: 600; padding: 1px 6px;
+  border-radius: 3px; white-space: nowrap; flex-shrink: 0;
+  min-width: 36px; text-align: center;
+}
+.unit-event-type.state-active { background: var(--green); color: #000; }
+.unit-event-type.state-recent { background: color-mix(in srgb, var(--green) 60%, var(--bg-surface)); color: #000; }
+.unit-event-type.state-affiliated { background: var(--cyan); color: #000; }
+.unit-event-type.state-location { background: var(--orange); color: #000; }
+.unit-event-type.state-data { background: color-mix(in srgb, var(--orange) 65%, var(--bg-surface)); color: #000; }
+.unit-event-type.state-off { background: var(--text-faint); color: var(--bg-surface); }
+.unit-event-tg {
+  color: var(--text-muted); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; flex: 1; min-width: 0;
+}
+.unit-modal-loading {
+  padding: 20px; text-align: center; color: var(--text-faint); font-size: 12px;
+}
+.unit-modal-error { color: var(--danger); font-size: 12px; }
 
 /* ── Status bar ── */
 .statusbar {
@@ -801,6 +932,7 @@ html.nerd .statusbar .nerd-btn { font-size: 9px; }
   <span class="server">tr-engine</span>
   <span>—</span>
   <span id="titlebar-chan">*status</span>
+  <button class="chan-edit-btn" id="titlebar-edit-btn" title="Edit channel name">&#9998;</button>
   <span class="topic" id="titlebar-topic">Connecting...</span>
   <button class="mobile-hamburger mobile-users-btn" id="mobile-users-btn" aria-label="Open users">👥</button>
   <span class="lag" id="titlebar-lag"></span>
@@ -827,6 +959,7 @@ html.nerd .statusbar .nerd-btn { font-size: 9px; }
   <div class="chat-area">
     <div class="channel-bar">
       <span class="chan-name" id="chan-name">*status</span>
+      <button class="chan-edit-btn" id="chan-edit-btn" title="Edit channel name">&#9998;</button>
       <span class="chan-mode" id="chan-mode"></span>
       <span class="chan-topic" id="chan-topic">Connecting to tr-engine...</span>
       <span class="chan-count" id="chan-count"></span>
@@ -876,6 +1009,29 @@ html.nerd .statusbar .nerd-btn { font-size: 9px; }
   <button class="nerd-btn" id="nerd-btn" title="Toggle hipster nerd cool mode">nerd</button>
 </div>
 <div class="nick-tooltip" id="nick-tooltip"></div>
+
+<div id="unit-modal" class="unit-modal">
+  <div class="unit-modal-box">
+    <button class="unit-modal-close">&times;</button>
+    <div class="unit-modal-header">
+      <span id="unit-modal-uid" class="unit-modal-uid"></span>
+      <span id="unit-modal-nick" class="unit-modal-nick"></span>
+      <span id="unit-modal-system" class="unit-modal-system"></span>
+    </div>
+    <div class="unit-modal-tag-row">
+      <input id="unit-modal-tag" class="unit-modal-tag-input" type="text" placeholder="No alpha tag">
+      <button id="unit-modal-save" class="unit-modal-save" disabled>Save</button>
+      <span id="unit-modal-save-status" class="unit-modal-save-status"></span>
+    </div>
+    <div id="unit-modal-meta" class="unit-modal-meta"></div>
+    <div class="unit-modal-section">
+      <div class="unit-modal-section-label">Recent Activity</div>
+      <div id="unit-modal-events" class="unit-modal-events">
+        <div class="unit-modal-loading">Loading events...</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 // ══════════════════════════════════════════════════════════════
@@ -978,8 +1134,10 @@ const chanCountEl = document.getElementById('chan-count');
 const nicklistHeader = document.getElementById('nicklist-header');
 const nicklistEntries = document.getElementById('nicklist-entries');
 const titlebarChan = document.getElementById('titlebar-chan');
+const titlebarEditBtn = document.getElementById('titlebar-edit-btn');
 const titlebarTopic = document.getElementById('titlebar-topic');
 const titlebarLag = document.getElementById('titlebar-lag');
+const chanEditBtn = document.getElementById('chan-edit-btn');
 const treeScroll = document.getElementById('tree-scroll');
 const treeStatus = document.getElementById('tree-status');
 const statusDot = document.getElementById('status-dot');
@@ -1290,6 +1448,231 @@ function hideNickTooltip() {
   clearTimeout(tooltipTimer);
   tooltipTimer = setTimeout(() => { nickTooltip.style.display = 'none'; }, 100);
 }
+
+// ── Unit detail modal ──
+let currentModalUnit = null;
+
+function relativeTime(isoString) {
+  if (!isoString) return '\u2014';
+  const now = Date.now();
+  const t = new Date(isoString).getTime();
+  const diff = now - t;
+  if (diff < 0 || diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  if (diff < 172800000) return 'yesterday';
+  const d = new Date(isoString);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[d.getMonth()] + ' ' + d.getDate();
+}
+
+function eventTypeStateClass(eventType) {
+  switch (eventType) {
+    case 'call': return 'state-active';
+    case 'end': return 'state-recent';
+    case 'join': case 'on': return 'state-affiliated';
+    case 'off': return 'state-off';
+    case 'location': return 'state-location';
+    case 'ackresp': case 'data': return 'state-data';
+    default: return 'state-affiliated';
+  }
+}
+
+function setEventsLoading(container, text) {
+  container.textContent = '';
+  const el = document.createElement('div');
+  el.className = 'unit-modal-loading';
+  el.textContent = text;
+  container.appendChild(el);
+}
+
+function openUnitModal(user) {
+  currentModalUnit = user;
+  hideNickTooltip();
+
+  const modal = document.getElementById('unit-modal');
+  const uidEl = document.getElementById('unit-modal-uid');
+  const nickEl = document.getElementById('unit-modal-nick');
+  const sysEl = document.getElementById('unit-modal-system');
+  const tagInput = document.getElementById('unit-modal-tag');
+  const saveBtn = document.getElementById('unit-modal-save');
+  const saveStatus = document.getElementById('unit-modal-save-status');
+  const metaEl = document.getElementById('unit-modal-meta');
+  const eventsEl = document.getElementById('unit-modal-events');
+
+  uidEl.textContent = user.unitId;
+  nickEl.textContent = user.nick;
+  sysEl.textContent = systemNames.get(user.systemId) || '';
+  tagInput.value = '';
+  tagInput._originalTag = '';
+  saveBtn.disabled = true;
+  saveStatus.textContent = '';
+  saveStatus.style.color = '';
+  metaEl.textContent = '';
+  setEventsLoading(eventsEl, 'Loading events...');
+
+  modal.classList.add('visible');
+
+  tagInput.oninput = () => {
+    saveBtn.disabled = tagInput.value.trim() === tagInput._originalTag;
+    saveStatus.textContent = '';
+  };
+  saveBtn.onclick = () => saveUnitTag(user, tagInput.value.trim());
+  tagInput.onkeydown = (e) => {
+    if (e.key === 'Enter' && !saveBtn.disabled) saveBtn.click();
+  };
+
+  const unitId = encodeURIComponent(user.systemId + ':' + user.unitId);
+
+  // Parallel fetch: unit detail + recent events
+  fetch(API_BASE + '/units/' + unitId)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || currentModalUnit !== user) return;
+      if (data.system_name) sysEl.textContent = data.system_name;
+      if (data.alpha_tag) {
+        tagInput.value = data.alpha_tag;
+        tagInput._originalTag = data.alpha_tag;
+        saveBtn.disabled = true;
+      }
+      metaEl.textContent = '';
+      const addMeta = (label, value) => {
+        const l = document.createElement('span');
+        l.className = 'unit-modal-meta-label';
+        l.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'unit-modal-meta-value';
+        v.textContent = value || '\u2014';
+        metaEl.appendChild(l);
+        metaEl.appendChild(v);
+      };
+      addMeta('State', data.last_event_type || 'unknown');
+      if (data.last_event_tg_tag || data.last_event_tgid) {
+        addMeta('Last TG', (data.last_event_tg_tag || '') + (data.last_event_tgid ? ' (' + data.last_event_tgid + ')' : ''));
+      }
+      addMeta('First seen', relativeTime(data.first_seen));
+      addMeta('Last seen', relativeTime(data.last_seen));
+    })
+    .catch(() => {});
+
+  fetch(API_BASE + '/units/' + unitId + '/events?limit=30')
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || currentModalUnit !== user) return;
+      const events = data.events || [];
+      eventsEl.textContent = '';
+      if (events.length === 0) {
+        setEventsLoading(eventsEl, 'No recent events');
+        return;
+      }
+      // Collapse consecutive runs of same (event_type, tgid)
+      const grouped = [];
+      events.forEach(ev => {
+        const prev = grouped[grouped.length - 1];
+        if (prev && prev.event_type === ev.event_type && (prev.tgid || 0) === (ev.tgid || 0)) {
+          prev.count++;
+        } else {
+          grouped.push({ event_type: ev.event_type, time: ev.time, tgid: ev.tgid,
+            tg_alpha_tag: ev.tg_alpha_tag, count: 1 });
+        }
+      });
+      grouped.forEach(ev => {
+        const row = document.createElement('div');
+        row.className = 'unit-event-row';
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'unit-event-time';
+        timeSpan.textContent = relativeTime(ev.time);
+
+        const typePill = document.createElement('span');
+        typePill.className = 'unit-event-type ' + eventTypeStateClass(ev.event_type);
+        typePill.textContent = ev.event_type + (ev.count > 1 ? ' \u00d7' + ev.count : '');
+
+        const tgSpan = document.createElement('span');
+        tgSpan.className = 'unit-event-tg';
+        tgSpan.textContent = ev.tg_alpha_tag || (ev.tgid ? 'TG ' + ev.tgid : '\u2014');
+
+        row.appendChild(timeSpan);
+        row.appendChild(typePill);
+        row.appendChild(tgSpan);
+        eventsEl.appendChild(row);
+      });
+    })
+    .catch(() => {
+      setEventsLoading(eventsEl, 'Failed to load events');
+    });
+}
+
+function closeUnitModal() {
+  currentModalUnit = null;
+  document.getElementById('unit-modal').classList.remove('visible');
+}
+
+function saveUnitTag(user, newTag) {
+  const saveBtn = document.getElementById('unit-modal-save');
+  const saveStatus = document.getElementById('unit-modal-save-status');
+  const tagInput = document.getElementById('unit-modal-tag');
+
+  saveBtn.disabled = true;
+  saveStatus.textContent = '...';
+  saveStatus.className = 'unit-modal-save-status';
+  saveStatus.style.color = '';
+
+  const unitId = encodeURIComponent(user.systemId + ':' + user.unitId);
+  fetch(API_BASE + '/units/' + unitId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alpha_tag: newTag, alpha_tag_source: 'manual' }),
+  })
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(() => {
+      tagInput._originalTag = newTag;
+      saveBtn.disabled = true;
+      saveStatus.textContent = '\u2713';
+      saveStatus.style.color = 'var(--green)';
+      setTimeout(() => { saveStatus.textContent = ''; }, 2000);
+
+      // Bust nick cache and update nick across all channels
+      const uk = unitKey(user.systemId, user.unitId);
+      unitNickCache.delete(uk);
+      const newNick = resolveNick(user.systemId, user.unitId, newTag);
+      for (const ch of channels.values()) {
+        if (ch.users.has(uk)) {
+          ch.users.get(uk).nick = newNick;
+        }
+      }
+      user.nick = newNick;
+      document.getElementById('unit-modal-nick').textContent = newNick;
+      renderNicklist();
+    })
+    .catch(() => {
+      saveBtn.disabled = false;
+      saveStatus.textContent = 'Error';
+      saveStatus.className = 'unit-modal-save-status unit-modal-error';
+    });
+}
+
+// Modal close listeners
+document.getElementById('unit-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'unit-modal') closeUnitModal();
+});
+document.querySelector('.unit-modal-close').addEventListener('click', closeUnitModal);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && currentModalUnit) closeUnitModal();
+});
+
+// Click nick in chat messages → open unit modal (event delegation)
+messagesEl.addEventListener('click', (e) => {
+  const nickEl = e.target.closest('.msg .nick');
+  if (!nickEl) return;
+  const nick = nickEl.dataset.nick;
+  if (!nick) return;
+  const found = findUserByNick(nick);
+  if (found) openUnitModal(found.user);
+});
 
 /** Format frequency in MHz */
 function fmtFreq(hz) {
@@ -1917,6 +2300,7 @@ function renderNicklist() {
       el.innerHTML = `<span class="nick-prefix">${prefix}</span>${esc(u.nick)}`;
       el.addEventListener('mouseenter', () => showNickTooltip(u.nick, el));
       el.addEventListener('mouseleave', hideNickTooltip);
+      el.addEventListener('click', () => openUnitModal(u));
       nicklistEntries.appendChild(el);
     }
   }
@@ -1930,17 +2314,146 @@ function renderNicklist() {
 
 
 // ══════════════════════════════════════════════════════════════
+// CHANNEL NAME EDITING
+// ══════════════════════════════════════════════════════════════
+
+let channelEditActive = false;
+
+function startChannelEdit() {
+  const state = channels.get(activeChannel);
+  if (!state || !state.tgid) return;
+  channelEditActive = true;
+
+  // Build inline edit row
+  const row = document.createElement('span');
+  row.className = 'chan-edit-row';
+  row.id = 'chan-edit-row';
+
+  const input = document.createElement('input');
+  input.className = 'chan-edit-input';
+  input.value = state.alpha_tag || '';
+  input.spellcheck = false;
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'chan-edit-save';
+  saveBtn.textContent = 'Save';
+  saveBtn.onclick = () => saveChannelTag(input.value.trim());
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'chan-edit-cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = cancelChannelEdit;
+
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') saveBtn.click();
+    if (e.key === 'Escape') cancelChannelEdit();
+  };
+
+  row.appendChild(input);
+  row.appendChild(saveBtn);
+  row.appendChild(cancelBtn);
+
+  chanNameEl.style.display = 'none';
+  chanEditBtn.style.display = 'none';
+  chanNameEl.parentNode.insertBefore(row, chanNameEl.nextSibling);
+  input.focus();
+  input.select();
+}
+
+function cancelChannelEdit() {
+  channelEditActive = false;
+  const row = document.getElementById('chan-edit-row');
+  if (row) row.remove();
+  chanNameEl.style.display = '';
+  const state = channels.get(activeChannel);
+  if (state && state.tgid) chanEditBtn.style.display = 'inline-block';
+}
+
+function saveChannelTag(newTag) {
+  const state = channels.get(activeChannel);
+  if (!state || !state.tgid || !newTag) return;
+
+  const tgId = encodeURIComponent(state.system_id + ':' + state.tgid);
+  fetch(API_BASE + '/talkgroups/' + tgId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alpha_tag: newTag, alpha_tag_source: 'manual' }),
+  })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(() => {
+      const oldChanName = activeChannel;
+      const key = tgKey(state.system_id, state.tgid);
+
+      // Update state
+      state.alpha_tag = newTag;
+
+      // Rebuild channel mapping
+      const newChanName = toChannelName(newTag);
+      let finalName = newChanName;
+      if (channels.has(finalName) && channels.get(finalName) !== state) {
+        finalName = newChanName + '-' + state.tgid;
+      }
+
+      if (finalName !== oldChanName) {
+        channels.delete(oldChanName);
+        channels.set(finalName, state);
+        tgidToChannel.set(key, finalName);
+        // Move unread count
+        channelUnread.set(finalName, channelUnread.get(oldChanName) || 0);
+        channelUnread.delete(oldChanName);
+        // Move activity tracking
+        if (channelHasActivity.has(oldChanName)) {
+          channelHasActivity.delete(oldChanName);
+          channelHasActivity.add(finalName);
+        }
+        if (channelLoadedCallIds.has(oldChanName)) {
+          channelLoadedCallIds.set(finalName, channelLoadedCallIds.get(oldChanName));
+          channelLoadedCallIds.delete(oldChanName);
+        }
+        if (channelLoadedEventIds.has(oldChanName)) {
+          channelLoadedEventIds.set(finalName, channelLoadedEventIds.get(oldChanName));
+          channelLoadedEventIds.delete(oldChanName);
+        }
+        activeChannel = finalName;
+      }
+
+      // Cancel edit UI and refresh display
+      cancelChannelEdit();
+      chanNameEl.textContent = finalName;
+      titlebarChan.textContent = finalName;
+      renderTree();
+    })
+    .catch(err => {
+      console.error('Failed to save talkgroup tag:', err);
+      cancelChannelEdit();
+    });
+}
+
+chanEditBtn.addEventListener('click', startChannelEdit);
+titlebarEditBtn.addEventListener('click', startChannelEdit);
+
+
+// ══════════════════════════════════════════════════════════════
 // CHANNEL SWITCHING
 // ══════════════════════════════════════════════════════════════
 
 function switchChannel(ch) {
   if (!channels.has(ch)) return;
+
+  // Cancel any in-progress edit
+  if (channelEditActive) cancelChannelEdit();
+
   activeChannel = ch;
   channelUnread.set(ch, 0);
 
   const state = channels.get(ch);
   const displayName = ch;
   const topic = state.description || state.tag || '';
+
+  // Show/hide edit buttons based on whether channel has a tgid
+  const showEdit = state.tgid ? 'inline-block' : 'none';
+  chanEditBtn.style.display = showEdit;
+  titlebarEditBtn.style.display = showEdit;
 
   chanNameEl.textContent = displayName;
   chanTopicEl.textContent = topic;
