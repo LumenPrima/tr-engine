@@ -28,6 +28,9 @@ tr-engine-linux
 # Playwright MCP
 .playwright-mcp/
 
+# Git worktrees
+.worktrees/
+
 # Dev scratch files
 mqtt-samples.txt
 *.png
