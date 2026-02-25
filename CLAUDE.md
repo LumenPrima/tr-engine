@@ -291,8 +291,11 @@ A live v1 instance runs on `tr-dashboard` alongside the existing v0.
 | Service | URL | Port |
 |---------|-----|------|
 | v1 (this repo) | `https://tr-engine.luxprimatech.com` | 8000 on host |
+| v1 Tailnet (direct) | `http://tr-dashboard.pizzly-manta.ts.net:8000` | 8000 on host |
 | v0 (legacy) | `https://tr-dashboard.luxprimatech.com` | 8080 on host |
 | v0 API direct | `https://tr-api.luxprimatech.com` | 8080 on host |
+
+**For API testing from scripts/CLI, prefer the Tailnet URL** — it bypasses Cloudflare (no WAF blocking, no rate limiting, no bot detection).
 
 ### Architecture on tr-dashboard
 
