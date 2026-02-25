@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: tr-engine API
-  version: 0.8.5
+  version: 0.9.0
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
@@ -9,6 +9,20 @@ info:
     Backend service for trunk-recorder data ingestion and querying.
     Provides REST APIs for accessing radio system data, calls, talkgroups,
     units, and recorder state.
+
+    ## Authentication
+
+    All endpoints (except `/health` and `/auth-init`) require a bearer token
+    via the `Authorization: Bearer <token>` header or `?token=` query param.
+
+    **Two-tier auth (optional):** When `WRITE_TOKEN` is configured, mutating
+    operations (POST, PATCH, PUT, DELETE) require the write token. Read
+    operations (GET) accept either the read token (`AUTH_TOKEN`) or write
+    token. If `WRITE_TOKEN` is not set, all operations accept `AUTH_TOKEN`
+    (backwards compatible).
+
+    The `/auth-init` endpoint returns only the read token — the write token
+    is never exposed by any endpoint.
 
     ## Data Model: Systems and Sites
 
@@ -257,6 +271,8 @@ paths:
                 $ref: "#/components/schemas/System"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -319,6 +335,8 @@ paths:
                 $ref: "#/components/schemas/Site"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -461,6 +479,8 @@ paths:
                 $ref: "#/components/schemas/Talkgroup"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -671,6 +691,8 @@ paths:
                     description: System ID the talkgroups were imported into
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -777,6 +799,8 @@ paths:
                 $ref: "#/components/schemas/Unit"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -861,17 +885,24 @@ paths:
         Returns unit events across an entire system with JOINs for display
         names. Supports multi-type filtering and optional emergency filter.
         Default lookback is 1 hour; max time range is 24 hours.
+
+        **At least one of `system_id` or `sysid` is required.** Returns 400
+        if neither is provided.
       tags: [units]
       parameters:
         - name: system_id
           in: query
-          description: Filter by internal system ID (comma-separated for multiple). Alias "systems" also accepted.
+          description: |
+            Filter by internal system ID (comma-separated for multiple).
+            Alias "systems" also accepted. **Required** unless `sysid` is provided.
           schema:
             type: string
             example: "1,2"
         - name: sysid
           in: query
-          description: Filter by P25 sysid hex (comma-separated for multiple). Alias "sysids" also accepted.
+          description: |
+            Filter by P25 sysid hex (comma-separated for multiple).
+            Alias "sysids" also accepted. **Required** unless `system_id` is provided.
           schema:
             type: string
         - name: unit_id
@@ -1312,6 +1343,8 @@ paths:
                     example: human
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -1363,6 +1396,8 @@ paths:
                   status:
                     type: string
                     enum: [queued]
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "503":
@@ -1387,6 +1422,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusChangeResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -1405,6 +1442,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusChangeResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -1423,6 +1462,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusChangeResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -1518,11 +1559,13 @@ paths:
         trunk-recorder's upload plugin at `POST /api/v1/call-upload` and it
         works out of the box.
 
-        **Authentication:** In addition to the standard `Authorization: Bearer`
-        header and `?token=` query parameter, this endpoint also accepts auth
-        via the `key` (rdio-scanner) or `api_key` (OpenMHz) multipart form
-        fields. This allows trunk-recorder upload plugins to authenticate
-        without custom header configuration.
+        **Authentication:** When `WRITE_TOKEN` is configured, this endpoint
+        requires the write token (uploads are write operations). Otherwise,
+        `AUTH_TOKEN` is accepted. In addition to the standard
+        `Authorization: Bearer` header and `?token=` query parameter, this
+        endpoint also accepts auth via the `key` (rdio-scanner) or `api_key`
+        (OpenMHz) multipart form fields. This allows trunk-recorder upload
+        plugins to authenticate without custom header configuration.
 
         **Format detection:** The endpoint inspects form field names to
         determine the upload format:
@@ -1692,6 +1735,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           description: Conflict — duplicate call (same system, talkgroup, and start time)
           content:
@@ -1854,6 +1899,14 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: call_state
+          in: query
+          description: |
+            Filter by call state. Defaults to `COMPLETED` (only finished calls).
+            Set to a specific state to filter, or pass an empty string to include all states.
+          schema:
+            type: string
+            default: COMPLETED
         - name: sort
           in: query
           description: Sort field — "calls" (default), "duration", "tgid"
@@ -2176,6 +2229,24 @@ paths:
           $ref: "#/components/responses/InternalError"
 
   # ----------------------------------------------------------
+  # OpenAPI Spec
+  # ----------------------------------------------------------
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPISpec
+      summary: OpenAPI specification
+      description: Returns the OpenAPI 3.0.3 YAML specification for this API. No authentication required.
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: OpenAPI specification in YAML format
+          content:
+            text/yaml:
+              schema:
+                type: string
+
+  # ----------------------------------------------------------
   # Admin
   # ----------------------------------------------------------
   /query:
@@ -2192,7 +2263,7 @@ paths:
           DELETE, DROP, and all other write operations are rejected by
           PostgreSQL.
         - A 30-second statement timeout prevents runaway queries.
-        - Results are capped at `limit` rows (default 1000, max 10000).
+        - Results are capped at `limit` rows (default 1000, max 50000).
         - Semicolons are rejected to prevent multi-statement injection.
 
         Use `$1`, `$2`, etc. as parameter placeholders with the `params`
@@ -2230,6 +2301,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -2279,6 +2352,8 @@ paths:
                 $ref: "#/components/schemas/SystemMergeResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Source or target system not found
           content:
@@ -2423,6 +2498,13 @@ components:
 
     Unauthorized:
       description: Unauthorized — missing or invalid auth token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    Forbidden:
+      description: Forbidden — valid read token but write token required for this operation
       content:
         application/json:
           schema:
@@ -3640,10 +3722,14 @@ components:
               enum: [ok, error]
             mqtt:
               type: string
-              enum: [ok, error, disconnected]
+              enum: [ok, error, disconnected, not_configured]
+            file_watcher:
+              type: string
+              enum: [watching, backfilling, stopped]
+              description: File watcher ingest status. Only present when WATCH_DIR is configured.
             transcription:
               type: string
-              enum: [ok, not_configured]
+              enum: [ok, unavailable, not_configured]
         trunk_recorders:
           type: array
           description: Status of connected trunk-recorder instances
@@ -4313,7 +4399,7 @@ components:
         limit:
           type: integer
           minimum: 1
-          maximum: 10000
+          maximum: 50000
           default: 1000
           description: Maximum number of rows to return.
 

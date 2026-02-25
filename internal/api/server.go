@@ -73,11 +73,16 @@ func NewServer(opts ServerOptions) *Server {
 	}
 
 	// Upload endpoint with custom auth (accepts form field key/api_key)
+	// Uploads are write operations — require WRITE_TOKEN when set, else AUTH_TOKEN.
 	if opts.Uploader != nil {
+		uploadToken := opts.Config.WriteToken
+		if uploadToken == "" {
+			uploadToken = opts.Config.AuthToken
+		}
 		uploadHandler := NewUploadHandler(opts.Uploader, opts.Config.UploadInstanceID, opts.Log)
 		r.Group(func(r chi.Router) {
 			r.Use(MaxBodySize(50 << 20)) // 50 MB for audio uploads
-			r.Use(UploadAuth(opts.Config.AuthToken))
+			r.Use(UploadAuth(uploadToken))
 			r.Post("/api/v1/call-upload", uploadHandler.Upload)
 		})
 	}
