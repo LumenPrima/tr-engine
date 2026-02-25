@@ -136,7 +136,7 @@ func main() {
 	switch cfg.STTProvider {
 	case "whisper":
 		if cfg.WhisperURL != "" {
-			sttProvider = transcribe.NewWhisperClient(cfg.WhisperURL, cfg.WhisperModel, cfg.WhisperTimeout)
+			sttProvider = transcribe.NewWhisperClient(cfg.WhisperURL, cfg.WhisperModel, cfg.WhisperAPIKey, cfg.WhisperTimeout)
 		}
 	case "elevenlabs":
 		if cfg.ElevenLabsAPIKey == "" {

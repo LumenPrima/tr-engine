@@ -50,6 +50,7 @@ type Config struct {
 	// Transcription (optional — disabled when no STT provider is configured)
 	STTProvider        string `env:"STT_PROVIDER" envDefault:"whisper"`
 	WhisperURL         string        `env:"WHISPER_URL"`
+	WhisperAPIKey      string        `env:"WHISPER_API_KEY"`
 	WhisperModel       string        `env:"WHISPER_MODEL"`
 	WhisperTimeout     time.Duration `env:"WHISPER_TIMEOUT" envDefault:"30s"`
 	WhisperTemperature float64       `env:"WHISPER_TEMPERATURE" envDefault:"0.1"`

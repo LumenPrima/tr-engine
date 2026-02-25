@@ -18,6 +18,7 @@ import (
 type WhisperClient struct {
 	url     string
 	model   string
+	apiKey  string
 	timeout time.Duration
 	client  *http.Client
 }
@@ -63,10 +64,11 @@ type whisperWord struct {
 }
 
 // NewWhisperClient creates a new Whisper HTTP client.
-func NewWhisperClient(url, model string, timeout time.Duration) *WhisperClient {
+func NewWhisperClient(url, model, apiKey string, timeout time.Duration) *WhisperClient {
 	return &WhisperClient{
 		url:     url,
 		model:   model,
+		apiKey:  apiKey,
 		timeout: timeout,
 		client:  &http.Client{Timeout: timeout},
 	}
@@ -174,6 +176,9 @@ func (wc *WhisperClient) Transcribe(ctx context.Context, audioPath string, opts 
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
+	if wc.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+wc.apiKey)
+	}
 
 	resp, err := wc.client.Do(req)
 	if err != nil {
