@@ -74,12 +74,11 @@ func NewServer(opts ServerOptions) *Server {
 
 	// Upload endpoint with custom auth (accepts form field key/api_key)
 	if opts.Uploader != nil {
+		uploadHandler := NewUploadHandler(opts.Uploader, opts.Config.UploadInstanceID, opts.Log)
 		r.Group(func(r chi.Router) {
 			r.Use(MaxBodySize(50 << 20)) // 50 MB for audio uploads
 			r.Use(UploadAuth(opts.Config.AuthToken))
-			r.Route("/api/v1", func(r chi.Router) {
-				NewUploadHandler(opts.Uploader, opts.Config.UploadInstanceID, opts.Log).Routes(r)
-			})
+			r.Post("/api/v1/call-upload", uploadHandler.Upload)
 		})
 	}
 
