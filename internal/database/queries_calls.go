@@ -73,18 +73,12 @@ type CallAPI struct {
 
 // ListCalls returns calls matching the filter with a total count.
 func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int, error) {
-	startTime := filter.StartTime
-	if startTime == nil {
-		t := time.Now().Add(-24 * time.Hour)
-		startTime = &t
-	}
-
 	// Always include the LEFT JOIN; the dedup condition skips it when not active.
 	const fromClause = `FROM calls c
 		JOIN systems s ON s.system_id = c.system_id
 		LEFT JOIN call_groups cg ON cg.id = c.call_group_id`
 	const whereClause = `
-		WHERE c.start_time >= $1
+		WHERE ($1::timestamptz IS NULL OR c.start_time >= $1)
 		  AND ($2::timestamptz IS NULL OR c.start_time < $2)
 		  AND ($3::int[] IS NULL OR c.system_id = ANY($3))
 		  AND ($4::int[] IS NULL OR c.site_id = ANY($4))
@@ -95,7 +89,7 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 		  AND ($9::boolean IS NULL OR c.encrypted = $9)
 		  AND ($10::boolean IS NOT TRUE OR c.call_group_id IS NULL OR c.call_id = cg.primary_call_id OR cg.primary_call_id IS NULL)`
 	args := []any{
-		*startTime, filter.EndTime,
+		filter.StartTime, filter.EndTime,
 		pqIntArray(filter.SystemIDs), pqIntArray(filter.SiteIDs),
 		pqStringArray(filter.Sysids), pqIntArray(filter.Tgids),
 		pqIntArray(filter.UnitIDs), filter.Emergency, filter.Encrypted,
@@ -287,21 +281,15 @@ type CallGroupAPI struct {
 
 // ListCallGroups returns call groups matching the filter.
 func (db *DB) ListCallGroups(ctx context.Context, filter CallGroupFilter) ([]CallGroupAPI, int, error) {
-	startTime := filter.StartTime
-	if startTime == nil {
-		t := time.Now().Add(-24 * time.Hour)
-		startTime = &t
-	}
-
 	const fromClause = `FROM call_groups cg
 		JOIN systems s ON s.system_id = cg.system_id
 		LEFT JOIN calls pc ON pc.call_id = cg.primary_call_id AND pc.start_time >= cg.start_time - interval '10 seconds'`
 	const whereClause = `
-		WHERE cg.start_time >= $1
+		WHERE ($1::timestamptz IS NULL OR cg.start_time >= $1)
 		  AND ($2::timestamptz IS NULL OR cg.start_time < $2)
 		  AND ($3::text[] IS NULL OR s.sysid = ANY($3))
 		  AND ($4::int[] IS NULL OR cg.tgid = ANY($4))`
-	args := []any{*startTime, filter.EndTime, pqStringArray(filter.Sysids), pqIntArray(filter.Tgids)}
+	args := []any{filter.StartTime, filter.EndTime, pqStringArray(filter.Sysids), pqIntArray(filter.Tgids)}
 
 	var total int
 	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, args...).Scan(&total); err != nil {

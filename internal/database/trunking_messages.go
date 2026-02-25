@@ -50,19 +50,13 @@ type TrunkingMessageAPI struct {
 
 // ListTrunkingMessages returns trunking messages matching the filter.
 func (db *DB) ListTrunkingMessages(ctx context.Context, filter TrunkingMessageFilter) ([]TrunkingMessageAPI, int, error) {
-	startTime := filter.StartTime
-	if startTime == nil {
-		t := time.Now().Add(-1 * time.Hour)
-		startTime = &t
-	}
-
 	const whereClause = `
 		WHERE ($1::int[] IS NULL OR tm.system_id = ANY($1))
 		  AND ($2::text IS NULL OR tm.opcode = $2)
 		  AND ($3::text IS NULL OR tm.opcode_type = $3)
-		  AND tm."time" >= $4
+		  AND ($4::timestamptz IS NULL OR tm."time" >= $4)
 		  AND ($5::timestamptz IS NULL OR tm."time" < $5)`
-	args := []any{pqIntArray(filter.SystemIDs), filter.Opcode, filter.OpcodeType, *startTime, filter.EndTime}
+	args := []any{pqIntArray(filter.SystemIDs), filter.Opcode, filter.OpcodeType, filter.StartTime, filter.EndTime}
 
 	var total int
 	if err := db.Pool.QueryRow(ctx, "SELECT count(*) FROM trunking_messages tm"+whereClause, args...).Scan(&total); err != nil {

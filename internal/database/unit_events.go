@@ -56,12 +56,6 @@ type UnitEventAPI struct {
 
 // ListUnitEvents returns unit events matching the filter.
 func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]UnitEventAPI, int, error) {
-	startTime := filter.StartTime
-	if startTime == nil {
-		t := time.Now().Add(-24 * time.Hour)
-		startTime = &t
-	}
-
 	const fromClause = `FROM unit_events ue
 		LEFT JOIN talkgroups tg ON tg.system_id = ue.system_id AND tg.tgid = ue.tgid`
 	const whereClause = `
@@ -69,9 +63,9 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 		  AND ue.unit_rid = $2
 		  AND ($3::text IS NULL OR ue.event_type = $3)
 		  AND ($4::int IS NULL OR ue.tgid = $4)
-		  AND ue.time >= $5
+		  AND ($5::timestamptz IS NULL OR ue.time >= $5)
 		  AND ($6::timestamptz IS NULL OR ue.time < $6)`
-	args := []any{filter.SystemID, filter.UnitID, filter.EventType, filter.Tgid, *startTime, filter.EndTime}
+	args := []any{filter.SystemID, filter.UnitID, filter.EventType, filter.Tgid, filter.StartTime, filter.EndTime}
 
 	var total int
 	if err := db.Pool.QueryRow(ctx, "SELECT count(*) "+fromClause+whereClause, args...).Scan(&total); err != nil {
@@ -118,12 +112,6 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 // ListUnitEventsGlobal returns unit events across a system with JOINs for display names.
 // Caller must ensure SystemID or Sysid is set.
 func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFilter) ([]UnitEventAPI, int, error) {
-	startTime := filter.StartTime
-	if startTime == nil {
-		t := time.Now().Add(-1 * time.Hour)
-		startTime = &t
-	}
-
 	const fromClause = `FROM unit_events ue
 		JOIN systems s ON s.system_id = ue.system_id
 		LEFT JOIN units u ON u.system_id = ue.system_id AND u.unit_id = ue.unit_rid
@@ -135,13 +123,13 @@ func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFi
 		  AND ($4::text[] IS NULL OR ue.event_type = ANY($4))
 		  AND ($5::int[] IS NULL OR ue.tgid = ANY($5))
 		  AND ($6::boolean IS NULL OR ue.emergency = $6)
-		  AND ue.time >= $7
+		  AND ($7::timestamptz IS NULL OR ue.time >= $7)
 		  AND ($8::timestamptz IS NULL OR ue.time < $8)`
 	args := []any{
 		pqIntArray(filter.SystemIDs), pqStringArray(filter.Sysids),
 		pqIntArray(filter.UnitIDs), pqStringArray(filter.EventTypes),
 		pqIntArray(filter.Tgids), filter.Emergency,
-		*startTime, filter.EndTime,
+		filter.StartTime, filter.EndTime,
 	}
 
 	var total int

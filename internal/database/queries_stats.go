@@ -192,22 +192,16 @@ type DecodeRateAPI struct {
 
 // GetDecodeRates returns decode rate measurements.
 func (db *DB) GetDecodeRates(ctx context.Context, filter DecodeRateFilter) ([]DecodeRateAPI, error) {
-	startTime := filter.StartTime
-	if startTime == nil {
-		t := time.Now().Add(-24 * time.Hour)
-		startTime = &t
-	}
-
 	query := `
 		SELECT d.time, d.system_id, COALESCE(s.name, ''), COALESCE(s.sysid, ''),
 			d.decode_rate, d.control_channel
 		FROM decode_rates d
 		LEFT JOIN systems s ON s.system_id = d.system_id
-		WHERE d.time >= $1
+		WHERE ($1::timestamptz IS NULL OR d.time >= $1)
 		  AND ($2::timestamptz IS NULL OR d.time <= $2)
 		ORDER BY d.time DESC LIMIT 1000`
 
-	rows, err := db.Pool.Query(ctx, query, *startTime, filter.EndTime)
+	rows, err := db.Pool.Query(ctx, query, filter.StartTime, filter.EndTime)
 	if err != nil {
 		return nil, err
 	}

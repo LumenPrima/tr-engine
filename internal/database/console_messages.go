@@ -29,18 +29,12 @@ type ConsoleMessageAPI struct {
 
 // ListConsoleMessages returns console messages matching the filter.
 func (db *DB) ListConsoleMessages(ctx context.Context, filter ConsoleMessageFilter) ([]ConsoleMessageAPI, int, error) {
-	startTime := filter.StartTime
-	if startTime == nil {
-		t := time.Now().Add(-1 * time.Hour)
-		startTime = &t
-	}
-
 	const whereClause = `
 		WHERE ($1::text IS NULL OR cm.instance_id = $1)
 		  AND ($2::text IS NULL OR cm.severity = $2)
-		  AND cm.log_time >= $3
+		  AND ($3::timestamptz IS NULL OR cm.log_time >= $3)
 		  AND ($4::timestamptz IS NULL OR cm.log_time < $4)`
-	args := []any{filter.InstanceID, filter.Severity, *startTime, filter.EndTime}
+	args := []any{filter.InstanceID, filter.Severity, filter.StartTime, filter.EndTime}
 
 	var total int
 	if err := db.Pool.QueryRow(ctx, "SELECT count(*) FROM console_messages cm"+whereClause, args...).Scan(&total); err != nil {
