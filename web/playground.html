@@ -131,6 +131,23 @@
   }
   .examples a:hover { opacity: 1; text-decoration: underline; }
 
+  /* ── Options ── */
+  .option-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 2px;
+  }
+  .option-row input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 14px; height: 14px; cursor: pointer;
+  }
+  .option-row label {
+    font-size: 12px; color: var(--text-mid); cursor: pointer;
+  }
+  .option-hint {
+    font-size: 10px; color: var(--text-faint); line-height: 1.3;
+    padding: 0 2px 0 22px;
+  }
+
   /* ── Buttons ── */
   .btn {
     background: var(--glass-bg); border: 1px solid var(--accent);
@@ -199,6 +216,13 @@
     <div class="mode-hint" id="modeHint">
       Page lives in tr-engine's web/ directory. Uses theme system and auto-auth.
     </div>
+    <div class="option-row">
+      <input type="checkbox" id="includeToken">
+      <label for="includeToken">Include connection info for live preview</label>
+    </div>
+    <div class="option-hint" id="tokenHint" style="display:none">
+      Adds this instance's URL and auth token so the AI-generated page works immediately in the preview.
+    </div>
     <button class="btn" id="buildBtn">Build Prompt</button>
   </div>
 
@@ -234,6 +258,8 @@
   const renderBtn = document.getElementById('renderBtn');
   const modeHint = document.getElementById('modeHint');
   const modeToggle = document.querySelector('.mode-toggle');
+  const includeTokenEl = document.getElementById('includeToken');
+  const tokenHint = document.getElementById('tokenHint');
 
   let currentMode = 'integrated';
 
@@ -345,6 +371,11 @@ Suggested palette: #0a0a0f background, #e0e0e8 text, #00d4ff accent.
     updateURL();
   });
 
+  // ── Token Checkbox ──
+  includeTokenEl.addEventListener('change', function() {
+    tokenHint.style.display = includeTokenEl.checked ? '' : 'none';
+  });
+
   // ── Example Links ──
   document.querySelector('.examples').addEventListener('click', function(e) {
     const link = e.target.closest('a[data-example]');
@@ -356,6 +387,22 @@ Suggested palette: #0a0a0f background, #e0e0e8 text, #00d4ff accent.
   });
 
   // ── Build Prompt ──
+  function getConnectionBlock() {
+    if (!includeTokenEl.checked) return '';
+    var token = window.trAuth && window.trAuth.getToken ? window.trAuth.getToken() : null;
+    if (!token) return '';
+    var baseUrl = location.origin;
+    return '\n\n## Live Instance (for testing)\n' +
+      'API base URL: ' + baseUrl + '\n' +
+      'Auth token: ' + token + '\n' +
+      (currentMode === 'integrated'
+        ? 'The page will be served from this instance, so relative URLs work. Auth is handled by auth.js automatically.'
+        : 'Pre-configure the page to connect to this instance on load:\n' +
+          '- Set API_URL = \'' + baseUrl + '\'\n' +
+          '- Set TOKEN = \'' + token + '\'\n' +
+          '- Skip the connection UI and go straight to showing data.');
+  }
+
   buildBtn.addEventListener('click', function() {
     const desc = descriptionEl.value.trim();
     if (!desc) {
@@ -364,7 +411,7 @@ Suggested palette: #0a0a0f background, #e0e0e8 text, #00d4ff accent.
       return;
     }
     const template = currentMode === 'integrated' ? INTEGRATED_TEMPLATE : STANDALONE_TEMPLATE;
-    promptOutput.value = template.replace('{DESCRIPTION}', desc);
+    promptOutput.value = template.replace('{DESCRIPTION}', desc) + getConnectionBlock();
     copyBtn.style.display = '';
     promptOutput.select();
   });
