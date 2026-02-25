@@ -34,6 +34,7 @@ tr-engine-linux
 # Dev scratch files
 mqtt-samples.txt
 *.png
+!docs/screenshots/*.png
 
 # Dev utilities
 cmd/mqtt-dump/

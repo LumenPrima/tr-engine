@@ -11,6 +11,29 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 > - **The ad-hoc SQL query endpoint (`/query`)** is disabled unless `AUTH_TOKEN` is set, and runs in a read-only transaction with a 30-second timeout.
 > - **Installation instructions have not been thoroughly vetted** and may cause random fires. Test in a disposable environment first.
 
+## Screenshots
+
+### Talkgroup Research — Browse View
+Browse 1,263+ talkgroups with search, system filtering, and sortable columns. Card grid and list views available.
+
+![Browse view — Crystal theme](docs/screenshots/tg-research-browse-crystal.png)
+
+### Talkgroup Research — Detail View
+Click any talkgroup to see stats, 24-hour activity timeline, site distribution, and encryption indicator.
+
+![Detail view — Crystal theme](docs/screenshots/tg-research-detail-crystal.png)
+
+### Units Tab — Top Talkers & Network Graph
+Horizontal bar chart of most active units plus an interactive SVG network graph showing unit-to-talkgroup relationships.
+
+![Units tab — Crystal theme](docs/screenshots/tg-research-units-crystal.png)
+
+### Dark Theme (Night City)
+All pages support 11 switchable themes. Here's the detail view with activity chart and calls tab.
+
+![Detail view — Night City theme](docs/screenshots/tg-research-detail-header.png)
+![Units tab — Night City theme](docs/screenshots/tg-research-units-tab.png)
+
 ## Tech Stack
 
 - **Go** — multi-core utilization at high message rates
@@ -181,6 +204,8 @@ tr-engine ships with several built-in dashboards at `http://localhost:8080`. The
 | **IRC Radio Live** | IRC-style monitor — talkgroups as channels, units as nicks, audio playback |
 | **Scanner** | Mobile-friendly radio scanner with auto-play and channel filtering |
 | **Talkgroup Directory** | Browse and import talkgroup reference data from CSV |
+| **Talkgroup Research** | Deep-dive analysis — browse table, detail view with charts, unit network graph, call history with audio, live affiliations, events |
+| **Call History** | Searchable call log with inline audio playback, expandable detail rows, transmission timeline |
 | **Signal Flow** | Stream graph of talkgroup activity over time (D3.js) |
 | **API Docs** | Interactive Swagger UI for the REST API |
 
@@ -228,6 +253,13 @@ sample.env                      Configuration template
 ```
 
 ## Changelog
+
+### v0.8.5
+
+- **Talkgroup Research page** — two-view investigation tool with browse table/card grid, full-page detail view with 24h activity chart, site distribution doughnut, encryption badge, units tab with top talkers bar chart and interactive SVG unit network graph, calls tab with audio playback, affiliations tab with auto-refresh, and events tab with type filtering. 11 switchable themes.
+- **API: Cloudflare-safe composite IDs** — all endpoints accepting `system_id:entity_id` now also accept `system_id-entity_id` (dash separator), avoiding Cloudflare WAF blocks on colons in URL paths
+- **API: call_count on talkgroup units** — `GET /talkgroups/{id}/units` now returns `call_count` per unit, sorted by most active first
+- **API: unit_id alias** — unit-events responses now include `unit_id` alongside `unit_rid` for consistency with other endpoints
 
 ### v0.8.3
 
