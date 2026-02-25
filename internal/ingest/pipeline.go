@@ -924,6 +924,18 @@ func (m *activeCallMap) FindByTgidAndTime(tgid int, startTime time.Time, toleran
 	return bestKey, bestEntry, bestDiff <= tolerance
 }
 
+// FindByFreq returns the first active call on the given frequency, if any.
+func (m *activeCallMap) FindByFreq(freq int64) (activeCallEntry, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, e := range m.calls {
+		if e.Freq == freq {
+			return e, true
+		}
+	}
+	return activeCallEntry{}, false
+}
+
 func (m *activeCallMap) Len() int {
 	m.mu.Lock()
 	n := len(m.calls)
@@ -1208,10 +1220,11 @@ func (p *Pipeline) UnitAffiliations() []api.UnitAffiliationData {
 	return result
 }
 
-// UpdateRecorderCache stores the latest recorder state in the in-memory cache.
+// UpdateRecorderCache stores the latest recorder state in the in-memory cache,
+// enriched with active call data (talkgroup, unit) by matching frequency.
 func (p *Pipeline) UpdateRecorderCache(instanceID string, rec database.RecorderSnapshotRow) {
 	key := fmt.Sprintf("%s_%d_%d", instanceID, rec.SrcNum, rec.RecNum)
-	p.recorderCache.Store(key, api.RecorderStateData{
+	data := api.RecorderStateData{
 		ID:         rec.RecorderID,
 		InstanceID: instanceID,
 		SrcNum:     rec.SrcNum,
@@ -1222,5 +1235,14 @@ func (p *Pipeline) UpdateRecorderCache(instanceID string, rec database.RecorderS
 		Duration:   rec.Duration,
 		Count:      rec.Count,
 		Squelched:  rec.Squelched,
-	})
+	}
+	if rec.Freq > 0 {
+		if call, ok := p.activeCalls.FindByFreq(rec.Freq); ok {
+			data.Tgid = &call.Tgid
+			data.TgAlphaTag = &call.TgAlphaTag
+			data.UnitID = &call.Unit
+			data.UnitAlphaTag = &call.UnitAlphaTag
+		}
+	}
+	p.recorderCache.Store(key, data)
 }
