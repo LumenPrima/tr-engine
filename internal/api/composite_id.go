@@ -25,12 +25,27 @@ func ParseCompositeID(r *http.Request, param string) (CompositeID, error) {
 		return CompositeID{}, fmt.Errorf("missing path parameter: %s", param)
 	}
 
+	// Accept both ":" and "-" as separators for composite IDs.
+	// Dash is Cloudflare WAF-safe; colon is the canonical format.
+	sep := -1
 	if idx := strings.IndexByte(raw, ':'); idx > 0 {
-		sysID, err := strconv.Atoi(raw[:idx])
+		sep = idx
+	} else if idx := strings.IndexByte(raw, '-'); idx > 0 {
+		// Only treat "-" as separator if both sides are numeric
+		left, right := raw[:idx], raw[idx+1:]
+		if _, err := strconv.Atoi(left); err == nil {
+			if _, err := strconv.Atoi(right); err == nil {
+				sep = idx
+			}
+		}
+	}
+
+	if sep > 0 {
+		sysID, err := strconv.Atoi(raw[:sep])
 		if err != nil {
 			return CompositeID{}, fmt.Errorf("invalid system_id in composite ID: %s", raw)
 		}
-		entID, err := strconv.Atoi(raw[idx+1:])
+		entID, err := strconv.Atoi(raw[sep+1:])
 		if err != nil {
 			return CompositeID{}, fmt.Errorf("invalid entity_id in composite ID: %s", raw)
 		}

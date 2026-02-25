@@ -61,6 +61,10 @@ func TestParseCompositeID(t *testing.T) {
 		{"invalid_system_id", "abc:100", 0, 0, false, true},
 		{"invalid_entity_id", "1:abc", 0, 0, false, true},
 		{"non_numeric_plain", "abc", 0, 0, false, true},
+		{"composite_dash", "3-48686", 3, 48686, false, false},
+		{"dash_large_ids", "1-1234567", 1, 1234567, false, false},
+		{"invalid_dash_system", "abc-100", 0, 0, false, true},
+		{"invalid_dash_entity", "1-abc", 0, 0, false, true},
 	}
 
 	for _, tt := range tests {
