@@ -1502,12 +1502,24 @@
         },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: function(ctx) {
+                  var idx = ctx[0].dataIndex;
+                  var d = new Date(now - (NUM_BUCKETS - 1 - idx) * BUCKET_MIN * 60e3);
+                  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                },
+                label: function(ctx) { return ctx.raw + ' calls'; }
+              }
+            }
+          },
           scales: {
             x: {
               ticks: {
                 color: getThemeColor('text-muted'),
-                maxTicksLimit: 10,
+                maxTicksLimit: 8,
                 font: { size: 10 },
                 autoSkip: true,
                 callback: function(val, idx) {
@@ -1519,6 +1531,7 @@
             },
             y: {
               beginAtZero: true,
+              title: { display: true, text: 'Calls / 15 min', color: getThemeColor('text-muted'), font: { size: 10 } },
               ticks: { color: getThemeColor('text-muted'), font: { size: 10 } },
               grid: { color: 'rgba(128,128,128,0.1)' }
             }
@@ -1533,8 +1546,9 @@
         var site = c.site_short_name || 'Unknown';
         siteCounts[site] = (siteCounts[site] || 0) + 1;
       });
-      var siteLabels = Object.keys(siteCounts);
-      var siteData = siteLabels.map(function(k) { return siteCounts[k]; });
+      var siteKeys = Object.keys(siteCounts);
+      var siteData = siteKeys.map(function(k) { return siteCounts[k]; });
+      var siteLabels = siteKeys.map(function(k, i) { return k + ' (' + siteCounts[k] + ')'; });
       var palette = [
         getThemeColor('electric'), getThemeColor('cyan'),
         getThemeColor('lime'), getThemeColor('magenta'), getThemeColor('orange')
@@ -1750,6 +1764,7 @@
             x: {
               type: 'logarithmic',
               min: 1,
+              title: { display: true, text: 'Calls (log scale)', color: getThemeColor('text-muted'), font: { size: 10 } },
               ticks: {
                 color: getThemeColor('text-muted'),
                 font: { size: 10 },
