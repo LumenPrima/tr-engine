@@ -50,11 +50,10 @@ func NewServer(opts ServerOptions) *Server {
 		}
 	}
 
-	// Global middleware
+	// Global middleware (no MaxBodySize here — upload endpoint needs a larger limit)
 	r.Use(RequestID)
 	r.Use(CORSWithOrigins(corsOrigins))
 	r.Use(RateLimiter(opts.Config.RateLimitRPS, opts.Config.RateLimitBurst))
-	r.Use(MaxBodySize(10 << 20)) // 10 MB max request body
 	r.Use(Recoverer)
 	r.Use(Logger(opts.Log))
 
@@ -76,6 +75,7 @@ func NewServer(opts ServerOptions) *Server {
 	// Upload endpoint with custom auth (accepts form field key/api_key)
 	if opts.Uploader != nil {
 		r.Group(func(r chi.Router) {
+			r.Use(MaxBodySize(50 << 20)) // 50 MB for audio uploads
 			r.Use(UploadAuth(opts.Config.AuthToken))
 			r.Route("/api/v1", func(r chi.Router) {
 				NewUploadHandler(opts.Uploader, opts.Config.UploadInstanceID, opts.Log).Routes(r)
@@ -85,6 +85,7 @@ func NewServer(opts ServerOptions) *Server {
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
+		r.Use(MaxBodySize(10 << 20)) // 10 MB for regular API requests
 		r.Use(BearerAuth(opts.Config.AuthToken))
 		r.Use(ResponseTimeout(opts.Config.WriteTimeout))
 

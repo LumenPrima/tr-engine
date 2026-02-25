@@ -4,56 +4,7 @@ import (
 	"testing"
 )
 
-// ── DetectUploadFormat ──────────────────────────────────────────────────
-
-func TestDetectUploadFormat_RdioScanner(t *testing.T) {
-	fields := []string{"audio", "audioName", "systemLabel", "talkgroup", "frequency", "dateTime"}
-	got := DetectUploadFormat(fields)
-	if got != "rdio-scanner" {
-		t.Errorf("DetectUploadFormat(%v) = %q, want %q", fields, got, "rdio-scanner")
-	}
-}
-
-func TestDetectUploadFormat_OpenMHz(t *testing.T) {
-	fields := []string{"call", "talkgroup_num", "start_time", "freq", "source_list"}
-	got := DetectUploadFormat(fields)
-	if got != "openmhz" {
-		t.Errorf("DetectUploadFormat(%v) = %q, want %q", fields, got, "openmhz")
-	}
-}
-
-func TestDetectUploadFormat_Unknown(t *testing.T) {
-	fields := []string{"someRandomField", "anotherField"}
-	got := DetectUploadFormat(fields)
-	if got != "" {
-		t.Errorf("DetectUploadFormat(%v) = %q, want empty string", fields, got)
-	}
-}
-
-func TestDetectUploadFormat_Empty(t *testing.T) {
-	got := DetectUploadFormat(nil)
-	if got != "" {
-		t.Errorf("DetectUploadFormat(nil) = %q, want empty string", got)
-	}
-}
-
-func TestDetectUploadFormat_RdioPartialMissing(t *testing.T) {
-	// Has audio and audioName but not systemLabel
-	fields := []string{"audio", "audioName", "talkgroup"}
-	got := DetectUploadFormat(fields)
-	if got != "" {
-		t.Errorf("DetectUploadFormat(%v) = %q, want empty string (missing systemLabel)", fields, got)
-	}
-}
-
-func TestDetectUploadFormat_OpenMHzPartialMissing(t *testing.T) {
-	// Has call and talkgroup_num but not start_time
-	fields := []string{"call", "talkgroup_num", "freq"}
-	got := DetectUploadFormat(fields)
-	if got != "" {
-		t.Errorf("DetectUploadFormat(%v) = %q, want empty string (missing start_time)", fields, got)
-	}
-}
+// Format detection is tested in api/upload_test.go (detectUploadFormat).
 
 // ── ParseRdioScannerFields ──────────────────────────────────────────────
 

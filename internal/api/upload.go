@@ -35,9 +35,6 @@ func (h *UploadHandler) Routes(r chi.Router) {
 // Accepts multipart form uploads in rdio-scanner or OpenMHz format.
 // Auto-detects the format from form field names.
 func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
-	// Limit upload size (50 MB)
-	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
-
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form: " + err.Error()})
 		return

@@ -178,27 +178,6 @@ func (p *Pipeline) ProcessUploadedCall(ctx context.Context, instanceID string, m
 	}, nil
 }
 
-// DetectUploadFormat inspects the multipart form field names to determine the
-// upload format. Returns "rdio-scanner", "openmhz", or "" if unknown.
-func DetectUploadFormat(fieldNames []string) string {
-	set := make(map[string]bool, len(fieldNames))
-	for _, name := range fieldNames {
-		set[name] = true
-	}
-
-	// rdio-scanner: uses "audio", "audioName", "systemLabel"
-	if set["audio"] && set["audioName"] && set["systemLabel"] {
-		return "rdio-scanner"
-	}
-
-	// OpenMHz: uses "call", "talkgroup_num", "start_time"
-	if set["call"] && set["talkgroup_num"] && set["start_time"] {
-		return "openmhz"
-	}
-
-	return ""
-}
-
 // ParseRdioScannerFields parses rdio-scanner trunk-recorder plugin form fields
 // into an AudioMetadata struct.
 //
