@@ -270,6 +270,13 @@ sample.env                      Configuration template
 
 ## Changelog
 
+### v0.8.6
+
+- **Starred meta-channel** — IRC Radio Live now has a `★ Starred` virtual channel that aggregates all activity from favorited talkgroups into one chronological feed. Clickable origin tags show which channel each message came from. Real-time forwarding, history loading with infinite scroll, and transcription support.
+- **Page builder playground** — interactive tool for building custom tr-engine web pages with prompt generation and live preview
+- **Read/write token separation** — `WRITE_TOKEN` for upload and write operations, `AUTH_TOKEN` for read-only access. Upload auth falls back to `AUTH_TOKEN` when `WRITE_TOKEN` is not set.
+- **Talkgroup enrichment** — heard talkgroups automatically enriched with directory data (alpha_tag, description, tag, group) from TR's CSV imports
+
 ### v0.8.5
 
 - **HTTP call upload** — `POST /api/v1/call-upload` accepts multipart uploads compatible with trunk-recorder's rdio-scanner and OpenMHz upload plugins. Auto-detects format from form field names. Fourth ingest path alongside MQTT, file-watch, and TR auto-discovery — no local audio capture or MQTT broker required.
