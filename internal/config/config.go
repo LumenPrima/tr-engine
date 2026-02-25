@@ -27,6 +27,9 @@ type Config struct {
 	WatchInstanceID   string `env:"WATCH_INSTANCE_ID" envDefault:"file-watch"`
 	WatchBackfillDays int    `env:"WATCH_BACKFILL_DAYS" envDefault:"7"`
 
+	// HTTP upload ingest mode (rdio-scanner / OpenMHz compatible)
+	UploadInstanceID string `env:"UPLOAD_INSTANCE_ID" envDefault:"http-upload"`
+
 	// TR auto-discovery (reads trunk-recorder's config.json + docker-compose.yaml)
 	TRDir        string `env:"TR_DIR"`
 	CSVWriteback bool   `env:"CSV_WRITEBACK" envDefault:"false"` // write edits back to TR's CSV files on disk
