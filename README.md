@@ -41,7 +41,7 @@ All pages support 11 switchable themes. Here's the detail view with activity cha
 - **Go** — multi-core utilization at high message rates
 - **PostgreSQL 17+** — partitioned tables, JSONB, denormalized for read performance
 - **MQTT + File Watch** — ingests from trunk-recorder via MQTT or filesystem monitoring (or both)
-- **REST API** — 49 endpoints under `/api/v1`, defined in `openapi.yaml`
+- **REST API** — 50 endpoints under `/api/v1`, defined in `openapi.yaml`
 - **SSE** — real-time event streaming with server-side filtering
 - **Web UI** — built-in dashboards demonstrating API and SSE capabilities
 
@@ -131,11 +131,12 @@ Both modes can coexist during a transition. Existing calls with MQTT-ingested au
 
 ### Ingest Modes
 
-tr-engine supports three ingest modes that can run independently or simultaneously:
+tr-engine supports four ingest modes that can run independently or simultaneously:
 
 - **MQTT** — subscribes to trunk-recorder's MQTT status plugin for real-time call events, unit activity, recorder state, and decode rates. The richest data source.
 - **File Watch** (`WATCH_DIR`) — monitors trunk-recorder's audio output directory for new `.json` metadata files via fsnotify. Only produces `call_end` events (no `call_start`, unit events, or recorder state). Backfills existing files on startup (configurable via `WATCH_BACKFILL_DAYS`).
 - **TR Auto-Discovery** (`TR_DIR`) — the simplest setup. Point at the directory containing trunk-recorder's `config.json`. Auto-discovers `captureDir` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, imports talkgroup CSVs and unit tag CSVs (`unitTagsFile`) into the database. If a `docker-compose.yaml` is found, container paths are translated to host paths via volume mappings. With `CSV_WRITEBACK=true`, alpha_tag edits are written back to the CSV files on disk.
+- **HTTP Upload** (`POST /api/v1/call-upload`) — accepts multipart call uploads compatible with trunk-recorder's rdio-scanner and OpenMHz upload plugins. Point TR's upload plugin at your tr-engine instance. No local audio capture or MQTT broker required. Produces `call_end` events with audio.
 
 ### Auto-Discovery
 
@@ -159,11 +160,13 @@ System "MARCS" (P25 sysid=348, wacn=BEE00)
 trunk-recorder  ──MQTT──>  broker  ──MQTT──>  tr-engine  ──REST/SSE──>  clients
       |                                            |
       +──audio files──>  fsnotify watcher ─────────+
+      |                                            |
+      +──HTTP upload──>  POST /call-upload ────────+
                                                    v
                                                PostgreSQL
 ```
 
-MQTT messages are routed to specialized handlers (calls, units, recorders, rates, trunking messages, etc.) that write to PostgreSQL and publish events to the SSE bus. File-watched calls go through the same pipeline as `call_end` events.
+MQTT messages are routed to specialized handlers (calls, units, recorders, rates, trunking messages, etc.) that write to PostgreSQL and publish events to the SSE bus. File-watched and HTTP-uploaded calls go through the same pipeline as `call_end` events.
 
 ## Real-Time Event Streaming
 
@@ -200,6 +203,7 @@ All under `/api/v1`. See `openapi.yaml` for the full specification.
 | `PUT /calls/{id}/transcription` | Submit human correction |
 | `POST /calls/{id}/transcribe` | Enqueue call for transcription |
 | `POST /admin/systems/merge` | Merge duplicate systems |
+| `POST /call-upload` | Upload call recording (rdio-scanner/OpenMHz compatible) |
 | `POST /query` | Ad-hoc read-only SQL queries |
 
 ## Web UI
@@ -267,6 +271,7 @@ sample.env                      Configuration template
 
 ### v0.8.5
 
+- **HTTP call upload** — `POST /api/v1/call-upload` accepts multipart uploads compatible with trunk-recorder's rdio-scanner and OpenMHz upload plugins. Auto-detects format from form field names. Fourth ingest path alongside MQTT, file-watch, and TR auto-discovery — no local audio capture or MQTT broker required.
 - **Talkgroup Research page** — two-view investigation tool with browse table/card grid, full-page detail view with 24h activity chart, site distribution doughnut, encryption badge, units tab with top talkers bar chart and interactive SVG unit network graph, calls tab with audio playback, affiliations tab with auto-refresh, and events tab with type filtering. 11 switchable themes.
 - **API: Cloudflare-safe composite IDs** — all endpoints accepting `system_id:entity_id` now also accept `system_id-entity_id` (dash separator), avoiding Cloudflare WAF blocks on colons in URL paths
 - **API: call_count on talkgroup units** — `GET /talkgroups/{id}/units` now returns `call_count` per unit, sorted by most active first

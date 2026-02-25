@@ -1503,6 +1503,205 @@ paths:
           $ref: "#/components/responses/BadRequest"
 
   # ----------------------------------------------------------
+  # Call Upload
+  # ----------------------------------------------------------
+  /call-upload:
+    post:
+      operationId: uploadCall
+      summary: Upload a call recording
+      description: |
+        Accepts multipart/form-data uploads compatible with trunk-recorder's
+        rdio-scanner and OpenMHz upload plugins. Auto-detects format from form
+        field names.
+
+        This provides a third ingest path alongside MQTT and file-watch. Point
+        trunk-recorder's upload plugin at `POST /api/v1/call-upload` and it
+        works out of the box.
+
+        **Authentication:** In addition to the standard `Authorization: Bearer`
+        header and `?token=` query parameter, this endpoint also accepts auth
+        via the `key` (rdio-scanner) or `api_key` (OpenMHz) multipart form
+        fields. This allows trunk-recorder upload plugins to authenticate
+        without custom header configuration.
+
+        **Format detection:** The endpoint inspects form field names to
+        determine the upload format:
+        - Fields `audio`, `audioName`, or `systemLabel` → **rdio-scanner** format
+        - Fields `call`, `talkgroup_num`, or `start_time` → **OpenMHz** format
+
+        **rdio-scanner format fields:**
+
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `audio` | file | Yes | Audio file (m4a, wav, mp3) |
+        | `talkgroup` | integer | Yes | Talkgroup ID |
+        | `dateTime` | integer | Yes | Unix epoch timestamp |
+        | `systemLabel` | string | Yes | System short name (used for identity resolution) |
+        | `frequency` | integer | No | Frequency in Hz |
+        | `sources` | JSON string | No | Array of `[{pos, src, tag}]` source items |
+        | `frequencies` | JSON string | No | Array of `[{freq, time, pos, len, errors, spikes}]` |
+        | `talkgroupLabel` | string | No | Talkgroup alpha tag |
+        | `talkgroupName` | string | No | Talkgroup description |
+        | `talkgroupTag` | string | No | Talkgroup service tag |
+        | `talkgroupGroup` | string | No | Talkgroup group/category |
+        | `audioType` | string | No | MIME type (e.g., `audio/mp4`) |
+        | `audioName` | string | No | Original filename |
+        | `emergency` | boolean | No | Emergency flag |
+        | `encrypted` | boolean | No | Encrypted flag |
+        | `key` | string | No | Auth token (alternative to Bearer header) |
+
+        **OpenMHz format fields:**
+
+        | Field | Type | Required | Description |
+        |-------|------|----------|-------------|
+        | `call` | file | Yes | Audio file |
+        | `talkgroup_num` | integer | Yes | Talkgroup ID |
+        | `start_time` | integer | Yes | Unix epoch start time |
+        | `freq` | integer | No | Frequency in Hz |
+        | `stop_time` | integer | No | Unix epoch stop time |
+        | `call_length` | number | No | Call duration in seconds |
+        | `source_list` | JSON string | No | Array of source items |
+        | `emergency` | integer | No | Emergency flag (0/1) |
+        | `error_count` | integer | No | Decode error count |
+        | `api_key` | string | No | Auth token (alternative to Bearer header) |
+      tags: [calls]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              description: |
+                Form fields depend on the upload format (rdio-scanner or OpenMHz).
+                See endpoint description for the complete field reference.
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: Audio file (rdio-scanner format)
+                call:
+                  type: string
+                  format: binary
+                  description: Audio file (OpenMHz format)
+                talkgroup:
+                  type: integer
+                  description: Talkgroup ID (rdio-scanner format)
+                talkgroup_num:
+                  type: integer
+                  description: Talkgroup ID (OpenMHz format)
+                dateTime:
+                  type: integer
+                  format: int64
+                  description: Unix epoch timestamp (rdio-scanner format)
+                start_time:
+                  type: integer
+                  format: int64
+                  description: Unix epoch start time (OpenMHz format)
+                systemLabel:
+                  type: string
+                  description: System short name (rdio-scanner format)
+                frequency:
+                  type: integer
+                  description: Frequency in Hz (rdio-scanner format)
+                freq:
+                  type: integer
+                  description: Frequency in Hz (OpenMHz format)
+                stop_time:
+                  type: integer
+                  format: int64
+                  description: Unix epoch stop time (OpenMHz format)
+                sources:
+                  type: string
+                  description: JSON array of source items (rdio-scanner format)
+                source_list:
+                  type: string
+                  description: JSON array of source items (OpenMHz format)
+                frequencies:
+                  type: string
+                  description: JSON array of frequency items (rdio-scanner format)
+                talkgroupLabel:
+                  type: string
+                  description: Talkgroup alpha tag
+                talkgroupName:
+                  type: string
+                  description: Talkgroup description
+                talkgroupTag:
+                  type: string
+                  description: Talkgroup service tag
+                talkgroupGroup:
+                  type: string
+                  description: Talkgroup group/category
+                audioType:
+                  type: string
+                  description: Audio MIME type (e.g., audio/mp4)
+                audioName:
+                  type: string
+                  description: Original audio filename
+                emergency:
+                  type: string
+                  description: Emergency flag (boolean or 0/1)
+                encrypted:
+                  type: string
+                  description: Encrypted flag (boolean or 0/1)
+                error_count:
+                  type: integer
+                  description: Decode error count (OpenMHz format)
+                call_length:
+                  type: number
+                  description: Call duration in seconds (OpenMHz format)
+                key:
+                  type: string
+                  description: Auth token (rdio-scanner format, alternative to Bearer header)
+                api_key:
+                  type: string
+                  description: Auth token (OpenMHz format, alternative to Bearer header)
+      responses:
+        "201":
+          description: Created — call record created and audio saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  call_id:
+                    type: integer
+                    format: int64
+                    description: Database ID of the created call
+                    example: 48531
+                  system_id:
+                    type: integer
+                    description: System the call was assigned to
+                    example: 1
+                  tgid:
+                    type: integer
+                    description: Talkgroup ID
+                    example: 9044
+                  start_time:
+                    type: string
+                    format: date-time
+                    description: Call start time (RFC 3339)
+                  audio_file_path:
+                    type: string
+                    description: Relative path to saved audio file
+                    example: "butco/2024/02/25/1708881234.m4a"
+        "400":
+          description: Bad Request — invalid multipart form, missing required fields, or unrecognized format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Conflict — duplicate call (same system, talkgroup, and start time)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------
   # Call Groups
   # ----------------------------------------------------------
   /call-groups:
