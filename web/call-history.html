@@ -1085,7 +1085,8 @@
       return;
     }
     currentAudioId = callId;
-    audioEl.src = url;
+    var authToken = window.trAuth && window.trAuth.getToken();
+    audioEl.src = authToken ? url + '?token=' + encodeURIComponent(authToken) : url;
     audioEl.play();
     setPlayingState(callId, true);
   }

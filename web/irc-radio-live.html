@@ -4013,9 +4013,10 @@ function playCall(callId, nick, channel, msgEl, txPos, txDuration) {
   // Clear old segments
   playerProgress.querySelectorAll('.player-segment, .player-segment-divider').forEach(el => el.remove());
 
-  // Load audio
+  // Load audio — append token for <audio> element (bypasses patched fetch)
   const audioUrl = `${API_BASE}/calls/${callId}/audio`;
-  audioEl.src = audioUrl;
+  const authToken = window.trAuth && window.trAuth.getToken();
+  audioEl.src = authToken ? audioUrl + '?token=' + encodeURIComponent(authToken) : audioUrl;
   audioEl.load();
 
   // Seek to transmission start once metadata loaded

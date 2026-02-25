@@ -1238,7 +1238,9 @@ function playCall(callId, nick, channel, feedItem) {
   npPlayBtn.innerHTML = '&#8987;';
 
   audioEl.volume = settings.volume / 100;
-  audioEl.src = `${API_BASE}/calls/${callId}/audio`;
+  const authToken = window.trAuth && window.trAuth.getToken();
+  const audioSrc = `${API_BASE}/calls/${callId}/audio`;
+  audioEl.src = authToken ? audioSrc + '?token=' + encodeURIComponent(authToken) : audioSrc;
   audioEl.load();
   audioEl.play().then(() => {
     npPlayBtn.innerHTML = '&#9646;&#9646;';
