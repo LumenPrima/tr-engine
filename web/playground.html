@@ -59,13 +59,17 @@
   /* ── Playground Layout ── */
   .playground {
     display: flex; flex-direction: row; gap: 16px;
-    padding: 16px; flex: 1; overflow: hidden;
+    padding: 16px; align-items: flex-start;
     position: relative; z-index: 1;
   }
 
   .panel {
     flex: 1; display: flex; flex-direction: column; gap: 12px;
     min-width: 0;
+  }
+  .panel:first-child {
+    flex: 0 0 340px;
+    position: sticky; top: 76px;
   }
 
   .panel-header {
@@ -175,19 +179,30 @@
   /* ── Preview Frame ── */
   .preview-frame {
     border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: #fff; min-height: 300px; flex: 1;
+    background: #fff; min-height: 85vh;
+    transition: border-radius 0.15s ease;
+  }
+  .preview-placeholder {
+    flex-shrink: 0;
+  }
+  .scroll-runway {
+    height: 60vh; flex-shrink: 0;
+    pointer-events: none;
   }
 
   /* ── Responsive ── */
   @media (max-width: 768px) {
     .playground {
-      flex-direction: column; overflow-y: auto;
+      flex-direction: column;
       padding: 12px;
+    }
+    .panel:first-child {
+      position: static; flex: none;
     }
     .description-input { min-height: 150px; }
     .prompt-output { min-height: 150px; }
     .preview-input { min-height: 120px; }
-    .preview-frame { min-height: 250px; }
+    .preview-frame { min-height: 350px; }
   }
 </style>
 </head>
@@ -239,6 +254,7 @@
       placeholder="Paste the HTML that Claude generates..."></textarea>
     <button class="btn" id="renderBtn">Render Preview</button>
     <iframe class="preview-frame" id="previewFrame" sandbox="allow-scripts allow-same-origin"></iframe>
+    <div class="scroll-runway"></div>
   </div>
 </div>
 
@@ -465,6 +481,88 @@ Suggested palette: #0a0a0f background, #e0e0e8 text, #00d4ff accent.
   });
 
   restoreURL();
+
+  // ── Scroll-driven preview expansion ──
+  // As the preview scrolls up, it expands to cover the full viewport,
+  // rolling over the left panel. Scrolling back down reverses it.
+  var placeholder = null;
+  var homeSnapshot = null;
+  var expanding = false;
+  var EXPAND_RANGE = 250;
+  var HEADER_HEIGHT = 60;
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function onScroll() {
+    if (window.innerWidth <= 768) {
+      if (expanding) resetPreview();
+      return;
+    }
+
+    // Before going fixed, measure from the iframe itself
+    if (!placeholder) {
+      var r = previewFrame.getBoundingClientRect();
+      var docTop = r.top + window.scrollY;
+      var scrollThreshold = docTop - HEADER_HEIGHT;
+      if (window.scrollY <= scrollThreshold) return;
+
+      // Snapshot the home position and create placeholder
+      homeSnapshot = { docTop: docTop, left: r.left, width: r.width, height: r.height };
+      placeholder = document.createElement('div');
+      placeholder.className = 'preview-placeholder';
+      placeholder.style.width = r.width + 'px';
+      placeholder.style.height = r.height + 'px';
+      previewFrame.parentNode.insertBefore(placeholder, previewFrame);
+      // Move iframe to body so it's not constrained by the panel
+      document.body.appendChild(previewFrame);
+      expanding = true;
+    }
+
+    var scrollThreshold = homeSnapshot.docTop - HEADER_HEIGHT;
+    if (window.scrollY <= scrollThreshold) {
+      resetPreview();
+      return;
+    }
+
+    var progress = Math.min(1, (window.scrollY - scrollThreshold) / EXPAND_RANGE);
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    // The home top in viewport coords shifts as we scroll
+    var homeViewportTop = homeSnapshot.docTop - window.scrollY;
+
+    previewFrame.style.position = 'fixed';
+    previewFrame.style.zIndex = '9997';
+    previewFrame.style.top = lerp(homeViewportTop, 0, progress) + 'px';
+    previewFrame.style.left = lerp(homeSnapshot.left, 0, progress) + 'px';
+    previewFrame.style.width = lerp(homeSnapshot.width, vw, progress) + 'px';
+    previewFrame.style.height = lerp(homeSnapshot.height, vh, progress) + 'px';
+    previewFrame.style.borderRadius = lerp(4, 0, progress) + 'px';
+    previewFrame.style.border = progress > 0.8 ? 'none' : '';
+  }
+
+  function resetPreview() {
+    previewFrame.style.position = '';
+    previewFrame.style.zIndex = '';
+    previewFrame.style.top = '';
+    previewFrame.style.left = '';
+    previewFrame.style.width = '';
+    previewFrame.style.height = '';
+    previewFrame.style.borderRadius = '';
+    previewFrame.style.border = '';
+    if (placeholder) {
+      // Move iframe back into the panel, before the placeholder
+      placeholder.parentNode.insertBefore(previewFrame, placeholder);
+      placeholder.remove();
+      placeholder = null;
+      homeSnapshot = null;
+    }
+    expanding = false;
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', function() {
+    if (expanding) onScroll();
+  }, { passive: true });
 })();
 </script>
 </body>
