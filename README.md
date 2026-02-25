@@ -72,15 +72,6 @@ docker compose pull && docker compose up -d
 
 This pulls the latest image and recreates the container. Your database and audio files are stored in named Docker volumes (`tr-engine-db`, `tr-engine-audio`) and persist across updates — only `docker compose down -v` (with the `-v` flag) removes them.
 
-If a release includes database schema changes, run the updated `schema.sql` against your database:
-
-```bash
-curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sql
-docker compose exec -T postgres psql -U trengine trengine < schema.sql
-```
-
-The schema uses `IF NOT EXISTS` throughout, so re-running it is safe. Check the release notes for any additional migration steps.
-
 ## Configuration
 
 Configuration is loaded in priority order: **CLI flags > environment variables > .env file > defaults**.
