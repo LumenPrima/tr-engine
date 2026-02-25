@@ -229,6 +229,16 @@ sample.env                      Configuration template
 
 ## Changelog
 
+### v0.8.3
+
+- **Call History page** — searchable, filterable call log with inline audio playback, expandable detail rows, transmission timeline, and URL-synced filters
+- **Fix audio playback auth** — `<audio>` elements now include auth token via `?token=` query param (fixes playback on IRC Radio, Call History, and Scanner)
+
+### v0.8.2
+
+- Page visibility management in nav dropdown
+- Theme engine improvements
+
 ### v0.8.1
 
 - **Fix duplicate system creation on fresh start** — calls arriving before system registration no longer create phantom systems with `sysid=0`. A warmup gate buffers non-identity messages until the first system registration establishes real P25 identity, then replays the buffer. Skipped on restart when identity is already cached.
