@@ -208,26 +208,73 @@ func clientIP(r *http.Request) string {
 	return ip
 }
 
-func BearerAuth(token string) func(http.Handler) http.Handler {
+// extractBearerToken reads the bearer token from the Authorization header
+// or the ?token= query parameter (fallback for EventSource/SSE).
+func extractBearerToken(r *http.Request) string {
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		return auth[7:]
+	}
+	if qt := r.URL.Query().Get("token"); qt != "" {
+		return qt
+	}
+	return ""
+}
+
+// BearerAuth requires a valid bearer token matching any of the provided tokens.
+// Empty tokens in the list are skipped. If all tokens are empty, all requests pass through.
+func BearerAuth(tokens ...string) func(http.Handler) http.Handler {
+	// Filter to non-empty tokens
+	var valid []string
+	for _, t := range tokens {
+		if t != "" {
+			valid = append(valid, t)
+		}
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if token == "" {
+			if len(valid) == 0 {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Check Authorization header first, then ?token= query param as fallback (for EventSource/SSE)
-			provided := ""
-			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-				provided = auth[7:]
-			} else if qt := r.URL.Query().Get("token"); qt != "" {
-				provided = qt
+			provided := extractBearerToken(r)
+			for _, t := range valid {
+				if subtle.ConstantTimeCompare([]byte(provided), []byte(t)) == 1 {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 
-			if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintf(w, `{"error":"unauthorized"}`)
+		})
+	}
+}
+
+// WriteAuth requires the write token for mutating HTTP methods (POST, PATCH, PUT, DELETE).
+// Read methods (GET, HEAD, OPTIONS) pass through unconditionally.
+// If writeToken is empty, all methods pass through (no write protection).
+func WriteAuth(writeToken string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if writeToken == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			switch r.Method {
+			case "GET", "HEAD", "OPTIONS":
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			provided := extractBearerToken(r)
+			if subtle.ConstantTimeCompare([]byte(provided), []byte(writeToken)) != 1 {
 				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				fmt.Fprintf(w, `{"error":"unauthorized"}`)
+				w.WriteHeader(http.StatusForbidden)
+				fmt.Fprintf(w, `{"error":"write operations require WRITE_TOKEN"}`)
 				return
 			}
 

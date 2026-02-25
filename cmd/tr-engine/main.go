@@ -288,6 +288,11 @@ func main() {
 	} else {
 		log.Info().Msg("AUTH_TOKEN loaded from configuration")
 	}
+	if cfg.WriteToken != "" {
+		log.Info().Msg("write protection enabled (WRITE_TOKEN set)")
+	} else {
+		log.Warn().Msg("WRITE_TOKEN not set — write endpoints accept the read token")
+	}
 
 	// HTTP Server
 	httpLog := log.With().Str("component", "http").Logger()

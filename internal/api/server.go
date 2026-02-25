@@ -74,7 +74,8 @@ func NewServer(opts ServerOptions) *Server {
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
-		r.Use(BearerAuth(opts.Config.AuthToken))
+		r.Use(BearerAuth(opts.Config.AuthToken, opts.Config.WriteToken))
+		r.Use(WriteAuth(opts.Config.WriteToken))
 		r.Use(ResponseTimeout(opts.Config.WriteTimeout))
 
 		// All API routes under /api/v1
