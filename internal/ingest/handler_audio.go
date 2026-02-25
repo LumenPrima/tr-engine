@@ -35,7 +35,7 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 	if err != nil {
 		// No call record yet — create one from audio metadata.
 		// call_end will find this record later via FindCallForAudio and update it.
-		callID, callStartTime, err = p.createCallFromAudio(ctx, identity, meta, startTime)
+		callID, callStartTime, _, err = p.createCallFromAudio(ctx, identity, meta, startTime)
 		if err != nil {
 			p.log.Error().Err(err).
 				Int("tgid", meta.Talkgroup).
@@ -111,12 +111,14 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 
 // createCallFromAudio creates a call record from audio metadata when no call_start was received.
 // The call_end handler will later find this record via FindCallForAudio and enrich it.
-func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedIdentity, meta *AudioMetadata, startTime time.Time) (int64, time.Time, error) {
+// Returns (callID, startTime, effectiveTgAlphaTag, error). The effective tag comes from the DB
+// and respects the manual > csv > mqtt priority chain.
+func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedIdentity, meta *AudioMetadata, startTime time.Time) (int64, time.Time, string, error) {
 	// Final dedup check right before INSERT — narrows the TOCTOU race window
 	// between concurrent MQTT (handleAudio) and file-watch (processWatchedFile)
 	// paths from seconds to sub-millisecond.
 	if existingID, existingST, err := p.db.FindCallForAudio(ctx, identity.SystemID, meta.Talkgroup, startTime); err == nil {
-		return existingID, existingST, nil
+		return existingID, existingST, meta.TalkgroupTag, nil
 	}
 
 	freq := int64(meta.Freq)
@@ -164,14 +166,17 @@ func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedId
 
 	callID, err := p.db.InsertCall(ctx, row)
 	if err != nil {
-		return 0, time.Time{}, fmt.Errorf("insert call from audio: %w", err)
+		return 0, time.Time{}, "", fmt.Errorf("insert call from audio: %w", err)
 	}
 
-	// Upsert talkgroup
+	// Upsert talkgroup — capture effective tag from DB
+	effectiveTgTag := meta.TalkgroupTag
 	if meta.Talkgroup > 0 {
-		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, meta.Talkgroup,
+		if dbTag, upsertErr := p.db.UpsertTalkgroup(ctx, identity.SystemID, meta.Talkgroup,
 			meta.TalkgroupTag, meta.TalkgroupGroupTag, meta.TalkgroupGroup, meta.TalkgroupDesc, startTime,
-		)
+		); upsertErr == nil && dbTag != "" {
+			effectiveTgTag = dbTag
+		}
 	}
 
 	// Create call group
@@ -189,7 +194,7 @@ func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedId
 		Str("sys_name", meta.ShortName).
 		Msg("call created from audio metadata")
 
-	return callID, startTime, nil
+	return callID, startTime, effectiveTgTag, nil
 }
 
 // srcFreqResult holds the pure data transformation output from buildSrcFreqJSON.
@@ -361,11 +366,11 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 	}
 
 	// Create call from audio metadata
-	callID, callStartTime, err := p.createCallFromAudio(ctx, identity, meta, startTime)
+	callID, callStartTime, effectiveTgTag, err := p.createCallFromAudio(ctx, identity, meta, startTime)
 	if err != nil && strings.Contains(err.Error(), "no partition") {
 		// Auto-create missing partition and retry once
 		p.ensurePartitionsFor(startTime)
-		callID, callStartTime, err = p.createCallFromAudio(ctx, identity, meta, startTime)
+		callID, callStartTime, effectiveTgTag, err = p.createCallFromAudio(ctx, identity, meta, startTime)
 	}
 	if err != nil {
 		return fmt.Errorf("create call from watched file: %w", err)
@@ -415,7 +420,7 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 			"call_id":       callID,
 			"system_id":     identity.SystemID,
 			"tgid":          meta.Talkgroup,
-			"tg_alpha_tag":  meta.TalkgroupTag,
+			"tg_alpha_tag":  effectiveTgTag,
 			"freq":          int64(meta.Freq),
 			"start_time":    startTime,
 			"stop_time":     stopTime,

@@ -66,12 +66,15 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		return fmt.Errorf("resolve identity: %w", err)
 	}
 
-	// Upsert talkgroup if present
+	// Upsert talkgroup if present — capture effective tag from DB
+	effectiveTgTag := data.TalkgroupAlphaTag
 	if data.Talkgroup > 0 {
-		if err := p.db.UpsertTalkgroup(ctx, identity.SystemID, data.Talkgroup,
+		if dbTag, err := p.db.UpsertTalkgroup(ctx, identity.SystemID, data.Talkgroup,
 			data.TalkgroupAlphaTag, data.TalkgroupTag, data.TalkgroupGroup, data.TalkgroupDescription, ts,
 		); err != nil {
 			p.log.Warn().Err(err).Int("tgid", data.Talkgroup).Msg("failed to upsert talkgroup")
+		} else if dbTag != "" {
+			effectiveTgTag = dbTag
 		}
 	}
 
@@ -108,7 +111,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 			UnitRID:      data.Unit,
 			Time:         ts,
 			UnitAlphaTag: effectiveUnitTag,
-			TgAlphaTag:   data.TalkgroupAlphaTag,
+			TgAlphaTag:   effectiveTgTag,
 			InstanceID:   env.InstanceID,
 			SysName:      data.SysName,
 			IncidentData: data.IncidentData,
@@ -180,7 +183,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 				"unit_id":        data.Unit,
 				"unit_alpha_tag": effectiveUnitTag,
 				"tgid":           data.Talkgroup,
-				"tg_alpha_tag":   data.TalkgroupAlphaTag,
+				"tg_alpha_tag":   effectiveTgTag,
 				"time":           ts,
 				"incident_data":  data.IncidentData,
 			},
@@ -203,7 +206,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 				UnitID:          data.Unit,
 				UnitAlphaTag:    effectiveUnitTag,
 				Tgid:            data.Talkgroup,
-				TgAlphaTag:      data.TalkgroupAlphaTag,
+				TgAlphaTag:      effectiveTgTag,
 				TgDescription:   data.TalkgroupDescription,
 				TgTag:           data.TalkgroupTag,
 				TgGroup:         data.TalkgroupGroup,
@@ -229,7 +232,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 					UnitID:          data.Unit,
 					UnitAlphaTag:    effectiveUnitTag,
 					Tgid:            data.Talkgroup,
-					TgAlphaTag:      data.TalkgroupAlphaTag,
+					TgAlphaTag:      effectiveTgTag,
 					TgDescription:   data.TalkgroupDescription,
 					TgTag:           data.TalkgroupTag,
 					TgGroup:         data.TalkgroupGroup,

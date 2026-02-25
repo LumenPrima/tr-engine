@@ -78,11 +78,11 @@ func (p *Pipeline) ProcessUploadedCall(ctx context.Context, instanceID string, m
 	}
 
 	// Create call from audio metadata
-	callID, callStartTime, err := p.createCallFromAudio(ctx, identity, meta, startTime)
+	callID, callStartTime, effectiveTgTag, err := p.createCallFromAudio(ctx, identity, meta, startTime)
 	if err != nil && strings.Contains(err.Error(), "no partition") {
 		// Auto-create missing partition and retry once
 		p.ensurePartitionsFor(startTime)
-		callID, callStartTime, err = p.createCallFromAudio(ctx, identity, meta, startTime)
+		callID, callStartTime, effectiveTgTag, err = p.createCallFromAudio(ctx, identity, meta, startTime)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("create call from upload: %w", err)
@@ -140,7 +140,7 @@ func (p *Pipeline) ProcessUploadedCall(ctx context.Context, instanceID string, m
 			"call_id":        callID,
 			"system_id":      identity.SystemID,
 			"tgid":           meta.Talkgroup,
-			"tg_alpha_tag":   meta.TalkgroupTag,
+			"tg_alpha_tag":   effectiveTgTag,
 			"freq":           int64(meta.Freq),
 			"start_time":     startTime,
 			"stop_time":      stopTime,

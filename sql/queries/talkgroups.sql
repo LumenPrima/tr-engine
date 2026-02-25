@@ -28,7 +28,7 @@ UPDATE talkgroups SET
     priority    = CASE WHEN @priority::int >= 0 THEN @priority ELSE priority END
 WHERE system_id = @system_id AND tgid = @tgid;
 
--- name: UpsertTalkgroup :exec
+-- name: UpsertTalkgroup :one
 INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, first_seen, last_seen)
 VALUES (@system_id, @tgid, @alpha_tag, @tag, @tg_group, @description, @event_time, @event_time)
 ON CONFLICT (system_id, tgid) DO UPDATE SET
@@ -41,7 +41,8 @@ ON CONFLICT (system_id, tgid) DO UPDATE SET
     description = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups.description
                        ELSE COALESCE(NULLIF(@description, ''), talkgroups.description) END,
     first_seen  = LEAST(talkgroups.first_seen, @event_time),
-    last_seen   = GREATEST(talkgroups.last_seen, @event_time);
+    last_seen   = GREATEST(talkgroups.last_seen, @event_time)
+RETURNING COALESCE(alpha_tag, '') AS alpha_tag;
 
 -- name: UpsertTalkgroupDirectory :exec
 INSERT INTO talkgroup_directory (system_id, tgid, alpha_tag, mode, description, tag, category, priority)

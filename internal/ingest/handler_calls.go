@@ -27,23 +27,29 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		return fmt.Errorf("resolve identity: %w", err)
 	}
 
-	// Upsert talkgroup
+	// Upsert talkgroup — capture effective tag from DB (respects manual > csv > mqtt)
+	effectiveTgTag := call.TalkgroupAlphaTag
 	if call.Talkgroup > 0 {
-		if err := p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
+		if dbTag, err := p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
 			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
 		); err != nil {
 			p.log.Warn().Err(err).Int("tgid", call.Talkgroup).Msg("failed to upsert talkgroup")
+		} else if dbTag != "" {
+			effectiveTgTag = dbTag
 		}
 		// Enrich from directory (fills missing fields like mode, priority, description)
 		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
 	}
 
-	// Upsert unit
+	// Upsert unit — capture effective tag from DB
+	effectiveUnitTag := call.UnitAlphaTag
 	if call.Unit > 0 {
-		if _, err := p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
+		if dbTag, err := p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
 			call.UnitAlphaTag, "call_start", startTime, call.Talkgroup,
 		); err != nil {
 			p.log.Warn().Err(err).Int("unit", call.Unit).Msg("failed to upsert unit")
+		} else if dbTag != "" {
+			effectiveUnitTag = dbTag
 		}
 	}
 
@@ -149,12 +155,12 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		SiteID:        &siteID,
 		SiteShortName: call.SysName,
 		Tgid:          call.Talkgroup,
-		TgAlphaTag:    call.TalkgroupAlphaTag,
+		TgAlphaTag:    effectiveTgTag,
 		TgDescription: call.TalkgroupDescription,
 		TgTag:         call.TalkgroupTag,
 		TgGroup:       call.TalkgroupGroup,
 		Unit:          call.Unit,
-		UnitAlphaTag:  call.UnitAlphaTag,
+		UnitAlphaTag:  effectiveUnitTag,
 		Freq:          freq,
 		Emergency:     call.Emergency,
 		Encrypted:     call.Encrypted,
@@ -193,12 +199,12 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 			"call_id":         callID,
 			"system_id":       identity.SystemID,
 			"tgid":            call.Talkgroup,
-			"tg_alpha_tag":    call.TalkgroupAlphaTag,
+			"tg_alpha_tag":    effectiveTgTag,
 			"tg_tag":          call.TalkgroupTag,
 			"tg_group":        call.TalkgroupGroup,
 			"tg_description":  call.TalkgroupDescription,
 			"unit":            call.Unit,
-			"unit_alpha_tag":  call.UnitAlphaTag,
+			"unit_alpha_tag":  effectiveUnitTag,
 			"freq":            freq,
 			"start_time":      startTime,
 			"emergency":       call.Emergency,
@@ -288,12 +294,23 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 
 	// Resolve identity for talkgroup upsert and event publishing
 	identity, idErr := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)
+	effectiveTgTag := call.TalkgroupAlphaTag
+	effectiveUnitTag := call.UnitAlphaTag
 	if idErr == nil && call.Talkgroup > 0 {
-		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
+		if dbTag, upsertErr := p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
 			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
-		)
+		); upsertErr == nil && dbTag != "" {
+			effectiveTgTag = dbTag
+		}
 		// Enrich from directory (fills missing fields like mode, priority, description)
 		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
+	}
+	if idErr == nil && call.Unit > 0 {
+		if dbTag, upsertErr := p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
+			call.UnitAlphaTag, "call_end", startTime, call.Talkgroup,
+		); upsertErr == nil && dbTag != "" {
+			effectiveUnitTag = dbTag
+		}
 	}
 
 	p.log.Debug().
@@ -313,9 +330,9 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 				"call_id":        entry.CallID,
 				"system_id":      identity.SystemID,
 				"tgid":           call.Talkgroup,
-				"tg_alpha_tag":   call.TalkgroupAlphaTag,
+				"tg_alpha_tag":   effectiveTgTag,
 				"unit":           call.Unit,
-				"unit_alpha_tag": call.UnitAlphaTag,
+				"unit_alpha_tag": effectiveUnitTag,
 				"freq":           int64(call.Freq),
 				"start_time":     startTime,
 				"stop_time":      stopTime,
@@ -399,20 +416,26 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		row.UnitIDs = []int32{int32(call.Unit)}
 	}
 
-	// Upsert talkgroup
+	// Upsert talkgroup — capture effective tag from DB
+	effectiveTgTag := call.TalkgroupAlphaTag
 	if call.Talkgroup > 0 {
-		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
+		if dbTag, upsertErr := p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
 			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
-		)
+		); upsertErr == nil && dbTag != "" {
+			effectiveTgTag = dbTag
+		}
 		// Enrich from directory (fills missing fields like mode, priority, description)
 		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
 	}
 
-	// Upsert unit
+	// Upsert unit — capture effective tag from DB
+	effectiveUnitTag := call.UnitAlphaTag
 	if call.Unit > 0 {
-		_, _ = p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
+		if dbTag, upsertErr := p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
 			call.UnitAlphaTag, "call_end", startTime, call.Talkgroup,
-		)
+		); upsertErr == nil && dbTag != "" {
+			effectiveUnitTag = dbTag
+		}
 	}
 
 	// Retry: audio handler may have created this call concurrently (race on reconnect bursts).
@@ -454,9 +477,9 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 				"call_id":        existingID,
 				"system_id":      identity.SystemID,
 				"tgid":           call.Talkgroup,
-				"tg_alpha_tag":   call.TalkgroupAlphaTag,
+				"tg_alpha_tag":   effectiveTgTag,
 				"unit":           call.Unit,
-				"unit_alpha_tag": call.UnitAlphaTag,
+				"unit_alpha_tag": effectiveUnitTag,
 				"freq":           freq,
 				"start_time":     startTime,
 				"stop_time":      stopTime,
@@ -506,9 +529,9 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 			"call_id":        callID,
 			"system_id":      identity.SystemID,
 			"tgid":           call.Talkgroup,
-			"tg_alpha_tag":   call.TalkgroupAlphaTag,
+			"tg_alpha_tag":   effectiveTgTag,
 			"unit":           call.Unit,
-			"unit_alpha_tag": call.UnitAlphaTag,
+			"unit_alpha_tag": effectiveUnitTag,
 			"freq":           freq,
 			"start_time":     startTime,
 			"stop_time":      stopTime,

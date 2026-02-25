@@ -174,7 +174,7 @@ func (q *Queries) UpdateTalkgroupFields(ctx context.Context, arg UpdateTalkgroup
 	return err
 }
 
-const upsertTalkgroup = `-- name: UpsertTalkgroup :exec
+const upsertTalkgroup = `-- name: UpsertTalkgroup :one
 INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, first_seen, last_seen)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 ON CONFLICT (system_id, tgid) DO UPDATE SET
@@ -188,6 +188,7 @@ ON CONFLICT (system_id, tgid) DO UPDATE SET
                        ELSE COALESCE(NULLIF($6, ''), talkgroups.description) END,
     first_seen  = LEAST(talkgroups.first_seen, $7),
     last_seen   = GREATEST(talkgroups.last_seen, $7)
+RETURNING COALESCE(alpha_tag, '') AS alpha_tag
 `
 
 type UpsertTalkgroupParams struct {
@@ -200,8 +201,8 @@ type UpsertTalkgroupParams struct {
 	EventTime   pgtype.Timestamptz
 }
 
-func (q *Queries) UpsertTalkgroup(ctx context.Context, arg UpsertTalkgroupParams) error {
-	_, err := q.db.Exec(ctx, upsertTalkgroup,
+func (q *Queries) UpsertTalkgroup(ctx context.Context, arg UpsertTalkgroupParams) (string, error) {
+	row := q.db.QueryRow(ctx, upsertTalkgroup,
 		arg.SystemID,
 		arg.Tgid,
 		arg.AlphaTag,
@@ -210,7 +211,9 @@ func (q *Queries) UpsertTalkgroup(ctx context.Context, arg UpsertTalkgroupParams
 		arg.Description,
 		arg.EventTime,
 	)
-	return err
+	var alpha_tag string
+	err := row.Scan(&alpha_tag)
+	return alpha_tag, err
 }
 
 const upsertTalkgroupDirectory = `-- name: UpsertTalkgroupDirectory :exec

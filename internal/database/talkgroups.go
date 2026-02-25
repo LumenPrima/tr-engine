@@ -191,7 +191,8 @@ func (db *DB) UpdateTalkgroupFields(ctx context.Context, systemID, tgid int,
 }
 
 // UpsertTalkgroup inserts or updates a talkgroup, never overwriting good data with empty strings.
-func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, tag, group, description string, eventTime time.Time) error {
+// Returns the effective alpha_tag from the database (respects manual > csv > mqtt priority).
+func (db *DB) UpsertTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, tag, group, description string, eventTime time.Time) (string, error) {
 	return db.Q.UpsertTalkgroup(ctx, sqlcdb.UpsertTalkgroupParams{
 		SystemID:    systemID,
 		Tgid:        tgid,
