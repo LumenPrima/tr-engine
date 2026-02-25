@@ -1235,6 +1235,7 @@
     tabBar.replaceChildren();
     tabPanels.replaceChildren();
     syncURL();
+    if (talkgroups.length === 0) fetchTalkgroups();
   }
 
   window.addEventListener('popstate', function(e) {
