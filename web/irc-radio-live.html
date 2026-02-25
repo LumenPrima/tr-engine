@@ -217,6 +217,17 @@ body::after {
 .channel-item:hover .fav-star,
 .fav-star.active { opacity: 1; }
 .fav-star.active { color: var(--warning); }
+.origin-tag {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  margin-right: 4px;
+  opacity: 0.7;
+}
+.origin-tag:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
 .group-unread {
   background: var(--orange);
   color: var(--bg);
@@ -1097,6 +1108,9 @@ let activeChannel = '*status';
 // Status channel for server messages
 const STATUS_CHANNEL = '*status';
 
+// Starred meta-channel: aggregates all favorited talkgroup activity
+const STARRED_CHANNEL = '\u2605 Starred';
+
 // Connection state
 let sseConnection = null;
 let connectionState = 'disconnected'; // connecting, connected, disconnected
@@ -1193,7 +1207,63 @@ function toggleFavorite(chanName) {
   if (favorites.has(key)) favorites.delete(key);
   else favorites.add(key);
   saveFavorites();
+  updateStarredChannel();
   renderTree();
+}
+
+// ── Starred meta-channel management ──
+
+function updateStarredChannel() {
+  const hasFavs = favorites.size > 0 && [...channels.keys()].some(ch => ch !== STATUS_CHANNEL && ch !== STARRED_CHANNEL && isFavorite(ch));
+  if (hasFavs && !channels.has(STARRED_CHANNEL)) {
+    createStarredChannel();
+  } else if (!hasFavs && channels.has(STARRED_CHANNEL)) {
+    destroyStarredChannel();
+  } else if (hasFavs && channels.has(STARRED_CHANNEL)) {
+    // Update topic with current count
+    const count = [...channels.keys()].filter(ch => ch !== STATUS_CHANNEL && ch !== STARRED_CHANNEL && isFavorite(ch)).length;
+    const st = channels.get(STARRED_CHANNEL);
+    st.description = `Aggregating ${count} starred channel${count !== 1 ? 's' : ''}`;
+  }
+}
+
+function createStarredChannel() {
+  const count = [...channels.keys()].filter(ch => ch !== STATUS_CHANNEL && ch !== STARRED_CHANNEL && isFavorite(ch)).length;
+  channels.set(STARRED_CHANNEL, {
+    tgid: null,
+    system_id: null,
+    alpha_tag: STARRED_CHANNEL,
+    description: `Aggregating ${count} starred channel${count !== 1 ? 's' : ''}`,
+    tag: '',
+    group: 'Favorites',
+    mode: '',
+    users: new Map(),
+    messages: [],
+    historyExhausted: false,
+  });
+  channelUnread.set(STARRED_CHANNEL, 0);
+}
+
+function destroyStarredChannel() {
+  if (activeChannel === STARRED_CHANNEL) {
+    switchChannel(STATUS_CHANNEL);
+  }
+  channels.delete(STARRED_CHANNEL);
+  channelUnread.delete(STARRED_CHANNEL);
+  channelLoadedCallIds.delete(STARRED_CHANNEL);
+}
+
+/** Forward a message to the starred channel with an origin tag */
+function forwardToStarred(sourceChannel, msg) {
+  if (!channels.has(STARRED_CHANNEL)) return;
+  if (sourceChannel === STARRED_CHANNEL || sourceChannel === STATUS_CHANNEL) return;
+  if (!isFavorite(sourceChannel)) return;
+  // Only forward real messages (calls, unit events), not system notices
+  if (msg.kind === 'topic' || msg.kind === 'mode') return;
+
+  const copy = Object.assign({}, msg);
+  copy.originChannel = sourceChannel;
+  addMsg(STARRED_CHANNEL, copy, true); // skipForward=true to prevent recursion
 }
 
 // Scanner mode
@@ -1853,7 +1923,7 @@ function resolveNick(systemId, unitId, alphaTag) {
 // MESSAGE RENDERING
 // ══════════════════════════════════════════════════════════════
 
-function addMsg(channel, msg) {
+function addMsg(channel, msg, skipForward) {
   const state = channels.get(channel);
   if (!state) return;
 
@@ -1882,6 +1952,11 @@ function addMsg(channel, msg) {
   }
 
   eventRate.push(Date.now());
+
+  // Forward to starred channel (unless this IS the starred channel or already forwarded)
+  if (!skipForward && channel !== STARRED_CHANNEL && channel !== STATUS_CHANNEL) {
+    forwardToStarred(channel, msg);
+  }
 }
 
 /** Build a DOM element for a message (content only, no append or call-group context). */
@@ -1904,7 +1979,12 @@ function buildMsgEl(m) {
     div.classList.add('system');
   } else {
     const color = nickColor(m.nick || '');
-    const nickHtml = `<span class="ts">${esc(m.ts)}</span><span class="nick" style="color:${color}" data-nick="${esc(m.nick || '')}">${esc(m.nick || '???')}</span>`;
+    let nickHtml = `<span class="ts">${esc(m.ts)}</span>`;
+    // Origin channel tag for starred channel aggregated messages
+    if (m.originChannel) {
+      nickHtml += `<span class="origin-tag" data-channel="${esc(m.originChannel)}">${esc(m.originChannel)}</span>`;
+    }
+    nickHtml += `<span class="nick" style="color:${color}" data-nick="${esc(m.nick || '')}">${esc(m.nick || '???')}</span>`;
 
     // Voice message with audio link (and optional transcription text)
     if (m.callId) {
@@ -1972,6 +2052,17 @@ function buildMsgEl(m) {
   }
 
   if (m.callId) div.dataset.callId = m.callId;
+
+  // Wire up origin tag click to switch to source channel
+  const originEl = div.querySelector('.origin-tag');
+  if (originEl) {
+    originEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ch = originEl.dataset.channel;
+      if (ch && channels.has(ch)) switchChannel(ch);
+    });
+  }
+
   return div;
 }
 
@@ -2082,14 +2173,16 @@ function createChannelItem(ch) {
   const unread = channelUnread.get(ch) || 0;
   el.className = 'channel-item' + (ch === activeChannel ? ' active' : '') + (unread > 0 && ch !== activeChannel ? ' has-activity' : '');
 
+  const isStarred = ch === STARRED_CHANNEL;
+
   const prefix = document.createElement('span');
   prefix.className = 'chan-prefix';
-  prefix.textContent = '#';
+  prefix.textContent = isStarred ? '\u2605' : '#';
   el.appendChild(prefix);
 
   const label = document.createElement('span');
   label.className = 'chan-label';
-  label.textContent = ch.slice(1);
+  label.textContent = isStarred ? 'Starred' : ch.slice(1);
   el.appendChild(label);
 
   if (unread > 0 && ch !== activeChannel) {
@@ -2099,32 +2192,34 @@ function createChannelItem(ch) {
     el.appendChild(badge);
   }
 
-  // Right-aligned cluster for icons (prevents double margin-left:auto issue with unread badge)
-  const rightCluster = document.createElement('span');
-  rightCluster.className = 'channel-icons';
+  // Right-aligned cluster for icons (skip for starred meta-channel)
+  if (!isStarred) {
+    const rightCluster = document.createElement('span');
+    rightCluster.className = 'channel-icons';
 
-  // Scan icon
-  const scanIcon = document.createElement('span');
-  scanIcon.className = 'scan-icon' + (isScanned(ch) ? ' active' : '');
-  scanIcon.textContent = isScanned(ch) ? '\uD83D\uDCE1' : '\uD83D\uDD07';
-  scanIcon.title = isScanned(ch) ? 'Remove from scanner' : 'Add to scanner';
-  scanIcon.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleScan(ch);
-  });
-  rightCluster.appendChild(scanIcon);
+    // Scan icon
+    const scanIcon = document.createElement('span');
+    scanIcon.className = 'scan-icon' + (isScanned(ch) ? ' active' : '');
+    scanIcon.textContent = isScanned(ch) ? '\uD83D\uDCE1' : '\uD83D\uDD07';
+    scanIcon.title = isScanned(ch) ? 'Remove from scanner' : 'Add to scanner';
+    scanIcon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleScan(ch);
+    });
+    rightCluster.appendChild(scanIcon);
 
-  // Favorite star
-  const star = document.createElement('span');
-  star.className = 'fav-star' + (isFavorite(ch) ? ' active' : '');
-  star.textContent = isFavorite(ch) ? '\u2605' : '\u2606';
-  star.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleFavorite(ch);
-  });
-  rightCluster.appendChild(star);
+    // Favorite star
+    const star = document.createElement('span');
+    star.className = 'fav-star' + (isFavorite(ch) ? ' active' : '');
+    star.textContent = isFavorite(ch) ? '\u2605' : '\u2606';
+    star.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavorite(ch);
+    });
+    rightCluster.appendChild(star);
 
-  el.appendChild(rightCluster);
+    el.appendChild(rightCluster);
+  }
 
   el.addEventListener('click', () => switchChannel(ch));
   return el;
@@ -2138,7 +2233,7 @@ function renderTree() {
   // Group channels by group field
   const groups = new Map();
   for (const [name, ch] of channels) {
-    if (name === STATUS_CHANNEL) continue;
+    if (name === STATUS_CHANNEL || name === STARRED_CHANNEL) continue;
     const g = ch.group || 'Ungrouped';
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(name);
@@ -2185,15 +2280,20 @@ function renderTree() {
   sysSection.appendChild(statusItem);
   treeScroll.appendChild(sysSection);
 
-  // Favorites section
-  const favChans = [...channels.keys()].filter(ch => ch !== STATUS_CHANNEL && isFavorite(ch));
-  if (favChans.length > 0) {
+  // Favorites section (with starred meta-channel at top)
+  const favChans = [...channels.keys()].filter(ch => ch !== STATUS_CHANNEL && ch !== STARRED_CHANNEL && isFavorite(ch));
+  if (favChans.length > 0 || channels.has(STARRED_CHANNEL)) {
     const favSection = document.createElement('div');
     favSection.className = 'tree-section';
     const favLabel = document.createElement('div');
     favLabel.className = 'tree-section-label fav-label';
     favLabel.textContent = '\u2605 Favorites';
     favSection.appendChild(favLabel);
+
+    // Starred meta-channel always first
+    if (channels.has(STARRED_CHANNEL)) {
+      favSection.appendChild(createChannelItem(STARRED_CHANNEL));
+    }
 
     favChans.sort();
     for (const ch of favChans) {
@@ -2314,11 +2414,28 @@ function renderNicklist() {
   const state = channels.get(activeChannel);
   if (!state) {
     nicklistHeader.textContent = 'Users';
-    nicklistEntries.innerHTML = '';
+    nicklistEntries.textContent = '';
     return;
   }
 
-  const users = [...state.users.values()];
+  // For starred channel, collect users from all favorited channels
+  let users;
+  if (activeChannel === STARRED_CHANNEL) {
+    const seen = new Set();
+    users = [];
+    for (const [chName, chState] of channels) {
+      if (chName === STATUS_CHANNEL || chName === STARRED_CHANNEL || !isFavorite(chName)) continue;
+      for (const u of chState.users.values()) {
+        const uk = `${u.systemId}:${u.unitId}`;
+        if (!seen.has(uk)) {
+          seen.add(uk);
+          users.push(u);
+        }
+      }
+    }
+  } else {
+    users = [...state.users.values()];
+  }
   // Sort: online first, then alphabetical within each group
   const sortUser = (a, b) => {
     const ao = a.online === false ? 1 : 0;
@@ -2502,7 +2619,11 @@ function switchChannel(ch) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
   // Load history if this channel hasn't been populated yet, or fill viewport
-  if (state.tgid && !channelLoading.has(ch)) {
+  if (ch === STARRED_CHANNEL) {
+    if (!channelHasActivity.has(ch) && !channelLoading.has(ch)) {
+      loadStarredHistory();
+    }
+  } else if (state.tgid && !channelLoading.has(ch)) {
     if (!channelHasActivity.has(ch)) {
       lazyLoadChannel(ch, state.system_id, state.tgid).then(() => ensureChannelFilled(ch));
     } else {
@@ -2709,10 +2830,140 @@ async function ensureChannelFilled(chanName) {
 messagesEl.addEventListener('scroll', () => {
   if (messagesEl.scrollTop > 100) return; // not near top
   if (!activeChannel || activeChannel === STATUS_CHANNEL) return;
+  if (activeChannel === STARRED_CHANNEL) {
+    const st = channels.get(STARRED_CHANNEL);
+    if (!st || st.historyExhausted || channelLoading.has(STARRED_CHANNEL)) return;
+    loadStarredHistory();
+    return;
+  }
   const ch = channels.get(activeChannel);
   if (!ch || !ch.tgid || ch.historyExhausted || channelLoading.has(activeChannel)) return;
   lazyLoadChannel(activeChannel, ch.system_id, ch.tgid);
 });
+
+/** Load history for the starred channel by fetching recent calls from all favorited talkgroups */
+async function loadStarredHistory() {
+  const st = channels.get(STARRED_CHANNEL);
+  if (!st || channelLoading.has(STARRED_CHANNEL)) return;
+  channelLoading.add(STARRED_CHANNEL);
+
+  try {
+    // Collect favorited talkgroups
+    const favTGs = [];
+    for (const key of favorites) {
+      const [sysId, tgid] = key.split(':').map(Number);
+      if (sysId && tgid) favTGs.push({ system_id: sysId, tgid });
+    }
+    if (favTGs.length === 0) {
+      st.historyExhausted = true;
+      channelLoading.delete(STARRED_CHANNEL);
+      return;
+    }
+
+    // Time-cursor: use oldest message in starred channel
+    const oldest = st.messages.length > 0 ? st.messages[0].date : null;
+    const endParam = oldest ? `&end_time=${oldest.toISOString()}` : '';
+
+    // Fetch from each favorited talkgroup in parallel (limited batch)
+    const perTG = Math.max(3, Math.floor(20 / favTGs.length));
+    const fetches = favTGs.map(tg =>
+      fetchJSON(`/calls?tgid=${tg.tgid}&system_id=${tg.system_id}&sort=-stop_time&deduplicate=true&limit=${perTG}${endParam}`)
+        .then(data => ({ calls: data.calls || [], system_id: tg.system_id, tgid: tg.tgid }))
+        .catch(() => ({ calls: [], system_id: tg.system_id, tgid: tg.tgid }))
+    );
+    const results = await Promise.all(fetches);
+
+    // Merge all calls and convert to messages with origin tags
+    let allCalls = [];
+    let anyHadData = false;
+    for (const r of results) {
+      if (r.calls.length > 0) anyHadData = true;
+      for (const call of r.calls) {
+        call._origin_system_id = r.system_id;
+        allCalls.push(call);
+      }
+    }
+    if (!anyHadData) {
+      st.historyExhausted = true;
+    }
+
+    // Sort newest-first then flip to oldest-first for message construction
+    allCalls.sort((a, b) => {
+      const ta = new Date(a.stop_time || a.start_time).getTime();
+      const tb = new Date(b.stop_time || b.start_time).getTime();
+      return tb - ta;
+    });
+
+    // Dedup by call_id
+    if (!channelLoadedCallIds.has(STARRED_CHANNEL)) channelLoadedCallIds.set(STARRED_CHANNEL, new Set());
+    const loadedIds = channelLoadedCallIds.get(STARRED_CHANNEL);
+    const newMsgs = [];
+
+    for (const call of allCalls.reverse()) { // oldest-first
+      if (loadedIds.has(call.call_id)) continue;
+      loadedIds.add(call.call_id);
+
+      const systemId = call.system_id || call._origin_system_id;
+      const chanName = resolveChannel(systemId, call.tgid);
+      const srcList = call.src_list || [];
+      const isEmergency = call.emergency || false;
+
+      if (srcList.length > 0) callSrcLists.set(call.call_id, srcList);
+
+      const txList = srcList.length > 0
+        ? [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0))
+        : [{ src: 0, tag: call.tg_alpha_tag || 'TG ' + call.tgid }];
+
+      for (const tx of txList) {
+        const nick = tx.src ? resolveNick(systemId, tx.src, tx.tag) : (call.tg_alpha_tag || 'TG ' + call.tgid);
+        const txTime = tx.time ? new Date(tx.time * 1000) : new Date(call.start_time);
+        const dur = tx.duration ? fmtDuration(tx.duration) : (call.duration ? fmtDuration(call.duration) : '');
+
+        newMsgs.push({
+          ts: ts(txTime), date: txTime,
+          nick, src: tx.src,
+          pos: tx.pos || 0, txDuration: tx.duration || 0,
+          callId: call.call_id,
+          duration: dur,
+          channel: chanName || STARRED_CHANNEL,
+          emergency: isEmergency || (tx.emergency === 1),
+          originChannel: chanName || null,
+        });
+      }
+    }
+
+    // Prepend older messages
+    st.messages.unshift(...newMsgs);
+    while (st.messages.length > MAX_MESSAGES) st.messages.pop();
+
+    if (newMsgs.length > 0) channelHasActivity.add(STARRED_CHANNEL);
+
+    // Re-render if still on starred channel, preserving scroll position
+    if (activeChannel === STARRED_CHANNEL) {
+      const prevScrollTop = messagesEl.scrollTop;
+      const prevScrollHeight = messagesEl.scrollHeight;
+      const wasAtBottom = prevScrollHeight - prevScrollTop - messagesEl.clientHeight < 80;
+      messagesEl.textContent = '';
+      lastRenderedDateStr = '';
+      for (const m of st.messages) appendMsgDOM(m);
+      const newScrollHeight = messagesEl.scrollHeight;
+      if (wasAtBottom && prevScrollHeight <= messagesEl.clientHeight) {
+        messagesEl.scrollTop = newScrollHeight;
+      } else {
+        messagesEl.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+      }
+    }
+    renderTree();
+
+    // Fetch transcriptions
+    const callIds = allCalls.map(c => c.call_id).filter(Boolean);
+    fetchTranscriptionsForCalls(callIds);
+  } catch (err) {
+    console.error('Failed to load starred history:', err);
+  } finally {
+    channelLoading.delete(STARRED_CHANNEL);
+  }
+}
 
 
 // ══════════════════════════════════════════════════════════════
@@ -2752,10 +3003,14 @@ async function bootstrapChannels() {
     }
 
     serverMsg(`Joined ${channels.size - 1} channels`);
+
+    // Create starred meta-channel if user has favorites
+    updateStarredChannel();
+
     renderTree();
 
     // Auto-switch to first real channel
-    const firstChan = [...channels.keys()].find(k => k !== STATUS_CHANNEL);
+    const firstChan = [...channels.keys()].find(k => k !== STATUS_CHANNEL && k !== STARRED_CHANNEL);
     if (firstChan) switchChannel(firstChan);
   } catch (err) {
     serverMsg(`ERROR fetching talkgroups: ${err.message}`);
@@ -3025,6 +3280,12 @@ async function handleTranscription(data) {
   }
 
   applyTranscriptionToChannel(ch, chanName, callId, fullText, segments);
+
+  // Also apply to starred channel if source channel is favorited
+  if (isFavorite(chanName) && channels.has(STARRED_CHANNEL)) {
+    const starred = channels.get(STARRED_CHANNEL);
+    applyTranscriptionToChannel(starred, STARRED_CHANNEL, callId, fullText, segments);
+  }
 }
 
 /** Apply transcription text to messages in a channel, matching segments to units.
