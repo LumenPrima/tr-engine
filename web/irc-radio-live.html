@@ -3140,9 +3140,12 @@ async function fetchTranscriptionsForCalls(callIds) {
   const safeIds = callIds.filter(id => Number.isInteger(id) && id > 0);
   if (safeIds.length === 0) return;
 
-  // Use the ad-hoc query endpoint to batch-fetch
-  const idList = safeIds.join(',');
+  // Try batch via /query first, fall back to individual fetches
+  const txMap = new Map();
+  let batchOk = false;
+
   try {
+    const idList = safeIds.join(',');
     const resp = await fetch(`${API_BASE}/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3150,34 +3153,47 @@ async function fetchTranscriptionsForCalls(callIds) {
         sql: `SELECT call_id, text, words->'segments' as segments FROM transcriptions WHERE call_id IN (${idList}) AND is_primary = true`,
       }),
     });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const rows = data.rows || [];
-    const cols = data.columns || [];
-
-    // Map column names to indices
-    const ci = {};
-    cols.forEach((c, i) => ci[c] = i);
-
-    // Build a map of call_id → {text, segments}
-    const txMap = new Map();
-    for (const row of rows) {
-      const cid = row[ci.call_id];
-      const rawSeg = row[ci.segments];
-      const segments = Array.isArray(rawSeg) ? rawSeg : [];
-      txMap.set(cid, { text: row[ci.text] || '', segments });
-    }
-
-    // Apply to all channels
-    for (const [chanName, ch] of channels) {
-      const chanCallIds = new Set(ch.messages.filter(m => m.callId && txMap.has(m.callId)).map(m => m.callId));
-      for (const callId of chanCallIds) {
-        const tx = txMap.get(callId);
-        if (tx) applyTranscriptionToChannel(ch, chanName, callId, tx.text, tx.segments);
+    if (resp.ok) {
+      batchOk = true;
+      const data = await resp.json();
+      const rows = data.rows || [];
+      const cols = data.columns || [];
+      const ci = {};
+      cols.forEach((c, i) => ci[c] = i);
+      for (const row of rows) {
+        const cid = row[ci.call_id];
+        const rawSeg = row[ci.segments];
+        const segments = Array.isArray(rawSeg) ? rawSeg : [];
+        txMap.set(cid, { text: row[ci.text] || '', segments });
       }
     }
-  } catch (err) {
-    // Silent — transcriptions are non-critical
+  } catch (err) { /* fall through to individual fetches */ }
+
+  if (!batchOk) {
+    // Fallback: fetch individually (throttled to avoid flooding)
+    const BATCH_SIZE = 6;
+    for (let i = 0; i < safeIds.length; i += BATCH_SIZE) {
+      const batch = safeIds.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(id => fetchJSON(`/calls/${id}/transcription`).then(d => [id, d]).catch(() => null))
+      );
+      for (const r of results) {
+        if (r.status !== 'fulfilled' || !r.value) continue;
+        const [id, d] = r.value;
+        if (!d || !d.text) continue;
+        const segments = d.words?.segments || [];
+        txMap.set(id, { text: d.text, segments });
+      }
+    }
+  }
+
+  // Apply to all channels
+  for (const [chanName, ch] of channels) {
+    const chanCallIds = new Set(ch.messages.filter(m => m.callId && txMap.has(m.callId)).map(m => m.callId));
+    for (const callId of chanCallIds) {
+      const tx = txMap.get(callId);
+      if (tx) applyTranscriptionToChannel(ch, chanName, callId, tx.text, tx.segments);
+    }
   }
 }
 
@@ -3292,9 +3308,16 @@ function handleCallEnd(call) {
   const tracked = activeCalls.get(call.call_id);
   activeCalls.delete(call.call_id);
 
-  const chanName = tracked
+  let chanName = tracked
     ? tracked.chanName
     : resolveChannel(call.system_id, call.tgid);
+  if (!chanName) {
+    // Missed call_start — create channel from call_end metadata
+    chanName = ensureChannel({
+      system_id: call.system_id, tgid: call.tgid,
+      alpha_tag: call.tg_alpha_tag,
+    });
+  }
   if (!chanName) return;
 
   clearTyping(chanName);
@@ -3356,12 +3379,22 @@ function handleCallEnd(call) {
 /** Try to upgrade a fallback call message to per-transmission messages.
  *  If the audio handler has already populated src_list, replace the single
  *  placeholder with one message per key-up. Then fetch and apply transcription
- *  to prevent race condition with handleTranscription. */
-async function upgradeCallWithSrcList(callId, chanName, systemId, isEmergency) {
+ *  to prevent race condition with handleTranscription.
+ *
+ *  The audio MQTT message is processed AFTER call_end, so src_list and
+ *  transcription may not be available on the first attempt. When src_list is
+ *  empty, a delayed retry (2s) gives the audio handler time to finish. */
+async function upgradeCallWithSrcList(callId, chanName, systemId, isEmergency, _retryCount = 0) {
   try {
     const data = await fetchJSON(`/calls/${callId}`);
     const srcList = data.src_list || [];
-    if (srcList.length === 0) return; // audio not processed yet — keep placeholder
+    if (srcList.length === 0) {
+      // Audio not processed yet — retry once after delay
+      if (_retryCount < 1) {
+        setTimeout(() => upgradeCallWithSrcList(callId, chanName, systemId, isEmergency, _retryCount + 1), 2000);
+      }
+      return;
+    }
 
     const ch = channels.get(chanName);
     if (!ch) return;
