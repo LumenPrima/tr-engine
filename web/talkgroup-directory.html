@@ -47,7 +47,7 @@
 
   .toolbar {
     position: sticky; top: 60px; z-index: 20;
-    background: var(--glass-bg);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     padding: 10px 20px;
@@ -91,7 +91,7 @@
 
   .import-panel {
     display: none;
-    background: var(--glass-bg);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     padding: 16px 20px;
@@ -147,7 +147,7 @@
   thead { position: sticky; top: 112px; z-index: 10; }
   th {
     text-align: left; padding: 8px 12px;
-    background: var(--glass-bg);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     color: var(--text-muted); font-weight: 500; font-size: 12px;
@@ -205,7 +205,7 @@
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     z-index: 10000; font-family: var(--font-display); font-size: 12px;
     letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
-    background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--border); padding: 10px 24px; border-radius: 100px;
     transition: all 0.5s; pointer-events: none; opacity: 0;
   }

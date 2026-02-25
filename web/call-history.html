@@ -50,7 +50,7 @@
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     z-index: 10000; font-family: var(--font-display); font-size: 12px;
     letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
-    background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--border); padding: 10px 24px; border-radius: 100px;
     transition: all 0.5s; pointer-events: none; opacity: 0;
   }
@@ -59,9 +59,9 @@
   /* ── Toolbar ── */
   .toolbar {
     position: sticky; top: 60px; z-index: 20;
-    background: var(--glass-bg);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--glass-border);
+    border-bottom: 1px solid var(--border);
     padding: 8px 16px;
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     transition: background 0.5s, border-color 0.4s;
@@ -133,7 +133,7 @@
   }
   thead { position: sticky; top: 0; z-index: 10; }
   th {
-    background: var(--glass-bg);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     text-transform: uppercase; font-size: 11px; font-weight: 600;
     color: var(--text-muted); letter-spacing: 0.05em;
@@ -328,9 +328,9 @@
   .pagination {
     display: flex; align-items: center; justify-content: center;
     gap: 12px; padding: 10px 16px;
-    background: var(--glass-bg);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    border-top: 1px solid var(--glass-border);
+    border-top: 1px solid var(--border);
   }
   .pagination button {
     padding: 4px 12px; font-size: 12px;

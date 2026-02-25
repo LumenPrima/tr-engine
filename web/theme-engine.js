@@ -160,7 +160,7 @@
 /* ── Event Horizon injected header ── */
 .eh-header {
   position: sticky; top: 0; z-index: 200;
-  background: var(--glass-bg);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
   backdrop-filter: blur(var(--glass-blur, 20px));
   -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
   border-bottom: 1px solid var(--glass-border);
@@ -326,7 +326,7 @@
   font-size: 8px; font-family: var(--font-mono);
   letter-spacing: 1px; text-transform: uppercase;
   white-space: nowrap; color: var(--text-muted);
-  background: var(--glass-bg); border: 1px solid var(--border);
+  background: var(--bg); border: 1px solid var(--border);
   padding: 2px 6px; border-radius: 4px;
   opacity: 0; transition: opacity 0.2s; pointer-events: none;
   z-index: 10001;
