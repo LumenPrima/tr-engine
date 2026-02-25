@@ -2803,9 +2803,10 @@ async function bootstrapRecentCalls() {
   serverMsg('Fetching recent activity (30 min)...');
   try {
     const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const sysIds = [...new Set([...channels.values()].map(c => c.system_id).filter(Boolean))].join(',');
     const [callData, eventData] = await Promise.all([
       fetchJSON(`/calls?sort=-stop_time&deduplicate=true&limit=500&start_time=${since}`),
-      fetchJSON(`/unit-events?type=join,off&sort=-time&limit=500&start_time=${since}`),
+      sysIds ? fetchJSON(`/unit-events?system_id=${sysIds}&type=join,off&sort=-time&limit=500&start_time=${since}`) : { events: [] },
     ]);
     const calls = callData.calls || [];
     const events = eventData.events || [];
