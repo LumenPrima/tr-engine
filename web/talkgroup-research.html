@@ -431,15 +431,57 @@
   ::-webkit-scrollbar-thumb { background: var(--accent-dim); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
+  /* ── Error/retry state ── */
+  .error-state {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 40px 20px;
+    color: var(--text-muted); font-size: 13px; gap: 10px;
+  }
+  .retry-btn {
+    padding: 4px 14px; font-size: 12px;
+    font-family: var(--font-mono);
+    background: transparent; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--radius-xs);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .retry-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Chart placeholder pulse ── */
+  .chart-loading {
+    position: absolute; inset: 40px 16px 16px 16px;
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--border) 20%, transparent) 0%,
+      color-mix(in srgb, var(--border) 40%, transparent) 50%,
+      color-mix(in srgb, var(--border) 20%, transparent) 100%);
+    background-size: 200% 100%;
+    border-radius: var(--radius-xs);
+    animation: chartPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes chartPulse {
+    0%, 100% { background-position: -200% 0; }
+    50% { background-position: 200% 0; }
+  }
+
   /* ── Responsive ── */
   @media (max-width: 768px) {
     .col-group, .col-24h { display: none; }
     th.col-group, th.col-24h { display: none; }
     .charts-row { flex-direction: column; }
+    .charts-row .chart-panel { height: 200px; }
     .units-top-row { flex-direction: column; }
     .toolbar { gap: 6px; }
     .search-box { max-width: none; }
     .call-detail-inner { grid-template-columns: 1fr; }
+    .detail-header { padding: 12px 14px; }
+    .charts-row { padding: 12px 14px; }
+    .tab-content { padding: 12px 14px; }
+    .stat-badges { gap: 6px; }
+    .tabs { padding: 0 14px; overflow-x: auto; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .filter-btns { gap: 3px; }
+    .network-panel { min-height: 280px; }
+    .col-enc { display: none; }
+    th.col-enc { display: none; }
   }
 </style>
 </head>
@@ -1053,6 +1095,9 @@
     var leftCanvas = document.createElement('canvas');
     leftCanvas.style.height = '180px';
     leftPanel.appendChild(leftCanvas);
+    var leftPulse = document.createElement('div');
+    leftPulse.className = 'chart-loading';
+    leftPanel.appendChild(leftPulse);
     chartsRow.appendChild(leftPanel);
 
     /* Right: Site Distribution */
@@ -1064,15 +1109,22 @@
     var rightCanvas = document.createElement('canvas');
     rightCanvas.style.height = '180px';
     rightPanel.appendChild(rightCanvas);
+    var rightPulse = document.createElement('div');
+    rightPulse.className = 'chart-loading';
+    rightPanel.appendChild(rightPulse);
     chartsRow.appendChild(rightPanel);
 
     try {
       var start = new Date(Date.now() - 86400e3).toISOString();
       var res = await fetch(API + '/calls?tgid=' + tgid + '&system_id=' + systemId +
         '&sort=-start_time&limit=500&start_time=' + encodeURIComponent(start));
-      if (!res.ok) return;
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       var data = await res.json();
       var calls = data.calls || [];
+
+      /* Remove loading placeholders */
+      if (leftPulse.parentNode) leftPulse.remove();
+      if (rightPulse.parentNode) rightPulse.remove();
 
       /* Activity timeline: bucket by hour */
       var now = Date.now();
@@ -1166,6 +1218,22 @@
       }
     } catch (e) {
       console.error('Load charts failed:', e);
+      if (leftPulse.parentNode) leftPulse.remove();
+      if (rightPulse.parentNode) rightPulse.remove();
+      /* Show error in left panel */
+      leftCanvas.style.display = 'none';
+      rightCanvas.style.display = 'none';
+      var errDiv = document.createElement('div');
+      errDiv.className = 'error-state';
+      var errMsg = document.createElement('span');
+      errMsg.textContent = 'Failed to load chart data';
+      errDiv.appendChild(errMsg);
+      var retryBtn = document.createElement('button');
+      retryBtn.className = 'retry-btn';
+      retryBtn.textContent = 'Retry';
+      retryBtn.addEventListener('click', function() { loadCharts(systemId, tgid); });
+      errDiv.appendChild(retryBtn);
+      leftPanel.appendChild(errDiv);
     }
   }
 
@@ -2299,6 +2367,98 @@
       }
     });
   }, 30000);
+
+  /* ══════════════════════════════════════════════════════════
+     THEME REACTIVITY
+     ══════════════════════════════════════════════════════════ */
+
+  window.addEventListener('themechange', function() {
+    /* Update Chart.js instances with new theme colors */
+    chartInstances.forEach(function(chart) {
+      var type = chart.config.type;
+
+      if (type === 'line') {
+        /* Activity timeline */
+        var accent = getThemeColor('accent');
+        chart.data.datasets[0].borderColor = accent;
+        chart.data.datasets[0].backgroundColor = accent.replace(')', ', 0.2)').replace('rgb(', 'rgba(');
+        chart.options.scales.x.ticks.color = getThemeColor('text-muted');
+        chart.options.scales.y.ticks.color = getThemeColor('text-muted');
+      } else if (type === 'doughnut') {
+        var labels = chart.data.labels || [];
+        if (labels[0] === 'Clear' && labels[1] === 'Encrypted') {
+          /* Encryption doughnut */
+          chart.data.datasets[0].backgroundColor = [getThemeColor('success'), getThemeColor('danger')];
+        } else {
+          /* Site distribution */
+          var palette = [
+            getThemeColor('electric'), getThemeColor('cyan'),
+            getThemeColor('lime'), getThemeColor('magenta'), getThemeColor('orange')
+          ];
+          chart.data.datasets[0].backgroundColor = palette.slice(0, labels.length);
+          if (chart.options.plugins.legend && chart.options.plugins.legend.labels) {
+            chart.options.plugins.legend.labels.color = getThemeColor('text-muted');
+          }
+        }
+      } else if (type === 'bar') {
+        /* Top talkers */
+        chart.data.datasets[0].backgroundColor = getThemeColor('accent');
+        chart.options.scales.x.ticks.color = getThemeColor('text-muted');
+        chart.options.scales.y.ticks.color = getThemeColor('text-muted');
+      }
+
+      chart.update();
+    });
+
+    /* Update SVG network graph colors */
+    var netPanel = document.querySelector('.network-panel');
+    if (netPanel) {
+      var svg = netPanel.querySelector('svg');
+      if (svg) {
+        /* Center node */
+        var centerCircle = svg.querySelector('g > circle:first-child');
+        if (centerCircle && centerCircle.getAttribute('r') === '22') {
+          centerCircle.setAttribute('fill', getThemeColor('accent'));
+          var centerText = centerCircle.parentNode.querySelector('text');
+          if (centerText) centerText.setAttribute('fill', getThemeColor('bg'));
+        }
+
+        /* Unit nodes */
+        var nodeGroups = svg.querySelectorAll('.network-node');
+        nodeGroups.forEach(function(g) {
+          var circle = g.querySelector('circle');
+          var label = g.querySelector('text');
+          if (circle) {
+            /* Tagged units use accent, untagged use text-muted */
+            var isTagged = label && label.textContent && !/^\d+$/.test(label.textContent);
+            circle.setAttribute('fill', isTagged ? getThemeColor('accent') : getThemeColor('text-muted'));
+          }
+          if (label) {
+            label.setAttribute('fill', getThemeColor('text-muted'));
+          }
+        });
+
+        /* Connecting lines */
+        svg.querySelectorAll('.network-line:not([data-expansion])').forEach(function(line) {
+          line.setAttribute('stroke', getThemeColor('border'));
+        });
+
+        /* Expanded unit highlight */
+        if (expandedUnitId !== null) {
+          var expandedNode = null;
+          nodeGroups.forEach(function(g) {
+            var c = g.querySelector('circle');
+            if (c && c.getAttribute('stroke-width') === '2') {
+              c.setAttribute('stroke', getThemeColor('accent'));
+            }
+          });
+        }
+
+        /* Secondary expansion nodes use palette colors — leave those as-is since they
+           already reference theme vars and get rebuilt on expand */
+      }
+    }
+  });
 
   /* ══════════════════════════════════════════════════════════
      INIT
