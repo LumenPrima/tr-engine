@@ -282,9 +282,11 @@ func main() {
 		log.Info().Str("watch_dir", cfg.WatchDir).Str("instance_id", cfg.WatchInstanceID).Msg("file watcher started")
 	}
 
-	// Auth check
-	if cfg.AuthToken == "" {
-		log.Warn().Msg("AUTH_TOKEN is not set — all API endpoints are publicly accessible. Set AUTH_TOKEN in .env for production use.")
+	// Auth status
+	if cfg.AuthTokenGenerated {
+		log.Info().Str("token", cfg.AuthToken).Msg("AUTH_TOKEN auto-generated (set AUTH_TOKEN in .env for a persistent token)")
+	} else {
+		log.Info().Msg("AUTH_TOKEN loaded from configuration")
 	}
 
 	// HTTP Server

@@ -192,7 +192,10 @@ async function query(apiBase, sql, params, limit = 10000) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql, params, limit }),
   });
-  if (!resp.ok) throw new Error(`Query failed: ${resp.status} ${await resp.text()}`);
+  if (!resp.ok) {
+    if (resp.status === 403) return { columns: [], rows: [] }; // /query disabled — degrade gracefully
+    throw new Error(`Query failed: ${resp.status} ${await resp.text()}`);
+  }
   return resp.json();
 }
 
