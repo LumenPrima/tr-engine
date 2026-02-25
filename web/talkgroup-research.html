@@ -161,6 +161,90 @@
     transition: width 0.3s;
   }
 
+  /* ── View toggle ── */
+  .view-toggle {
+    display: flex; gap: 2px; margin-left: 8px;
+    border: 1px solid var(--border); border-radius: var(--radius-xs);
+    overflow: hidden;
+  }
+  .view-btn {
+    padding: 3px 8px; font-size: 14px; line-height: 1;
+    background: transparent; color: var(--text-muted);
+    border: none; cursor: pointer; transition: all 0.15s;
+  }
+  .view-btn:hover { color: var(--text); }
+  .view-btn.active {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+  }
+
+  /* ── Talkgroup card grid ── */
+  .tg-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 8px; padding: 8px 0;
+  }
+  .tg-card {
+    background: var(--bg-surface);
+    border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    border-radius: var(--radius-xs);
+    padding: 10px 12px;
+    cursor: pointer; transition: all 0.15s;
+    display: flex; flex-direction: column; gap: 4px;
+    border-left: 3px solid transparent;
+    overflow: hidden;
+  }
+  .tg-card:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 5%, var(--bg-surface));
+    border-left-color: var(--accent);
+  }
+  .tg-card.heat-high { border-left-color: var(--accent); }
+  .tg-card.heat-med { border-left-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .tg-card.heat-low { border-left-color: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .tg-card-top {
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .tg-card-name {
+    font-weight: 500; font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1;
+  }
+  .tg-card-tgid {
+    font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);
+    flex-shrink: 0;
+  }
+  .tg-card-group {
+    font-size: 10px; color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tg-card-stats {
+    display: flex; gap: 6px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .tg-card-stat {
+    font-size: 10px; color: var(--text-muted);
+    font-family: var(--font-mono);
+    display: flex; gap: 3px; align-items: center;
+  }
+  .tg-card-stat b {
+    color: var(--text); font-weight: 600;
+  }
+  .tg-card-stat.stat-hot b { color: var(--accent); }
+  .tg-card-bar {
+    height: 3px; border-radius: 2px; margin-top: 2px;
+    background: color-mix(in srgb, var(--border) 25%, transparent);
+    overflow: hidden;
+  }
+  .tg-card-bar-fill {
+    height: 100%; border-radius: 2px;
+    background: var(--accent); opacity: 0.6;
+  }
+  .tg-card-time {
+    font-size: 10px; color: var(--text-muted);
+    margin-left: auto; flex-shrink: 0;
+  }
+
   /* ── Badge ── */
   .badge {
     display: inline-block;
@@ -557,6 +641,7 @@
     .col-group, .col-24h, .col-activity { display: none; }
     th.col-group, th.col-24h, th.col-activity { display: none; }
     .unit-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+    .tg-card-grid { grid-template-columns: 1fr; }
     .charts-row { flex-direction: column; }
     .charts-row .chart-panel { height: 200px; }
     .units-top-row { flex-direction: column; }
@@ -589,6 +674,10 @@
       <option value="">All Systems</option>
     </select>
     <span class="result-count" id="resultCount"></span>
+    <span class="view-toggle" id="viewToggle">
+      <button class="view-btn active" id="viewTable" title="Table view">&#9776;</button>
+      <button class="view-btn" id="viewCards" title="Card view">&#9638;</button>
+    </span>
   </div>
 
   <div class="content" id="browseContent">
@@ -609,6 +698,7 @@
       </thead>
       <tbody id="browseTbody"></tbody>
     </table>
+    <div class="tg-card-grid" id="browseCardGrid" style="display:none"></div>
     <div class="loading-state" id="browseLoading">
       <div class="spinner"></div>
       <span>Loading talkgroups...</span>
@@ -666,6 +756,41 @@
   var tabBar = document.getElementById('tabBar');
   var tabPanels = document.getElementById('tabPanels');
   var audioEl = document.getElementById('audioEl');
+  var browseCardGrid = document.getElementById('browseCardGrid');
+  var viewTableBtn = document.getElementById('viewTable');
+  var viewCardsBtn = document.getElementById('viewCards');
+  var browseTable = document.querySelector('.tg-table');
+
+  /* ── View mode (table vs cards) ── */
+  var browseViewMode = localStorage.getItem('tg-browse-mode') || 'table';
+
+  function applyViewMode() {
+    if (browseViewMode === 'cards') {
+      browseTable.style.display = 'none';
+      browseCardGrid.style.display = '';
+      viewTableBtn.classList.remove('active');
+      viewCardsBtn.classList.add('active');
+    } else {
+      browseTable.style.display = '';
+      browseCardGrid.style.display = 'none';
+      viewTableBtn.classList.add('active');
+      viewCardsBtn.classList.remove('active');
+    }
+  }
+
+  viewTableBtn.addEventListener('click', function() {
+    browseViewMode = 'table';
+    localStorage.setItem('tg-browse-mode', 'table');
+    applyViewMode();
+  });
+  viewCardsBtn.addEventListener('click', function() {
+    browseViewMode = 'cards';
+    localStorage.setItem('tg-browse-mode', 'cards');
+    renderBrowseCards();
+    applyViewMode();
+  });
+
+  applyViewMode();
 
   /* ── Current detail state ── */
   var detailSystemId = null;
@@ -898,6 +1023,106 @@
       tr.appendChild(tdLast);
 
       browseTbody.appendChild(tr);
+    });
+    if (browseViewMode === 'cards') renderBrowseCards();
+  }
+
+  function renderBrowseCards() {
+    while (browseCardGrid.firstChild) browseCardGrid.removeChild(browseCardGrid.firstChild);
+    if (talkgroups.length === 0) return;
+
+    var max1h = 1;
+    talkgroups.forEach(function(tg) {
+      if (tg.calls_1h > max1h) max1h = tg.calls_1h;
+    });
+
+    talkgroups.forEach(function(tg) {
+      var card = document.createElement('div');
+      card.className = 'tg-card';
+      card.dataset.systemId = tg.system_id;
+      card.dataset.tgid = tg.tgid;
+
+      /* Heat border */
+      var heat = tg.calls_1h > max1h * 0.3 ? 'heat-high'
+        : tg.calls_1h > 0 ? 'heat-med'
+        : (tg.calls_24h > 0 ? 'heat-low' : '');
+      if (heat) card.classList.add(heat);
+
+      /* Top row: Name + TGID */
+      var topRow = document.createElement('div');
+      topRow.className = 'tg-card-top';
+      var nameEl = document.createElement('span');
+      nameEl.className = 'tg-card-name';
+      nameEl.textContent = tg.alpha_tag || 'TG ' + tg.tgid;
+      if (tg.description) nameEl.title = tg.description;
+      topRow.appendChild(nameEl);
+      var idEl = document.createElement('span');
+      idEl.className = 'tg-card-tgid';
+      idEl.textContent = '#' + tg.tgid;
+      topRow.appendChild(idEl);
+      card.appendChild(topRow);
+
+      /* Group */
+      if (tg.group) {
+        var groupEl = document.createElement('div');
+        groupEl.className = 'tg-card-group';
+        groupEl.textContent = tg.group;
+        card.appendChild(groupEl);
+      }
+
+      /* Stats row */
+      var stats = document.createElement('div');
+      stats.className = 'tg-card-stats';
+
+      function makeStat(label, value, hot) {
+        var el = document.createElement('span');
+        el.className = 'tg-card-stat' + (hot ? ' stat-hot' : '');
+        el.appendChild(document.createTextNode(label + ' '));
+        var b = document.createElement('b');
+        b.textContent = value;
+        el.appendChild(b);
+        return el;
+      }
+
+      stats.appendChild(makeStat('1h', tg.calls_1h != null ? tg.calls_1h : '\u2014', tg.calls_1h > max1h * 0.3));
+      stats.appendChild(makeStat('24h', tg.calls_24h != null ? tg.calls_24h : '\u2014', false));
+      stats.appendChild(makeStat('total', tg.call_count != null ? tg.call_count : '\u2014', false));
+      stats.appendChild(makeStat('units', tg.unit_count != null ? tg.unit_count : '\u2014', false));
+
+      /* Enc % — only show if non-zero */
+      var encPct = tg.encrypted_calls && tg.call_count
+        ? Math.round((tg.encrypted_calls / tg.call_count) * 100) : 0;
+      if (encPct > 0) {
+        var statEnc = makeStat('enc', encPct + '%', false);
+        statEnc.style.color = 'var(--danger)';
+        statEnc.querySelector('b').style.color = 'var(--danger)';
+        stats.appendChild(statEnc);
+      }
+
+      /* Last seen */
+      var timeEl = document.createElement('span');
+      timeEl.className = 'tg-card-time';
+      timeEl.textContent = relativeTime(tg.last_seen);
+      if (tg.last_seen) timeEl.title = absTime(tg.last_seen);
+      stats.appendChild(timeEl);
+
+      card.appendChild(stats);
+
+      /* Activity bar */
+      var bar = document.createElement('div');
+      bar.className = 'tg-card-bar';
+      var fill = document.createElement('div');
+      fill.className = 'tg-card-bar-fill';
+      var pct = tg.calls_1h ? Math.max(3, Math.round((tg.calls_1h / max1h) * 100)) : 0;
+      fill.style.width = pct + '%';
+      bar.appendChild(fill);
+      card.appendChild(bar);
+
+      card.addEventListener('click', function() {
+        showDetail(parseInt(card.dataset.systemId), parseInt(card.dataset.tgid));
+      });
+
+      browseCardGrid.appendChild(card);
     });
   }
 
