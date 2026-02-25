@@ -33,7 +33,8 @@ Go was chosen over Node.js for multi-core utilization and headroom at high messa
 - `internal/api/server.go` — Chi router + HTTP server lifecycle. All endpoints wired via handler `Routes()` methods.
 - `internal/api/query.go` — Ad-hoc read-only SQL query handler (`POST /query`). Read-only transaction, 30s statement timeout, row cap, semicolon rejection.
 - `internal/database/query.go` — `ExecuteReadOnlyQuery()` — runs SQL in a `BEGIN READ ONLY` transaction with `SET LOCAL statement_timeout = '30s'`.
-- `internal/api/middleware.go` — RequestID, structured request Logger (zerolog/hlog), Recoverer (JSON 500), BearerAuth (passthrough when `AUTH_TOKEN` empty), CORSWithOrigins, RateLimiter (per-IP via `X-Forwarded-For`/`X-Real-IP`, configurable `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST`), MaxBodySize (10 MB), ResponseTimeout (wraps non-SSE/audio handlers with `HTTP_WRITE_TIMEOUT`).
+- `internal/api/middleware.go` — RequestID, structured request Logger (zerolog/hlog), Recoverer (JSON 500), BearerAuth (checks `Authorization: Bearer` header or `?token=` query param; always active since AUTH_TOKEN is auto-generated), CORSWithOrigins, RateLimiter (per-IP via `X-Forwarded-For`/`X-Real-IP`, configurable `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST`), MaxBodySize (10 MB), ResponseTimeout (wraps non-SSE/audio handlers with `HTTP_WRITE_TIMEOUT`).
+- `web/auth.js` — Shared browser-side auth for all web pages. On load, fetches token from `GET /api/v1/auth-init` (unauthenticated, CDN-safe JSON endpoint). Patches `window.fetch` to inject `Authorization: Bearer` header and `EventSource` to append `?token=` on same-origin `/api/` calls. Falls back to localStorage prompt on 401. Included via `<script src="auth.js?v=1"></script>` in all pages.
 
 ## Go Dependencies
 
@@ -145,7 +146,7 @@ The `.env` file is auto-loaded from the current directory on startup (silent if 
 | `--env-file` | — | `.env` | Path to .env file |
 | `--version` | — | — | Print version and exit |
 
-Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN`, `CORS_ORIGINS` (comma-separated allowed origins; empty = allow all `*`), `RATE_LIMIT_RPS` (per-IP requests/second, default `20`), `RATE_LIMIT_BURST` (per-IP burst size, default `40`), `RAW_STORE` (bool, default `true` — master switch to disable all raw MQTT archival), `RAW_INCLUDE_TOPICS` (comma-separated allowlist of handler names for raw archival; supports `_unknown` for unrecognized topics; takes priority over `RAW_EXCLUDE_TOPICS`), `RAW_EXCLUDE_TOPICS` (comma-separated denylist of handler names to exclude from raw archival), `WATCH_INSTANCE_ID` (instance ID for file-watched calls, default `file-watch`), `WATCH_BACKFILL_DAYS` (days of existing files to backfill on startup, default `7`; `0` = all, `-1` = none), `CSV_WRITEBACK` (bool, default `false` — when enabled, PATCH edits to talkgroup/unit alpha_tags are written back to TR's CSV files on disk; requires `TR_DIR`).
+Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN` (persistent API token; if not set, a random token is auto-generated on each startup and logged — web UI pages receive it transparently via `GET /api/v1/auth-init`), `CORS_ORIGINS` (comma-separated allowed origins; empty = allow all `*`), `RATE_LIMIT_RPS` (per-IP requests/second, default `20`), `RATE_LIMIT_BURST` (per-IP burst size, default `40`), `RAW_STORE` (bool, default `true` — master switch to disable all raw MQTT archival), `RAW_INCLUDE_TOPICS` (comma-separated allowlist of handler names for raw archival; supports `_unknown` for unrecognized topics; takes priority over `RAW_EXCLUDE_TOPICS`), `RAW_EXCLUDE_TOPICS` (comma-separated denylist of handler names to exclude from raw archival), `WATCH_INSTANCE_ID` (instance ID for file-watched calls, default `file-watch`), `WATCH_BACKFILL_DAYS` (days of existing files to backfill on startup, default `7`; `0` = all, `-1` = none), `CSV_WRITEBACK` (bool, default `false` — when enabled, PATCH edits to talkgroup/unit alpha_tags are written back to TR's CSV files on disk; requires `TR_DIR`).
 
 **Ingest modes:** At least one of `MQTT_BROKER_URL`, `WATCH_DIR`, or `TR_DIR` must be set. Both MQTT and watch mode can run simultaneously. Watch mode only produces `call_end` events (files appear after calls complete). MQTT is the upgrade path for `call_start`, unit events, recorder state, and decode rates.
 
@@ -194,6 +195,8 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="auth.js?v=1"></script>
 <meta name="card-title" content="My Dashboard">
 <meta name="card-description" content="One-line description">
 <meta name="card-order" content="4">
@@ -225,10 +228,12 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 - Health endpoint — shows database, MQTT, and trunk-recorder instance status (connected/disconnected with last_seen timestamps)
 - Dev tools — `cmd/mqtt-dump` (MQTT traffic inspector), `cmd/dbcheck` (DB analysis)
 - Security hardening — proxy-aware per-IP rate limiting, 10 MB request body limit, response timeout for non-streaming handlers, CORS origin restrictions, XSS prevention in web UI
+- Transparent web auth — API always requires a Bearer token (auto-generated if `AUTH_TOKEN` not set). Web pages load token from `GET /api/v1/auth-init` via shared `auth.js`, which patches fetch/EventSource to inject credentials. No user prompt needed. Stops automated scanners while keeping the UI seamless.
 - Tag source tracking — `alpha_tag_source` on talkgroups and units (`manual`, `csv`, `mqtt`). Manual edits are preserved across MQTT and CSV re-imports.
 - Unit CSV import — loads unit tags from TR's `unitTagsFile` at startup; opt-in writeback on PATCH via `CSV_WRITEBACK`
 - Affiliation map eviction — stale entries (>24h) cleaned every 5 minutes
 - Warmup gate — buffers non-identity MQTT messages on fresh start until system registration establishes real P25 sysid/wacn, preventing duplicate system creation from early calls. 5s timeout fallback for conventional systems. Skipped on restart when identity cache loads from DB.
+- Recorder enrichment — SSE `recorder_update` events and REST recorder cache are enriched with `tgid`, `tg_alpha_tag`, `unit_id`, `unit_alpha_tag` by matching recorder frequency against active calls.
 
 **Not yet done:**
 - Test coverage for unit-events and affiliations endpoints
@@ -315,6 +320,16 @@ docker compose up -d
 docker compose pull && docker compose up -d
 ```
 
+### Dev Deploy Script
+
+`deploy-dev.sh` cross-compiles for linux/amd64, stops the container, uploads the binary, restarts, and pushes web files:
+
+```bash
+./deploy-dev.sh              # full deploy (binary + web + restart)
+./deploy-dev.sh --web-only   # just push web files (no restart needed)
+./deploy-dev.sh --binary-only # just push binary + restart
+```
+
 ### Updating Web Files (No Rebuild)
 
 Web files are embedded in the Go binary via `go:embed`, but the Docker deployment bind-mounts `./web:/opt/tr-engine/web` which overrides the embedded files. When a `web/` directory exists on disk, tr-engine serves from it instead — changes take effect on the next browser request with no restart.
@@ -348,13 +363,16 @@ ssh root@tr-dashboard 'cd /data/tr-engine/v1/web && curl -s https://api.github.c
     ├── pgdata/                # PostgreSQL data (bind-mounted into container)
     ├── audio/                 # Call audio files (bind-mounted into container)
     └── web/                   # Bind-mounted into container, overrides embedded UI
+        ├── auth.js             # Shared auth (fetches token from /api/v1/auth-init)
         ├── index.html
         ├── irc-radio-live.html
         ├── stream-graph.html
         ├── signal-flow-data.js
+        ├── scanner.html
         ├── units.html
         ├── events.html
         ├── timeline.html
+        ├── talkgroup-directory.html
         └── docs.html
 ```
 

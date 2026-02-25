@@ -148,6 +148,33 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
 
   # ----------------------------------------------------------
+  # Auth
+  # ----------------------------------------------------------
+  /auth-init:
+    get:
+      operationId: getAuthInit
+      summary: Web auth bootstrap
+      description: |
+        Returns the API auth token for web UI pages. No authentication required.
+        Used by `auth.js` to transparently authenticate browser-side API calls.
+        The URL has no file extension so CDNs (Cloudflare) skip caching it.
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: Token payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: Bearer token for API authentication
+        "404":
+          description: Auth not configured (AUTH_TOKEN not set and auto-generation failed)
+
+  # ----------------------------------------------------------
   # Systems
   # ----------------------------------------------------------
   /systems:
