@@ -262,6 +262,31 @@
 .eh-nav-link:hover .eh-nav-link-arrow { transform: translateX(3px); color: var(--accent); }
 .eh-nav-placeholder { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); padding: 12px 10px; text-align: center; }
 
+/* Page visibility edit mode */
+.eh-nav-manage {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 10px 4px; margin-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--border), transparent 60%);
+  cursor: pointer; background: none; border-left: none; border-right: none; border-bottom: none;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+  transition: color 0.15s; width: 100%;
+}
+.eh-nav-manage:hover { color: var(--accent); }
+.eh-nav-manage svg { width: 12px; height: 12px; }
+.eh-nav-link.eh-hidden { opacity: 0.35; }
+.eh-nav-link.eh-hidden:hover { opacity: 0.55; }
+.eh-nav-vis-toggle {
+  width: 22px; height: 22px; flex-shrink: 0;
+  display: none; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: var(--text-muted); border-radius: 4px; transition: color 0.15s, background 0.15s;
+}
+.eh-nav-vis-toggle:hover { color: var(--accent); background: var(--tile-bg); }
+.eh-nav-vis-toggle svg { width: 14px; height: 14px; }
+.eh-nav-dropdown.eh-editing .eh-nav-vis-toggle { display: flex; }
+.eh-nav-dropdown.eh-editing .eh-nav-link-arrow { display: none; }
+
 /* Subtitle */
 .eh-header-sub {
   font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em;
@@ -358,51 +383,201 @@
       if (isOpen) loadNavPages();
     });
     document.addEventListener('click', e => {
-      if (!wrap.contains(e.target)) wrap.classList.remove('open');
+      if (!wrap.contains(e.target)) {
+        wrap.classList.remove('open');
+        if (_navEditing) { _navEditing = false; renderNavPages(); }
+      }
     });
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') wrap.classList.remove('open');
+      if (e.key === 'Escape') {
+        wrap.classList.remove('open');
+        if (_navEditing) { _navEditing = false; renderNavPages(); }
+      }
     });
   }
 
   /**
    * Fetch pages from the API and populate the nav dropdown.
-   * Only fetches once; subsequent opens reuse the rendered links.
+   * Supports edit mode for hiding/showing pages via localStorage.
    */
-  let _navLoaded = false;
-  function loadNavPages() {
-    if (_navLoaded) return;
-    _navLoaded = true;
+  const HIDDEN_PAGES_KEY = 'eh-hidden-pages';
+  let _navPages = null;  // cached page list from API
+  let _navEditing = false;
 
-    const dropdown = document.getElementById('eh-nav-dropdown');
-    const currentFile = window.location.pathname.split('/').pop() || 'index.html';
+  function getHiddenPages() {
+    try { return JSON.parse(localStorage.getItem(HIDDEN_PAGES_KEY)) || []; }
+    catch { return []; }
+  }
+  function setHiddenPages(arr) {
+    localStorage.setItem(HIDDEN_PAGES_KEY, JSON.stringify(arr));
+  }
+
+  function loadNavPages() {
+    if (_navPages) { renderNavPages(); return; }
 
     fetch('/api/v1/pages')
       .then(r => r.json())
-      .then(pages => {
-        const others = pages.filter(p => {
-          const file = (p.path || '').split('/').pop();
-          return file !== currentFile;
-        });
-        if (!others.length) {
-          dropdown.innerHTML = '<div class="eh-nav-placeholder">no other pages</div>';
-          return;
-        }
-        const NAV_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
-        dropdown.innerHTML = others.map(p =>
-          `<a href="${p.path}" class="eh-nav-link" role="menuitem">
-            <div class="eh-nav-link-icon">${NAV_ICON}</div>
-            <div class="eh-nav-link-text">
-              <div class="eh-nav-link-title">${p.title}</div>
-              ${p.description ? `<div class="eh-nav-link-desc">${p.description}</div>` : ''}
-            </div>
-            <span class="eh-nav-link-arrow">›</span>
-          </a>`
-        ).join('');
-      })
+      .then(pages => { _navPages = pages; renderNavPages(); })
       .catch(() => {
-        dropdown.innerHTML = '<div class="eh-nav-placeholder">could not load pages</div>';
+        const dropdown = document.getElementById('eh-nav-dropdown');
+        dropdown.textContent = '';
+        const ph = document.createElement('div');
+        ph.className = 'eh-nav-placeholder';
+        ph.textContent = 'could not load pages';
+        dropdown.appendChild(ph);
       });
+  }
+
+  function renderNavPages() {
+    const dropdown = document.getElementById('eh-nav-dropdown');
+    const currentFile = window.location.pathname.split('/').pop() || 'index.html';
+    const hidden = getHiddenPages();
+
+    const others = (_navPages || []).filter(p => {
+      const file = (p.path || '').split('/').pop();
+      return file !== currentFile;
+    });
+
+    if (!others.length) {
+      dropdown.textContent = '';
+      const ph = document.createElement('div');
+      ph.className = 'eh-nav-placeholder';
+      ph.textContent = 'no other pages';
+      dropdown.appendChild(ph);
+      return;
+    }
+
+    const visible = _navEditing ? others : others.filter(p => !hidden.includes(p.path));
+
+    const NAV_SVG_ATTRS = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+
+    function makeSvg(attrs, paths) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      for (const [k, v] of Object.entries({ ...NAV_SVG_ATTRS, ...attrs })) svg.setAttribute(k, v);
+      paths.forEach(d => {
+        if (typeof d === 'string') {
+          const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); svg.appendChild(p);
+        } else {
+          const el = document.createElementNS('http://www.w3.org/2000/svg', d.tag);
+          for (const [k, v] of Object.entries(d)) { if (k !== 'tag') el.setAttribute(k, v); }
+          svg.appendChild(el);
+        }
+      });
+      return svg;
+    }
+
+    function navIcon() {
+      return makeSvg({}, [
+        { tag: 'rect', x: '3', y: '3', width: '7', height: '7', rx: '1' },
+        { tag: 'rect', x: '14', y: '3', width: '7', height: '7', rx: '1' },
+        { tag: 'rect', x: '3', y: '14', width: '7', height: '7', rx: '1' },
+        { tag: 'rect', x: '14', y: '14', width: '7', height: '7', rx: '1' },
+      ]);
+    }
+    function eyeOpen() {
+      return makeSvg({}, [
+        'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z',
+        { tag: 'circle', cx: '12', cy: '12', r: '3' },
+      ]);
+    }
+    function eyeClosed() {
+      return makeSvg({}, [
+        'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24',
+        { tag: 'line', x1: '1', y1: '1', x2: '23', y2: '23' },
+      ]);
+    }
+    function pencilIcon() {
+      return makeSvg({}, [
+        'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7',
+        'M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z',
+      ]);
+    }
+    function checkIcon() {
+      return makeSvg({}, [{ tag: 'polyline', points: '20 6 9 17 4 12' }]);
+    }
+
+    dropdown.classList.toggle('eh-editing', _navEditing);
+    dropdown.textContent = '';
+
+    if (visible.length) {
+      visible.forEach(p => {
+        const isHidden = hidden.includes(p.path);
+
+        const link = document.createElement('a');
+        link.href = _navEditing ? 'javascript:void(0)' : p.path;
+        link.className = 'eh-nav-link' + (isHidden ? ' eh-hidden' : '');
+        link.setAttribute('role', 'menuitem');
+        link.dataset.pagePath = p.path;
+
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'eh-nav-link-icon';
+        iconWrap.appendChild(navIcon());
+        link.appendChild(iconWrap);
+
+        const textWrap = document.createElement('div');
+        textWrap.className = 'eh-nav-link-text';
+        const titleEl = document.createElement('div');
+        titleEl.className = 'eh-nav-link-title';
+        titleEl.textContent = p.title;
+        textWrap.appendChild(titleEl);
+        if (p.description) {
+          const descEl = document.createElement('div');
+          descEl.className = 'eh-nav-link-desc';
+          descEl.textContent = p.description;
+          textWrap.appendChild(descEl);
+        }
+        link.appendChild(textWrap);
+
+        const visBtn = document.createElement('button');
+        visBtn.className = 'eh-nav-vis-toggle';
+        visBtn.dataset.path = p.path;
+        visBtn.title = (isHidden ? 'Show' : 'Hide') + ' page';
+        visBtn.appendChild(isHidden ? eyeClosed() : eyeOpen());
+        link.appendChild(visBtn);
+
+        const arrow = document.createElement('span');
+        arrow.className = 'eh-nav-link-arrow';
+        arrow.textContent = '\u203a';
+        link.appendChild(arrow);
+
+        dropdown.appendChild(link);
+
+        // Wire eye toggle
+        if (_navEditing) {
+          visBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const h = getHiddenPages();
+            const idx = h.indexOf(p.path);
+            if (idx >= 0) h.splice(idx, 1); else h.push(p.path);
+            setHiddenPages(h);
+            renderNavPages();
+          });
+          link.addEventListener('click', (e) => e.preventDefault());
+        }
+      });
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'eh-nav-placeholder';
+      ph.textContent = 'all pages hidden';
+      dropdown.appendChild(ph);
+    }
+
+    // Manage / Done button
+    const manageBtn = document.createElement('button');
+    manageBtn.className = 'eh-nav-manage';
+    manageBtn.id = 'eh-nav-manage';
+    manageBtn.appendChild(_navEditing ? checkIcon() : pencilIcon());
+    const manageLabel = document.createElement('span');
+    manageLabel.textContent = _navEditing ? 'Done' : 'Manage pages';
+    manageBtn.appendChild(manageLabel);
+    dropdown.appendChild(manageBtn);
+
+    manageBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _navEditing = !_navEditing;
+      renderNavPages();
+    });
   }
 
   /**
