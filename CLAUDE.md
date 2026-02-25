@@ -185,7 +185,8 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 
 **How it works:**
 - `GET /api/v1/pages` (`internal/api/pages.go`) scans `web/*.html`, extracts meta tags, returns sorted JSON.
-- `index.html` fetches that endpoint on load and renders a card per page.
+- `theme-engine.js` injects a sticky header with a nav dropdown that fetches `/api/v1/pages` and renders links.
+- **Page visibility**: Users can hide pages from the nav dropdown via an inline "Manage pages" edit mode. Eye icons toggle visibility per page. State persists in `localStorage` key `eh-hidden-pages`. Hidden pages are still accessible by direct URL.
 - Dev mode (local `web/` directory on disk): new files picked up on next refresh, no rebuild.
 - Production: files embedded via `//go:embed web/*` in `embed.go`, rebuild required.
 
@@ -201,9 +202,12 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 <meta name="card-description" content="One-line description">
 <meta name="card-order" content="4">
 <title>My Dashboard — tr-engine</title>
+<!-- Theme system -->
+<script src="theme-config.js"></script>
 </head>
 <body>
   <!-- page content -->
+  <script src="theme-engine.js?v=2"></script>
 </body>
 </html>
 ```
@@ -234,6 +238,7 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 - Affiliation map eviction — stale entries (>24h) cleaned every 5 minutes
 - Warmup gate — buffers non-identity MQTT messages on fresh start until system registration establishes real P25 sysid/wacn, preventing duplicate system creation from early calls. 5s timeout fallback for conventional systems. Skipped on restart when identity cache loads from DB.
 - Recorder enrichment — SSE `recorder_update` events and REST recorder cache are enriched with `tgid`, `tg_alpha_tag`, `unit_id`, `unit_alpha_tag` by matching recorder frequency against active calls.
+- Theme engine — `theme-config.js` + `theme-engine.js` provide 11 switchable themes, sticky header with nav dropdown, keyboard shortcut (Ctrl+Shift+T), and page visibility management (hide/show pages per-browser via localStorage).
 
 **Not yet done:**
 - Test coverage for unit-events and affiliations endpoints
