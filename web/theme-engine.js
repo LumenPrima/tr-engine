@@ -653,6 +653,8 @@
     default: opts.default,
   };
 
+  window.trTheme = { invalidateNavCache: function() { _navPages = null; } };
+
 })();
 
 // bfcache fix — re-apply theme when browser restores page from back/forward cache

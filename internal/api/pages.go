@@ -2,8 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -82,5 +85,125 @@ func PagesHandler(webFS fs.FS) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(pages)
+	}
+}
+
+// protectedFiles are core files that must never be overwritten by SavePageHandler.
+var protectedFiles = map[string]bool{
+	"index.html":      true,
+	"auth.js":         true,
+	"theme-config.js": true,
+	"theme-engine.js": true,
+	"playground.html": true,
+}
+
+// sanitizeFilename strips directory components and non-safe characters.
+// Returns empty string if nothing valid remains.
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name)
+	var b strings.Builder
+	for _, c := range name {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' {
+			b.WriteRune(c)
+		}
+	}
+	name = b.String()
+	// Strip leading dots (no hidden files)
+	name = strings.TrimLeft(name, ".")
+	return name
+}
+
+// savePageRequest is the JSON body for POST /pages.
+type savePageRequest struct {
+	Filename  string `json:"filename"`
+	HTML      string `json:"html"`
+	Overwrite bool   `json:"overwrite"`
+}
+
+// SavePageHandler writes an HTML page to the web directory on disk.
+// Returns 503 if the server is using embedded web files (no disk web/ directory).
+func SavePageHandler(webDir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if webDir == "" {
+			WriteErrorDetail(w, http.StatusServiceUnavailable,
+				"embedded web files",
+				"Server is using embedded web files; create a web/ directory and restart to enable saving pages.")
+			return
+		}
+
+		var req savePageRequest
+		if err := DecodeJSON(r, &req); err != nil {
+			WriteError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		// Sanitize and validate filename
+		filename := sanitizeFilename(req.Filename)
+		if filename == "" {
+			WriteError(w, http.StatusBadRequest, "filename is empty after sanitization")
+			return
+		}
+		if !strings.HasSuffix(filename, ".html") {
+			filename += ".html"
+		}
+		if len(filename) > 100 {
+			WriteError(w, http.StatusBadRequest, "filename too long (max 100 characters)")
+			return
+		}
+
+		// Reject protected files
+		if protectedFiles[filename] {
+			WriteErrorDetail(w, http.StatusForbidden, "protected file",
+				fmt.Sprintf("%s is a core file and cannot be overwritten", filename))
+			return
+		}
+
+		// Validate HTML size (1 MB max)
+		if len(req.HTML) > 1<<20 {
+			WriteError(w, http.StatusBadRequest, "HTML content too large (max 1 MB)")
+			return
+		}
+
+		// Require card-title meta tag
+		if !cardTitleRe.MatchString(req.HTML) {
+			WriteErrorDetail(w, http.StatusBadRequest, "missing card-title",
+				`HTML must contain <meta name="card-title" content="..."> for page discovery`)
+			return
+		}
+
+		destPath := filepath.Join(webDir, filename)
+
+		// Check for existing file when overwrite is false
+		if !req.Overwrite {
+			if _, err := os.Stat(destPath); err == nil {
+				WriteErrorDetail(w, http.StatusConflict, "file already exists",
+					fmt.Sprintf("%s already exists; set overwrite=true to replace it", filename))
+				return
+			}
+		}
+
+		// Atomic write: write to .tmp then rename
+		tmpPath := destPath + ".tmp"
+		if err := os.WriteFile(tmpPath, []byte(req.HTML), 0644); err != nil {
+			WriteErrorDetail(w, http.StatusInternalServerError, "write failed", err.Error())
+			return
+		}
+		if err := os.Rename(tmpPath, destPath); err != nil {
+			os.Remove(tmpPath)
+			WriteErrorDetail(w, http.StatusInternalServerError, "rename failed", err.Error())
+			return
+		}
+
+		// Extract title for response
+		title := ""
+		if m := cardTitleRe.FindStringSubmatch(req.HTML); m != nil {
+			title = m[1]
+		}
+
+		WriteJSON(w, http.StatusCreated, map[string]string{
+			"path":    "/" + filename,
+			"title":   title,
+			"message": "Page saved",
+		})
 	}
 }

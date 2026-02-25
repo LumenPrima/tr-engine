@@ -2234,6 +2234,79 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
+    post:
+      operationId: savePage
+      summary: Save an HTML page to the web directory
+      description: |
+        Writes an HTML file to the server's disk `web/` directory, where
+        the page discovery system picks it up immediately. Requires the
+        HTML to contain a `card-title` meta tag. Protected core files
+        (index.html, auth.js, theme-config.js, theme-engine.js,
+        playground.html) cannot be overwritten. Returns 503 if the server
+        is using embedded web files with no disk directory.
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, html]
+              properties:
+                filename:
+                  type: string
+                  description: Target filename (sanitized server-side; .html appended if missing)
+                  example: my-dashboard.html
+                html:
+                  type: string
+                  description: Full HTML content of the page (max 1 MB)
+                overwrite:
+                  type: boolean
+                  default: false
+                  description: If true, overwrite an existing file with the same name
+      responses:
+        "201":
+          description: Page saved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+                    example: /my-dashboard.html
+                  title:
+                    type: string
+                    example: My Dashboard
+                  message:
+                    type: string
+                    example: Page saved
+        "400":
+          description: Invalid request (empty filename, missing card-title, HTML too large)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Attempted to overwrite a protected core file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: File already exists and overwrite was not set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Server is using embedded web files (no disk web/ directory)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   # ----------------------------------------------------------
   # OpenAPI Spec

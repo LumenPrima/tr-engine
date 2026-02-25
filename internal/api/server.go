@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -87,6 +88,19 @@ func NewServer(opts ServerOptions) *Server {
 		})
 	}
 
+	// Detect web directory: prefer local web/ on disk for dev, fall back to embedded
+	var webFSys fs.FS
+	var webDir string
+	if info, err := os.Stat("web"); err == nil && info.IsDir() {
+		webFSys = os.DirFS("web")
+		if abs, err := filepath.Abs("web"); err == nil {
+			webDir = abs
+		}
+		opts.Log.Info().Msg("serving web files from disk (dev mode)")
+	} else {
+		webFSys, _ = fs.Sub(opts.WebFiles, "web")
+	}
+
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(MaxBodySize(10 << 20)) // 10 MB for regular API requests
@@ -108,6 +122,7 @@ func NewServer(opts ServerOptions) *Server {
 			NewAffiliationsHandler(opts.Live).Routes(r)
 			NewTranscriptionsHandler(opts.DB, opts.Live).Routes(r)
 			NewAdminHandler(opts.DB, opts.OnSystemMerge).Routes(r)
+			r.Post("/pages", SavePageHandler(webDir))
 
 			// Query endpoint always requires auth — disabled when AUTH_TOKEN is empty
 			r.Group(func(r chi.Router) {
@@ -123,14 +138,6 @@ func NewServer(opts ServerOptions) *Server {
 		w.Write(opts.OpenAPISpec)
 	})
 
-	// Serve web files: prefer local web/ directory on disk for dev, fall back to embedded
-	var webFSys fs.FS
-	if info, err := os.Stat("web"); err == nil && info.IsDir() {
-		webFSys = os.DirFS("web")
-		opts.Log.Info().Msg("serving web files from disk (dev mode)")
-	} else {
-		webFSys, _ = fs.Sub(opts.WebFiles, "web")
-	}
 	r.Get("/api/v1/pages", PagesHandler(webFSys))
 	r.Handle("/*", http.FileServer(http.FS(webFSys)))
 
