@@ -962,8 +962,9 @@ paths:
       summary: List live talkgroup affiliations
       description: |
         Returns current talkgroup affiliation state for units, derived from
-        live MQTT `join` and `off` events. The map starts empty on boot and
-        populates from live traffic.
+        live MQTT `join` and `off` events. This is a live endpoint — data
+        is served from memory, not the database. The map starts empty on
+        boot and populates from live traffic.
 
         Each entry shows which talkgroup a unit is currently affiliated with,
         when the affiliation started, and the unit's status (`affiliated` or `off`).
@@ -1119,7 +1120,9 @@ paths:
       summary: List active calls (real-time)
       description: |
         Returns currently active calls from the in-memory MQTT tracker.
-        This is the real-time data source — use it for live dashboards.
+        This is a live endpoint — it returns a point-in-time snapshot of
+        all active calls from memory. There is no pagination; the full
+        list is returned in a single response.
 
         Active calls may have incomplete fields (no stop_time, no audio_url,
         duration is elapsed-so-far). The response uses the same Call schema
@@ -1946,6 +1949,10 @@ paths:
         Returns all known recorder states from in-memory cache (populated
         by MQTT recorder messages). Includes embedded system and talkgroup
         display names.
+
+        This is a live endpoint — it returns a point-in-time snapshot of
+        all recorders from memory. There is no pagination; the full list
+        is returned in a single response.
       tags: [recorders]
       responses:
         "200":
