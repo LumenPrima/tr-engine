@@ -286,7 +286,7 @@ func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter Tra
 			COALESCE(c.tg_alpha_tag, ''), c.start_time, c.duration
 		` + fromClause + whereClause + `
 		ORDER BY rank DESC
-		LIMIT $7 OFFSET $8`
+		LIMIT $8 OFFSET $9`
 
 	rows, err := db.Pool.Query(ctx, dataQuery, append(args, limit, filter.Offset)...)
 	if err != nil {
