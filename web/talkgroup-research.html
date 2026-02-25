@@ -248,7 +248,7 @@
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm); padding: 16px;
-    position: relative;
+    position: relative; height: 240px;
   }
   .chart-panel h4 {
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
@@ -282,28 +282,44 @@
   }
   .tab-content.active { display: block; }
 
-  /* ── Network panel (Task 6) ── */
+  /* ── Units tab layout ── */
+  .units-top-row {
+    display: flex; gap: 16px; margin-bottom: 20px;
+  }
+  .units-top-row > * { flex: 1; min-width: 0; }
+
+  /* ── Network panel ── */
   .network-panel {
     background: var(--glass-bg);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm); padding: 16px;
-    min-height: 300px; position: relative;
+    min-height: 340px; position: relative; overflow: hidden;
   }
   .network-panel h4 {
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--text-muted); margin-bottom: 12px; font-weight: 600;
+    color: var(--text-muted); margin-bottom: 8px; font-weight: 600;
   }
-  .network-panel svg { width: 100%; height: 100%; }
+  .network-panel svg { width: 100%; height: 100%; display: block; }
   .network-tooltip {
     position: absolute; z-index: 30;
     background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--border); border-radius: var(--radius-xs);
     padding: 8px 12px; font-size: 11px; color: var(--text);
     pointer-events: none; opacity: 0; transition: opacity 0.15s;
-    white-space: nowrap;
+    white-space: nowrap; max-width: 260px;
   }
   .network-tooltip.visible { opacity: 1; }
+  .network-node { cursor: pointer; transition: filter 0.2s; }
+  .network-node:hover { filter: drop-shadow(0 0 6px var(--accent-glow)); }
+  .network-line { transition: opacity 0.3s; }
+  .network-secondary { cursor: pointer; }
+  .network-secondary:hover { filter: drop-shadow(0 0 6px var(--accent-glow)); }
+  .network-fade-in { animation: netFadeIn 0.4s ease-out forwards; }
+  @keyframes netFadeIn {
+    from { opacity: 0; transform: scale(0.7); }
+    to { opacity: 1; transform: scale(1); }
+  }
 
   /* ── Filter buttons (Events tab) ── */
   .filter-btns {
@@ -420,6 +436,7 @@
     .col-group, .col-24h { display: none; }
     th.col-group, th.col-24h { display: none; }
     .charts-row { flex-direction: column; }
+    .units-top-row { flex-direction: column; }
     .toolbar { gap: 6px; }
     .search-box { max-width: none; }
     .call-detail-inner { grid-template-columns: 1fr; }
@@ -1214,8 +1231,12 @@
      UNITS TAB
      ══════════════════════════════════════════════════════════ */
 
+  var expandedUnitId = null; /* currently expanded node in network graph */
+  var networkTooltip = null; /* tooltip element for network graph */
+
   async function loadUnitsTab(panel) {
     panel.replaceChildren();
+    expandedUnitId = null;
 
     var loadingDiv = document.createElement('div');
     loadingDiv.className = 'loading-state';
@@ -1243,17 +1264,32 @@
         return;
       }
 
-      /* Top Talkers chart */
+      /* Top row: chart + network side by side */
+      var topRow = document.createElement('div');
+      topRow.className = 'units-top-row';
+
+      /* Left: Top Talkers chart */
       var chartDiv = document.createElement('div');
-      chartDiv.style.cssText = 'margin-bottom:20px; height:260px; position:relative;';
+      chartDiv.style.cssText = 'height:340px; position:relative;';
       var h4 = document.createElement('h4');
       h4.style.cssText = 'font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); margin-bottom:8px; font-weight:600;';
       h4.textContent = 'Top Talkers (24h)';
       chartDiv.appendChild(h4);
       var canvas = document.createElement('canvas');
       chartDiv.appendChild(canvas);
-      panel.appendChild(chartDiv);
+      topRow.appendChild(chartDiv);
 
+      /* Right: Network graph */
+      var netPanel = document.createElement('div');
+      netPanel.className = 'network-panel';
+      var netH4 = document.createElement('h4');
+      netH4.textContent = 'Unit Network';
+      netPanel.appendChild(netH4);
+      topRow.appendChild(netPanel);
+
+      panel.appendChild(topRow);
+
+      /* Build top talkers chart */
       var top10 = units.slice(0, 10);
       var barLabels = top10.map(function(u) { return u.alpha_tag || ('Unit ' + u.unit_id); });
       var barData = top10.map(function(u) { return u.call_count || 0; });
@@ -1287,6 +1323,9 @@
         }
       });
       chartInstances.push(barChart);
+
+      /* Build network graph */
+      buildNetworkGraph(netPanel, units);
 
       /* Units table */
       var table = document.createElement('table');
@@ -1338,6 +1377,328 @@
       errDiv.textContent = 'Failed to load units';
       panel.appendChild(errDiv);
     }
+  }
+
+  /* ── Network Graph (SVG) ── */
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS(SVG_NS, tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function(k) { el.setAttribute(k, attrs[k]); });
+    }
+    return el;
+  }
+
+  function buildNetworkGraph(container, units) {
+    /* Limit to top 20 units for readability */
+    var displayUnits = units.slice(0, 20);
+    var maxCalls = Math.max.apply(null, displayUnits.map(function(u) { return u.call_count || 1; }));
+
+    var W = 420, H = 310;
+    var cx = W / 2, cy = H / 2;
+    var radius = Math.min(cx, cy) - 40;
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet' });
+
+    /* Tooltip (shared, positioned absolutely in .network-panel) */
+    if (!networkTooltip) {
+      networkTooltip = document.createElement('div');
+      networkTooltip.className = 'network-tooltip';
+    }
+    networkTooltip.classList.remove('visible');
+    container.appendChild(networkTooltip);
+
+    /* Group for lines (drawn first so they're behind nodes) */
+    var linesGroup = svgEl('g');
+    svg.appendChild(linesGroup);
+
+    /* Group for secondary expansion nodes */
+    var expansionGroup = svgEl('g');
+    svg.appendChild(expansionGroup);
+
+    /* Group for unit nodes */
+    var nodesGroup = svgEl('g');
+    svg.appendChild(nodesGroup);
+
+    /* Central TG node */
+    var centerNode = svgEl('g');
+    var centerCircle = svgEl('circle', {
+      cx: cx, cy: cy, r: 22,
+      fill: getThemeColor('accent'),
+      opacity: '0.9'
+    });
+    centerNode.appendChild(centerCircle);
+
+    var centerLabel = svgEl('text', {
+      x: cx, y: cy + 1,
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      fill: getThemeColor('bg'),
+      'font-size': '9', 'font-weight': '700',
+      'font-family': 'var(--font-mono)'
+    });
+    centerLabel.textContent = detailData ? (detailData.alpha_tag || ('TG ' + detailTgid)) : ('TG ' + detailTgid);
+    /* Truncate long labels */
+    if (centerLabel.textContent.length > 10) {
+      centerLabel.textContent = centerLabel.textContent.substring(0, 9) + '\u2026';
+    }
+    centerNode.appendChild(centerLabel);
+    nodesGroup.appendChild(centerNode);
+
+    /* Unit nodes arranged in a circle */
+    var nodePositions = []; /* { x, y, unit, nodeGroup } */
+
+    displayUnits.forEach(function(u, i) {
+      var angle = (2 * Math.PI * i / displayUnits.length) - Math.PI / 2;
+      var nx = cx + radius * Math.cos(angle);
+      var ny = cy + radius * Math.sin(angle);
+
+      /* Scale node radius by call_count: 6px min, 16px max */
+      var callRatio = (u.call_count || 1) / maxCalls;
+      var nodeR = 6 + callRatio * 10;
+
+      /* Line from center to unit */
+      var lineWidth = 1 + callRatio * 2.5;
+      var line = svgEl('line', {
+        x1: cx, y1: cy, x2: nx, y2: ny,
+        stroke: getThemeColor('border'),
+        'stroke-width': lineWidth,
+        opacity: '0.4',
+        class: 'network-line'
+      });
+      linesGroup.appendChild(line);
+
+      /* Unit node group */
+      var nodeG = svgEl('g', { class: 'network-node network-fade-in' });
+      nodeG.style.transformOrigin = nx + 'px ' + ny + 'px';
+      nodeG.style.animationDelay = (i * 30) + 'ms';
+
+      var fillColor = u.alpha_tag ? getThemeColor('accent') : getThemeColor('text-muted');
+      var circle = svgEl('circle', {
+        cx: nx, cy: ny, r: nodeR,
+        fill: fillColor, opacity: '0.85'
+      });
+      nodeG.appendChild(circle);
+
+      /* Label — positioned radially outside */
+      var labelDist = nodeR + 10;
+      var lx = nx + labelDist * Math.cos(angle);
+      var ly = ny + labelDist * Math.sin(angle);
+      var anchor = Math.cos(angle) < -0.3 ? 'end' : (Math.cos(angle) > 0.3 ? 'start' : 'middle');
+      var labelText = u.alpha_tag || String(u.unit_id);
+      if (labelText.length > 12) labelText = labelText.substring(0, 11) + '\u2026';
+
+      var label = svgEl('text', {
+        x: lx, y: ly,
+        'text-anchor': anchor,
+        'dominant-baseline': 'middle',
+        fill: getThemeColor('text-muted'),
+        'font-size': '8',
+        'font-family': 'var(--font-mono)',
+        opacity: displayUnits.length > 15 ? '0.7' : '0.9'
+      });
+      label.textContent = labelText;
+      nodeG.appendChild(label);
+
+      nodesGroup.appendChild(nodeG);
+
+      /* Store position info */
+      var pos = { x: nx, y: ny, r: nodeR, angle: angle, unit: u, nodeGroup: nodeG, circle: circle };
+      nodePositions.push(pos);
+
+      /* Hover tooltip */
+      nodeG.addEventListener('mouseenter', function(ev) {
+        var rect = container.getBoundingClientRect();
+        var svgRect = svg.getBoundingClientRect();
+        var scaleX = svgRect.width / W;
+        var scaleY = svgRect.height / H;
+        var tooltipX = svgRect.left - rect.left + nx * scaleX;
+        var tooltipY = svgRect.top - rect.top + ny * scaleY - nodeR * scaleY - 8;
+        networkTooltip.textContent = (u.alpha_tag || 'Unit ' + u.unit_id) +
+          ' \u2014 ' + (u.call_count || 0) + ' calls';
+        networkTooltip.style.left = tooltipX + 'px';
+        networkTooltip.style.top = tooltipY + 'px';
+        networkTooltip.style.transform = 'translateX(-50%)';
+        networkTooltip.classList.add('visible');
+      });
+      nodeG.addEventListener('mouseleave', function() {
+        networkTooltip.classList.remove('visible');
+      });
+
+      /* Click: expand to show other TGs this unit talks on */
+      nodeG.addEventListener('click', function() {
+        expandUnit(pos, nodePositions, expansionGroup, linesGroup, svg, container);
+      });
+    });
+
+    container.appendChild(svg);
+  }
+
+  async function expandUnit(pos, allPositions, expansionGroup, linesGroup, svg, container) {
+    var unitId = pos.unit.unit_id;
+
+    /* Toggle off if already expanded */
+    if (expandedUnitId === unitId) {
+      expandedUnitId = null;
+      collapseExpansion(expansionGroup, linesGroup);
+      pos.circle.setAttribute('stroke', 'none');
+      pos.circle.setAttribute('stroke-width', '0');
+      return;
+    }
+
+    /* Collapse previous */
+    collapseExpansion(expansionGroup, linesGroup);
+    allPositions.forEach(function(p) {
+      p.circle.setAttribute('stroke', 'none');
+      p.circle.setAttribute('stroke-width', '0');
+    });
+
+    expandedUnitId = unitId;
+
+    /* Highlight the expanded node */
+    pos.circle.setAttribute('stroke', getThemeColor('accent'));
+    pos.circle.setAttribute('stroke-width', '2');
+
+    /* Fetch this unit's recent calls to find other TGs */
+    try {
+      var res = await fetch(API + '/calls?unit_id=' + unitId + '&system_id=' + detailSystemId +
+        '&sort=-start_time&limit=50&deduplicate=true');
+      if (!res.ok) return;
+      var data = await res.json();
+      var calls = data.calls || [];
+
+      /* Collect unique TGs (excluding current) */
+      var tgMap = {};
+      calls.forEach(function(c) {
+        if (c.tgid === detailTgid && c.system_id === detailSystemId) return;
+        var key = c.system_id + ':' + c.tgid;
+        if (!tgMap[key]) {
+          tgMap[key] = {
+            systemId: c.system_id,
+            tgid: c.tgid,
+            tag: c.tg_alpha_tag || ('TG ' + c.tgid),
+            count: 0
+          };
+        }
+        tgMap[key].count++;
+      });
+
+      var otherTGs = Object.keys(tgMap).map(function(k) { return tgMap[k]; });
+      otherTGs.sort(function(a, b) { return b.count - a.count; });
+      otherTGs = otherTGs.slice(0, 8); /* Max 8 secondary nodes */
+
+      if (otherTGs.length === 0) return;
+
+      /* Position secondary nodes in an arc away from center, branching from the unit */
+      var baseAngle = pos.angle;
+      var spread = Math.min(Math.PI * 0.6, otherTGs.length * 0.2);
+      var branchDist = 50;
+
+      var palette = [
+        getThemeColor('cyan'), getThemeColor('lime'),
+        getThemeColor('magenta'), getThemeColor('orange'),
+        getThemeColor('electric')
+      ];
+
+      otherTGs.forEach(function(tg, i) {
+        var arcAngle = baseAngle + (i - (otherTGs.length - 1) / 2) * (spread / Math.max(otherTGs.length - 1, 1));
+        var sx = pos.x + branchDist * Math.cos(arcAngle);
+        var sy = pos.y + branchDist * Math.sin(arcAngle);
+
+        /* Clamp within viewBox */
+        sx = Math.max(24, Math.min(396, sx));
+        sy = Math.max(24, Math.min(286, sy));
+
+        /* Connecting line from unit to secondary */
+        var line = svgEl('line', {
+          x1: pos.x, y1: pos.y, x2: sx, y2: sy,
+          stroke: palette[i % palette.length],
+          'stroke-width': '1.5',
+          opacity: '0.5',
+          'stroke-dasharray': '3,3',
+          class: 'network-line',
+          'data-expansion': 'true'
+        });
+        linesGroup.appendChild(line);
+
+        /* Secondary TG node */
+        var secG = svgEl('g', { class: 'network-secondary network-fade-in' });
+        secG.style.transformOrigin = sx + 'px ' + sy + 'px';
+        secG.style.animationDelay = (i * 60) + 'ms';
+
+        var secR = 10;
+        var secCircle = svgEl('circle', {
+          cx: sx, cy: sy, r: secR,
+          fill: palette[i % palette.length],
+          opacity: '0.85'
+        });
+        secG.appendChild(secCircle);
+
+        /* Label */
+        var secLabel = svgEl('text', {
+          x: sx, y: sy + secR + 10,
+          'text-anchor': 'middle',
+          fill: palette[i % palette.length],
+          'font-size': '7',
+          'font-family': 'var(--font-mono)',
+          opacity: '0.9'
+        });
+        var tagText = tg.tag;
+        if (tagText.length > 14) tagText = tagText.substring(0, 13) + '\u2026';
+        secLabel.textContent = tagText;
+        secG.appendChild(secLabel);
+
+        /* Count badge */
+        var countLabel = svgEl('text', {
+          x: sx, y: sy + 1,
+          'text-anchor': 'middle', 'dominant-baseline': 'middle',
+          fill: getThemeColor('bg'),
+          'font-size': '7', 'font-weight': '700',
+          'font-family': 'var(--font-mono)'
+        });
+        countLabel.textContent = tg.count;
+        secG.appendChild(countLabel);
+
+        /* Hover */
+        secG.addEventListener('mouseenter', function() {
+          var rect = container.getBoundingClientRect();
+          var svgRect = svg.getBoundingClientRect();
+          var scaleX = svgRect.width / 420;
+          var scaleY = svgRect.height / 310;
+          var tooltipX = svgRect.left - rect.left + sx * scaleX;
+          var tooltipY = svgRect.top - rect.top + sy * scaleY - secR * scaleY - 8;
+          networkTooltip.textContent = tg.tag + ' \u2014 ' + tg.count + ' shared calls';
+          networkTooltip.style.left = tooltipX + 'px';
+          networkTooltip.style.top = tooltipY + 'px';
+          networkTooltip.style.transform = 'translateX(-50%)';
+          networkTooltip.classList.add('visible');
+        });
+        secG.addEventListener('mouseleave', function() {
+          networkTooltip.classList.remove('visible');
+        });
+
+        /* Click to navigate */
+        secG.addEventListener('click', function() {
+          showDetail(tg.systemId, tg.tgid);
+        });
+
+        expansionGroup.appendChild(secG);
+      });
+
+    } catch (e) {
+      console.error('Expand unit failed:', e);
+    }
+  }
+
+  function collapseExpansion(expansionGroup, linesGroup) {
+    /* Remove expansion nodes */
+    while (expansionGroup.firstChild) {
+      expansionGroup.removeChild(expansionGroup.firstChild);
+    }
+    /* Remove expansion lines */
+    var expLines = linesGroup.querySelectorAll('[data-expansion="true"]');
+    expLines.forEach(function(l) { l.remove(); });
   }
 
   /* ══════════════════════════════════════════════════════════
