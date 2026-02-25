@@ -4,10 +4,11 @@
  * Include via <script src="auth.js"></script> before any page scripts.
  *
  * What it does:
- * 1. Reads token from localStorage('tr-engine-token')
- * 2. Patches window.fetch to inject Authorization header on same-origin /api/ calls
- * 3. Patches EventSource to append ?token= on same-origin URLs
- * 4. On 401 response, shows a token prompt modal → saves → reloads
+ * 1. Fetches token from /api/v1/auth-init (server-provided, CDN-safe)
+ * 2. Falls back to localStorage('tr-engine-token')
+ * 3. Patches window.fetch to inject Authorization header on same-origin /api/ calls
+ * 4. Patches EventSource to append ?token= on same-origin URLs
+ * 5. On 401 response, shows a token prompt modal → saves → reloads
  *
  * Pages don't need to change their fetch() or EventSource calls at all.
  */
@@ -15,8 +16,21 @@
   'use strict';
 
   const STORAGE_KEY = 'tr-engine-token';
-  // Server injects window.__TR_AUTH_TOKEN__ when AUTH_TOKEN is configured.
-  // This lets web UI users authenticate transparently without a prompt.
+
+  // Load token from server (synchronous XHR so it's ready before page scripts run).
+  // The /api/v1/auth-init endpoint has no file extension, so CDNs won't cache it.
+  if (!window.__TR_AUTH_TOKEN__) {
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', '/api/v1/auth-init', false);
+      xhr.send();
+      if (xhr.status === 200) {
+        var data = JSON.parse(xhr.responseText);
+        if (data.token) window.__TR_AUTH_TOKEN__ = data.token;
+      }
+    } catch (e) { /* server may not support auth-init — fall through */ }
+  }
+
   let token = window.__TR_AUTH_TOKEN__ || localStorage.getItem(STORAGE_KEY) || '';
   let prompted = false; // prevent multiple prompts
 

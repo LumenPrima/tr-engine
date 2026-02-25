@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -58,9 +57,20 @@ func NewServer(opts ServerOptions) *Server {
 	r.Use(Recoverer)
 	r.Use(Logger(opts.Log))
 
-	// Health endpoint — no auth
+	// Unauthenticated endpoints
 	health := NewHealthHandler(opts.DB, opts.MQTT, opts.Live, opts.Version, opts.StartTime)
 	r.Get("/api/v1/health", health.ServeHTTP)
+
+	// Web auth bootstrap — returns the token for web UI pages.
+	// No file extension in the URL so CDNs (Cloudflare) won't cache it.
+	if opts.Config.AuthToken != "" {
+		tokenJSON := fmt.Sprintf(`{"token":"%s"}`, strings.ReplaceAll(opts.Config.AuthToken, `"`, `\"`))
+		r.Get("/api/v1/auth-init", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Write([]byte(tokenJSON))
+		})
+	}
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
@@ -105,13 +115,7 @@ func NewServer(opts ServerOptions) *Server {
 		webFSys, _ = fs.Sub(opts.WebFiles, "web")
 	}
 	r.Get("/api/v1/pages", PagesHandler(webFSys))
-
-	// Inject AUTH_TOKEN into auth.js so web UI users authenticate transparently
-	fileServer := http.FileServer(http.FS(webFSys))
-	if opts.Config.AuthToken != "" {
-		r.Get("/auth.js", authJSHandler(webFSys, opts.Config.AuthToken))
-	}
-	r.Handle("/*", fileServer)
+	r.Handle("/*", http.FileServer(http.FS(webFSys)))
 
 	srv := &http.Server{
 		Addr:        opts.Config.HTTPAddr,
@@ -143,31 +147,3 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
-// authJSHandler serves auth.js with the AUTH_TOKEN injected as a global variable.
-// This lets web UI users authenticate transparently without entering a token.
-func authJSHandler(webFS fs.FS, token string) http.HandlerFunc {
-	// Escape token for safe embedding in JS string literal
-	escaped := strings.ReplaceAll(token, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-	prefix := fmt.Sprintf("window.__TR_AUTH_TOKEN__ = \"%s\";\n", escaped)
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		f, err := webFS.Open("auth.js")
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		defer f.Close()
-
-		data, err := io.ReadAll(f)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Write([]byte(prefix))
-		w.Write(data)
-	}
-}
