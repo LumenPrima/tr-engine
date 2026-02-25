@@ -178,11 +178,14 @@ const upsertTalkgroup = `-- name: UpsertTalkgroup :exec
 INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, first_seen, last_seen)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 ON CONFLICT (system_id, tgid) DO UPDATE SET
-    alpha_tag   = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') = 'manual' THEN talkgroups.alpha_tag
+    alpha_tag   = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups.alpha_tag
                        ELSE COALESCE(NULLIF($3, ''), talkgroups.alpha_tag) END,
-    tag         = COALESCE(NULLIF($4, ''), talkgroups.tag),
-    "group"     = COALESCE(NULLIF($5, ''), talkgroups."group"),
-    description = COALESCE(NULLIF($6, ''), talkgroups.description),
+    tag         = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups.tag
+                       ELSE COALESCE(NULLIF($4, ''), talkgroups.tag) END,
+    "group"     = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups."group"
+                       ELSE COALESCE(NULLIF($5, ''), talkgroups."group") END,
+    description = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups.description
+                       ELSE COALESCE(NULLIF($6, ''), talkgroups.description) END,
     first_seen  = LEAST(talkgroups.first_seen, $7),
     last_seen   = GREATEST(talkgroups.last_seen, $7)
 `

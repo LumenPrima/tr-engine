@@ -32,11 +32,14 @@ WHERE system_id = @system_id AND tgid = @tgid;
 INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, first_seen, last_seen)
 VALUES (@system_id, @tgid, @alpha_tag, @tag, @tg_group, @description, @event_time, @event_time)
 ON CONFLICT (system_id, tgid) DO UPDATE SET
-    alpha_tag   = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') = 'manual' THEN talkgroups.alpha_tag
+    alpha_tag   = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups.alpha_tag
                        ELSE COALESCE(NULLIF(@alpha_tag, ''), talkgroups.alpha_tag) END,
-    tag         = COALESCE(NULLIF(@tag, ''), talkgroups.tag),
-    "group"     = COALESCE(NULLIF(@tg_group, ''), talkgroups."group"),
-    description = COALESCE(NULLIF(@description, ''), talkgroups.description),
+    tag         = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups.tag
+                       ELSE COALESCE(NULLIF(@tag, ''), talkgroups.tag) END,
+    "group"     = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups."group"
+                       ELSE COALESCE(NULLIF(@tg_group, ''), talkgroups."group") END,
+    description = CASE WHEN COALESCE(talkgroups.alpha_tag_source, '') IN ('manual', 'csv') THEN talkgroups.description
+                       ELSE COALESCE(NULLIF(@description, ''), talkgroups.description) END,
     first_seen  = LEAST(talkgroups.first_seen, @event_time),
     last_seen   = GREATEST(talkgroups.last_seen, @event_time);
 
