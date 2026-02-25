@@ -222,6 +222,16 @@ func (db *DB) UpsertTalkgroupDirectory(ctx context.Context, systemID, tgid int, 
 	})
 }
 
+// EnrichTalkgroupsFromDirectory fills missing talkgroup fields from the directory.
+// If tgid is 0, enriches all heard talkgroups in the system (bulk mode).
+// If tgid > 0, enriches only that specific talkgroup (per-call mode).
+func (db *DB) EnrichTalkgroupsFromDirectory(ctx context.Context, systemID, tgid int) (int64, error) {
+	return db.Q.EnrichTalkgroupsFromDirectory(ctx, sqlcdb.EnrichTalkgroupsFromDirectoryParams{
+		SystemID: systemID,
+		Tgid:     tgid,
+	})
+}
+
 // ListTalkgroups returns talkgroups with embedded stats.
 func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]TalkgroupAPI, int, error) {
 	statsDays := filter.StatsDays

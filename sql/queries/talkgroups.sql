@@ -51,3 +51,20 @@ ON CONFLICT (system_id, tgid) DO UPDATE SET
     category    = COALESCE(NULLIF(@category, ''), talkgroup_directory.category),
     priority    = COALESCE(@priority, talkgroup_directory.priority),
     imported_at = now();
+
+-- name: EnrichTalkgroupsFromDirectory :execrows
+UPDATE talkgroups t SET
+    alpha_tag   = CASE WHEN COALESCE(t.alpha_tag_source, '') = 'manual' THEN t.alpha_tag
+                       ELSE COALESCE(NULLIF(t.alpha_tag, ''), td.alpha_tag) END,
+    alpha_tag_source = CASE WHEN COALESCE(t.alpha_tag_source, '') = 'manual' THEN t.alpha_tag_source
+                            WHEN COALESCE(t.alpha_tag, '') = '' AND COALESCE(td.alpha_tag, '') <> '' THEN 'csv'
+                            ELSE t.alpha_tag_source END,
+    tag         = COALESCE(NULLIF(t.tag, ''), td.tag),
+    "group"     = COALESCE(NULLIF(t."group", ''), td.category),
+    description = COALESCE(NULLIF(t.description, ''), td.description),
+    mode        = COALESCE(t.mode, td.mode),
+    priority    = COALESCE(t.priority, td.priority)
+FROM talkgroup_directory td
+WHERE td.system_id = t.system_id AND td.tgid = t.tgid
+  AND t.system_id = @system_id
+  AND (@tgid::int = 0 OR t.tgid = @tgid);

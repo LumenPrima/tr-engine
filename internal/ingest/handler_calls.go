@@ -34,6 +34,8 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		); err != nil {
 			p.log.Warn().Err(err).Int("tgid", call.Talkgroup).Msg("failed to upsert talkgroup")
 		}
+		// Enrich from directory (fills missing fields like mode, priority, description)
+		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
 	}
 
 	// Upsert unit
@@ -290,6 +292,8 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
 			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
 		)
+		// Enrich from directory (fills missing fields like mode, priority, description)
+		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
 	}
 
 	p.log.Debug().
@@ -400,6 +404,8 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		_ = p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
 			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
 		)
+		// Enrich from directory (fills missing fields like mode, priority, description)
+		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
 	}
 
 	// Upsert unit

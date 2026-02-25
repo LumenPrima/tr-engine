@@ -246,6 +246,14 @@ func main() {
 					Int("imported", imported).
 					Int("total", len(sys.Talkgroups)).
 					Msg("talkgroup directory imported")
+
+				// Enrich existing heard talkgroups with directory data
+				enriched, enrichErr := db.EnrichTalkgroupsFromDirectory(ctx, systemID, 0)
+				if enrichErr != nil {
+					log.Warn().Err(enrichErr).Int("system_id", systemID).Msg("failed to enrich talkgroups from directory")
+				} else if enriched > 0 {
+					log.Info().Int64("enriched", enriched).Str("system", sys.ShortName).Msg("heard talkgroups enriched from directory")
+				}
 			}
 
 			// Import unit tags

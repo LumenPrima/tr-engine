@@ -11,6 +11,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const enrichTalkgroupsFromDirectory = `-- name: EnrichTalkgroupsFromDirectory :execrows
+UPDATE talkgroups t SET
+    alpha_tag   = CASE WHEN COALESCE(t.alpha_tag_source, '') = 'manual' THEN t.alpha_tag
+                       ELSE COALESCE(NULLIF(t.alpha_tag, ''), td.alpha_tag) END,
+    alpha_tag_source = CASE WHEN COALESCE(t.alpha_tag_source, '') = 'manual' THEN t.alpha_tag_source
+                            WHEN COALESCE(t.alpha_tag, '') = '' AND COALESCE(td.alpha_tag, '') <> '' THEN 'csv'
+                            ELSE t.alpha_tag_source END,
+    tag         = COALESCE(NULLIF(t.tag, ''), td.tag),
+    "group"     = COALESCE(NULLIF(t."group", ''), td.category),
+    description = COALESCE(NULLIF(t.description, ''), td.description),
+    mode        = COALESCE(t.mode, td.mode),
+    priority    = COALESCE(t.priority, td.priority)
+FROM talkgroup_directory td
+WHERE td.system_id = t.system_id AND td.tgid = t.tgid
+  AND t.system_id = $1
+  AND ($2::int = 0 OR t.tgid = $2)
+`
+
+type EnrichTalkgroupsFromDirectoryParams struct {
+	SystemID int
+	Tgid     int
+}
+
+func (q *Queries) EnrichTalkgroupsFromDirectory(ctx context.Context, arg EnrichTalkgroupsFromDirectoryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, enrichTalkgroupsFromDirectory, arg.SystemID, arg.Tgid)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const findTalkgroupSystems = `-- name: FindTalkgroupSystems :many
 SELECT t.system_id, COALESCE(s.name, '') AS system_name, s.sysid
 FROM talkgroups t
