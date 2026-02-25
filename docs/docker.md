@@ -122,12 +122,29 @@ environment:
   AUDIO_DIR: /data/audio
   LOG_LEVEL: debug        # add any env var from sample.env
   AUTH_TOKEN: my-secret   # enable API authentication
+  # WRITE_TOKEN: my-write-secret  # separate token for write operations (see below)
   # CORS_ORIGINS: https://example.com  # restrict CORS (empty = allow all)
   # TR_DIR: /tr-config    # auto-discover from TR's config.json (see below)
   # WATCH_DIR: /tr-audio  # file watch mode (alternative to MQTT)
 ```
 
 Then restart: `docker compose up -d`
+
+### Securing a public-facing instance
+
+If your tr-engine instance is accessible from the internet, you should **always** set `WRITE_TOKEN`:
+
+```yaml
+environment:
+  AUTH_TOKEN: my-read-token       # used by the web UI (served via /auth-init)
+  WRITE_TOKEN: my-write-secret    # required for all write operations
+```
+
+**Why this matters:** `AUTH_TOKEN` is automatically served to every browser that loads the web UI (via `GET /api/v1/auth-init`). Without `WRITE_TOKEN`, anyone who visits your dashboard can use that token to modify talkgroup names, merge systems, delete data, or upload arbitrary call recordings.
+
+Setting `WRITE_TOKEN` makes the web UI read-only. Only services that know the write token (trunk-recorder upload plugins, admin scripts) can perform write operations (POST, PUT, PATCH, DELETE). The web UI continues to work normally for viewing data.
+
+Use a strong, random value for `WRITE_TOKEN` and do **not** reuse your `AUTH_TOKEN`.
 
 ### TR auto-discovery (TR_DIR)
 

@@ -136,6 +136,7 @@ Add any variable from [sample.env](https://github.com/LumenPrima/tr-engine/blob/
 
 ```yaml
       AUTH_TOKEN: my-secret              # enable API authentication
+      # WRITE_TOKEN: my-write-secret     # separate token for write operations (recommended for public instances)
       # CORS_ORIGINS: https://example.com  # restrict CORS (empty = allow all)
       LOG_LEVEL: debug                   # more verbose logging
       RAW_STORE: "false"                 # disable raw MQTT archival (saves disk)

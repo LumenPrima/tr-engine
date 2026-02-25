@@ -208,7 +208,13 @@ AUDIO_DIR=./audio
 # To serve audio directly from trunk-recorder's filesystem instead of
 # receiving it over MQTT, set TR_AUDIO_DIR to TR's audioBaseDir:
 # TR_AUDIO_DIR=/path/to/trunk-recorder/audio
+
+# Authentication
+# AUTH_TOKEN=my-secret           # API token (auto-generated if not set)
+# WRITE_TOKEN=my-write-secret    # separate token for write operations
 ```
+
+> **Public-facing instances:** If your tr-engine is accessible from the internet, **always set `WRITE_TOKEN`**. The `AUTH_TOKEN` is served to every browser via `/api/v1/auth-init` so the web UI works without a login prompt. Without `WRITE_TOKEN`, anyone who visits your dashboard can use that token to modify talkgroups, merge systems, or upload calls. Setting `WRITE_TOKEN` makes the web UI read-only while only trusted services can write.
 
 `MQTT_TOPICS` must match the topic prefixes from your TR plugin config. If all your TR topics share a common root (e.g. `topic: "trengine/feeds"`, `unit_topic: "trengine/units"`), a single wildcard like `trengine/#` covers everything. If they differ, comma-separate them: `MQTT_TOPICS=prefix1/#,prefix2/#`.
 
