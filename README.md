@@ -218,8 +218,9 @@ tr-engine ships with several built-in dashboards at `http://localhost:8080`. The
 | **Call History** | Searchable call log with inline audio playback, expandable detail rows, transmission timeline |
 | **Signal Flow** | Stream graph of talkgroup activity over time (D3.js) |
 | **API Docs** | Interactive Swagger UI for the REST API |
+| **Page Builder** | Generate custom dashboard pages with AI — describe what you want, get a working page |
 
-Pages are plain HTML with no build step. Add new pages by dropping an `.html` file in `web/` with a `<meta name="card-title">` tag — see [CLAUDE.md](CLAUDE.md#web-frontend-page-registration) for the spec.
+Pages are plain HTML with no build step. Add new pages by dropping an `.html` file in `web/` with a `<meta name="card-title">` tag — see [CLAUDE.md](CLAUDE.md#web-frontend-page-registration) for the spec. Want to build your own dashboard? See **[Building Custom Pages](docs/building-pages.md)** or open the built-in [Page Builder](/playground.html).
 
 ## Storage Estimates
 
