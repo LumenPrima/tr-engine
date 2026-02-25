@@ -35,6 +35,7 @@ type UnitAPI struct {
 	LastEventTime  *time.Time `json:"last_event_time,omitempty"`
 	LastEventTgid  *int       `json:"last_event_tgid,omitempty"`
 	LastEventTgTag string     `json:"last_event_tg_tag,omitempty"`
+	CallCount      *int       `json:"call_count,omitempty"`
 	RelevanceScore *int       `json:"relevance_score,omitempty"`
 }
 

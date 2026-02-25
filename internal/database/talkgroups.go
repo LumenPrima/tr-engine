@@ -328,18 +328,21 @@ func (db *DB) ListTalkgroupUnits(ctx context.Context, systemID, tgid, windowMinu
 	}
 
 	rows, err := db.Pool.Query(ctx, `
+		WITH unit_calls AS (
+			SELECT uid, count(*) AS call_count
+			FROM calls c, unnest(c.unit_ids) AS uid
+			WHERE c.system_id = $1 AND c.tgid = $2 AND c.start_time > now() - $3::interval
+			GROUP BY uid
+		)
 		SELECT u.system_id, COALESCE(s.name, ''), s.sysid,
 			u.unit_id, COALESCE(u.alpha_tag, ''), COALESCE(u.alpha_tag_source, ''),
 			u.first_seen, u.last_seen,
-			u.last_event_type, u.last_event_time, u.last_event_tgid
+			u.last_event_type, u.last_event_time, u.last_event_tgid,
+			uc.call_count
 		FROM units u
 		JOIN systems s ON s.system_id = u.system_id
-		WHERE u.system_id = $1 AND u.unit_id IN (
-			SELECT DISTINCT uid
-			FROM calls c, unnest(c.unit_ids) AS uid
-			WHERE c.system_id = $1 AND c.tgid = $2 AND c.start_time > now() - $3::interval
-		)
-		ORDER BY u.unit_id
+		JOIN unit_calls uc ON uc.uid = u.unit_id
+		ORDER BY uc.call_count DESC, u.unit_id
 		LIMIT $4 OFFSET $5
 	`, systemID, tgid, window, limit, offset)
 	if err != nil {
@@ -355,6 +358,7 @@ func (db *DB) ListTalkgroupUnits(ctx context.Context, systemID, tgid, windowMinu
 			&u.UnitID, &u.AlphaTag, &u.AlphaTagSource,
 			&u.FirstSeen, &u.LastSeen,
 			&u.LastEventType, &u.LastEventTime, &u.LastEventTgid,
+			&u.CallCount,
 		); err != nil {
 			return nil, 0, err
 		}
