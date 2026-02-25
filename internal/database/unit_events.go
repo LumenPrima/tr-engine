@@ -45,6 +45,7 @@ type UnitEventAPI struct {
 	SystemID      int       `json:"system_id"`
 	SystemName    string    `json:"system_name,omitempty"`
 	UnitRID       int       `json:"unit_rid"`
+	UnitID        int       `json:"unit_id"`
 	UnitAlphaTag  string    `json:"unit_alpha_tag,omitempty"`
 	Tgid          *int      `json:"tgid,omitempty"`
 	TgAlphaTag    string    `json:"tg_alpha_tag,omitempty"`
@@ -105,6 +106,7 @@ func (db *DB) ListUnitEvents(ctx context.Context, filter UnitEventFilter) ([]Uni
 		); err != nil {
 			return nil, 0, err
 		}
+		e.UnitID = e.UnitRID
 		events = append(events, e)
 	}
 	if events == nil {
@@ -181,6 +183,7 @@ func (db *DB) ListUnitEventsGlobal(ctx context.Context, filter GlobalUnitEventFi
 		); err != nil {
 			return nil, 0, err
 		}
+		e.UnitID = e.UnitRID
 		events = append(events, e)
 	}
 	if events == nil {
