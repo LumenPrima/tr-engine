@@ -13,8 +13,10 @@ Zero configuration for radio systems — tr-engine discovers systems, sites, tal
 
 ## Screenshots
 
+> Live demo: [tr-engine.luxprimatech.com](https://tr-engine.luxprimatech.com)
+
 ### Talkgroup Research — Browse View
-Browse 1,263+ talkgroups with search, system filtering, and sortable columns. Card grid and list views available.
+Browse all discovered talkgroups with search, system filtering, and sortable columns. Card grid and list views available.
 
 ![Browse view — Crystal theme](docs/screenshots/tg-research-browse-crystal.png)
 
