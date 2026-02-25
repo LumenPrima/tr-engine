@@ -12,13 +12,14 @@ import (
 
 // TalkgroupFilter specifies filters for listing talkgroups.
 type TalkgroupFilter struct {
-	SystemIDs []int
-	Sysids    []string
-	Group     *string
-	Search    *string
-	Limit     int
-	Offset    int
-	Sort      string
+	SystemIDs  []int
+	Sysids     []string
+	Group      *string
+	Search     *string
+	Limit      int
+	Offset     int
+	Sort       string
+	StatsDays  int // time window for call_count/calls_1h/calls_24h stats (default 30)
 }
 
 // TalkgroupAPI represents a talkgroup for API responses.
@@ -223,7 +224,13 @@ func (db *DB) UpsertTalkgroupDirectory(ctx context.Context, systemID, tgid int, 
 
 // ListTalkgroups returns talkgroups with embedded stats.
 func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]TalkgroupAPI, int, error) {
-	const fromClause = `
+	statsDays := filter.StatsDays
+	if statsDays <= 0 {
+		statsDays = 30
+	}
+	statsInterval := strconv.Itoa(statsDays) + " days"
+
+	fromClause := fmt.Sprintf(`
 		FROM talkgroups t
 		JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL
 		LEFT JOIN LATERAL (
@@ -231,14 +238,14 @@ func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]Tal
 				count(*) FILTER (WHERE start_time > now() - interval '1 hour') AS calls_1h,
 				count(*) FILTER (WHERE start_time > now() - interval '24 hours') AS calls_24h
 			FROM calls c
-			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days'
+			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '%s'
 		) ts ON true
 		LEFT JOIN LATERAL (
 			SELECT count(DISTINCT u) AS unit_count
 			FROM calls c, unnest(c.unit_ids) AS u
-			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days'
+			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '%s'
 		) us ON true
-	`
+	`, statsInterval, statsInterval)
 	const whereClause = `
 		WHERE ($1::int[] IS NULL OR t.system_id = ANY($1))
 		  AND ($2::text[] IS NULL OR s.sysid = ANY($2))
@@ -445,8 +452,8 @@ func (db *DB) SearchTalkgroupDirectory(ctx context.Context, filter TalkgroupDire
 
 	// Fetch
 	limit := filter.Limit
-	if limit <= 0 || limit > 1000 {
-		limit = 100
+	if limit <= 0 {
+		limit = 50
 	}
 
 	query := `

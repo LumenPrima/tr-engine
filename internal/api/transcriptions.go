@@ -211,6 +211,9 @@ func (h *TranscriptionsHandler) SearchTranscriptions(w http.ResponseWriter, r *h
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if v, ok := QueryBool(r, "primary_only"); ok {
+		filter.PrimaryOnly = &v
+	}
 
 	hits, total, err := h.db.SearchTranscriptions(r.Context(), q, filter)
 	if err != nil {

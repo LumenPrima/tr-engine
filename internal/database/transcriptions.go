@@ -63,11 +63,12 @@ type CallTranscriptionInfo struct {
 
 // TranscriptionSearchFilter specifies filters for full-text search.
 type TranscriptionSearchFilter struct {
-	SystemIDs []int
-	SiteIDs   []int
-	Tgids     []int
-	StartTime *time.Time
-	EndTime   *time.Time
+	SystemIDs   []int
+	SiteIDs     []int
+	Tgids       []int
+	StartTime   *time.Time
+	EndTime     *time.Time
+	PrimaryOnly *bool // default true; set to false to include all variants
 	Limit     int
 	Offset    int
 }
@@ -248,17 +249,20 @@ func (db *DB) ListTranscriptionsByCall(ctx context.Context, callID int64) ([]Tra
 }
 
 // SearchTranscriptions performs full-text search across transcriptions with call context.
+// Defaults to primary transcriptions only; pass primary_only=false to include all variants.
 func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter TranscriptionSearchFilter) ([]TranscriptionSearchHit, int, error) {
+	primaryOnly := filter.PrimaryOnly == nil || *filter.PrimaryOnly
+
 	const fromClause = `FROM transcriptions t JOIN calls c ON c.call_id = t.call_id AND c.start_time = t.call_start_time`
 	const whereClause = `
 		WHERE t.search_vector @@ plainto_tsquery('english', $1)
-		  AND t.is_primary = true
-		  AND ($2::timestamptz IS NULL OR t.call_start_time >= $2)
-		  AND ($3::timestamptz IS NULL OR t.call_start_time < $3)
-		  AND ($4::int[] IS NULL OR c.system_id = ANY($4))
-		  AND ($5::int[] IS NULL OR c.site_id = ANY($5))
-		  AND ($6::int[] IS NULL OR c.tgid = ANY($6))`
-	args := []any{query, filter.StartTime, filter.EndTime,
+		  AND ($2::boolean IS NOT TRUE OR t.is_primary = true)
+		  AND ($3::timestamptz IS NULL OR t.call_start_time >= $3)
+		  AND ($4::timestamptz IS NULL OR t.call_start_time < $4)
+		  AND ($5::int[] IS NULL OR c.system_id = ANY($5))
+		  AND ($6::int[] IS NULL OR c.site_id = ANY($6))
+		  AND ($7::int[] IS NULL OR c.tgid = ANY($7))`
+	args := []any{query, primaryOnly, filter.StartTime, filter.EndTime,
 		pqIntArray(filter.SystemIDs), pqIntArray(filter.SiteIDs), pqIntArray(filter.Tgids)}
 
 	// Count
@@ -269,7 +273,7 @@ func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter Tra
 
 	// Results with rank — reuse $1 for the rank expression
 	limit := filter.Limit
-	if limit <= 0 || limit > 200 {
+	if limit <= 0 {
 		limit = 50
 	}
 

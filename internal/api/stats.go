@@ -34,6 +34,13 @@ func (h *StatsHandler) GetDecodeRates(w http.ResponseWriter, r *http.Request) {
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if v, ok := QueryInt(r, "limit"); ok {
+		if v < 1 || v > 10000 {
+			WriteError(w, http.StatusBadRequest, "limit must be between 1 and 10000")
+			return
+		}
+		filter.Limit = v
+	}
 
 	rates, err := h.db.GetDecodeRates(r.Context(), filter)
 	if err != nil {
@@ -119,7 +126,16 @@ func (h *StatsHandler) ListConsoleMessages(w http.ResponseWriter, r *http.Reques
 
 // GetTalkgroupActivity returns call counts grouped by talkgroup for a time range.
 func (h *StatsHandler) GetTalkgroupActivity(w http.ResponseWriter, r *http.Request) {
-	filter := database.TalkgroupActivityFilter{}
+	p, err := ParsePagination(r)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	filter := database.TalkgroupActivityFilter{
+		Limit:  p.Limit,
+		Offset: p.Offset,
+	}
 	filter.SystemIDs = QueryIntListAliased(r, "system_id", "systems")
 	filter.SiteIDs = QueryIntListAliased(r, "site_id", "sites")
 	filter.Tgids = QueryIntListAliased(r, "tgid", "tgids")
@@ -130,14 +146,11 @@ func (h *StatsHandler) GetTalkgroupActivity(w http.ResponseWriter, r *http.Reque
 	if t, ok := QueryTime(r, "before"); ok {
 		filter.Before = &t
 	}
-	if v, ok := QueryInt(r, "limit"); ok {
-		filter.Limit = v
-	}
-	if v, ok := QueryInt(r, "offset"); ok {
-		filter.Offset = v
-	}
 	if v, ok := QueryString(r, "sort"); ok {
 		filter.SortField = v
+	}
+	if v, ok := QueryString(r, "call_state"); ok {
+		filter.CallState = &v
 	}
 
 	activity, total, err := h.db.GetTalkgroupActivity(r.Context(), filter)

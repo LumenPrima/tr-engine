@@ -48,8 +48,9 @@ func (h *QueryHandler) ExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	if maxRows <= 0 {
 		maxRows = 1000
 	}
-	if maxRows > 10000 {
-		maxRows = 10000
+	if maxRows > 50000 {
+		WriteError(w, http.StatusBadRequest, "limit must be <= 50000")
+		return
 	}
 
 	if req.Params == nil {

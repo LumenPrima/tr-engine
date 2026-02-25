@@ -52,6 +52,13 @@ func (h *TalkgroupsHandler) ListTalkgroups(w http.ResponseWriter, r *http.Reques
 	if v, ok := QueryString(r, "search"); ok {
 		filter.Search = &v
 	}
+	if v, ok := QueryInt(r, "stats_days"); ok {
+		if v < 1 || v > 365 {
+			WriteError(w, http.StatusBadRequest, "stats_days must be between 1 and 365")
+			return
+		}
+		filter.StatsDays = v
+	}
 
 	talkgroups, total, err := h.db.ListTalkgroups(r.Context(), filter)
 	if err != nil {
@@ -275,7 +282,11 @@ func (h *TalkgroupsHandler) ListTalkgroupUnits(w http.ResponseWriter, r *http.Re
 // GetEncryptionStats returns encryption stats per talkgroup.
 func (h *TalkgroupsHandler) GetEncryptionStats(w http.ResponseWriter, r *http.Request) {
 	hours := 24
-	if v, ok := QueryInt(r, "hours"); ok && v >= 1 {
+	if v, ok := QueryInt(r, "hours"); ok {
+		if v < 1 || v > 8760 {
+			WriteError(w, http.StatusBadRequest, "hours must be between 1 and 8760")
+			return
+		}
 		hours = v
 	}
 	sysid, _ := QueryString(r, "sysid")

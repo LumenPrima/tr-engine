@@ -78,7 +78,8 @@ type TalkgroupActivityFilter struct {
 	Before    *time.Time
 	Limit     int
 	Offset    int
-	SortField string // "calls", "duration", "tgid"
+	SortField string  // "calls", "duration", "tgid"
+	CallState *string // filter by call_state (default: "COMPLETED")
 }
 
 // TalkgroupActivity represents call counts grouped by talkgroup.
@@ -98,15 +99,27 @@ type TalkgroupActivity struct {
 }
 
 // GetTalkgroupActivity returns call counts grouped by talkgroup for a time range.
+// Defaults to COMPLETED calls only; pass call_state to override (empty string = all states).
 func (db *DB) GetTalkgroupActivity(ctx context.Context, filter TalkgroupActivityFilter) ([]TalkgroupActivity, int, error) {
+	// Default to COMPLETED if not specified
+	callState := "COMPLETED"
+	if filter.CallState != nil {
+		callState = *filter.CallState
+	}
+	var callStateArg any
+	if callState != "" {
+		callStateArg = callState
+	}
+
 	const whereClause = `
-		WHERE c.call_state = 'COMPLETED'
-		  AND ($1::int[] IS NULL OR c.system_id = ANY($1))
-		  AND ($2::int[] IS NULL OR c.site_id = ANY($2))
-		  AND ($3::int[] IS NULL OR c.tgid = ANY($3))
-		  AND ($4::timestamptz IS NULL OR c.start_time >= $4)
-		  AND ($5::timestamptz IS NULL OR c.start_time < $5)`
+		WHERE ($1::text IS NULL OR c.call_state_type = $1)
+		  AND ($2::int[] IS NULL OR c.system_id = ANY($2))
+		  AND ($3::int[] IS NULL OR c.site_id = ANY($3))
+		  AND ($4::int[] IS NULL OR c.tgid = ANY($4))
+		  AND ($5::timestamptz IS NULL OR c.start_time >= $5)
+		  AND ($6::timestamptz IS NULL OR c.start_time < $6)`
 	args := []any{
+		callStateArg,
 		pqIntArray(filter.SystemIDs), pqIntArray(filter.SiteIDs), pqIntArray(filter.Tgids),
 		filter.After, filter.Before,
 	}
@@ -127,9 +140,6 @@ func (db *DB) GetTalkgroupActivity(ctx context.Context, filter TalkgroupActivity
 	}
 
 	limit := filter.Limit
-	if limit <= 0 || limit > 500 {
-		limit = 50
-	}
 
 	dataQuery := fmt.Sprintf(`
 		SELECT c.system_id, COALESCE(c.system_name, ''),
@@ -144,7 +154,7 @@ func (db *DB) GetTalkgroupActivity(ctx context.Context, filter TalkgroupActivity
 			c.tgid, COALESCE(c.tg_alpha_tag, ''), COALESCE(c.tg_description, ''),
 			COALESCE(c.tg_tag, ''), COALESCE(c.tg_group, '')
 		ORDER BY %s
-		LIMIT $6 OFFSET $7
+		LIMIT $7 OFFSET $8
 	`, whereClause, orderBy)
 
 	rows, err := db.Pool.Query(ctx, dataQuery, append(args, limit, filter.Offset)...)
@@ -178,6 +188,7 @@ func (db *DB) GetTalkgroupActivity(ctx context.Context, filter TalkgroupActivity
 type DecodeRateFilter struct {
 	StartTime *time.Time
 	EndTime   *time.Time
+	Limit     int
 }
 
 // DecodeRateAPI represents a decode rate for API responses.
@@ -192,6 +203,11 @@ type DecodeRateAPI struct {
 
 // GetDecodeRates returns decode rate measurements.
 func (db *DB) GetDecodeRates(ctx context.Context, filter DecodeRateFilter) ([]DecodeRateAPI, error) {
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 5000
+	}
+
 	query := `
 		SELECT d.time, d.system_id, COALESCE(s.name, ''), COALESCE(s.sysid, ''),
 			d.decode_rate, d.control_channel
@@ -199,9 +215,9 @@ func (db *DB) GetDecodeRates(ctx context.Context, filter DecodeRateFilter) ([]De
 		LEFT JOIN systems s ON s.system_id = d.system_id
 		WHERE ($1::timestamptz IS NULL OR d.time >= $1)
 		  AND ($2::timestamptz IS NULL OR d.time <= $2)
-		ORDER BY d.time DESC LIMIT 1000`
+		ORDER BY d.time DESC LIMIT $3`
 
-	rows, err := db.Pool.Query(ctx, query, filter.StartTime, filter.EndTime)
+	rows, err := db.Pool.Query(ctx, query, filter.StartTime, filter.EndTime, limit)
 	if err != nil {
 		return nil, err
 	}
