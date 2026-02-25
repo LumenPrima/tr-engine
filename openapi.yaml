@@ -59,10 +59,13 @@ info:
     - **Call ID**: database auto-increment integer (e.g., `48531`).
       Unique per recording. Opaque — clients should not parse or
       construct call IDs.
-    - **Talkgroup ID**: `{system_id}:{tgid}` (e.g., `1:9178`) or plain
-      `{tgid}` if unambiguous across systems.
-    - **Unit ID**: `{system_id}:{unit_id}` (e.g., `1:924003`) or plain
-      `{unit_id}` if unambiguous.
+    - **Talkgroup ID**: `{system_id}:{tgid}` (e.g., `1:9178`) or
+      `{system_id}-{tgid}` (e.g., `1-9178`) or plain `{tgid}` if
+      unambiguous across systems. The dash format avoids issues with
+      WAF rules that block colons in URL paths.
+    - **Unit ID**: `{system_id}:{unit_id}` (e.g., `1:924003`) or
+      `{system_id}-{unit_id}` (e.g., `1-924003`) or plain `{unit_id}`
+      if unambiguous.
     - **Call Group key**: derived from `(system_id, tgid, start_unix)`.
       Multiple recordings of the same transmission (possibly from
       different sites) are grouped automatically.
@@ -2555,6 +2558,10 @@ components:
           type: string
           description: Alpha tag of the talkgroup from last event
           example: "09-8L Main"
+        call_count:
+          type: integer
+          description: "Number of calls within the requested time window (only present on /talkgroups/{id}/units)"
+          example: 42
         # Search field
         relevance_score:
           type: integer
@@ -2788,7 +2795,7 @@ components:
     UnitEvent:
       type: object
       description: A unit event (registration, affiliation, call activity, etc.)
-      required: [id, event_type, unit_rid, time]
+      required: [id, event_type, unit_rid, unit_id, time]
       properties:
         id:
           type: integer
@@ -2813,6 +2820,11 @@ components:
         # Unit context (embedded to avoid lookup)
         unit_rid:
           type: integer
+          description: "P25 Radio ID (legacy name; prefer unit_id for consistency)"
+          example: 1234567
+        unit_id:
+          type: integer
+          description: "Radio unit ID (alias for unit_rid, consistent with other endpoints)"
           example: 1234567
         unit_alpha_tag:
           type: string
