@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="auth.js?v=1"></script>
+<meta name="card-title" content="Call History">
+<meta name="card-description" content="Searchable call log with audio playback">
+<meta name="card-order" content="6">
+<title>Call History — tr-engine</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;700&family=Outfit:wght@200;300;400;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Karla:wght@200;300;400;500&family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="theme-config.js"></script>
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-mono);
+    font-weight: var(--font-weight-body);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    transition: background 0.5s, color 0.4s;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: var(--grid-bg);
+    background-size: var(--grid-size) var(--grid-size);
+    pointer-events: none; z-index: 0;
+  }
+  body::after {
+    content: ''; position: fixed; inset: 0;
+    background: var(--scanlines);
+    pointer-events: none; z-index: 9999;
+  }
+  .vignette-overlay {
+    position: fixed; inset: 0;
+    background: var(--vignette);
+    pointer-events: none; z-index: 9998;
+    transition: background 0.6s;
+  }
+  .theme-label {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    z-index: 10000; font-family: var(--font-display); font-size: 12px;
+    letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+    background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border); padding: 10px 24px; border-radius: 100px;
+    transition: all 0.5s; pointer-events: none; opacity: 0;
+  }
+  .theme-label.show { opacity: 1; }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    position: sticky; top: 60px; z-index: 20;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--glass-border);
+    padding: 8px 16px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    transition: background 0.5s, border-color 0.4s;
+  }
+
+  /* ── Range buttons ── */
+  .range-btn {
+    padding: 4px 10px; font-size: 11px; font-weight: 600;
+    font-family: var(--font-mono);
+    background: transparent; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--radius-xs);
+    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .range-btn:hover { border-color: var(--border-hover); color: var(--text); }
+  .range-btn.active {
+    background: var(--accent); color: var(--bg);
+    border-color: var(--accent);
+  }
+
+  /* ── Toggle buttons ── */
+  .toggle-btn {
+    padding: 4px 10px; font-size: 11px; font-weight: 600;
+    font-family: var(--font-mono);
+    background: transparent; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--radius-xs);
+    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .toggle-btn:hover { border-color: var(--border-hover); color: var(--text); }
+  .toggle-btn.active {
+    background: var(--danger); color: #fff;
+    border-color: var(--danger);
+  }
+  .toggle-btn.active.enc {
+    background: var(--warning); color: var(--bg);
+    border-color: var(--warning);
+  }
+
+  /* ── Inputs / selects ── */
+  .toolbar select,
+  .toolbar input[type="text"] {
+    padding: 4px 10px; font-size: 12px;
+    background: var(--bg-surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-xs);
+    font-family: var(--font-mono); outline: none;
+    transition: border-color 0.2s;
+  }
+  .toolbar select:focus,
+  .toolbar input[type="text"]:focus {
+    border-color: var(--accent);
+  }
+  .toolbar select option {
+    background: var(--bg); color: var(--text);
+  }
+  .toolbar input::placeholder { color: var(--text-faint); }
+
+  /* ── Search box ── */
+  .search-box {
+    flex: 1; min-width: 160px; max-width: 300px;
+  }
+
+  /* ── Content area ── */
+  .content {
+    flex: 1; overflow-y: auto; position: relative; z-index: 1;
+  }
+
+  /* ── Table ── */
+  table {
+    width: 100%; border-collapse: collapse; table-layout: fixed;
+  }
+  thead { position: sticky; top: 0; z-index: 10; }
+  th {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    text-transform: uppercase; font-size: 11px; font-weight: 600;
+    color: var(--text-muted); letter-spacing: 0.05em;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  /* ── Column widths ── */
+  .col-time { width: 130px; }
+  .col-tg { width: 22%; }
+  .col-dur { width: 60px; text-align: right; }
+  .col-units { width: 50px; text-align: center; }
+  .col-transcript { width: auto; }
+  .col-play { width: 44px; text-align: center; }
+  .col-flags { width: 50px; text-align: center; }
+
+  th.col-dur { text-align: right; }
+  th.col-units { text-align: center; }
+  th.col-play { text-align: center; }
+  th.col-flags { text-align: center; }
+
+  /* ── Call rows ── */
+  .call-row { cursor: pointer; transition: background 0.1s; }
+  .call-row:hover { background: var(--bg-surface); }
+
+  /* ── Emergency rows ── */
+  tr.emergency td { border-left: 3px solid var(--danger); }
+
+  /* ── Talkgroup badge ── */
+  .tg-tag {
+    display: inline-block; margin-left: 6px;
+    padding: 1px 6px; border-radius: var(--radius-xs);
+    font-size: 10px; font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+  }
+  .tg-name {
+    cursor: pointer; transition: color 0.15s;
+  }
+  .tg-name:hover {
+    text-decoration: underline; color: var(--accent);
+  }
+
+  .transcript-snippet {
+    font-size: 12px;
+  }
+
+  /* ── Play button ── */
+  .play-btn {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--text-muted); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0; transition: all 0.15s;
+  }
+  .play-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .play-btn.playing {
+    background: var(--accent); color: var(--bg);
+    border-color: var(--accent);
+  }
+  .play-btn.no-audio { opacity: 0.3; cursor: default; }
+  .play-btn svg { width: 12px; height: 12px; fill: currentColor; }
+
+  .flag-icon { font-size: 13px; margin: 0 1px; }
+
+  /* ── Detail row ── */
+  tr.detail-row td {
+    padding: 0;
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--bg-surface) 70%, var(--bg) 30%);
+  }
+
+  /* ── Detail panel ── */
+  .detail-panel {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 16px; padding: 16px 20px;
+  }
+
+  /* ── Detail section ── */
+  .detail-section h4 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-muted); margin-bottom: 8px; font-weight: 600;
+  }
+
+  /* ── Timeline bar ── */
+  .timeline-bar {
+    height: 24px; border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--border) 30%, transparent);
+    position: relative; overflow: hidden;
+  }
+  .timeline-seg {
+    position: absolute; top: 0; height: 100%;
+    min-width: 2px; border-radius: 2px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: var(--bg); font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 0 3px;
+  }
+
+  /* ── Signal badges ── */
+  .signal-badges {
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+  .signal-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--border) 30%, transparent);
+    font-size: 12px;
+  }
+  .signal-badge .label { color: var(--text-muted); }
+  .signal-badge .value { color: var(--text); font-weight: 500; }
+
+  /* ── Full transcription ── */
+  .full-transcript {
+    font-family: var(--font-body); font-size: 13px; line-height: 1.6;
+    color: var(--text);
+  }
+  .full-transcript .word {
+    cursor: default; border-radius: 2px; padding: 0 1px;
+    transition: background 0.1s;
+  }
+  .full-transcript .word:hover {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+
+  /* ── Metadata grid ── */
+  .meta-grid {
+    display: grid; grid-template-columns: auto 1fr;
+    gap: 4px 12px; font-size: 12px;
+  }
+  .meta-grid .k {
+    color: var(--text-muted); text-align: right; white-space: nowrap;
+  }
+  .meta-grid .v { color: var(--text); }
+
+  /* ── Audio player ── */
+  .audio-player {
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  /* ── Progress bar ── */
+  .audio-progress-wrap {
+    flex: 1; height: 20px; border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--border) 30%, transparent);
+    cursor: pointer; position: relative; overflow: hidden;
+  }
+  .audio-progress-fill {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    transition: width 0.1s linear;
+    pointer-events: none;
+  }
+  .audio-progress-head {
+    position: absolute; top: 0; height: 100%; width: 2px;
+    background: var(--accent);
+    transition: left 0.1s linear;
+    pointer-events: none;
+  }
+
+  /* ── Audio time ── */
+  .audio-time {
+    font-size: 11px; font-family: var(--font-mono);
+    color: var(--text-muted); min-width: 70px; text-align: right;
+    white-space: nowrap;
+  }
+
+  /* ── Loading / empty ── */
+  .loading-state, .empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 60px 20px;
+    color: var(--text-muted); font-size: 13px; gap: 12px;
+  }
+  .spinner {
+    width: 24px; height: 24px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-hint { font-size: 11px; color: var(--text-faint); }
+
+  /* ── Pagination ── */
+  .pagination {
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px; padding: 10px 16px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--glass-border);
+  }
+  .pagination button {
+    padding: 4px 12px; font-size: 12px;
+    font-family: var(--font-mono);
+    background: transparent; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--radius-xs);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .pagination button:hover:not(:disabled) {
+    border-color: var(--accent); color: var(--accent);
+  }
+  .pagination button:disabled {
+    opacity: 0.3; cursor: default;
+  }
+  .page-info {
+    font-size: 12px; color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--border); }
+  ::-webkit-scrollbar-thumb { background: var(--accent-dim); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .col-transcript, .col-flags { display: none; }
+    th.col-transcript, th.col-flags { display: none; }
+    .detail-panel { grid-template-columns: 1fr; }
+    .search-box { max-width: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="vignette-overlay"></div>
+<div class="theme-label" id="themeLabel"></div>
+
+<div class="toolbar" id="toolbar">
+  <button class="range-btn" data-range="1h">1h</button>
+  <button class="range-btn" data-range="6h">6h</button>
+  <button class="range-btn active" data-range="24h">24h</button>
+  <button class="range-btn" data-range="7d">7d</button>
+
+  <select id="systemFilter">
+    <option value="">All Systems</option>
+  </select>
+
+  <input type="text" id="tgFilter" placeholder="Talkgroup ID" style="width:100px">
+  <input type="text" id="unitFilter" placeholder="Unit ID" style="width:80px">
+
+  <button class="toggle-btn" id="emergencyToggle">EMG</button>
+  <button class="toggle-btn enc" id="encryptedToggle">ENC</button>
+
+  <input type="text" id="transcriptSearch" class="search-box" placeholder="Search transcriptions...">
+
+  <select id="sortSelect">
+    <option value="-start_time">Newest</option>
+    <option value="start_time">Oldest</option>
+    <option value="-duration">Longest</option>
+  </select>
+</div>
+
+<div class="content" id="content">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-time">Time</th>
+        <th class="col-tg">Talkgroup</th>
+        <th class="col-dur">Dur</th>
+        <th class="col-units">Units</th>
+        <th class="col-transcript">Transcription</th>
+        <th class="col-play"></th>
+        <th class="col-flags"></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div class="loading-state" id="loading">
+    <div class="spinner"></div>
+    <span>Loading calls...</span>
+  </div>
+  <div class="empty-state" id="empty" style="display:none">
+    <span>No calls found</span>
+    <span class="empty-hint">Try adjusting filters or expanding the time range</span>
+  </div>
+</div>
+
+<div class="pagination" id="pagination" style="display:none">
+  <button id="prevBtn" disabled>Prev</button>
+  <span class="page-info" id="pageInfo"></span>
+  <button id="nextBtn" disabled>Next</button>
+</div>
+
+<audio id="audioEl" preload="none"></audio>
+
+<script>
+(function() {
+  'use strict';
+
+  var API = '/api/v1';
+  var PAGE_SIZE = 50;
+  var calls = [];
+  var total = 0;
+  var offset = 0;
+  var activeRange = '24h';
+  var expandedCallId = null;
+  var currentAudioId = null;
+
+  /* ── DOM refs ── */
+  var tbody = document.getElementById('tbody');
+  var loading = document.getElementById('loading');
+  var empty = document.getElementById('empty');
+  var pagination = document.getElementById('pagination');
+  var pageInfo = document.getElementById('pageInfo');
+  var prevBtn = document.getElementById('prevBtn');
+  var nextBtn = document.getElementById('nextBtn');
+  var systemFilter = document.getElementById('systemFilter');
+  var tgFilter = document.getElementById('tgFilter');
+  var unitFilter = document.getElementById('unitFilter');
+  var emergencyToggle = document.getElementById('emergencyToggle');
+  var encryptedToggle = document.getElementById('encryptedToggle');
+  var transcriptSearch = document.getElementById('transcriptSearch');
+  var sortSelect = document.getElementById('sortSelect');
+  var audioEl = document.getElementById('audioEl');
+
+  /* ── Helpers ── */
+
+  /* esc() not needed — all output uses textContent/setAttribute (no innerHTML) */
+
+  function fmtDuration(sec) {
+    if (!sec) return '\u2014';
+    var m = Math.floor(sec / 60);
+    var s2 = Math.round(sec % 60);
+    return m > 0 ? m + 'm ' + s2 + 's' : s2 + 's';
+  }
+
+  function fmtFreq(hz) {
+    if (!hz) return '\u2014';
+    return (hz / 1e6).toFixed(4) + ' MHz';
+  }
+
+  function relativeTime(iso) {
+    var diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return Math.round(diff) + 's ago';
+    if (diff < 3600) return Math.round(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.round(diff / 3600) + 'h ago';
+    return Math.round(diff / 86400) + 'd ago';
+  }
+
+  function absTime(iso) {
+    return new Date(iso).toLocaleString();
+  }
+
+  function rangeStart(range) {
+    var ms = { '1h': 3600e3, '6h': 21600e3, '24h': 86400e3, '7d': 604800e3 };
+    return new Date(Date.now() - (ms[range] || 86400e3)).toISOString();
+  }
+
+  function fmtMMSS(sec) {
+    var m = Math.floor(sec / 60);
+    var s2 = Math.floor(sec % 60);
+    return m + ':' + String(s2).padStart(2, '0');
+  }
+
+  var UNIT_COLORS = [
+    'var(--info)', 'var(--success)', 'var(--warning)', 'var(--magenta)',
+    'var(--cyan)', 'var(--danger)', 'var(--accent)', '#ff9800'
+  ];
+
+  function unitColor(id) {
+    return UNIT_COLORS[id % UNIT_COLORS.length];
+  }
+
+  /* ── SVG helpers ── */
+
+  function makeSvg(tag, attrs) {
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (var k in attrs) {
+      if (attrs.hasOwnProperty(k)) el.setAttribute(k, attrs[k]);
+    }
+    return el;
+  }
+
+  function playIcon() {
+    var svg = makeSvg('svg', { viewBox: '0 0 24 24' });
+    svg.appendChild(makeSvg('polygon', { points: '8,5 19,12 8,19' }));
+    return svg;
+  }
+
+  function pauseIcon() {
+    var svg = makeSvg('svg', { viewBox: '0 0 24 24' });
+    svg.appendChild(makeSvg('rect', { x: '7', y: '5', width: '3', height: '14' }));
+    svg.appendChild(makeSvg('rect', { x: '14', y: '5', width: '3', height: '14' }));
+    return svg;
+  }
+
+  /* ── Build query params ── */
+
+  function buildParams() {
+    var p = new URLSearchParams();
+    p.set('sort', sortSelect.value);
+    p.set('deduplicate', 'true');
+    p.set('limit', String(PAGE_SIZE));
+    p.set('offset', String(offset));
+    p.set('start_time', rangeStart(activeRange));
+
+    var sysVal = systemFilter.value;
+    if (sysVal) p.set('system_id', sysVal);
+
+    var tgVal = tgFilter.value.trim();
+    if (tgVal) p.set('tgid', tgVal);
+
+    var unitVal = unitFilter.value.trim();
+    if (unitVal) p.set('unit_id', unitVal);
+
+    if (emergencyToggle.classList.contains('active')) p.set('emergency', 'true');
+    if (encryptedToggle.classList.contains('active')) p.set('encrypted', 'true');
+
+    return p;
+  }
+
+  /* ── Fetch calls ── */
+
+  async function fetchCalls() {
+    loading.style.display = '';
+    empty.style.display = 'none';
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    expandedCallId = null;
+
+    try {
+      var res = await fetch(API + '/calls?' + buildParams());
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      calls = data.calls || [];
+      total = data.total || 0;
+
+      var q = transcriptSearch.value.trim().toLowerCase();
+      if (q) {
+        calls = calls.filter(function(c) {
+          return c.transcription_text && c.transcription_text.toLowerCase().indexOf(q) !== -1;
+        });
+        total = calls.length; /* client-side filter — override server total */
+      }
+
+      renderTable();
+      renderPagination();
+    } catch (e) {
+      console.error('Fetch calls failed:', e);
+      loading.style.display = 'none';
+      empty.style.display = '';
+    }
+  }
+
+  /* ── Render table (DOM API only) ── */
+
+  function renderTable() {
+    loading.style.display = 'none';
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+    if (calls.length === 0) {
+      empty.style.display = '';
+      pagination.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+
+    calls.forEach(function(c) {
+      var tr = document.createElement('tr');
+      tr.className = 'call-row' + (c.emergency ? ' emergency' : '');
+      tr.dataset.id = c.call_id;
+
+      /* Time */
+      var tdTime = document.createElement('td');
+      tdTime.className = 'col-time';
+      tdTime.textContent = relativeTime(c.start_time);
+      tdTime.title = absTime(c.start_time);
+      tr.appendChild(tdTime);
+
+      /* Talkgroup */
+      var tdTg = document.createElement('td');
+      tdTg.className = 'col-tg';
+      var tgSpan = document.createElement('span');
+      tgSpan.className = 'tg-name';
+      tgSpan.textContent = c.tg_alpha_tag || String(c.tgid);
+      tgSpan.dataset.tgid = c.tgid;
+      if (c.tg_description) tgSpan.title = c.tg_description;
+      tdTg.appendChild(tgSpan);
+      if (c.tg_group) {
+        var badge = document.createElement('span');
+        badge.className = 'tg-tag';
+        badge.textContent = c.tg_group;
+        tdTg.appendChild(badge);
+      }
+      tr.appendChild(tdTg);
+
+      /* Duration */
+      var tdDur = document.createElement('td');
+      tdDur.className = 'col-dur';
+      tdDur.textContent = fmtDuration(c.duration);
+      tr.appendChild(tdDur);
+
+      /* Unit count */
+      var tdUnits = document.createElement('td');
+      tdUnits.className = 'col-units';
+      var unitCount = c.unit_ids ? c.unit_ids.length :
+        (c.src_list ? new Set(c.src_list.map(function(s) { return s.src; })).size : 0);
+      tdUnits.textContent = unitCount;
+      tr.appendChild(tdUnits);
+
+      /* Transcription snippet */
+      var tdTx = document.createElement('td');
+      tdTx.className = 'col-transcript';
+      var txSpan = document.createElement('span');
+      txSpan.className = 'transcript-snippet';
+      if (c.transcription_text) {
+        txSpan.textContent = c.transcription_text.length > 80
+          ? c.transcription_text.substring(0, 80) + '\u2026'
+          : c.transcription_text;
+      } else {
+        txSpan.textContent = '\u2014';
+        txSpan.style.color = 'var(--text-faint)';
+      }
+      tdTx.appendChild(txSpan);
+      tr.appendChild(tdTx);
+
+      /* Play button */
+      var tdPlay = document.createElement('td');
+      tdPlay.className = 'col-play';
+      var playBtn = document.createElement('button');
+      playBtn.className = 'play-btn' + (c.audio_url ? '' : ' no-audio');
+      playBtn.dataset.id = c.call_id;
+      playBtn.dataset.url = c.audio_url || '';
+      playBtn.title = c.audio_url ? 'Play audio' : 'No audio';
+      playBtn.appendChild(playIcon());
+      tdPlay.appendChild(playBtn);
+      tr.appendChild(tdPlay);
+
+      /* Flags */
+      var tdFlags = document.createElement('td');
+      tdFlags.className = 'col-flags';
+      if (c.emergency) {
+        var em = document.createElement('span');
+        em.className = 'flag-icon flag-emergency';
+        em.title = 'Emergency';
+        em.textContent = '\uD83D\uDEA8';
+        tdFlags.appendChild(em);
+      }
+      if (c.encrypted) {
+        var enc = document.createElement('span');
+        enc.className = 'flag-icon flag-encrypted';
+        enc.title = 'Encrypted';
+        enc.textContent = '\uD83D\uDD12';
+        tdFlags.appendChild(enc);
+      }
+      tr.appendChild(tdFlags);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  /* ── Render pagination ── */
+
+  function renderPagination() {
+    if (total <= PAGE_SIZE) {
+      pagination.style.display = 'none';
+      return;
+    }
+    pagination.style.display = '';
+    var page = Math.floor(offset / PAGE_SIZE) + 1;
+    var pages = Math.ceil(total / PAGE_SIZE);
+    pageInfo.textContent = 'Page ' + page + ' of ' + pages + ' (' + total + ' calls)';
+    prevBtn.disabled = offset === 0;
+    nextBtn.disabled = offset + PAGE_SIZE >= total;
+  }
+
+  /* ── Filter event listeners ── */
+
+  document.querySelectorAll('.range-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.range-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      activeRange = btn.dataset.range;
+      offset = 0;
+      fetchCalls();
+      syncURL();
+    });
+  });
+
+  emergencyToggle.addEventListener('click', function() {
+    emergencyToggle.classList.toggle('active');
+    offset = 0;
+    fetchCalls();
+    syncURL();
+  });
+
+  encryptedToggle.addEventListener('click', function() {
+    encryptedToggle.classList.toggle('active');
+    offset = 0;
+    fetchCalls();
+    syncURL();
+  });
+
+  systemFilter.addEventListener('change', function() {
+    offset = 0;
+    fetchCalls();
+    syncURL();
+  });
+
+  sortSelect.addEventListener('change', function() {
+    offset = 0;
+    fetchCalls();
+    syncURL();
+  });
+
+  var _deb = null;
+  function debounceSearch() {
+    clearTimeout(_deb);
+    _deb = setTimeout(function() {
+      offset = 0;
+      fetchCalls();
+      syncURL();
+    }, 400);
+  }
+  tgFilter.addEventListener('input', debounceSearch);
+  unitFilter.addEventListener('input', debounceSearch);
+  transcriptSearch.addEventListener('input', debounceSearch);
+
+  prevBtn.addEventListener('click', function() {
+    offset = Math.max(0, offset - PAGE_SIZE);
+    fetchCalls();
+  });
+  nextBtn.addEventListener('click', function() {
+    offset += PAGE_SIZE;
+    fetchCalls();
+  });
+
+  /* ── Clickable talkgroup names + row expansion ── */
+
+  tbody.addEventListener('click', function(e) {
+    var tgName = e.target.closest('.tg-name');
+    if (tgName) {
+      e.stopPropagation();
+      tgFilter.value = tgName.dataset.tgid;
+      offset = 0;
+      fetchCalls();
+      syncURL();
+      return;
+    }
+
+    if (e.target.closest('.play-btn')) return;
+
+    var row = e.target.closest('.call-row');
+    if (!row) return;
+    var callId = parseInt(row.dataset.id);
+    toggleDetail(callId, row);
+  });
+
+  /* ── Toggle detail panel ── */
+
+  async function toggleDetail(callId, row) {
+    if (expandedCallId === callId) {
+      var existing = row.nextElementSibling;
+      if (existing && existing.classList.contains('detail-row')) existing.remove();
+      expandedCallId = null;
+      return;
+    }
+
+    var prev = tbody.querySelector('.detail-row');
+    if (prev) prev.remove();
+    expandedCallId = callId;
+
+    var call = calls.find(function(c) { return c.call_id === callId; });
+    if (!call) return;
+
+    var detailRow = document.createElement('tr');
+    detailRow.className = 'detail-row';
+    var td = document.createElement('td');
+    td.colSpan = 7;
+    var loadingDiv = document.createElement('div');
+    loadingDiv.className = 'detail-panel';
+    var spinDiv = document.createElement('div');
+    spinDiv.className = 'loading-state';
+    spinDiv.style.gridColumn = '1 / -1';
+    var spin = document.createElement('div');
+    spin.className = 'spinner';
+    spinDiv.appendChild(spin);
+    loadingDiv.appendChild(spinDiv);
+    td.appendChild(loadingDiv);
+    detailRow.appendChild(td);
+    row.after(detailRow);
+
+    var transcription = null;
+    try {
+      var res = await fetch(API + '/calls/' + callId + '/transcription');
+      if (res.ok) transcription = await res.json();
+    } catch (e) { /* no transcription */ }
+
+    var panel = buildDetailPanel(call, transcription);
+    td.replaceChildren(panel);
+  }
+
+  /* ── Build detail panel (DOM API only) ── */
+
+  function buildDetailPanel(call, transcription) {
+    var dur = call.duration || 1;
+    var panel = document.createElement('div');
+    panel.className = 'detail-panel';
+
+    /* 1. Transmission Timeline */
+    if (call.src_list && call.src_list.length > 0) {
+      var section = document.createElement('div');
+      section.className = 'detail-section';
+      var h4 = document.createElement('h4');
+      h4.textContent = 'Transmission Timeline';
+      section.appendChild(h4);
+      var bar = document.createElement('div');
+      bar.className = 'timeline-bar';
+      call.src_list.forEach(function(s) {
+        var seg = document.createElement('div');
+        seg.className = 'timeline-seg';
+        seg.style.left = ((s.pos / dur) * 100) + '%';
+        seg.style.width = (Math.max((s.duration / dur) * 100, 1)) + '%';
+        seg.style.background = unitColor(s.src);
+        seg.title = (s.tag || s.src) + ' \u2014 ' + s.duration.toFixed(1) + 's';
+        seg.textContent = s.tag || String(s.src);
+        bar.appendChild(seg);
+      });
+      section.appendChild(bar);
+      panel.appendChild(section);
+    }
+
+    /* 2. Signal Quality */
+    (function() {
+      var section = document.createElement('div');
+      section.className = 'detail-section';
+      var h4 = document.createElement('h4');
+      h4.textContent = 'Signal Quality';
+      section.appendChild(h4);
+      var badges = document.createElement('div');
+      badges.className = 'signal-badges';
+      var items = [];
+      if (call.signal_db != null) items.push(['Signal', call.signal_db.toFixed(1) + ' dB']);
+      if (call.noise_db != null) items.push(['Noise', call.noise_db.toFixed(1) + ' dB']);
+      if (call.error_count != null) items.push(['Errors', String(call.error_count)]);
+      if (call.spike_count != null) items.push(['Spikes', String(call.spike_count)]);
+      if (call.freq) items.push(['Freq', fmtFreq(call.freq)]);
+      items.forEach(function(item) {
+        var b = document.createElement('span');
+        b.className = 'signal-badge';
+        var lbl = document.createElement('span');
+        lbl.className = 'label';
+        lbl.textContent = item[0];
+        var val = document.createElement('span');
+        val.className = 'value';
+        val.textContent = item[1];
+        b.appendChild(lbl);
+        b.appendChild(val);
+        badges.appendChild(b);
+      });
+      section.appendChild(badges);
+      panel.appendChild(section);
+    })();
+
+    /* 3. Frequency Hops */
+    if (call.freq_list && call.freq_list.length > 1) {
+      var section3 = document.createElement('div');
+      section3.className = 'detail-section';
+      var h4f = document.createElement('h4');
+      h4f.textContent = 'Frequency Hops';
+      section3.appendChild(h4f);
+      var bar3 = document.createElement('div');
+      bar3.className = 'timeline-bar';
+      call.freq_list.forEach(function(f) {
+        var seg = document.createElement('div');
+        seg.className = 'timeline-seg';
+        seg.style.left = ((f.pos / dur) * 100) + '%';
+        seg.style.width = (Math.max((f.len / dur) * 100, 1)) + '%';
+        seg.style.background = 'var(--info)';
+        seg.style.opacity = '0.6';
+        seg.title = fmtFreq(f.freq) + ' \u2014 ' + f.len.toFixed(1) + 's';
+        seg.textContent = fmtFreq(f.freq);
+        bar3.appendChild(seg);
+      });
+      section3.appendChild(bar3);
+      panel.appendChild(section3);
+    }
+
+    /* 4. Transcription */
+    if (transcription && transcription.words && transcription.words.words && transcription.words.words.length > 0) {
+      var sectionTx = document.createElement('div');
+      sectionTx.className = 'detail-section';
+      var h4tx = document.createElement('h4');
+      h4tx.textContent = 'Transcription';
+      sectionTx.appendChild(h4tx);
+      var txDiv = document.createElement('div');
+      txDiv.className = 'full-transcript';
+      transcription.words.words.forEach(function(w, i) {
+        if (i > 0) txDiv.appendChild(document.createTextNode(' '));
+        var span = document.createElement('span');
+        span.className = 'word';
+        span.textContent = w.word;
+        if (w.src) span.dataset.src = w.src;
+        if (w.src_tag) span.dataset.srcTag = w.src_tag;
+        if (w.start != null) span.title = w.start.toFixed(2) + 's';
+        txDiv.appendChild(span);
+      });
+      sectionTx.appendChild(txDiv);
+      panel.appendChild(sectionTx);
+    } else if (call.transcription_text) {
+      var sectionTx2 = document.createElement('div');
+      sectionTx2.className = 'detail-section';
+      var h4tx2 = document.createElement('h4');
+      h4tx2.textContent = 'Transcription';
+      sectionTx2.appendChild(h4tx2);
+      var txDiv2 = document.createElement('div');
+      txDiv2.className = 'full-transcript';
+      txDiv2.textContent = call.transcription_text;
+      sectionTx2.appendChild(txDiv2);
+      panel.appendChild(sectionTx2);
+    }
+
+    /* 5. Audio Player */
+    if (call.audio_url) {
+      var sectionAudio = document.createElement('div');
+      sectionAudio.className = 'detail-section';
+      sectionAudio.style.gridColumn = '1 / -1';
+      var h4a = document.createElement('h4');
+      h4a.textContent = 'Audio';
+      sectionAudio.appendChild(h4a);
+
+      var player = document.createElement('div');
+      player.className = 'audio-player';
+      player.dataset.callId = call.call_id;
+      player.dataset.url = call.audio_url;
+
+      var btn = document.createElement('button');
+      btn.className = 'play-btn';
+      btn.dataset.id = call.call_id;
+      btn.dataset.url = call.audio_url;
+      btn.appendChild(currentAudioId === call.call_id ? pauseIcon() : playIcon());
+      if (currentAudioId === call.call_id) btn.classList.add('playing');
+      player.appendChild(btn);
+
+      var progressWrap = document.createElement('div');
+      progressWrap.className = 'audio-progress-wrap';
+      progressWrap.dataset.callId = call.call_id;
+
+      var progressFill = document.createElement('div');
+      progressFill.className = 'audio-progress-fill';
+      progressFill.style.width = '0';
+      progressWrap.appendChild(progressFill);
+
+      var progressHead = document.createElement('div');
+      progressHead.className = 'audio-progress-head';
+      progressHead.style.left = '0';
+      progressWrap.appendChild(progressHead);
+
+      if (call.src_list) {
+        call.src_list.forEach(function(s) {
+          var overlay = document.createElement('div');
+          overlay.style.position = 'absolute';
+          overlay.style.top = '0';
+          overlay.style.height = '100%';
+          overlay.style.borderRadius = '2px';
+          overlay.style.opacity = '0.15';
+          overlay.style.left = ((s.pos / dur) * 100) + '%';
+          overlay.style.width = (Math.max((s.duration / dur) * 100, 0.5)) + '%';
+          overlay.style.background = unitColor(s.src);
+          overlay.style.pointerEvents = 'none';
+          progressWrap.appendChild(overlay);
+        });
+      }
+      player.appendChild(progressWrap);
+
+      var timeSpan = document.createElement('span');
+      timeSpan.className = 'audio-time';
+      timeSpan.textContent = '0:00 / ' + fmtMMSS(call.duration || 0);
+      player.appendChild(timeSpan);
+
+      sectionAudio.appendChild(player);
+      panel.appendChild(sectionAudio);
+    }
+
+    /* 6. Metadata */
+    (function() {
+      var section = document.createElement('div');
+      section.className = 'detail-section';
+      var h4 = document.createElement('h4');
+      h4.textContent = 'Metadata';
+      section.appendChild(h4);
+      var grid = document.createElement('div');
+      grid.className = 'meta-grid';
+
+      var metaItems = [
+        ['System', call.system_name],
+        ['Site', call.site_short_name],
+        ['Audio Type', call.audio_type],
+        ['Start', absTime(call.start_time)],
+        ['Stop', call.stop_time ? absTime(call.stop_time) : '\u2014']
+      ];
+      if (call.phase2_tdma) metaItems.push(['TDMA', 'Phase 2 Slot ' + call.tdma_slot]);
+      if (call.patched_tgids && call.patched_tgids.length) metaItems.push(['Patched', call.patched_tgids.join(', ')]);
+
+      metaItems.forEach(function(item) {
+        var k = document.createElement('span');
+        k.className = 'k';
+        k.textContent = item[0];
+        var v = document.createElement('span');
+        v.className = 'v';
+        v.textContent = item[1] || '\u2014';
+        grid.appendChild(k);
+        grid.appendChild(v);
+      });
+      section.appendChild(grid);
+      panel.appendChild(section);
+    })();
+
+    return panel;
+  }
+
+  /* ── Audio playback ── */
+
+  audioEl.addEventListener('timeupdate', function() {
+    if (!currentAudioId) return;
+    var player = document.querySelector('.audio-player[data-call-id="' + currentAudioId + '"]');
+    if (!player) return;
+    var fill = player.querySelector('.audio-progress-fill');
+    var head = player.querySelector('.audio-progress-head');
+    var ts = player.querySelector('.audio-time');
+    var pct = audioEl.duration ? (audioEl.currentTime / audioEl.duration) * 100 : 0;
+    if (fill) fill.style.width = pct + '%';
+    if (head) head.style.left = pct + '%';
+    if (ts) ts.textContent = fmtMMSS(audioEl.currentTime) + ' / ' + fmtMMSS(audioEl.duration || 0);
+  });
+
+  audioEl.addEventListener('ended', stopAudio);
+
+  function playAudio(callId, url) {
+    if (currentAudioId && currentAudioId !== callId) {
+      setPlayingState(currentAudioId, false);
+    }
+    if (currentAudioId === callId) {
+      if (audioEl.paused) {
+        audioEl.play();
+        setPlayingState(callId, true);
+      } else {
+        audioEl.pause();
+        setPlayingState(callId, false);
+      }
+      return;
+    }
+    currentAudioId = callId;
+    audioEl.src = url;
+    audioEl.play();
+    setPlayingState(callId, true);
+  }
+
+  function stopAudio() {
+    if (currentAudioId) setPlayingState(currentAudioId, false);
+    currentAudioId = null;
+    audioEl.pause();
+    audioEl.removeAttribute('src');
+  }
+
+  function setPlayingState(callId, playing) {
+    document.querySelectorAll('.play-btn[data-id="' + callId + '"]').forEach(function(btn) {
+      btn.replaceChildren(playing ? pauseIcon() : playIcon());
+      btn.classList.toggle('playing', playing);
+    });
+  }
+
+  /* Play button clicks (delegated) */
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.play-btn');
+    if (!btn || btn.classList.contains('no-audio')) return;
+    e.stopPropagation();
+    var callId = parseInt(btn.dataset.id);
+    var url = btn.dataset.url;
+    if (url) playAudio(callId, url);
+  });
+
+  /* Seek on progress bar click */
+  document.addEventListener('click', function(e) {
+    var wrap = e.target.closest('.audio-progress-wrap');
+    if (!wrap) return;
+    var callId = parseInt(wrap.dataset.callId);
+    if (currentAudioId !== callId || !audioEl.duration) return;
+    var rect = wrap.getBoundingClientRect();
+    var pct = (e.clientX - rect.left) / rect.width;
+    audioEl.currentTime = pct * audioEl.duration;
+  });
+
+  /* ── URL sync ── */
+
+  function syncURL() {
+    var p = new URLSearchParams();
+    if (activeRange !== '24h') p.set('range', activeRange);
+    if (systemFilter.value) p.set('system', systemFilter.value);
+    if (tgFilter.value.trim()) p.set('tg', tgFilter.value.trim());
+    if (unitFilter.value.trim()) p.set('unit', unitFilter.value.trim());
+    if (emergencyToggle.classList.contains('active')) p.set('emergency', '1');
+    if (encryptedToggle.classList.contains('active')) p.set('encrypted', '1');
+    if (transcriptSearch.value.trim()) p.set('q', transcriptSearch.value.trim());
+    if (sortSelect.value !== '-start_time') p.set('sort', sortSelect.value);
+    var qs = p.toString();
+    history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+  }
+
+  function restoreFromURL() {
+    var p = new URLSearchParams(window.location.search);
+    if (p.has('range')) {
+      activeRange = p.get('range');
+      document.querySelectorAll('.range-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.range === activeRange);
+      });
+    }
+    if (p.has('system')) systemFilter.value = p.get('system');
+    if (p.has('tg')) tgFilter.value = p.get('tg');
+    if (p.has('unit')) unitFilter.value = p.get('unit');
+    if (p.get('emergency') === '1') emergencyToggle.classList.add('active');
+    if (p.get('encrypted') === '1') encryptedToggle.classList.add('active');
+    if (p.has('q')) transcriptSearch.value = p.get('q');
+    if (p.has('sort')) sortSelect.value = p.get('sort');
+  }
+
+  /* ── Load systems dropdown ── */
+
+  async function loadSystems() {
+    var savedSystem = new URLSearchParams(window.location.search).get('system');
+    try {
+      var res = await fetch(API + '/systems');
+      if (!res.ok) return;
+      var data = await res.json();
+      (data.systems || []).forEach(function(sys) {
+        var opt = document.createElement('option');
+        opt.value = sys.system_id;
+        opt.textContent = sys.name || ('System ' + sys.system_id);
+        systemFilter.appendChild(opt);
+      });
+      if (savedSystem) systemFilter.value = savedSystem;
+    } catch (e) {
+      console.error('Load systems failed:', e);
+    }
+  }
+
+  /* ── Relative time refresh ── */
+
+  setInterval(function() {
+    tbody.querySelectorAll('.call-row').forEach(function(row) {
+      var call = calls.find(function(c) { return c.call_id === parseInt(row.dataset.id); });
+      if (call) {
+        var td = row.querySelector('.col-time');
+        if (td) td.textContent = relativeTime(call.start_time);
+      }
+    });
+  }, 30000);
+
+  /* ── Init ── */
+
+  restoreFromURL();
+  loadSystems();
+  fetchCalls();
+
+})();
+</script>
+<script src="theme-engine.js?v=2"></script>
+</body>
+</html>
