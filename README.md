@@ -63,6 +63,7 @@ To remove: `cd tr-engine && docker compose down -v && cd .. && rm -rf tr-engine`
 - **[Docker with existing MQTT](docs/docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
 - **[Build from source](docs/getting-started.md)** — compile from source, bring your own PostgreSQL
 - **[Binary releases](docs/binary-releases.md)** — download a pre-built binary, just add PostgreSQL
+- **[HTTP Upload](docs/http-upload.md)** — ingest calls via trunk-recorder's rdio-scanner or OpenMHz upload plugins (no MQTT or shared filesystem needed)
 
 ## Updating
 
@@ -136,7 +137,7 @@ tr-engine supports four ingest modes that can run independently or simultaneousl
 - **MQTT** — subscribes to trunk-recorder's MQTT status plugin for real-time call events, unit activity, recorder state, and decode rates. The richest data source.
 - **File Watch** (`WATCH_DIR`) — monitors trunk-recorder's audio output directory for new `.json` metadata files via fsnotify. Only produces `call_end` events (no `call_start`, unit events, or recorder state). Backfills existing files on startup (configurable via `WATCH_BACKFILL_DAYS`).
 - **TR Auto-Discovery** (`TR_DIR`) — the simplest setup. Point at the directory containing trunk-recorder's `config.json`. Auto-discovers `captureDir` (sets `WATCH_DIR` + `TR_AUDIO_DIR`), system names, imports talkgroup CSVs and unit tag CSVs (`unitTagsFile`) into the database. If a `docker-compose.yaml` is found, container paths are translated to host paths via volume mappings. With `CSV_WRITEBACK=true`, alpha_tag edits are written back to the CSV files on disk.
-- **HTTP Upload** (`POST /api/v1/call-upload`) — accepts multipart call uploads compatible with trunk-recorder's rdio-scanner and OpenMHz upload plugins. Point TR's upload plugin at your tr-engine instance. No local audio capture or MQTT broker required. Produces `call_end` events with audio.
+- **[HTTP Upload](docs/http-upload.md)** (`POST /api/v1/call-upload`) — accepts multipart call uploads compatible with trunk-recorder's rdio-scanner and OpenMHz upload plugins. Point TR's upload plugin at your tr-engine instance. No local audio capture or MQTT broker required. Produces `call_end` events with audio. Rdio-scanner plugin recommended for richer metadata.
 
 ### Auto-Discovery
 
