@@ -296,6 +296,7 @@ func main() {
 		DB:            db,
 		MQTT:          mqtt,
 		Live:          pipeline,
+		Uploader:      pipeline, // Pipeline implements CallUploader via ProcessUpload
 		WebFiles:      trengine.WebFiles,
 		OpenAPISpec:   trengine.OpenAPISpec,
 		Version:       fmt.Sprintf("%s (commit=%s, built=%s)", version, commit, buildTime),

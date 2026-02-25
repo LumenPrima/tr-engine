@@ -1,6 +1,9 @@
 package api
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // LiveDataSource provides real-time data from the ingest pipeline to the API layer.
 // The pipeline implements this interface — no circular imports since api owns the interface.
@@ -36,6 +39,25 @@ type LiveDataSource interface {
 
 	// TranscriptionQueueStats returns queue statistics, or nil if not configured.
 	TranscriptionQueueStats() *TranscriptionQueueStatsData
+}
+
+// CallUploader processes an uploaded call (audio + metadata).
+// The ingest Pipeline implements this interface via an adapter.
+type CallUploader interface {
+	// ProcessUpload handles an HTTP-uploaded call. fields contains the parsed
+	// form field values, audioData is the raw audio bytes, audioFilename is the
+	// original filename from the upload. format is "rdio-scanner" or "openmhz".
+	// Returns the result or an error (containing "duplicate call" for 409s).
+	ProcessUpload(ctx context.Context, instanceID string, format string, fields map[string]string, audioData []byte, audioFilename string) (*UploadCallResult, error)
+}
+
+// UploadCallResult is returned after a successful call upload.
+type UploadCallResult struct {
+	CallID        int64     `json:"call_id"`
+	SystemID      int       `json:"system_id"`
+	Tgid          int       `json:"tgid"`
+	StartTime     time.Time `json:"start_time"`
+	AudioFilePath string    `json:"audio_file_path,omitempty"`
 }
 
 // WatcherStatusData represents the status of the file watcher ingest mode.

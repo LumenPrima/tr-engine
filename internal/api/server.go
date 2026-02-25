@@ -26,8 +26,9 @@ type ServerOptions struct {
 	DB            *database.DB
 	MQTT          *mqttclient.Client
 	Live          LiveDataSource
-	WebFiles      fs.FS  // embedded web/ directory
-	OpenAPISpec   []byte // embedded openapi.yaml
+	Uploader      CallUploader // nil if upload ingest not available
+	WebFiles      fs.FS        // embedded web/ directory
+	OpenAPISpec   []byte       // embedded openapi.yaml
 	Version       string
 	StartTime     time.Time
 	Log           zerolog.Logger
@@ -69,6 +70,16 @@ func NewServer(opts ServerOptions) *Server {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
 			w.Write([]byte(tokenJSON))
+		})
+	}
+
+	// Upload endpoint with custom auth (accepts form field key/api_key)
+	if opts.Uploader != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(UploadAuth(opts.Config.AuthToken))
+			r.Route("/api/v1", func(r chi.Router) {
+				NewUploadHandler(opts.Uploader, opts.Config.UploadInstanceID, opts.Log).Routes(r)
+			})
 		})
 	}
 

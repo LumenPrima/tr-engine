@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/snarg/tr-engine/internal/api"
 )
 
 // UploadResult holds the outcome of a successfully processed uploaded call.
@@ -16,6 +18,44 @@ type UploadResult struct {
 	Tgid          int
 	StartTime     time.Time
 	AudioFilePath string
+}
+
+// ProcessUpload implements api.CallUploader. It bridges the API layer to the
+// pipeline by parsing form fields into AudioMetadata based on format, then
+// delegating to ProcessUploadedCall.
+func (p *Pipeline) ProcessUpload(ctx context.Context, instanceID string, format string, fields map[string]string, audioData []byte, audioFilename string) (*api.UploadCallResult, error) {
+	var meta *AudioMetadata
+	var err error
+
+	switch format {
+	case "rdio-scanner":
+		meta, err = ParseRdioScannerFields(fields)
+	case "openmhz":
+		meta, err = ParseOpenMHzFields(fields)
+	default:
+		return nil, fmt.Errorf("unsupported upload format: %s", format)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("parse %s fields: %w", format, err)
+	}
+
+	// OpenMHz doesn't always include short_name — use instanceID as fallback
+	if meta.ShortName == "" {
+		meta.ShortName = instanceID
+	}
+
+	result, err := p.ProcessUploadedCall(ctx, instanceID, meta, audioData, audioFilename)
+	if err != nil {
+		return nil, err
+	}
+
+	return &api.UploadCallResult{
+		CallID:        result.CallID,
+		SystemID:      result.SystemID,
+		Tgid:          result.Tgid,
+		StartTime:     result.StartTime,
+		AudioFilePath: result.AudioFilePath,
+	}, nil
 }
 
 // ProcessUploadedCall ingests a call submitted via HTTP upload (rdio-scanner or
