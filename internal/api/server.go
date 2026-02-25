@@ -85,7 +85,8 @@ func NewServer(opts ServerOptions) *Server {
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(MaxBodySize(10 << 20)) // 10 MB for regular API requests
-		r.Use(BearerAuth(opts.Config.AuthToken))
+		r.Use(BearerAuth(opts.Config.AuthToken, opts.Config.WriteToken))
+		r.Use(WriteAuth(opts.Config.WriteToken))
 		r.Use(ResponseTimeout(opts.Config.WriteTimeout))
 
 		// All API routes under /api/v1

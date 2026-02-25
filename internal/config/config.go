@@ -41,6 +41,7 @@ type Config struct {
 
 	AuthToken          string `env:"AUTH_TOKEN"`
 	AuthTokenGenerated bool   // true when auto-generated (not from env/config)
+	WriteToken         string `env:"WRITE_TOKEN"` // separate token for write operations; if not set, writes use AuthToken
 	RateLimitRPS   float64 `env:"RATE_LIMIT_RPS" envDefault:"20"`
 	RateLimitBurst int     `env:"RATE_LIMIT_BURST" envDefault:"40"`
 	CORSOrigins string `env:"CORS_ORIGINS"` // comma-separated allowed origins; empty = allow all (*)
