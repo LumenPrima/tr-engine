@@ -44,10 +44,10 @@ The upload endpoint checks credentials in this order:
 
 | `WRITE_TOKEN` set? | Upload authenticates with | Web UI / read API uses |
 |---------------------|--------------------------|----------------------|
-| Yes | `WRITE_TOKEN` | `AUTH_TOKEN` |
-| No | `AUTH_TOKEN` | `AUTH_TOKEN` |
+| Yes | `WRITE_TOKEN` only | `AUTH_TOKEN` |
+| No (fallback) | `AUTH_TOKEN` | `AUTH_TOKEN` |
 
-When `WRITE_TOKEN` is configured, all write operations (POST, PUT, PATCH, DELETE) across the API require it. This lets you give trunk-recorder (and other uploaders) a write token while keeping a separate read-only token for the web UI.
+When `WRITE_TOKEN` is not set, uploads fall back to `AUTH_TOKEN` — everything works with a single token. When `WRITE_TOKEN` is configured, uploads require the write token specifically. This lets you give trunk-recorder a write token while keeping a separate read-only token for the web UI. The same applies to all other write operations (POST, PUT, PATCH, DELETE) across the API.
 
 ## Choosing a Plugin
 
