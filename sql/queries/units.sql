@@ -21,14 +21,15 @@ UPDATE units SET
     alpha_tag_source = CASE WHEN @alpha_tag_source::text <> '' THEN @alpha_tag_source ELSE alpha_tag_source END
 WHERE system_id = @system_id AND unit_id = @unit_id;
 
--- name: UpsertUnit :exec
+-- name: UpsertUnit :one
 INSERT INTO units (system_id, unit_id, alpha_tag, first_seen, last_seen, last_event_type, last_event_time, last_event_tgid)
 VALUES (@system_id, @unit_id, @alpha_tag, @event_time, @event_time, @event_type, @event_time, @tgid)
 ON CONFLICT (system_id, unit_id) DO UPDATE SET
-    alpha_tag       = CASE WHEN COALESCE(units.alpha_tag_source, '') = 'manual' THEN units.alpha_tag
+    alpha_tag       = CASE WHEN COALESCE(units.alpha_tag_source, '') IN ('manual', 'csv') THEN units.alpha_tag
                            ELSE COALESCE(NULLIF(@alpha_tag, ''), units.alpha_tag) END,
     first_seen      = LEAST(units.first_seen, @event_time),
     last_seen       = GREATEST(units.last_seen, @event_time),
     last_event_type = CASE WHEN @event_time >= units.last_event_time THEN @event_type ELSE units.last_event_type END,
     last_event_time = GREATEST(units.last_event_time, @event_time),
-    last_event_tgid = CASE WHEN @event_time >= units.last_event_time AND @tgid > 0 THEN @tgid ELSE units.last_event_tgid END;
+    last_event_tgid = CASE WHEN @event_time >= units.last_event_time AND @tgid > 0 THEN @tgid ELSE units.last_event_tgid END
+RETURNING COALESCE(alpha_tag, '') AS alpha_tag;

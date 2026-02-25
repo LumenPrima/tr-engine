@@ -120,17 +120,18 @@ func (q *Queries) UpdateUnitFields(ctx context.Context, arg UpdateUnitFieldsPara
 	return err
 }
 
-const upsertUnit = `-- name: UpsertUnit :exec
+const upsertUnit = `-- name: UpsertUnit :one
 INSERT INTO units (system_id, unit_id, alpha_tag, first_seen, last_seen, last_event_type, last_event_time, last_event_tgid)
 VALUES ($1, $2, $3, $4, $4, $5, $4, $6)
 ON CONFLICT (system_id, unit_id) DO UPDATE SET
-    alpha_tag       = CASE WHEN COALESCE(units.alpha_tag_source, '') = 'manual' THEN units.alpha_tag
+    alpha_tag       = CASE WHEN COALESCE(units.alpha_tag_source, '') IN ('manual', 'csv') THEN units.alpha_tag
                            ELSE COALESCE(NULLIF($3, ''), units.alpha_tag) END,
     first_seen      = LEAST(units.first_seen, $4),
     last_seen       = GREATEST(units.last_seen, $4),
     last_event_type = CASE WHEN $4 >= units.last_event_time THEN $5 ELSE units.last_event_type END,
     last_event_time = GREATEST(units.last_event_time, $4),
     last_event_tgid = CASE WHEN $4 >= units.last_event_time AND $6 > 0 THEN $6 ELSE units.last_event_tgid END
+RETURNING COALESCE(alpha_tag, '') AS alpha_tag
 `
 
 type UpsertUnitParams struct {
@@ -142,8 +143,8 @@ type UpsertUnitParams struct {
 	Tgid      *int32
 }
 
-func (q *Queries) UpsertUnit(ctx context.Context, arg UpsertUnitParams) error {
-	_, err := q.db.Exec(ctx, upsertUnit,
+func (q *Queries) UpsertUnit(ctx context.Context, arg UpsertUnitParams) (string, error) {
+	row := q.db.QueryRow(ctx, upsertUnit,
 		arg.SystemID,
 		arg.UnitID,
 		arg.AlphaTag,
@@ -151,5 +152,7 @@ func (q *Queries) UpsertUnit(ctx context.Context, arg UpsertUnitParams) error {
 		arg.EventType,
 		arg.Tgid,
 	)
-	return err
+	var alpha_tag string
+	err := row.Scan(&alpha_tag)
+	return alpha_tag, err
 }

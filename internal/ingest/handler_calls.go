@@ -40,7 +40,7 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 
 	// Upsert unit
 	if call.Unit > 0 {
-		if err := p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
+		if _, err := p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
 			call.UnitAlphaTag, "call_start", startTime, call.Talkgroup,
 		); err != nil {
 			p.log.Warn().Err(err).Int("unit", call.Unit).Msg("failed to upsert unit")
@@ -410,7 +410,7 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 
 	// Upsert unit
 	if call.Unit > 0 {
-		_ = p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
+		_, _ = p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
 			call.UnitAlphaTag, "call_end", startTime, call.Talkgroup,
 		)
 	}

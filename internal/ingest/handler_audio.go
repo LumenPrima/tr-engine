@@ -394,7 +394,7 @@ func (p *Pipeline) processWatchedFile(instanceID string, meta *AudioMetadata, js
 	// Upsert units from srcList
 	for _, s := range meta.SrcList {
 		if s.Src > 0 {
-			_ = p.db.UpsertUnit(ctx, identity.SystemID, s.Src,
+			_, _ = p.db.UpsertUnit(ctx, identity.SystemID, s.Src,
 				s.Tag, "file_watch", startTime, meta.Talkgroup,
 			)
 		}

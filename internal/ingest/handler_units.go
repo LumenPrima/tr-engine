@@ -75,11 +75,14 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		}
 	}
 
-	// Upsert unit
-	if err := p.db.UpsertUnit(ctx, identity.SystemID, data.Unit,
+	// Upsert unit — returns the DB's effective alpha_tag (respects manual > csv > mqtt priority)
+	effectiveUnitTag := data.UnitAlphaTag
+	if dbTag, err := p.db.UpsertUnit(ctx, identity.SystemID, data.Unit,
 		data.UnitAlphaTag, eventType, ts, data.Talkgroup,
 	); err != nil {
 		p.log.Warn().Err(err).Int("unit", data.Unit).Msg("failed to upsert unit")
+	} else if dbTag != "" {
+		effectiveUnitTag = dbTag
 	}
 
 	// Dedup check: skip DB insert + SSE publish if an equivalent event was
@@ -104,7 +107,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 			SystemID:     identity.SystemID,
 			UnitRID:      data.Unit,
 			Time:         ts,
-			UnitAlphaTag: data.UnitAlphaTag,
+			UnitAlphaTag: effectiveUnitTag,
 			TgAlphaTag:   data.TalkgroupAlphaTag,
 			InstanceID:   env.InstanceID,
 			SysName:      data.SysName,
@@ -175,7 +178,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 				"event_type":     eventType,
 				"system_id":      identity.SystemID,
 				"unit_id":        data.Unit,
-				"unit_alpha_tag": data.UnitAlphaTag,
+				"unit_alpha_tag": effectiveUnitTag,
 				"tgid":           data.Talkgroup,
 				"tg_alpha_tag":   data.TalkgroupAlphaTag,
 				"time":           ts,
@@ -198,7 +201,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 				SystemName:      identity.SystemName,
 				Sysid:           identity.Sysid,
 				UnitID:          data.Unit,
-				UnitAlphaTag:    data.UnitAlphaTag,
+				UnitAlphaTag:    effectiveUnitTag,
 				Tgid:            data.Talkgroup,
 				TgAlphaTag:      data.TalkgroupAlphaTag,
 				TgDescription:   data.TalkgroupDescription,
@@ -224,7 +227,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 					SystemName:      identity.SystemName,
 					Sysid:           identity.Sysid,
 					UnitID:          data.Unit,
-					UnitAlphaTag:    data.UnitAlphaTag,
+					UnitAlphaTag:    effectiveUnitTag,
 					Tgid:            data.Talkgroup,
 					TgAlphaTag:      data.TalkgroupAlphaTag,
 					TgDescription:   data.TalkgroupDescription,

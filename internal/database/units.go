@@ -206,7 +206,8 @@ func (db *DB) ImportUnitTag(ctx context.Context, systemID, unitID int, alphaTag 
 }
 
 // UpsertUnit inserts or updates a unit, never overwriting good data with empty strings.
-func (db *DB) UpsertUnit(ctx context.Context, systemID, unitID int, alphaTag, eventType string, eventTime time.Time, tgid int) error {
+// Returns the effective alpha_tag from the database (respects manual > csv > mqtt priority).
+func (db *DB) UpsertUnit(ctx context.Context, systemID, unitID int, alphaTag, eventType string, eventTime time.Time, tgid int) (string, error) {
 	tgid32 := int32(tgid)
 	return db.Q.UpsertUnit(ctx, sqlcdb.UpsertUnitParams{
 		SystemID:  systemID,
