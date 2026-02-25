@@ -178,6 +178,73 @@ When `TR_AUDIO_DIR` is set, tr-engine skips saving audio from MQTT and instead r
 
 Both modes coexist during a transition — existing MQTT-ingested audio still serves from `AUDIO_DIR`.
 
+### Transcription (STT)
+
+Transcription is optional. Add STT environment variables to the `tr-engine` service to enable automatic transcription of call recordings. Three provider options:
+
+**Local Whisper (self-hosted):**
+
+```yaml
+  tr-engine:
+    environment:
+      STT_PROVIDER: whisper
+      WHISPER_URL: http://whisper-server:8000/v1/audio/transcriptions
+      WHISPER_MODEL: deepdml/faster-whisper-large-v3-turbo-ct2
+      WHISPER_LANGUAGE: en
+      WHISPER_TEMPERATURE: "0.1"
+      TRANSCRIBE_WORKERS: 2
+      # Optional — can improve recognition of domain terms but may cause
+      # hallucinations (Whisper repeats prompt words even in silence).
+      # Test with your audio before enabling in production.
+      # WHISPER_PROMPT: "Police dispatch. Engine 7, Medic 23. 10-4, copy, en route."
+      # WHISPER_HOTWORDS: "Medic,Engine,Ladder,Rescue,10-4"
+```
+
+Requires an OpenAI-compatible Whisper server (e.g., [speaches-ai](https://github.com/speaches-ai/speaches)). See `tools/whisper-server/` for a ready-made Docker Compose.
+
+**Remote Whisper (Groq, OpenAI, etc.):**
+
+```yaml
+  tr-engine:
+    environment:
+      STT_PROVIDER: whisper
+      WHISPER_URL: https://api.groq.com/openai/v1/audio/transcriptions
+      WHISPER_API_KEY: gsk_your_api_key_here
+      WHISPER_MODEL: whisper-large-v3-turbo
+      WHISPER_LANGUAGE: en
+      WHISPER_TEMPERATURE: "0.1"
+      TRANSCRIBE_WORKERS: 2
+      # Optional — see note above about hallucination risk.
+      # WHISPER_PROMPT: "Police dispatch. Engine 7, Medic 23. 10-4, copy, en route."
+```
+
+Works with any OpenAI-compatible API. For OpenAI, use `https://api.openai.com/v1/audio/transcriptions` and model `whisper-1`.
+
+**ElevenLabs:**
+
+```yaml
+  tr-engine:
+    environment:
+      STT_PROVIDER: elevenlabs
+      ELEVENLABS_API_KEY: sk_your_api_key_here
+      ELEVENLABS_MODEL: scribe_v2
+      TRANSCRIBE_WORKERS: 2
+      # Optional — boosts recognition of specific terms.
+      # Less prone to hallucination than Whisper prompts, but test first.
+      # ELEVENLABS_KEYTERMS: "Medic,Engine,Ladder,Rescue,10-4"
+```
+
+**Common tuning (all providers):**
+
+```yaml
+      TRANSCRIBE_QUEUE_SIZE: 500       # max queued jobs (dropped when full)
+      TRANSCRIBE_MIN_DURATION: "1.0"   # skip calls shorter than 1s
+      TRANSCRIBE_MAX_DURATION: 300     # skip calls longer than 5min
+      # PREPROCESS_AUDIO: true         # bandpass filter + normalize (requires sox)
+```
+
+Transcription auto-triggers on every `call_end` within the min/max duration range. See `sample.env` for the full list of Whisper tuning parameters including anti-hallucination options.
+
 ### Custom web UI files
 
 The web UI is embedded in the binary, but you can override it by mounting a local directory:
