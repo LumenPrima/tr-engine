@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -228,6 +230,104 @@ func TestBearerAuth(t *testing.T) {
 		BearerAuth("secret123")(okHandler).ServeHTTP(rec, req)
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rec.Code)
+		}
+	})
+}
+
+func TestUploadAuth(t *testing.T) {
+	token := "test-secret-token"
+
+	t.Run("bearer_header", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/call-upload", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		UploadAuth(token)(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
+		}
+	})
+
+	t.Run("query_param_token", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/call-upload?token="+token, nil)
+		UploadAuth(token)(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
+		}
+	})
+
+	t.Run("no_auth", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/call-upload", nil)
+		UploadAuth(token)(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("wrong_bearer", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/call-upload", nil)
+		req.Header.Set("Authorization", "Bearer wrong-token")
+		UploadAuth(token)(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("form_field_key", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		writer.WriteField("key", token)
+		writer.WriteField("talkgroup", "9044")
+		writer.Close()
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/call-upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		UploadAuth(token)(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200 (rdio-scanner key field)", rec.Code)
+		}
+	})
+
+	t.Run("form_field_api_key", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		writer.WriteField("api_key", token)
+		writer.WriteField("talkgroup_num", "9044")
+		writer.Close()
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/call-upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		UploadAuth(token)(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200 (OpenMHz api_key field)", rec.Code)
+		}
+	})
+
+	t.Run("wrong_form_field_key", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		writer.WriteField("key", "wrong-token")
+		writer.Close()
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/call-upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		UploadAuth(token)(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("empty_token_passes_all", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/call-upload", nil)
+		UploadAuth("")(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
 		}
 	})
 }

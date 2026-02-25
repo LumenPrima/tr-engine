@@ -208,6 +208,53 @@ func clientIP(r *http.Request) string {
 	return ip
 }
 
+// UploadAuth is like BearerAuth but also accepts auth via form field "key" or "api_key"
+// in multipart uploads. This supports trunk-recorder upload plugins (rdio-scanner, OpenMHz)
+// which send the API key as a form field rather than an Authorization header.
+// Check order: Authorization header → ?token= query param → form field "key" → form field "api_key"
+func UploadAuth(token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// 1. Check Authorization header
+			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				if subtle.ConstantTimeCompare([]byte(auth[7:]), []byte(token)) == 1 {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// 2. Check ?token= query param
+			if qt := r.URL.Query().Get("token"); qt != "" {
+				if subtle.ConstantTimeCompare([]byte(qt), []byte(token)) == 1 {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// 3. Check form field "key" (rdio-scanner) or "api_key" (OpenMHz)
+			if err := r.ParseMultipartForm(32 << 20); err == nil {
+				for _, fieldName := range []string{"key", "api_key"} {
+					if val := r.FormValue(fieldName); val != "" {
+						if subtle.ConstantTimeCompare([]byte(val), []byte(token)) == 1 {
+							next.ServeHTTP(w, r)
+							return
+						}
+					}
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintf(w, `{"error":"unauthorized"}`)
+		})
+	}
+}
+
 func BearerAuth(token string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
