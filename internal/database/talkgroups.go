@@ -233,30 +233,8 @@ func (db *DB) EnrichTalkgroupsFromDirectory(ctx context.Context, systemID, tgid 
 	})
 }
 
-// ListTalkgroups returns talkgroups with embedded stats.
+// ListTalkgroups returns talkgroups with cached stats.
 func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]TalkgroupAPI, int, error) {
-	statsDays := filter.StatsDays
-	if statsDays <= 0 {
-		statsDays = 30
-	}
-	statsInterval := strconv.Itoa(statsDays) + " days"
-
-	fromClause := fmt.Sprintf(`
-		FROM talkgroups t
-		JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL
-		LEFT JOIN LATERAL (
-			SELECT count(*) AS call_count,
-				count(*) FILTER (WHERE start_time > now() - interval '1 hour') AS calls_1h,
-				count(*) FILTER (WHERE start_time > now() - interval '24 hours') AS calls_24h
-			FROM calls c
-			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '%s'
-		) ts ON true
-		LEFT JOIN LATERAL (
-			SELECT count(DISTINCT u) AS unit_count
-			FROM calls c, unnest(c.unit_ids) AS u
-			WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '%s'
-		) us ON true
-	`, statsInterval, statsInterval)
 	const whereClause = `
 		WHERE ($1::int[] IS NULL OR t.system_id = ANY($1))
 		  AND ($2::text[] IS NULL OR s.sysid = ANY($2))
@@ -264,34 +242,30 @@ func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]Tal
 		  AND ($4::text IS NULL OR t.alpha_tag ILIKE '%' || $4 || '%' OR t.description ILIKE '%' || $4 || '%' OR t.tag ILIKE '%' || $4 || '%' OR t."group" ILIKE '%' || $4 || '%' OR t.tgid::text = $4)`
 	args := []any{pqIntArray(filter.SystemIDs), pqStringArray(filter.Sysids), filter.Group, filter.Search}
 
-	// Count (simpler FROM without LATERAL joins)
-	const countWhereClause = `
-		WHERE ($1::int[] IS NULL OR t.system_id = ANY($1))
-		  AND ($2::text[] IS NULL OR s.sysid = ANY($2))
-		  AND ($3::text IS NULL OR t."group" = $3)
-		  AND ($4::text IS NULL OR t.alpha_tag ILIKE '%' || $4 || '%' OR t.description ILIKE '%' || $4 || '%' OR t.tag ILIKE '%' || $4 || '%' OR t."group" ILIKE '%' || $4 || '%' OR t.tgid::text = $4)`
+	// Count
 	var total int
-	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM talkgroups t JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL`+countWhereClause, args...).Scan(&total); err != nil {
+	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM talkgroups t JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL`+whereClause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	// Sort
+	// Sort — remap stats sort fields to cached columns
 	orderBy := "t.alpha_tag ASC"
 	if filter.Sort != "" {
 		orderBy = filter.Sort
 	}
 
 	dataQuery := fmt.Sprintf(`
-		SELECT t.system_id, COALESCE(s.name, ''), s.sysid,
-			t.tgid, COALESCE(t.alpha_tag, ''), COALESCE(t.tag, ''),
-			COALESCE(t."group", ''), COALESCE(t.description, ''),
+		SELECT t.system_id, COALESCE(s.name, '') AS system_name, s.sysid,
+			t.tgid, COALESCE(t.alpha_tag, '') AS alpha_tag, COALESCE(t.tag, '') AS tag,
+			COALESCE(t."group", '') AS "group", COALESCE(t.description, '') AS description,
 			t.mode, t.priority, t.first_seen, t.last_seen,
-			COALESCE(ts.call_count, 0), COALESCE(ts.calls_1h, 0), COALESCE(ts.calls_24h, 0),
-			COALESCE(us.unit_count, 0)
-		%s %s
+			t.call_count_30d, t.calls_1h, t.calls_24h, t.unit_count_30d
+		FROM talkgroups t
+		JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL
+		%s
 		ORDER BY %s
 		LIMIT $5 OFFSET $6
-	`, fromClause, whereClause, orderBy)
+	`, whereClause, orderBy)
 
 	rows, err := db.Pool.Query(ctx, dataQuery, append(args, filter.Limit, filter.Offset)...)
 	if err != nil {
@@ -495,4 +469,41 @@ func (db *DB) SearchTalkgroupDirectory(ctx context.Context, filter TalkgroupDire
 	}
 
 	return results, total, rows.Err()
+}
+
+// RefreshTalkgroupStats updates the cached stats columns on all talkgroups.
+// Designed to run periodically from the maintenance task (every few minutes).
+func (db *DB) RefreshTalkgroupStats(ctx context.Context) (int64, error) {
+	tag, err := db.Pool.Exec(ctx, `
+		UPDATE talkgroups t SET
+			call_count_30d = COALESCE(cs.call_count, 0),
+			calls_1h       = COALESCE(cs.calls_1h, 0),
+			calls_24h      = COALESCE(cs.calls_24h, 0),
+			unit_count_30d = COALESCE(us.unit_count, 0),
+			stats_updated_at = now()
+		FROM (
+			SELECT system_id, tgid,
+				count(*)::int AS call_count,
+				count(*) FILTER (WHERE start_time > now() - interval '1 hour')::int AS calls_1h,
+				count(*) FILTER (WHERE start_time > now() - interval '24 hours')::int AS calls_24h
+			FROM calls
+			WHERE start_time > now() - interval '30 days'
+			GROUP BY system_id, tgid
+		) cs
+		RIGHT JOIN (
+			SELECT system_id, tgid, count(DISTINCT unit_rid)::int AS unit_count
+			FROM unit_events
+			WHERE tgid IS NOT NULL AND time > now() - interval '30 days'
+			GROUP BY system_id, tgid
+		) us USING (system_id, tgid)
+		WHERE t.system_id = us.system_id AND t.tgid = us.tgid
+		  AND (t.call_count_30d IS DISTINCT FROM COALESCE(cs.call_count, 0)
+			OR t.calls_1h IS DISTINCT FROM COALESCE(cs.calls_1h, 0)
+			OR t.calls_24h IS DISTINCT FROM COALESCE(cs.calls_24h, 0)
+			OR t.unit_count_30d IS DISTINCT FROM COALESCE(us.unit_count, 0))
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }

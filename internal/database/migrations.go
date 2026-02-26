@@ -32,6 +32,16 @@ var migrations = []migration{
 		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'talkgroups' AND column_name = 'alpha_tag_source')`,
 	},
 	{
+		name: "add talkgroup stats cache columns",
+		sql: `ALTER TABLE talkgroups
+			ADD COLUMN IF NOT EXISTS call_count_30d int NOT NULL DEFAULT 0,
+			ADD COLUMN IF NOT EXISTS calls_1h int NOT NULL DEFAULT 0,
+			ADD COLUMN IF NOT EXISTS calls_24h int NOT NULL DEFAULT 0,
+			ADD COLUMN IF NOT EXISTS unit_count_30d int NOT NULL DEFAULT 0,
+			ADD COLUMN IF NOT EXISTS stats_updated_at timestamptz`,
+		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'talkgroups' AND column_name = 'call_count_30d')`,
+	},
+	{
 		name: "replace unique sysid/wacn index with non-unique",
 		sql: `DROP INDEX IF EXISTS uq_systems_sysid_wacn;
 CREATE INDEX IF NOT EXISTS idx_systems_sysid_wacn ON systems (sysid, wacn)

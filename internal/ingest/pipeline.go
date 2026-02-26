@@ -183,6 +183,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	}
 	go p.statsLoop()
 	go p.maintenanceLoop()
+	go p.talkgroupStatsLoop()
 	go p.dedupCleanupLoop()
 	go p.affiliationEvictionLoop()
 	if p.transcriber != nil {
@@ -529,6 +530,40 @@ func (p *Pipeline) runMaintenance() {
 	}
 
 	log.Info().Dur("elapsed_ms", time.Since(start)).Msg("partition maintenance complete")
+}
+
+// talkgroupStatsLoop refreshes cached talkgroup stats every 5 minutes.
+func (p *Pipeline) talkgroupStatsLoop() {
+	log := p.log.With().Str("task", "tg-stats").Logger()
+
+	// Initial refresh on startup
+	p.refreshTalkgroupStats(log)
+
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			p.refreshTalkgroupStats(log)
+		}
+	}
+}
+
+func (p *Pipeline) refreshTalkgroupStats(log zerolog.Logger) {
+	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
+	defer cancel()
+
+	updated, err := p.db.RefreshTalkgroupStats(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("talkgroup stats refresh failed")
+		return
+	}
+	if updated > 0 {
+		log.Info().Int64("updated", updated).Msg("talkgroup stats refreshed")
+	}
 }
 
 // unitDedupKey identifies a unique unit event for deduplication across sites.

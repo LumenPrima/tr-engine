@@ -24,9 +24,10 @@ var talkgroupSortFields = map[string]string{
 	"tgid":       "t.tgid",
 	"group":      `t."group"`,
 	"last_seen":  "t.last_seen",
-	"call_count": "COALESCE(ts.call_count, 0)",
-	"calls_1h":   "COALESCE(ts.calls_1h, 0)",
-	"calls_24h":  "COALESCE(ts.calls_24h, 0)",
+	"call_count": "t.call_count_30d",
+	"calls_1h":   "t.calls_1h",
+	"calls_24h":  "t.calls_24h",
+	"unit_count": "t.unit_count_30d",
 }
 
 // ListTalkgroups returns talkgroups with embedded stats.

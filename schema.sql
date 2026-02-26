@@ -122,6 +122,12 @@ CREATE TABLE talkgroups (
     first_seen    timestamptz,
     last_seen     timestamptz,
     search_vector tsvector,
+    -- Cached stats (refreshed periodically by maintenance task)
+    call_count_30d  int         NOT NULL DEFAULT 0,
+    calls_1h        int         NOT NULL DEFAULT 0,
+    calls_24h       int         NOT NULL DEFAULT 0,
+    unit_count_30d  int         NOT NULL DEFAULT 0,
+    stats_updated_at timestamptz,
     created_at    timestamptz  NOT NULL DEFAULT now(),
     updated_at    timestamptz  NOT NULL DEFAULT now(),
 

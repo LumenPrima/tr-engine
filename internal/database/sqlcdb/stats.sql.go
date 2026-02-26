@@ -54,8 +54,8 @@ SELECT
     (SELECT count(*)::int FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour') AS calls_1h,
     (SELECT count(*)::int FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '24 hours') AS calls_24h,
     (SELECT count(DISTINCT tgid)::int FROM calls c WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour') AS active_talkgroups,
-    (SELECT count(DISTINCT u)::int FROM calls c, unnest(c.unit_ids) AS u
-        WHERE c.system_id = s.system_id AND c.start_time > now() - interval '1 hour') AS active_units
+    (SELECT COALESCE(sum(t.unit_count_30d), 0)::int FROM talkgroups t
+        WHERE t.system_id = s.system_id) AS active_units
 FROM systems s
 WHERE s.deleted_at IS NULL
 ORDER BY s.system_id
