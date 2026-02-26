@@ -3248,9 +3248,10 @@ components:
           description: Frequency in Hz
           example: 154875000
         time:
-          type: integer
-          description: Unix timestamp of when this frequency segment started
-          example: 1713207802
+          type: string
+          format: date-time
+          description: When this frequency segment started (RFC 3339)
+          example: "2024-04-15T19:03:22Z"
         pos:
           type: number
           description: Position in the audio file in seconds
@@ -3282,9 +3283,10 @@ components:
           description: Unit alpha tag at time of transmission (from trunk-recorder)
           example: "09 7COM3"
         time:
-          type: integer
-          description: Unix timestamp of when this unit keyed up
-          example: 1713207802
+          type: string
+          format: date-time
+          description: When this unit keyed up (RFC 3339)
+          example: "2024-04-15T19:03:22Z"
         pos:
           type: number
           description: Position in audio file in seconds
