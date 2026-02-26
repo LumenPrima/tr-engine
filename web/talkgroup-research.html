@@ -2315,11 +2315,11 @@
       table.className = 'inner-table';
       var thead = document.createElement('thead');
       var headerRow = document.createElement('tr');
-      ['Time', 'Duration', '', 'Site', ''].forEach(function(h, idx) {
+      ['Time', 'Transcription', 'Duration', '', 'Site', ''].forEach(function(h, idx) {
         var th = document.createElement('th');
         th.textContent = h;
-        if (idx === 1) th.style.textAlign = 'right';
-        if (idx === 4) { th.style.width = '44px'; th.style.textAlign = 'center'; }
+        if (idx === 2) th.style.textAlign = 'right';
+        if (idx === 5) { th.style.width = '44px'; th.style.textAlign = 'center'; }
         headerRow.appendChild(th);
       });
       thead.appendChild(headerRow);
@@ -2336,6 +2336,12 @@
         tdTime.textContent = relativeTime(c.start_time);
         tdTime.title = absTime(c.start_time);
         tr.appendChild(tdTime);
+
+        var tdTx = document.createElement('td');
+        tdTx.style.cssText = 'color:var(--text-muted);font-size:12px;max-width:400px;';
+        tdTx.textContent = c.transcription_text || '\u2014';
+        tdTx.title = c.transcription_text || '';
+        tr.appendChild(tdTx);
 
         var tdDur = document.createElement('td');
         tdDur.style.textAlign = 'right';
@@ -2443,7 +2449,7 @@
     var detailRow = document.createElement('tr');
     detailRow.className = 'call-detail-row';
     var td = document.createElement('td');
-    td.colSpan = 5;
+    td.colSpan = 6;
 
     var inner = document.createElement('div');
     inner.className = 'call-detail-inner';
