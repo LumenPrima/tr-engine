@@ -1,5 +1,7 @@
 FROM golang:1.25-alpine AS builder
 
+RUN apk add --no-cache git
+
 ARG VERSION=dev
 ARG TARGETOS
 ARG TARGETARCH
