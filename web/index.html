@@ -104,7 +104,10 @@ body::after {
    RECORDER CARD
    ═══════════════════════════════════════════════ */
 .col-recorders { grid-column: span 8; }
-.rec-grid { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 30px; }
+.rec-grid { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; min-height: 30px; }
+.rec-group { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.rec-group-dots { display: flex; flex-wrap: wrap; gap: 6px; }
+.rec-group-label { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); opacity: 0.7; white-space: nowrap; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
 .rec-summary { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); font-weight: 600; }
 .rec-dot { width: 14px; height: 14px; border-radius: 50%; cursor: default; transition: transform 0.15s; flex-shrink: 0; }
 .rec-dot:hover { transform: scale(1.4); }
@@ -521,17 +524,45 @@ async function loadRecorders() {
     recs.sort((a, b) => (a.rec_num ?? 0) - (b.rec_num ?? 0));
     const recording = recs.filter(r => r.rec_state === 1 || r.rec_state === 'RECORDING').length;
     $('rec-summary').textContent = `${recording} / ${recs.length} active`;
-    el.innerHTML = recs.map(r => {
-      const on = r.rec_state === 1 || r.rec_state === 'RECORDING';
-      const cls = on ? 'recording' : (r.rec_state === 0 || r.rec_state === 'AVAILABLE' ? 'available' : 'idle');
-      const id = esc(r.id || `${r.src_num}_${r.rec_num}`);
-      const t = on ? `${id} ▸ ${esc(r.tg_alpha_tag)||'TG '+(r.tgid||'?')}` : `${id} · ${cls}`;
-      return `<div class="rec-dot ${cls}" data-tip="${esc(t)}"></div>`;
-    }).join('');
-    el.querySelectorAll('.rec-dot').forEach(dot => {
-      dot.addEventListener('mouseenter', () => showTip(dot, dot.dataset.tip));
-      dot.addEventListener('mouseleave', hideTip);
-    });
+    // Group by instance_id
+    const groups = {};
+    for (const r of recs) {
+      const key = r.instance_id || 'unknown';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(r);
+    }
+    const instanceIds = Object.keys(groups).sort();
+    const singleInstance = instanceIds.length === 1;
+    // Build DOM nodes safely
+    el.replaceChildren();
+    for (const inst of instanceIds) {
+      const container = singleInstance ? el : document.createElement('div');
+      if (!singleInstance) {
+        container.className = 'rec-group';
+        const dotsWrap = document.createElement('div');
+        dotsWrap.className = 'rec-group-dots';
+        container.appendChild(dotsWrap);
+        const label = document.createElement('span');
+        label.className = 'rec-group-label';
+        label.title = inst;
+        label.textContent = inst;
+        container.appendChild(label);
+      }
+      const target = singleInstance ? el : container.querySelector('.rec-group-dots');
+      for (const r of groups[inst]) {
+        const on = r.rec_state === 1 || r.rec_state === 'RECORDING';
+        const cls = on ? 'recording' : (r.rec_state === 0 || r.rec_state === 'AVAILABLE' ? 'available' : 'idle');
+        const id = r.id || `${r.src_num}_${r.rec_num}`;
+        const tip = on ? `${id} \u25b8 ${r.tg_alpha_tag||'TG '+(r.tgid||'?')}` : `${id} \xb7 ${cls}`;
+        const dot = document.createElement('div');
+        dot.className = `rec-dot ${cls}`;
+        dot.dataset.tip = tip;
+        dot.addEventListener('mouseenter', () => showTip(dot, dot.dataset.tip));
+        dot.addEventListener('mouseleave', hideTip);
+        target.appendChild(dot);
+      }
+      if (!singleInstance) el.appendChild(container);
+    }
   } catch {}
 }
 
