@@ -461,10 +461,13 @@ async function loadHealth() {
     $('health-dot').className = 'health-dot-lg ' + (d.status || 'unknown');
     $('health-label').textContent = d.status || 'unknown';
     if (d.uptime_seconds) $('uptime-text').textContent = 'uptime ' + fmtUp(d.uptime_seconds);
+    const sseEl = $('sse-status');
+    const sseText = sseEl ? sseEl.textContent : 'connecting';
+    const sseCls = sseEl ? sseEl.className : 'subsys-status loading';
     let h = '';
     if (d.checks) for (const [k,v] of Object.entries(d.checks))
       h += `<div class="subsys-row"><span class="subsys-name">${esc(k)}</span><span class="subsys-status ${esc(v)}">${esc(v)}</span></div>`;
-    h += `<div class="subsys-row"><span class="subsys-name">sse stream</span><span class="subsys-status loading" id="sse-status">connecting</span></div>`;
+    h += `<div class="subsys-row"><span class="subsys-name">sse stream</span><span class="${sseCls}" id="sse-status">${esc(sseText)}</span></div>`;
     $('subsys-list').innerHTML = h;
     const el = $('instances-list');
     if (d.trunk_recorders?.length)
