@@ -165,6 +165,8 @@ func (db *DB) ListCalls(ctx context.Context, filter CallFilter) ([]CallAPI, int,
 			url := fmt.Sprintf("/api/v1/calls/%d/audio", c.CallID)
 			c.AudioURL = &url
 		}
+		c.SrcList = NormalizeSrcFreqTimestamps(c.SrcList)
+		c.FreqList = NormalizeSrcFreqTimestamps(c.FreqList)
 		calls = append(calls, c)
 	}
 	if calls == nil {
@@ -222,6 +224,8 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 		url := fmt.Sprintf("/api/v1/calls/%d/audio", c.CallID)
 		c.AudioURL = &url
 	}
+	c.SrcList = NormalizeSrcFreqTimestamps(c.SrcList)
+	c.FreqList = NormalizeSrcFreqTimestamps(c.FreqList)
 	return &c, nil
 }
 
@@ -420,6 +424,8 @@ func (db *DB) GetCallGroupByID(ctx context.Context, id int) (*CallGroupAPI, []Ca
 			url := fmt.Sprintf("/api/v1/calls/%d/audio", c.CallID)
 			c.AudioURL = &url
 		}
+		c.SrcList = NormalizeSrcFreqTimestamps(c.SrcList)
+		c.FreqList = NormalizeSrcFreqTimestamps(c.FreqList)
 		calls = append(calls, c)
 	}
 	if calls == nil {
