@@ -292,14 +292,16 @@ func main() {
 	}
 
 	// Auth status
-	if cfg.AuthTokenGenerated {
+	if !cfg.AuthEnabled {
+		log.Warn().Msg("AUTH_ENABLED=false — API authentication is disabled, all endpoints are open")
+	} else if cfg.AuthTokenGenerated {
 		log.Info().Str("token", cfg.AuthToken).Msg("AUTH_TOKEN auto-generated (set AUTH_TOKEN in .env for a persistent token)")
 	} else {
 		log.Info().Msg("AUTH_TOKEN loaded from configuration")
 	}
-	if cfg.WriteToken != "" {
+	if cfg.AuthEnabled && cfg.WriteToken != "" {
 		log.Info().Msg("write protection enabled (WRITE_TOKEN set)")
-	} else {
+	} else if cfg.AuthEnabled {
 		log.Warn().Msg("WRITE_TOKEN not set — write endpoints accept the read token")
 	}
 

@@ -44,6 +44,7 @@ type Config struct {
 	WriteTimeout time.Duration `env:"HTTP_WRITE_TIMEOUT" envDefault:"30s"`
 	IdleTimeout  time.Duration `env:"HTTP_IDLE_TIMEOUT" envDefault:"120s"`
 
+	AuthEnabled        bool   `env:"AUTH_ENABLED" envDefault:"true"` // set to false to disable all API auth
 	AuthToken          string `env:"AUTH_TOKEN"`
 	AuthTokenGenerated bool   // true when auto-generated (not from env/config)
 	WriteToken         string `env:"WRITE_TOKEN"` // separate token for write operations; if not set, writes use AuthToken
@@ -162,10 +163,14 @@ func Load(overrides Overrides) (*Config, error) {
 		cfg.WhisperURL = overrides.WhisperURL
 	}
 
-	// Auto-generate AUTH_TOKEN if not configured. This ensures the API is always
-	// protected from automated scanners. Web pages get the token injected via auth.js.
-	// The token changes on each restart; set AUTH_TOKEN in .env for a persistent one.
-	if cfg.AuthToken == "" {
+	// When auth is explicitly disabled, clear any tokens so middleware passes everything through.
+	if !cfg.AuthEnabled {
+		cfg.AuthToken = ""
+		cfg.WriteToken = ""
+	} else if cfg.AuthToken == "" {
+		// Auto-generate AUTH_TOKEN if not configured. This ensures the API is always
+		// protected from automated scanners. Web pages get the token injected via auth.js.
+		// The token changes on each restart; set AUTH_TOKEN in .env for a persistent one.
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err == nil {
 			cfg.AuthToken = base64.URLEncoding.EncodeToString(b)
