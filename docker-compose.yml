@@ -22,7 +22,10 @@ services:
       - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
 
   tr-engine:
-    build: .
+    build:
+      context: .
+      args:
+        VERSION: "${VERSION:-dev}"
     image: ghcr.io/lumenprima/tr-engine:latest
     ports:
       - "8080:8080"

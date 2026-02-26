@@ -9,8 +9,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-    -ldflags="-w -s -X main.version=${VERSION} -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+# Auto-detect version/commit from git if available (.git in context),
+# otherwise fall back to ARG values. CI passes VERSION explicitly.
+RUN BUILD_VERSION="${VERSION}"; \
+    BUILD_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"; \
+    if [ "$BUILD_VERSION" = "dev" ] && git describe --tags --always 2>/dev/null 1>&2; then \
+      BUILD_VERSION="$(git describe --tags --always --dirty)"; \
+    fi; \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -ldflags="-w -s -X main.version=${BUILD_VERSION} -X main.commit=${BUILD_COMMIT} -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     -o /tr-engine ./cmd/tr-engine
 
 FROM alpine:3.20
