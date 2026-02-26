@@ -46,7 +46,7 @@ func (p *Pipeline) processSystemInfo(instanceID string, sys *SystemInfoData) err
 	// If another system already owns this (sysid, wacn), we merge into it
 	// rather than trying to set the same values on our system (which would
 	// violate the unique constraint).
-	if sys.Sysid != "" && sys.Sysid != "0" && sys.Wacn != "" && sys.Wacn != "0" {
+	if p.mergeP25Systems && sys.Sysid != "" && sys.Sysid != "0" && sys.Wacn != "" && sys.Wacn != "0" {
 		targetID, err := p.db.FindSystemBySysidWacn(ctx, sys.Sysid, sys.Wacn, identity.SystemID)
 		if err != nil {
 			return fmt.Errorf("find merge target: %w", err)

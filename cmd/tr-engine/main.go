@@ -191,6 +191,7 @@ func main() {
 		RawStore:         cfg.RawStore,
 		RawIncludeTopics: cfg.RawIncludeTopics,
 		RawExcludeTopics: cfg.RawExcludeTopics,
+		MergeP25Systems:  cfg.MergeP25Systems,
 		TranscribeOpts:   transcribeOpts,
 		Log:              log,
 	})

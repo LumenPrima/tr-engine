@@ -34,6 +34,11 @@ type Config struct {
 	TRDir        string `env:"TR_DIR"`
 	CSVWriteback bool   `env:"CSV_WRITEBACK" envDefault:"false"` // write edits back to TR's CSV files on disk
 
+	// P25 system merging: when true (default), systems with the same sysid/wacn
+	// are auto-merged into one system with multiple sites. Set to false to keep
+	// each TR instance's systems separate even if they share sysid/wacn.
+	MergeP25Systems bool `env:"MERGE_P25_SYSTEMS" envDefault:"true"`
+
 	HTTPAddr     string        `env:"HTTP_ADDR" envDefault:":8080"`
 	ReadTimeout  time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"5s"`
 	WriteTimeout time.Duration `env:"HTTP_WRITE_TIMEOUT" envDefault:"30s"`

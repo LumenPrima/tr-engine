@@ -41,6 +41,9 @@ type Pipeline struct {
 	rawInclude map[string]bool // if non-empty, allowlist mode (only these handlers)
 	rawExclude map[string]bool // if non-empty, denylist mode (skip these handlers)
 
+	// P25 system merging
+	mergeP25Systems bool // when false, systems with same sysid/wacn stay separate
+
 	// Transcription worker pool (optional, nil if WHISPER_URL not set)
 	transcriber *transcribe.WorkerPool
 
@@ -85,6 +88,7 @@ type PipelineOptions struct {
 	RawStore         bool
 	RawIncludeTopics string
 	RawExcludeTopics string
+	MergeP25Systems  bool // auto-merge systems with same sysid/wacn (default true)
 	TranscribeOpts   *transcribe.WorkerPoolOptions // nil = transcription disabled
 	Log              zerolog.Logger
 }
@@ -114,15 +118,20 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		log.Info().Strs("handlers", names).Msg("raw message archival excluded for handlers")
 	}
 
+	if !opts.MergeP25Systems {
+		log.Info().Msg("P25 system auto-merge disabled (MERGE_P25_SYSTEMS=false)")
+	}
+
 	p := &Pipeline{
-		db:          opts.DB,
-		identity:    NewIdentityResolver(opts.DB, log),
-		log:         log,
-		audioDir:    opts.AudioDir,
-		trAudioDir:  opts.TRAudioDir,
-		rawStore:    rawStore,
-		rawInclude:  rawInclude,
-		rawExclude:  rawExclude,
+		db:              opts.DB,
+		identity:        NewIdentityResolver(opts.DB, log),
+		log:             log,
+		audioDir:        opts.AudioDir,
+		trAudioDir:      opts.TRAudioDir,
+		rawStore:        rawStore,
+		rawInclude:      rawInclude,
+		rawExclude:      rawExclude,
+		mergeP25Systems: opts.MergeP25Systems,
 		activeCalls:  newActiveCallMap(),
 		affiliations: newAffiliationMap(),
 		eventBus:    NewEventBus(4096), // ~60s of events at high rate

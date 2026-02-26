@@ -62,8 +62,10 @@ CREATE TABLE systems (
     updated_at   timestamptz  NOT NULL DEFAULT now()
 );
 
--- P25/smartnet identity uniqueness (only for active, non-conventional systems)
-CREATE UNIQUE INDEX uq_systems_sysid_wacn
+-- P25/smartnet identity index for merge lookups.
+-- Not unique: when MERGE_P25_SYSTEMS=false, multiple systems may share sysid/wacn.
+-- Uniqueness is enforced at the application level when merging is enabled.
+CREATE INDEX idx_systems_sysid_wacn
     ON systems (sysid, wacn)
     WHERE system_type IN ('p25', 'smartnet')
       AND deleted_at IS NULL

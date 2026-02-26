@@ -31,6 +31,13 @@ var migrations = []migration{
 		sql:   `ALTER TABLE talkgroups ADD COLUMN IF NOT EXISTS alpha_tag_source text`,
 		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'talkgroups' AND column_name = 'alpha_tag_source')`,
 	},
+	{
+		name: "replace unique sysid/wacn index with non-unique",
+		sql: `DROP INDEX IF EXISTS uq_systems_sysid_wacn;
+CREATE INDEX IF NOT EXISTS idx_systems_sysid_wacn ON systems (sysid, wacn)
+    WHERE system_type IN ('p25', 'smartnet') AND deleted_at IS NULL AND sysid <> '0'`,
+		check: `SELECT NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'uq_systems_sysid_wacn')`,
+	},
 }
 
 // Migrate runs all pending schema migrations.
