@@ -75,6 +75,8 @@ RUN apt-get update && apt-get -y upgrade && \
         libsoapysdr0.8 \
     # ── SoapyPlutoPAPR runtime deps ──────────────────────────────────────────
         libiio0 libad9361-0 \
+    # ── scripting (e.g. streaming helpers) ─────────────────────────────────
+        python3 \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /usr/share/{doc,man,info} /usr/local/share/{doc,man,info}
 
