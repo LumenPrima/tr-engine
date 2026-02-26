@@ -655,6 +655,11 @@ func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 
 	p.archiveRaw(route.Handler, topic, payload, env.InstanceID)
 
+	// Track instance as connected on any message (not just trunk_recorder/status)
+	if env.InstanceID != "" {
+		p.UpdateTRInstanceStatus(env.InstanceID, "connected", time.Now())
+	}
+
 	// Dispatch to handler
 	p.dispatch(route, topic, payload, &env)
 }
