@@ -265,6 +265,8 @@ body::after {
 .intro-text a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent), transparent 60%); transition: border-color 0.2s; }
 .intro-text a:hover { border-bottom-color: var(--accent); }
 .intro-text .intro-label { font-family: var(--font-display); font-weight: var(--font-weight-display); font-size: 15px; color: var(--text); letter-spacing: 0.01em; }
+.intro-hide { display: block; margin-top: 8px; font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); cursor: pointer; opacity: 0.6; transition: opacity 0.2s; }
+.intro-hide:hover { opacity: 1; }
 
 /* ── Misc ── */
 .footer { margin-top: 28px; text-align: center; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); opacity: 0.6; }
@@ -308,10 +310,11 @@ body::after {
 
 <div class="shell">
   <div class="grid">
-    <div class="panel col-intro">
+    <div class="panel col-intro" id="intro-panel">
       <div class="panel-body">
         <div class="intro-text">
-          <span class="intro-label">Event Horizon</span> is a tech demo frontend for <a href="https://github.com/LumenPrima/tr-engine" target="_blank">tr-engine</a>, a backend service that ingests and serves radio system monitoring data from <a href="https://github.com/robotastic/trunk-recorder" target="_blank">trunk-recorder</a>. Everything on these pages is powered by the tr-engine <a href="docs.html">REST API</a> and real-time SSE event stream. The streaks across the background are live radio activity &mdash; each one is a real unit transmission.
+          <span class="intro-label">Event Horizon</span> is a collection of pages that showcase the capabilities and flexibility of <a href="https://github.com/LumenPrima/tr-engine" target="_blank">tr-engine</a>, a backend service that ingests and serves radio system monitoring data from <a href="https://github.com/robotastic/trunk-recorder" target="_blank">trunk-recorder</a>. Everything here is powered by the tr-engine <a href="docs.html">REST API</a> and <a href="events.html">real-time SSE event stream</a>. Build your own pages with the <a href="playground.html">Page Builder</a>. The streaks across the background are live radio activity &mdash; each one is a real unit transmission.
+          <a class="intro-hide" id="intro-hide">hide this</a>
         </div>
       </div>
     </div>
@@ -636,7 +639,7 @@ function spawnStreak(subtype) {
   else if (side < 0.8) { x=W+20; y=Math.random()*H; angle=Math.PI+(Math.random()-0.5)*0.6; }
   else if (side < 0.9) { x=Math.random()*W; y=-20; angle=Math.PI/2+(Math.random()-0.5)*0.8; }
   else { x=Math.random()*W; y=H+20; angle=-Math.PI/2+(Math.random()-0.5)*0.8; }
-  streaks.push({ x, y, angle, vx:Math.cos(angle)*(600+Math.random()*900), vy:Math.sin(angle)*(600+Math.random()*900), length:80+Math.random()*180, width:1+Math.random()*2, opacity:0.25+Math.random()*0.35, life:1, decay:0.4+Math.random()*0.5, r:c.r, g:c.g, b:c.b });
+  streaks.push({ x, y, angle, vx:Math.cos(angle)*(250+Math.random()*400), vy:Math.sin(angle)*(250+Math.random()*400), length:120+Math.random()*240, width:1.5+Math.random()*2.5, opacity:0.4+Math.random()*0.4, life:1, decay:0.2+Math.random()*0.35, r:c.r, g:c.g, b:c.b });
   if (!streakRAF) streakLoop(performance.now());
 }
 
@@ -669,6 +672,14 @@ function connectSSE() {
     catch { recordEvent('unit_call'); spawnStreak('call'); }
   });
 }
+
+/* ═══ Intro hide/show ═══ */
+const introPanel = $('intro-panel');
+if (localStorage.getItem('eh-hide-intro') === '1') introPanel.style.display = 'none';
+$('intro-hide').addEventListener('click', () => {
+  introPanel.style.display = 'none';
+  localStorage.setItem('eh-hide-intro', '1');
+});
 
 /* ═══ Boot ═══ */
 (async () => {
