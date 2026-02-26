@@ -232,7 +232,7 @@ func (db *DB) GetCallByID(ctx context.Context, callID int64) (*CallAPI, error) {
 // CallFrequencyAPI represents a frequency entry for API responses.
 type CallFrequencyAPI struct {
 	Freq       int64    `json:"freq"`
-	Time       *int64   `json:"time,omitempty"`
+	Time       *string  `json:"time,omitempty"`
 	Pos        *float32 `json:"pos,omitempty"`
 	Len        *float32 `json:"len,omitempty"`
 	ErrorCount *int     `json:"error_count,omitempty"`
@@ -243,7 +243,7 @@ type CallFrequencyAPI struct {
 type CallTransmissionAPI struct {
 	Src          int      `json:"src"`
 	Tag          string   `json:"tag,omitempty"`
-	Time         *int64   `json:"time,omitempty"`
+	Time         *string  `json:"time,omitempty"`
 	Pos          *float32 `json:"pos,omitempty"`
 	Duration     *float32 `json:"duration,omitempty"`
 	Emergency    int16    `json:"emergency"`

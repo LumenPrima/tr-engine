@@ -389,8 +389,9 @@ func (db *DB) GetCallFrequencies(ctx context.Context, callID int64) ([]CallFrequ
 	if len(raw) == 0 || string(raw) == "null" {
 		return []CallFrequencyAPI{}, nil
 	}
+	normalized := NormalizeSrcFreqTimestamps(raw)
 	var freqs []CallFrequencyAPI
-	if err := json.Unmarshal(raw, &freqs); err != nil {
+	if err := json.Unmarshal(normalized, &freqs); err != nil {
 		return nil, err
 	}
 	if freqs == nil {
@@ -408,8 +409,9 @@ func (db *DB) GetCallTransmissions(ctx context.Context, callID int64) ([]CallTra
 	if len(raw) == 0 || string(raw) == "null" {
 		return []CallTransmissionAPI{}, nil
 	}
+	normalized := NormalizeSrcFreqTimestamps(raw)
 	var txs []CallTransmissionAPI
-	if err := json.Unmarshal(raw, &txs); err != nil {
+	if err := json.Unmarshal(normalized, &txs); err != nil {
 		return nil, err
 	}
 	if txs == nil {
