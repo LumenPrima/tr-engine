@@ -2676,7 +2676,7 @@ function callsToMessages(calls, chanName, systemId) {
       const txSorted = [...srcList].sort((a, b) => (a.pos || 0) - (b.pos || 0));
       for (const tx of txSorted) {
         const nick = resolveNick(sid, tx.src, tx.tag);
-        const txTime = tx.time ? new Date(tx.time * 1000) : (call.start_time ? new Date(call.start_time) : new Date());
+        const txTime = tx.time ? new Date(tx.time) : (call.start_time ? new Date(call.start_time) : new Date());
         const dur = tx.duration ? fmtDuration(tx.duration) : '';
         if (ch) ensureUserInChannel(ch, chanName, sid, tx.src, tx.tag);
         msgs.push({
@@ -2916,7 +2916,7 @@ async function loadStarredHistory() {
 
       for (const tx of txList) {
         const nick = tx.src ? resolveNick(systemId, tx.src, tx.tag) : (call.tg_alpha_tag || 'TG ' + call.tgid);
-        const txTime = tx.time ? new Date(tx.time * 1000) : new Date(call.start_time);
+        const txTime = tx.time ? new Date(tx.time) : new Date(call.start_time);
         const dur = tx.duration ? fmtDuration(tx.duration) : (call.duration ? fmtDuration(call.duration) : '');
 
         newMsgs.push({
@@ -3702,7 +3702,7 @@ function renderCallTransmissions(chanName, callId, systemId, srcList, isEmergenc
     const nick = resolveNick(systemId, tx.src, tx.tag);
     ensureUserInChannel(ch, chanName, systemId, tx.src, tx.tag);
 
-    const txTime = tx.time ? new Date(tx.time * 1000) : new Date();
+    const txTime = tx.time ? new Date(tx.time) : new Date();
     const dur = tx.duration ? fmtDuration(tx.duration) : '';
     const txEmergency = tx.emergency === 1;
 

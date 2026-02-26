@@ -1677,7 +1677,7 @@ function callToFeedItem(call) {
   } else {
     const first = srcList[0];
     nick = resolveNick(call.system_id, first.src, first.tag);
-    callTime = first.time ? new Date(first.time * 1000) : (call.start_time ? new Date(call.start_time) : new Date());
+    callTime = first.time ? new Date(first.time) : (call.start_time ? new Date(call.start_time) : new Date());
   }
 
   return {
