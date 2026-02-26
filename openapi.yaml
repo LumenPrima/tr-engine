@@ -378,8 +378,10 @@ paths:
       operationId: listTalkgroups
       summary: List talkgroups
       description: |
-        Returns talkgroups with embedded stats (call_count, calls_1h, calls_24h,
-        unit_count). Supports filtering by system (database ID or P25 SYSID),
+        Returns talkgroups with cached stats (call_count, calls_1h, calls_24h,
+        unit_count). Stats are refreshed every 5 minutes by a background task.
+        For real-time stats, use the single-talkgroup endpoint.
+        Supports filtering by system (database ID or P25 SYSID),
         group category, and free-text search. Search results include a
         relevance_score (100=exact, 50=prefix, 10=contains).
       tags: [talkgroups]
@@ -407,11 +409,12 @@ paths:
             type: string
         - name: stats_days
           in: query
-          description: Number of days to include in call_count stats (default varies by endpoint)
+          deprecated: true
+          description: >-
+            No longer supported — returns 400 if provided.
+            Use GET /talkgroups/{id} for real-time stats.
           schema:
             type: integer
-            minimum: 1
-            maximum: 365
         - $ref: "#/components/parameters/sort"
         - $ref: "#/components/parameters/sortDir"
         - $ref: "#/components/parameters/limit"
@@ -433,9 +436,9 @@ paths:
       operationId: getTalkgroup
       summary: Get a talkgroup
       description: |
-        Returns a single talkgroup with stats. Accepts composite `system_id:tgid`
-        format (e.g., "1:9178") or plain `tgid`. Returns 409 if a plain tgid
-        is ambiguous across systems.
+        Returns a single talkgroup with real-time stats computed at request time.
+        Accepts composite `system_id:tgid` format (e.g., "1:9178") or plain `tgid`.
+        Returns 409 if a plain tgid is ambiguous across systems.
       tags: [talkgroups]
       parameters:
         - $ref: "#/components/parameters/talkgroupId"
@@ -2869,10 +2872,11 @@ components:
         last_seen:
           type: string
           format: date-time
-        # Stats (populated by list/detail queries)
+        # Stats — list endpoint uses cached values (refreshed every 5 min);
+        # single-talkgroup endpoint computes live at request time.
         call_count:
           type: integer
-          description: Total calls recorded on this talkgroup
+          description: Calls in the last 30 days
           example: 1547
         calls_1h:
           type: integer
@@ -2884,7 +2888,7 @@ components:
           example: 234
         unit_count:
           type: integer
-          description: Distinct units seen on this talkgroup
+          description: Distinct units with any activity (calls, joins, locations, etc.) in the last 30 days
           example: 45
         # Search field (only present when search param is used)
         relevance_score:

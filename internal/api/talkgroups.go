@@ -53,12 +53,9 @@ func (h *TalkgroupsHandler) ListTalkgroups(w http.ResponseWriter, r *http.Reques
 	if v, ok := QueryString(r, "search"); ok {
 		filter.Search = &v
 	}
-	if v, ok := QueryInt(r, "stats_days"); ok {
-		if v < 1 || v > 365 {
-			WriteError(w, http.StatusBadRequest, "stats_days must be between 1 and 365")
-			return
-		}
-		filter.StatsDays = v
+	if _, ok := QueryInt(r, "stats_days"); ok {
+		WriteError(w, http.StatusBadRequest, "stats_days is no longer supported on the list endpoint; use GET /talkgroups/{id} for real-time stats")
+		return
 	}
 
 	talkgroups, total, err := h.db.ListTalkgroups(r.Context(), filter)

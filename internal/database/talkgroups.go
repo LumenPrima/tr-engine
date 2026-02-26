@@ -19,7 +19,6 @@ type TalkgroupFilter struct {
 	Limit      int
 	Offset     int
 	Sort       string
-	StatsDays  int // time window for call_count/calls_1h/calls_24h stats (default 30)
 }
 
 // TalkgroupAPI represents a talkgroup for API responses.
