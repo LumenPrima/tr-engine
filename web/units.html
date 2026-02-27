@@ -553,6 +553,7 @@ function authHeaders() {
 function setStatus(state, text) {
   statusDot.className = 'status-dot ' + state;
   statusText.textContent = text;
+  if (window.ehSetNetworkStatus) window.ehSetNetworkStatus(state);
 }
 
 function esc(s) {

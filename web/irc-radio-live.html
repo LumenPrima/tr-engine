@@ -3230,6 +3230,7 @@ function connectSSE() {
 
 function setConnectionState(state) {
   connectionState = state;
+  if (window.ehSetNetworkStatus) window.ehSetNetworkStatus(state);
   const dot = treeStatus.querySelector('.dot');
 
   if (state === 'connected') {

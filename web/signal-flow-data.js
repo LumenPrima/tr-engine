@@ -420,8 +420,12 @@ function startSSE(apiBase, systemId, sysid) {
     }
   });
 
+  eventSource.onopen = () => {
+    if (window.ehSetNetworkStatus) window.ehSetNetworkStatus('connected');
+  };
   eventSource.onerror = (err) => {
     console.warn('[signal-flow-data] SSE error, will auto-reconnect:', err);
+    if (window.ehSetNetworkStatus) window.ehSetNetworkStatus('connecting');
     // EventSource auto-reconnects. On reconnect, pass Last-Event-ID
     // for gapless recovery (server buffers 60s of events).
   };

@@ -345,6 +345,16 @@
 .eh-update-badge:hover { opacity: 0.85; }
 [data-square-elements="true"] .eh-update-badge { border-radius: 0; }
 
+/* Network status dot */
+.eh-net-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: none; flex-shrink: 0;
+}
+.eh-net-dot.connected { display: block; background: var(--success); }
+.eh-net-dot.connecting { display: block; background: var(--warning, #f59e0b); animation: eh-pulse 1.5s infinite; }
+.eh-net-dot.disconnected { display: block; background: var(--danger); }
+@keyframes eh-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
 /* ── Mobile ── */
 @media (max-width: 600px) {
   .eh-header { height: 50px; padding: 0 12px; gap: 10px; }
@@ -380,6 +390,7 @@
       </div>
       <span class="eh-header-sub">${pageSubtitle}</span>
       <div class="eh-header-right">
+        <span class="eh-net-dot" id="eh-net-dot" title="Disconnected"></span>
         <div class="eh-picker" id="eh-picker"></div>
       </div>
     `;
@@ -689,6 +700,15 @@
   };
 
   window.trTheme = { invalidateNavCache: function() { _navPages = null; } };
+
+  // ── Network status dot API ──
+  window.ehSetNetworkStatus = function(state) {
+    var dot = document.getElementById('eh-net-dot');
+    if (!dot) return;
+    dot.className = 'eh-net-dot ' + state;
+    dot.title = state === 'connected' ? 'Connected' :
+                state === 'connecting' ? 'Connecting\u2026' : 'Disconnected';
+  };
 
 })();
 

@@ -563,7 +563,11 @@ function connectRecorderSSE() {
       render();
     } catch {}
   });
+  sseSource.onopen = () => {
+    if (window.ehSetNetworkStatus) window.ehSetNetworkStatus('connected');
+  };
   sseSource.onerror = () => {
+    if (window.ehSetNetworkStatus) window.ehSetNetworkStatus('connecting');
     // Will auto-reconnect
   };
 }

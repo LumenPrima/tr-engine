@@ -204,6 +204,7 @@ function getSelectedTypes() {
 function setStatus(state, text) {
   statusDot.className = 'status-dot ' + state;
   statusText.textContent = text;
+  if (window.ehSetNetworkStatus) window.ehSetNetworkStatus(state);
 }
 
 function formatTime(ts) {

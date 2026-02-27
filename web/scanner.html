@@ -1916,6 +1916,7 @@ function connectSSE() {
 
 function setConnectionState(state) {
   connectionState = state;
+  if (window.ehSetNetworkStatus) window.ehSetNetworkStatus(state);
   if (state === 'connected') {
     sbDot.className = 'dot on';
     sbStatus.textContent = 'Connected';

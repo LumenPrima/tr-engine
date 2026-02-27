@@ -680,8 +680,8 @@ function streakLoop(now) {
 function connectSSE() {
   const es = new EventSource(API+'/events/stream');
   const st = () => document.getElementById('sse-status');
-  es.onopen = () => { const e=st(); if(e){e.textContent='ok';e.className='subsys-status ok';} };
-  es.onerror = () => { const e=st(); if(e){e.textContent='reconnecting';e.className='subsys-status disconnected';} };
+  es.onopen = () => { const e=st(); if(e){e.textContent='ok';e.className='subsys-status ok';} if(window.ehSetNetworkStatus) window.ehSetNetworkStatus('connected'); };
+  es.onerror = () => { const e=st(); if(e){e.textContent='reconnecting';e.className='subsys-status disconnected';} if(window.ehSetNetworkStatus) window.ehSetNetworkStatus('connecting'); };
   for (const t of ['call_start','call_end','call_update']) es.addEventListener(t, () => recordEvent(t));
   es.addEventListener('unit_event', e => {
     try { const d=JSON.parse(e.data), sub=d.event_type||'call'; recordEvent('unit_'+sub); spawnStreak(sub); }

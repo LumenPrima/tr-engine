@@ -1132,7 +1132,7 @@
   }
 
   // ── SSE Connection ──────────────────────────────────
-  function setStatus(state) { statusDot.className = 'pulse-dot ' + state; }
+  function setStatus(state) { statusDot.className = 'pulse-dot ' + state; if (window.ehSetNetworkStatus) window.ehSetNetworkStatus(state); }
   function showAuth() { authPrompt.classList.add('visible'); authTokenInput.value = authToken; authTokenInput.focus(); }
   function hideAuth() { authPrompt.classList.remove('visible'); }
 
