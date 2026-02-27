@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/snarg/tr-engine/internal/config"
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/metrics"
 	"github.com/snarg/tr-engine/internal/mqttclient"
 )
 
@@ -71,6 +74,17 @@ func NewServer(opts ServerOptions) *Server {
 	}
 	r.Get("/api/v1/health", health.ServeHTTP)
 
+	// Prometheus metrics endpoint (unauthenticated, like /health)
+	if opts.Config.MetricsEnabled {
+		var ingestStats metrics.IngestStats
+		if opts.Live != nil {
+			ingestStats = &liveDataMetricsAdapter{live: opts.Live}
+		}
+		collector := metrics.NewCollector(opts.DB.Pool, ingestStats)
+		prometheus.MustRegister(collector)
+		r.Get("/metrics", promhttp.Handler().ServeHTTP)
+	}
+
 	// Web auth bootstrap — returns the token for web UI pages.
 	// No file extension in the URL so CDNs (Cloudflare) won't cache it.
 	if opts.Config.AuthToken != "" {
@@ -113,6 +127,9 @@ func NewServer(opts ServerOptions) *Server {
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(MaxBodySize(10 << 20)) // 10 MB for regular API requests
+		if opts.Config.MetricsEnabled {
+			r.Use(metrics.InstrumentHandler)
+		}
 		r.Use(BearerAuth(opts.Config.AuthToken, opts.Config.WriteToken))
 		r.Use(WriteAuth(opts.Config.WriteToken))
 		r.Use(ResponseTimeout(opts.Config.WriteTimeout))
@@ -147,6 +164,13 @@ func NewServer(opts ServerOptions) *Server {
 	r.Get("/api/v1/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/yaml")
 		w.Write(opts.OpenAPISpec)
+	})
+
+	// Favicon — simple SVG radio tower icon
+	r.Get("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#1a1a2e"/><path d="M16 8v16M12 24h8M10 12a8 8 0 0 1 12 0M7 9a12 12 0 0 1 18 0" stroke="#00d4ff" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="16" cy="8" r="2" fill="#00d4ff"/></svg>`))
 	})
 
 	r.Get("/api/v1/pages", PagesHandler(webFSys))
@@ -186,5 +210,42 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.log.Info().Msg("http server shutting down")
 	return s.http.Shutdown(ctx)
+}
+
+// liveDataMetricsAdapter adapts LiveDataSource to metrics.IngestStats.
+type liveDataMetricsAdapter struct {
+	live LiveDataSource
+}
+
+func (a *liveDataMetricsAdapter) MsgCount() int64 {
+	m := a.live.IngestMetrics()
+	if m == nil {
+		return 0
+	}
+	return m.MsgCount
+}
+
+func (a *liveDataMetricsAdapter) HandlerCounts() map[string]int64 {
+	m := a.live.IngestMetrics()
+	if m == nil {
+		return nil
+	}
+	return m.HandlerCounts
+}
+
+func (a *liveDataMetricsAdapter) ActiveCallCount() int {
+	m := a.live.IngestMetrics()
+	if m == nil {
+		return 0
+	}
+	return m.ActiveCalls
+}
+
+func (a *liveDataMetricsAdapter) SSESubscriberCount() int {
+	m := a.live.IngestMetrics()
+	if m == nil {
+		return 0
+	}
+	return m.SSESubscribers
 }
 

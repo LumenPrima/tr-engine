@@ -153,6 +153,14 @@ func (eb *EventBus) Publish(e EventData) {
 	eb.mu.RUnlock()
 }
 
+// SubscriberCount returns the current number of SSE subscribers.
+func (eb *EventBus) SubscriberCount() int {
+	eb.mu.RLock()
+	n := len(eb.subscribers)
+	eb.mu.RUnlock()
+	return n
+}
+
 func matchesFilter(e api.SSEEvent, f api.EventFilter) bool {
 	if f.EmergencyOnly && !e.Emergency {
 		return false

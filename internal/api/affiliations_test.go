@@ -23,6 +23,7 @@ func (m *mockLiveData) WatcherStatus() *WatcherStatusData               { return
 func (m *mockLiveData) TranscriptionStatus() *TranscriptionStatusData   { return nil }
 func (m *mockLiveData) EnqueueTranscription(int64) bool                 { return false }
 func (m *mockLiveData) TranscriptionQueueStats() *TranscriptionQueueStatsData { return nil }
+func (m *mockLiveData) IngestMetrics() *IngestMetricsData                     { return nil }
 
 // affiliationsResponse matches the JSON shape returned by ListAffiliations.
 type affiliationsResponse struct {

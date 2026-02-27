@@ -88,6 +88,9 @@ type Config struct {
 	LLMModel   string        `env:"LLM_MODEL"`
 	LLMTimeout time.Duration `env:"LLM_TIMEOUT" envDefault:"30s"`
 
+	// Prometheus metrics endpoint at /metrics (enabled by default)
+	MetricsEnabled bool `env:"METRICS_ENABLED" envDefault:"true"`
+
 	// Update checker (enabled by default — set UPDATE_CHECK=false to disable)
 	UpdateCheck    bool   `env:"UPDATE_CHECK" envDefault:"true"`
 	UpdateCheckURL string `env:"UPDATE_CHECK_URL" envDefault:"https://updates.luxprimatech.com/check"`

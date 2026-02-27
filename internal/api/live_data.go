@@ -39,6 +39,10 @@ type LiveDataSource interface {
 
 	// TranscriptionQueueStats returns queue statistics, or nil if not configured.
 	TranscriptionQueueStats() *TranscriptionQueueStatsData
+
+	// IngestMetrics returns pipeline metrics for the Prometheus collector.
+	// Returns nil if the pipeline is not running.
+	IngestMetrics() *IngestMetricsData
 }
 
 // CallUploader processes an uploaded call (audio + metadata).
@@ -147,6 +151,14 @@ type TranscriptionQueueStatsData struct {
 	Pending   int   `json:"pending"`
 	Completed int64 `json:"completed"`
 	Failed    int64 `json:"failed"`
+}
+
+// IngestMetricsData provides pipeline state for Prometheus metrics.
+type IngestMetricsData struct {
+	MsgCount       int64
+	ActiveCalls    int
+	HandlerCounts  map[string]int64
+	SSESubscribers int
 }
 
 // EventFilter specifies which events an SSE subscriber wants to receive.

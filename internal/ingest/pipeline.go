@@ -1162,6 +1162,41 @@ func (p *Pipeline) RewriteSystemID(oldSystemID, newSystemID int) {
 	p.identity.RewriteSystemID(oldSystemID, newSystemID)
 }
 
+// MsgCount returns the total number of MQTT messages processed.
+func (p *Pipeline) MsgCount() int64 {
+	return p.msgCount.Load()
+}
+
+// HandlerCounts returns a snapshot of per-handler message counts.
+func (p *Pipeline) HandlerCounts() map[string]int64 {
+	counts := make(map[string]int64)
+	p.handlerCount.Range(func(key, value any) bool {
+		counts[key.(string)] = value.(*atomic.Int64).Load()
+		return true
+	})
+	return counts
+}
+
+// ActiveCallCount returns the number of currently in-progress calls.
+func (p *Pipeline) ActiveCallCount() int {
+	return p.activeCalls.Len()
+}
+
+// SSESubscriberCount returns the number of active SSE subscribers.
+func (p *Pipeline) SSESubscriberCount() int {
+	return p.eventBus.SubscriberCount()
+}
+
+// IngestMetrics returns pipeline state for Prometheus metrics.
+func (p *Pipeline) IngestMetrics() *api.IngestMetricsData {
+	return &api.IngestMetricsData{
+		MsgCount:       p.MsgCount(),
+		ActiveCalls:    p.ActiveCallCount(),
+		HandlerCounts:  p.HandlerCounts(),
+		SSESubscribers: p.SSESubscriberCount(),
+	}
+}
+
 // PublishEvent is a convenience method to publish an event through the event bus.
 func (p *Pipeline) PublishEvent(e EventData) {
 	if p.eventBus != nil {
