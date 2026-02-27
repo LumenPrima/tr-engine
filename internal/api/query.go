@@ -28,7 +28,7 @@ func (h *QueryHandler) ExecuteQuery(w http.ResponseWriter, r *http.Request) {
 
 	var req queryRequest
 	if err := DecodeJSON(r, &req); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid request body")
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid request body")
 		return
 	}
 
@@ -62,7 +62,7 @@ func (h *QueryHandler) ExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	result, err := h.db.ExecuteReadOnlyQuery(r.Context(), sql, req.Params, maxRows)
 	if err != nil {
 		log.Warn().Err(err).Str("sql", sql).Msg("query failed")
-		WriteErrorDetail(w, http.StatusBadRequest, "query failed", err.Error())
+		WriteErrorWithCodeDetail(w, http.StatusBadRequest, ErrQueryFailed, "query failed", err.Error())
 		return
 	}
 

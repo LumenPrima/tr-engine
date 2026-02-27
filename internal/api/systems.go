@@ -57,7 +57,7 @@ func (h *SystemsHandler) UpdateSystem(w http.ResponseWriter, r *http.Request) {
 		Wacn  *string `json:"wacn"`
 	}
 	if err := DecodeJSON(r, &patch); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid request body")
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid request body")
 		return
 	}
 
@@ -105,7 +105,7 @@ func (h *SystemsHandler) UpdateSite(w http.ResponseWriter, r *http.Request) {
 		P25SiteID  *int    `json:"p25_site_id"`
 	}
 	if err := DecodeJSON(r, &patch); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid request body")
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid request body")
 		return
 	}
 

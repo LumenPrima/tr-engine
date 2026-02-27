@@ -35,7 +35,7 @@ func (h *StatsHandler) GetDecodeRates(w http.ResponseWriter, r *http.Request) {
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 	if v, ok := QueryInt(r, "limit"); ok {
@@ -61,7 +61,7 @@ func (h *StatsHandler) GetDecodeRates(w http.ResponseWriter, r *http.Request) {
 func (h *StatsHandler) ListTrunkingMessages(w http.ResponseWriter, r *http.Request) {
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	filter := database.TrunkingMessageFilter{
@@ -82,7 +82,7 @@ func (h *StatsHandler) ListTrunkingMessages(w http.ResponseWriter, r *http.Reque
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 
@@ -101,7 +101,7 @@ func (h *StatsHandler) ListTrunkingMessages(w http.ResponseWriter, r *http.Reque
 func (h *StatsHandler) ListConsoleMessages(w http.ResponseWriter, r *http.Request) {
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	filter := database.ConsoleMessageFilter{
@@ -121,7 +121,7 @@ func (h *StatsHandler) ListConsoleMessages(w http.ResponseWriter, r *http.Reques
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 
@@ -140,7 +140,7 @@ func (h *StatsHandler) ListConsoleMessages(w http.ResponseWriter, r *http.Reques
 func (h *StatsHandler) GetTalkgroupActivity(w http.ResponseWriter, r *http.Request) {
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 

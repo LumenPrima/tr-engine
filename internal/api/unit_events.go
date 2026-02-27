@@ -42,7 +42,7 @@ func (h *UnitEventsHandler) ListUnitEventsGlobal(w http.ResponseWriter, r *http.
 
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	sort := ParseSort(r, "-time", unitEventSortFields)
@@ -74,7 +74,7 @@ func (h *UnitEventsHandler) ListUnitEventsGlobal(w http.ResponseWriter, r *http.
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 

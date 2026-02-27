@@ -36,7 +36,7 @@ func (h *UploadHandler) Routes(r chi.Router) {
 // Auto-detects the format from form field names.
 func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form: " + err.Error()})
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid multipart form: "+err.Error())
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
@@ -52,9 +52,7 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	format := detectUploadFormat(fieldNames)
 	if format == "" {
-		WriteJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "unrecognized upload format: expected rdio-scanner or OpenMHz fields",
-		})
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrBadRequest, "unrecognized upload format: expected rdio-scanner or OpenMHz fields")
 		return
 	}
 
@@ -78,7 +76,7 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		defer file.Close()
 		data, readErr := io.ReadAll(file)
 		if readErr != nil {
-			WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "failed to read audio file"})
+			WriteError(w, http.StatusBadRequest, "failed to read audio file")
 			return
 		}
 		audioData = data
@@ -97,11 +95,11 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	result, err := h.uploader.ProcessUpload(r.Context(), h.instanceID, format, fields, audioData, audioFilename)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate call") {
-			WriteJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			WriteErrorWithCode(w, http.StatusConflict, ErrDuplicate, err.Error())
 			return
 		}
 		h.log.Error().Err(err).Str("format", format).Msg("upload processing failed")
-		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 

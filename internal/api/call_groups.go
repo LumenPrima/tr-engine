@@ -21,7 +21,7 @@ func NewCallGroupsHandler(db *database.DB, trAudioDir string) *CallGroupsHandler
 func (h *CallGroupsHandler) ListCallGroups(w http.ResponseWriter, r *http.Request) {
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -39,7 +39,7 @@ func (h *CallGroupsHandler) ListCallGroups(w http.ResponseWriter, r *http.Reques
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 

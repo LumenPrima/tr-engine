@@ -53,7 +53,7 @@ func Recoverer(next http.Handler) http.Handler {
 				log.Error().Interface("panic", rv).Msg("recovered from panic")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, `{"error":"internal server error"}`)
+				fmt.Fprintf(w, `{"code":"internal_error","error":"internal server error"}`)
 			}
 		}()
 		next.ServeHTTP(w, r)
@@ -105,9 +105,7 @@ func RequireAuth(token string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token == "" {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				fmt.Fprintf(w, `{"error":"this endpoint requires AUTH_TOKEN to be configured"}`)
+				WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, "this endpoint requires AUTH_TOKEN to be configured")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -148,10 +146,8 @@ func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := clientIP(r)
 			if !getLimiter(ip).Allow() {
-				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "1")
-				w.WriteHeader(http.StatusTooManyRequests)
-				fmt.Fprintf(w, `{"error":"rate limit exceeded"}`)
+				WriteErrorWithCode(w, http.StatusTooManyRequests, ErrRateLimited, "rate limit exceeded")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -170,7 +166,7 @@ func ResponseTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			h := http.TimeoutHandler(next, timeout, `{"error":"request timeout"}`)
+			h := http.TimeoutHandler(next, timeout, `{"code":"request_timeout","error":"request timeout"}`)
 			h.ServeHTTP(w, r)
 		})
 	}
@@ -252,9 +248,7 @@ func UploadAuth(token string) func(http.Handler) http.Handler {
 				}
 			}
 
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			fmt.Fprintf(w, `{"error":"unauthorized"}`)
+			WriteError(w, http.StatusUnauthorized, "unauthorized")
 		})
 	}
 }
@@ -285,9 +279,7 @@ func BearerAuth(tokens ...string) func(http.Handler) http.Handler {
 				}
 			}
 
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			fmt.Fprintf(w, `{"error":"unauthorized"}`)
+			WriteError(w, http.StatusUnauthorized, "unauthorized")
 		})
 	}
 }
@@ -311,9 +303,7 @@ func WriteAuth(writeToken string) func(http.Handler) http.Handler {
 
 			provided := extractBearerToken(r)
 			if subtle.ConstantTimeCompare([]byte(provided), []byte(writeToken)) != 1 {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				fmt.Fprintf(w, `{"error":"write operations require WRITE_TOKEN"}`)
+				WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, "write operations require WRITE_TOKEN")
 				return
 			}
 

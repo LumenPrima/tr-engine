@@ -18,20 +18,76 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// ErrorCode is a machine-readable error code for programmatic handling.
+type ErrorCode = string
+
+const (
+	ErrBadRequest       ErrorCode = "bad_request"
+	ErrUnauthorized     ErrorCode = "unauthorized"
+	ErrForbidden        ErrorCode = "forbidden"
+	ErrNotFound         ErrorCode = "not_found"
+	ErrConflict         ErrorCode = "conflict"
+	ErrRateLimited      ErrorCode = "rate_limited"
+	ErrInternalError    ErrorCode = "internal_error"
+	ErrServiceUnavail   ErrorCode = "service_unavailable"
+	ErrInvalidBody      ErrorCode = "invalid_body"
+	ErrInvalidParameter ErrorCode = "invalid_parameter"
+	ErrInvalidTimeRange ErrorCode = "invalid_time_range"
+	ErrQueryFailed      ErrorCode = "query_failed"
+	ErrAmbiguousID      ErrorCode = "ambiguous_id"
+	ErrDuplicate        ErrorCode = "duplicate"
+	ErrRequestTimeout   ErrorCode = "request_timeout"
+)
+
+// codeFromStatus returns a default error code for an HTTP status code.
+func codeFromStatus(status int) ErrorCode {
+	switch status {
+	case http.StatusBadRequest:
+		return ErrBadRequest
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	case http.StatusNotFound:
+		return ErrNotFound
+	case http.StatusConflict:
+		return ErrConflict
+	case http.StatusTooManyRequests:
+		return ErrRateLimited
+	case http.StatusInternalServerError:
+		return ErrInternalError
+	case http.StatusServiceUnavailable:
+		return ErrServiceUnavail
+	default:
+		return ErrInternalError
+	}
+}
+
 // ErrorResponse is the standard error response body.
 type ErrorResponse struct {
-	Error  string `json:"error"`
-	Detail string `json:"detail,omitempty"`
+	Code   ErrorCode `json:"code"`
+	Error  string    `json:"error"`
+	Detail string    `json:"detail,omitempty"`
 }
 
-// WriteError writes a JSON error response.
+// WriteError writes a JSON error response with an auto-derived error code.
 func WriteError(w http.ResponseWriter, status int, msg string) {
-	WriteJSON(w, status, ErrorResponse{Error: msg})
+	WriteJSON(w, status, ErrorResponse{Code: codeFromStatus(status), Error: msg})
 }
 
-// WriteErrorDetail writes a JSON error response with detail.
+// WriteErrorDetail writes a JSON error response with detail and auto-derived code.
 func WriteErrorDetail(w http.ResponseWriter, status int, msg, detail string) {
-	WriteJSON(w, status, ErrorResponse{Error: msg, Detail: detail})
+	WriteJSON(w, status, ErrorResponse{Code: codeFromStatus(status), Error: msg, Detail: detail})
+}
+
+// WriteErrorWithCode writes a JSON error response with a specific error code.
+func WriteErrorWithCode(w http.ResponseWriter, status int, code ErrorCode, msg string) {
+	WriteJSON(w, status, ErrorResponse{Code: code, Error: msg})
+}
+
+// WriteErrorWithCodeDetail writes a JSON error response with a specific code and detail.
+func WriteErrorWithCodeDetail(w http.ResponseWriter, status int, code ErrorCode, msg, detail string) {
+	WriteJSON(w, status, ErrorResponse{Code: code, Error: msg, Detail: detail})
 }
 
 // Pagination holds parsed pagination parameters.

@@ -29,7 +29,7 @@ var unitSortFields = map[string]string{
 func (h *UnitsHandler) ListUnits(w http.ResponseWriter, r *http.Request) {
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	sort := ParseSort(r, "unit_id", unitSortFields)
@@ -68,7 +68,7 @@ func (h *UnitsHandler) ListUnits(w http.ResponseWriter, r *http.Request) {
 func (h *UnitsHandler) GetUnit(w http.ResponseWriter, r *http.Request) {
 	cid, err := ParseCompositeID(r, "id")
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *UnitsHandler) GetUnit(w http.ResponseWriter, r *http.Request) {
 func (h *UnitsHandler) UpdateUnit(w http.ResponseWriter, r *http.Request) {
 	cid, err := ParseCompositeID(r, "id")
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -119,7 +119,7 @@ func (h *UnitsHandler) UpdateUnit(w http.ResponseWriter, r *http.Request) {
 		AlphaTagSource *string `json:"alpha_tag_source"`
 	}
 	if err := DecodeJSON(r, &patch); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid request body")
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid request body")
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *UnitsHandler) UpdateUnit(w http.ResponseWriter, r *http.Request) {
 func (h *UnitsHandler) ListUnitCalls(w http.ResponseWriter, r *http.Request) {
 	cid, err := ParseCompositeID(r, "id")
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -172,7 +172,7 @@ func (h *UnitsHandler) ListUnitCalls(w http.ResponseWriter, r *http.Request) {
 
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	filter := database.CallFilter{
@@ -188,7 +188,7 @@ func (h *UnitsHandler) ListUnitCalls(w http.ResponseWriter, r *http.Request) {
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 
@@ -209,7 +209,7 @@ func (h *UnitsHandler) ListUnitCalls(w http.ResponseWriter, r *http.Request) {
 func (h *UnitsHandler) ListUnitEvents(w http.ResponseWriter, r *http.Request) {
 	cid, err := ParseCompositeID(r, "id")
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -228,7 +228,7 @@ func (h *UnitsHandler) ListUnitEvents(w http.ResponseWriter, r *http.Request) {
 
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	filter := database.UnitEventFilter{
@@ -250,7 +250,7 @@ func (h *UnitsHandler) ListUnitEvents(w http.ResponseWriter, r *http.Request) {
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 

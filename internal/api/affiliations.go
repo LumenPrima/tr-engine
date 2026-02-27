@@ -94,7 +94,7 @@ func (h *AffiliationsHandler) ListAffiliations(w http.ResponseWriter, r *http.Re
 	// Apply pagination
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	start := p.Offset

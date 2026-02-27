@@ -34,7 +34,7 @@ var talkgroupSortFields = map[string]string{
 func (h *TalkgroupsHandler) ListTalkgroups(w http.ResponseWriter, r *http.Request) {
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	sort := ParseSort(r, "alpha_tag", talkgroupSortFields)
@@ -75,7 +75,7 @@ func (h *TalkgroupsHandler) ListTalkgroups(w http.ResponseWriter, r *http.Reques
 func (h *TalkgroupsHandler) GetTalkgroup(w http.ResponseWriter, r *http.Request) {
 	cid, err := ParseCompositeID(r, "id")
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -104,7 +104,7 @@ func (h *TalkgroupsHandler) GetTalkgroup(w http.ResponseWriter, r *http.Request)
 func (h *TalkgroupsHandler) UpdateTalkgroup(w http.ResponseWriter, r *http.Request) {
 	cid, err := ParseCompositeID(r, "id")
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -130,7 +130,7 @@ func (h *TalkgroupsHandler) UpdateTalkgroup(w http.ResponseWriter, r *http.Reque
 		Priority       *int    `json:"priority"`
 	}
 	if err := DecodeJSON(r, &patch); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid request body")
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid request body")
 		return
 	}
 
@@ -185,7 +185,7 @@ func (h *TalkgroupsHandler) UpdateTalkgroup(w http.ResponseWriter, r *http.Reque
 func (h *TalkgroupsHandler) ListTalkgroupCalls(w http.ResponseWriter, r *http.Request) {
 	cid, err := ParseCompositeID(r, "id")
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -204,7 +204,7 @@ func (h *TalkgroupsHandler) ListTalkgroupCalls(w http.ResponseWriter, r *http.Re
 
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	filter := database.CallFilter{
@@ -220,7 +220,7 @@ func (h *TalkgroupsHandler) ListTalkgroupCalls(w http.ResponseWriter, r *http.Re
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 
@@ -241,7 +241,7 @@ func (h *TalkgroupsHandler) ListTalkgroupCalls(w http.ResponseWriter, r *http.Re
 func (h *TalkgroupsHandler) ListTalkgroupUnits(w http.ResponseWriter, r *http.Request) {
 	cid, err := ParseCompositeID(r, "id")
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -260,7 +260,7 @@ func (h *TalkgroupsHandler) ListTalkgroupUnits(w http.ResponseWriter, r *http.Re
 
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 	window := 60
@@ -309,7 +309,7 @@ func (h *TalkgroupsHandler) GetEncryptionStats(w http.ResponseWriter, r *http.Re
 func (h *TalkgroupsHandler) ListTalkgroupDirectory(w http.ResponseWriter, r *http.Request) {
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 

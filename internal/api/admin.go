@@ -23,7 +23,7 @@ func (h *AdminHandler) MergeSystems(w http.ResponseWriter, r *http.Request) {
 		TargetID int `json:"target_id"`
 	}
 	if err := DecodeJSON(r, &req); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid request body")
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid request body")
 		return
 	}
 

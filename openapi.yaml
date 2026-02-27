@@ -2667,8 +2667,28 @@ components:
 
     Error:
       type: object
-      required: [error]
+      required: [code, error]
       properties:
+        code:
+          type: string
+          description: Machine-readable error code for programmatic handling
+          example: not_found
+          enum:
+            - bad_request
+            - unauthorized
+            - forbidden
+            - not_found
+            - conflict
+            - rate_limited
+            - internal_error
+            - service_unavailable
+            - invalid_body
+            - invalid_parameter
+            - invalid_time_range
+            - query_failed
+            - ambiguous_id
+            - duplicate
+            - request_timeout
         error:
           type: string
           example: Resource not found
@@ -2678,8 +2698,11 @@ components:
 
     AmbiguousError:
       type: object
-      required: [error, matches]
+      required: [code, error, matches]
       properties:
+        code:
+          type: string
+          example: ambiguous_id
         error:
           type: string
           example: "Ambiguous ID 9178: exists in multiple systems"

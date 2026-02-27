@@ -61,6 +61,7 @@ func ParseCompositeID(r *http.Request, param string) (CompositeID, error) {
 
 // AmbiguousErrorResponse is returned when a plain ID matches multiple systems.
 type AmbiguousErrorResponse struct {
+	Code    ErrorCode                 `json:"code"`
 	Error   string                    `json:"error"`
 	Matches []database.AmbiguousMatch `json:"matches"`
 }
@@ -68,6 +69,7 @@ type AmbiguousErrorResponse struct {
 // WriteAmbiguous writes a 409 response listing systems where the entity was found.
 func WriteAmbiguous(w http.ResponseWriter, entityID int, matches []database.AmbiguousMatch) {
 	WriteJSON(w, http.StatusConflict, AmbiguousErrorResponse{
+		Code:    ErrAmbiguousID,
 		Error:   fmt.Sprintf("Ambiguous ID %d: exists in multiple systems", entityID),
 		Matches: matches,
 	})

@@ -80,7 +80,7 @@ func (h *TranscriptionsHandler) SubmitCorrection(w http.ResponseWriter, r *http.
 		Words    json.RawMessage `json:"words"`    // optional pre-built segments
 	}
 	if err := DecodeJSON(r, &body); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid request body")
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid request body")
 		return
 	}
 	if body.Text == "" {
@@ -194,7 +194,7 @@ func (h *TranscriptionsHandler) SearchTranscriptions(w http.ResponseWriter, r *h
 
 	p, err := ParsePagination(r)
 	if err != nil {
-		WriteError(w, http.StatusBadRequest, err.Error())
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, err.Error())
 		return
 	}
 
@@ -212,7 +212,7 @@ func (h *TranscriptionsHandler) SearchTranscriptions(w http.ResponseWriter, r *h
 		filter.EndTime = &t
 	}
 	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
-		WriteError(w, http.StatusBadRequest, msg)
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidTimeRange, msg)
 		return
 	}
 	if v, ok := QueryBool(r, "primary_only"); ok {

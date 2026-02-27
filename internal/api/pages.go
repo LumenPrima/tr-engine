@@ -133,7 +133,7 @@ func SavePageHandler(webDir string) http.HandlerFunc {
 
 		var req savePageRequest
 		if err := DecodeJSON(r, &req); err != nil {
-			WriteError(w, http.StatusBadRequest, "invalid JSON body")
+			WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid JSON body")
 			return
 		}
 
