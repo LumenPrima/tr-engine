@@ -219,6 +219,10 @@ func (h *TalkgroupsHandler) ListTalkgroupCalls(w http.ResponseWriter, r *http.Re
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	calls, total, err := h.db.ListCalls(r.Context(), filter)
 	if err != nil {

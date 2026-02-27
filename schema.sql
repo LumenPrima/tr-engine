@@ -907,4 +907,35 @@ COMMENT ON TABLE decode_rates IS
  * $$);
  */
 
+-- ============================================================
+-- Additional Indexes (added post-initial schema)
+-- ============================================================
+
+-- Speed up "recently updated talkgroups" queries
+CREATE INDEX IF NOT EXISTS idx_talkgroups_updated_at ON talkgroups (updated_at DESC);
+
+-- Speed up "recently updated call groups" queries
+CREATE INDEX IF NOT EXISTS idx_call_groups_updated_at ON call_groups (updated_at DESC);
+
+-- Speed up "get primary transcription for call" lookups
+CREATE INDEX IF NOT EXISTS idx_transcriptions_primary_lookup
+    ON transcriptions (call_id, is_primary) WHERE is_primary;
+
+-- ============================================================
+-- Check Constraints (added post-initial schema)
+-- ============================================================
+
+-- Constrain alpha_tag_source to known values
+DO $$ BEGIN
+    ALTER TABLE talkgroups ADD CONSTRAINT chk_talkgroups_alpha_tag_source
+        CHECK (alpha_tag_source IS NULL OR alpha_tag_source IN ('manual', 'csv', 'mqtt', 'directory'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE units ADD CONSTRAINT chk_units_alpha_tag_source
+        CHECK (alpha_tag_source IS NULL OR alpha_tag_source IN ('manual', 'csv', 'mqtt'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 COMMIT;

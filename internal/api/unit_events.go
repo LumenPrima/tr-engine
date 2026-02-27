@@ -73,6 +73,10 @@ func (h *UnitEventsHandler) ListUnitEventsGlobal(w http.ResponseWriter, r *http.
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	// Enforce max 24h range
 	if filter.StartTime != nil && filter.EndTime != nil {

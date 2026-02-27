@@ -34,6 +34,10 @@ func (h *StatsHandler) GetDecodeRates(w http.ResponseWriter, r *http.Request) {
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
+	}
 	if v, ok := QueryInt(r, "limit"); ok {
 		if v < 1 || v > 10000 {
 			WriteError(w, http.StatusBadRequest, "limit must be between 1 and 10000")
@@ -77,6 +81,10 @@ func (h *StatsHandler) ListTrunkingMessages(w http.ResponseWriter, r *http.Reque
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	messages, total, err := h.db.ListTrunkingMessages(r.Context(), filter)
 	if err != nil {
@@ -111,6 +119,10 @@ func (h *StatsHandler) ListConsoleMessages(w http.ResponseWriter, r *http.Reques
 	}
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
+	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
 	}
 
 	messages, total, err := h.db.ListConsoleMessages(r.Context(), filter)

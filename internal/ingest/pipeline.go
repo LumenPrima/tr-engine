@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/snarg/tr-engine/internal/api"
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/metrics"
 	"github.com/snarg/tr-engine/internal/transcribe"
 )
 
@@ -639,6 +640,7 @@ func (p *Pipeline) ensurePartitionsFor(t time.Time) {
 // HandleMessage is the entry point called by the MQTT client for each message.
 func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 	p.msgCount.Add(1)
+	metrics.MQTTMessagesTotal.Inc()
 
 	route := ParseTopic(topic)
 
@@ -667,6 +669,7 @@ func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 func (p *Pipeline) incHandler(name string) {
 	v, _ := p.handlerCount.LoadOrStore(name, &atomic.Int64{})
 	v.(*atomic.Int64).Add(1)
+	metrics.MQTTHandlerMessagesTotal.WithLabelValues(name).Inc()
 }
 
 func (p *Pipeline) dispatch(route *Route, topic string, payload []byte, env *Envelope) {

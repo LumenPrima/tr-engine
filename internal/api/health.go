@@ -20,10 +20,21 @@ type HealthResponse struct {
 	Version        string                `json:"version"`
 	UptimeSeconds  int64                 `json:"uptime_seconds"`
 	Checks         map[string]string     `json:"checks"`
+	Database       *DatabasePoolStats    `json:"database_pool,omitempty"`
 	TrunkRecorders []TRInstanceStatusData `json:"trunk_recorders,omitempty"`
 	UpdateAvailable *bool                `json:"update_available,omitempty"`
 	LatestVersion   string               `json:"latest_version,omitempty"`
 	ReleaseURL      string               `json:"release_url,omitempty"`
+}
+
+type DatabasePoolStats struct {
+	MaxConns          int32 `json:"max_conns"`
+	TotalConns        int32 `json:"total_conns"`
+	AcquiredConns     int32 `json:"acquired_conns"`
+	IdleConns         int32 `json:"idle_conns"`
+	ConstructingConns int32 `json:"constructing_conns"`
+	AcquireCount      int64 `json:"acquire_count"`
+	EmptyAcquireCount int64 `json:"empty_acquire_count"`
 }
 
 type updateStatus struct {
@@ -193,11 +204,24 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		trInstances = h.live.TRInstanceStatus()
 	}
 
+	// Database pool stats
+	stat := h.db.Pool.Stat()
+	poolStats := &DatabasePoolStats{
+		MaxConns:          stat.MaxConns(),
+		TotalConns:        stat.TotalConns(),
+		AcquiredConns:     stat.AcquiredConns(),
+		IdleConns:         stat.IdleConns(),
+		ConstructingConns: stat.ConstructingConns(),
+		AcquireCount:      stat.AcquireCount(),
+		EmptyAcquireCount: stat.EmptyAcquireCount(),
+	}
+
 	resp := HealthResponse{
 		Status:         status,
 		Version:        h.version,
 		UptimeSeconds:  int64(time.Since(h.startTime).Seconds()),
 		Checks:         checks,
+		Database:       poolStats,
 		TrunkRecorders: trInstances,
 	}
 

@@ -194,6 +194,16 @@ func QueryTime(r *http.Request, name string) (time.Time, bool) {
 	return t, true
 }
 
+// ValidateTimeRange checks that start_time is not after end_time.
+// Returns an error message if invalid, empty string if OK.
+// Callers should check after parsing both QueryTime values.
+func ValidateTimeRange(startTime, endTime *time.Time) string {
+	if startTime != nil && endTime != nil && startTime.After(*endTime) {
+		return "start_time must be before end_time"
+	}
+	return ""
+}
+
 // QueryIntList extracts a comma-separated list of ints from a query param.
 func QueryIntList(r *http.Request, name string) []int {
 	v := r.URL.Query().Get(name)

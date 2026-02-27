@@ -38,6 +38,10 @@ func (h *CallGroupsHandler) ListCallGroups(w http.ResponseWriter, r *http.Reques
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	groups, total, err := h.db.ListCallGroups(r.Context(), filter)
 	if err != nil {

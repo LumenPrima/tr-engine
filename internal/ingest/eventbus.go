@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/snarg/tr-engine/internal/api"
+	"github.com/snarg/tr-engine/internal/metrics"
 )
 
 // EventBus provides pub-sub event distribution for SSE subscribers.
@@ -118,6 +119,8 @@ func (eb *EventBus) Publish(e EventData) {
 	if err != nil {
 		return
 	}
+
+	metrics.SSEEventsPublishedTotal.Inc()
 
 	seq := eb.seq.Add(1)
 	event := api.SSEEvent{

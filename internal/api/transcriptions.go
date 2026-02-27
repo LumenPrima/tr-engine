@@ -211,6 +211,10 @@ func (h *TranscriptionsHandler) SearchTranscriptions(w http.ResponseWriter, r *h
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
+	}
 	if v, ok := QueryBool(r, "primary_only"); ok {
 		filter.PrimaryOnly = &v
 	}

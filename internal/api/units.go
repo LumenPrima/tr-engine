@@ -187,6 +187,10 @@ func (h *UnitsHandler) ListUnitCalls(w http.ResponseWriter, r *http.Request) {
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	calls, total, err := h.db.ListCalls(r.Context(), filter)
 	if err != nil {
@@ -244,6 +248,10 @@ func (h *UnitsHandler) ListUnitEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
+	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
 	}
 
 	events, total, err := h.db.ListUnitEvents(r.Context(), filter)

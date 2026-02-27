@@ -79,6 +79,10 @@ func (h *CallsHandler) ListCalls(w http.ResponseWriter, r *http.Request) {
 	if t, ok := QueryTime(r, "end_time"); ok {
 		filter.EndTime = &t
 	}
+	if msg := ValidateTimeRange(filter.StartTime, filter.EndTime); msg != "" {
+		WriteError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	calls, total, err := h.db.ListCalls(r.Context(), filter)
 	if err != nil {
@@ -214,9 +218,26 @@ func (h *CallsHandler) GetCallFrequencies(w http.ResponseWriter, r *http.Request
 		WriteError(w, http.StatusNotFound, "call not found")
 		return
 	}
+
+	total := len(freqs)
+	p, _ := ParsePagination(r)
+	if p.Offset > 0 || p.Limit < total {
+		if p.Offset >= total {
+			freqs = []database.CallFrequencyAPI{}
+		} else {
+			end := p.Offset + p.Limit
+			if end > total {
+				end = total
+			}
+			freqs = freqs[p.Offset:end]
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"frequencies": freqs,
-		"total":       len(freqs),
+		"total":       total,
+		"limit":       p.Limit,
+		"offset":      p.Offset,
 	})
 }
 
@@ -233,9 +254,26 @@ func (h *CallsHandler) GetCallTransmissions(w http.ResponseWriter, r *http.Reque
 		WriteError(w, http.StatusNotFound, "call not found")
 		return
 	}
+
+	total := len(txs)
+	p, _ := ParsePagination(r)
+	if p.Offset > 0 || p.Limit < total {
+		if p.Offset >= total {
+			txs = []database.CallTransmissionAPI{}
+		} else {
+			end := p.Offset + p.Limit
+			if end > total {
+				end = total
+			}
+			txs = txs[p.Offset:end]
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"transmissions": txs,
-		"total":         len(txs),
+		"total":         total,
+		"limit":         p.Limit,
+		"offset":        p.Offset,
 	})
 }
 
