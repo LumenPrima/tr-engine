@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -128,30 +129,66 @@ func (h *HealthHandler) checkForUpdate(url string, firstCheck bool) {
 	}
 
 	var result struct {
-		UpdateAvailable bool   `json:"update_available"`
-		Latest          string `json:"latest"`
-		URL             string `json:"url"`
+		Latest string `json:"latest"`
+		URL    string `json:"url"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		h.log.Debug().Err(err).Msg("update check response parse failed")
 		return
 	}
 
+	// Compare versions locally — the server response is for stats, not authority
+	currentVer := h.version
+	if idx := strings.Index(currentVer, " "); idx > 0 {
+		currentVer = currentVer[:idx]
+	}
+	available := compareVersions(result.Latest, currentVer) > 0
+
 	h.mu.Lock()
 	h.update = &updateStatus{
-		Available:     result.UpdateAvailable,
+		Available:     available,
 		LatestVersion: result.Latest,
 		ReleaseURL:    result.URL,
 	}
 	h.mu.Unlock()
 
-	if firstCheck && result.UpdateAvailable {
+	if firstCheck && available {
 		h.log.Warn().
-			Str("current", h.version).
+			Str("current", currentVer).
 			Str("latest", result.Latest).
 			Str("release_url", result.URL).
 			Msg("a newer version of tr-engine is available")
 	}
+}
+
+// compareVersions compares two version strings like "v0.8.8.1" or "0.8.8".
+// Returns >0 if a > b, <0 if a < b, 0 if equal.
+// Handles variable-length segments (0.8.8 < 0.8.8.1).
+func compareVersions(a, b string) int {
+	a = strings.TrimPrefix(a, "v")
+	b = strings.TrimPrefix(b, "v")
+
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+
+	maxLen := len(aParts)
+	if len(bParts) > maxLen {
+		maxLen = len(bParts)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		var aNum, bNum int
+		if i < len(aParts) {
+			aNum, _ = strconv.Atoi(aParts[i])
+		}
+		if i < len(bParts) {
+			bNum, _ = strconv.Atoi(bParts[i])
+		}
+		if aNum != bNum {
+			return aNum - bNum
+		}
+	}
+	return 0
 }
 
 func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
