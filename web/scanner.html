@@ -198,6 +198,23 @@ body::after {
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
+.np-speed-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: center;
+  transition: all 0.15s;
+}
+.np-speed-btn:active { background: var(--bg-elevated); }
+.np-speed-btn.modified { color: var(--accent); border-color: var(--accent); }
 .np-progress {
   height: 6px;
   background: var(--border);
@@ -211,6 +228,19 @@ body::after {
   border-radius: 3px;
   width: 0%;
   transition: width 0.15s linear;
+}
+.np-progress.loading .np-progress-fill {
+  width: 100% !important;
+  opacity: 0.4;
+  animation: progress-pulse 1.2s ease-in-out infinite;
+}
+@keyframes progress-pulse {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.5; }
+}
+.np-play-btn.error {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* ── Queue indicator ── */
@@ -703,6 +733,7 @@ body { overscroll-behavior-y: contain; }
         <div class="np-channel" id="np-channel"></div>
       </div>
       <div class="np-time" id="np-time">0:00 / 0:00</div>
+      <button class="np-speed-btn" id="np-speed-btn" title="Playback speed">1x</button>
     </div>
     <div class="np-progress" id="np-progress">
       <div class="np-progress-fill" id="np-progress-fill"></div>
@@ -917,6 +948,7 @@ let settings = {
   volume: 80,
   showEncrypted: false,
   compact: false,
+  playbackSpeed: 1,
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -946,6 +978,8 @@ const sbTime = document.getElementById('sb-time');
 // Audio
 const audioEl = new Audio();
 audioEl.preload = 'auto';
+const npSpeedBtn = document.getElementById('np-speed-btn');
+const PLAYBACK_SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 let currentCallId = null;
 let currentFeedItem = null;
 let lastPlayedFeedItem = null;  // remembers last item for sequential playback
@@ -1211,12 +1245,12 @@ function playCall(callId, nick, channel, feedItem) {
   // Toggle if same call
   if (currentCallId === callId && !audioEl.paused) {
     audioEl.pause();
-    npPlayBtn.innerHTML = '&#9654;';
+    npPlayBtn.textContent = '\u25B6';
     return;
   }
   if (currentCallId === callId && audioEl.paused && audioEl.src) {
     audioEl.play();
-    npPlayBtn.innerHTML = '&#9646;&#9646;';
+    npPlayBtn.textContent = '\u23F8';
     return;
   }
 
@@ -1228,25 +1262,27 @@ function playCall(callId, nick, channel, feedItem) {
 
   if (feedItem) updateFeedItemPlaying(feedItem.id, true);
 
-  // Update now playing
+  // Update now playing — clear error state from previous playback
   nowPlayingEl.classList.add('has-audio');
+  npPlayBtn.classList.remove('error');
   npNick.textContent = nick || '?';
   npNick.style.color = nickColor(nick || '');
   npChannel.textContent = channel || '';
   npTime.textContent = '0:00 / --:--';
   npProgressFill.style.width = '0%';
-  npPlayBtn.innerHTML = '&#8987;';
+  npPlayBtn.textContent = '\u23F3';
 
   audioEl.volume = settings.volume / 100;
+  audioEl.playbackRate = settings.playbackSpeed;
   const authToken = window.trAuth && window.trAuth.getToken();
   const audioSrc = `${API_BASE}/calls/${callId}/audio`;
   audioEl.src = authToken ? audioSrc + '?token=' + encodeURIComponent(authToken) : audioSrc;
   audioEl.load();
   audioEl.play().then(() => {
-    npPlayBtn.innerHTML = '&#9646;&#9646;';
+    npPlayBtn.textContent = '\u23F8';
     startProgressUpdate();
   }).catch(err => {
-    npPlayBtn.innerHTML = '&#9654;';
+    npPlayBtn.textContent = '\u25B6';
     npTime.textContent = err.name === 'NotAllowedError' ? 'tap to play' : 'no audio';
     // On autoplay failure, try advancing queue
     if (scannerActive) setTimeout(playNext, 500);
@@ -1270,11 +1306,11 @@ npPlayBtn.addEventListener('click', () => {
   if (!audioEl.src) return;
   if (audioEl.paused) {
     audioEl.play();
-    npPlayBtn.innerHTML = '&#9646;&#9646;';
+    npPlayBtn.textContent = '\u23F8';
     startProgressUpdate();
   } else {
     audioEl.pause();
-    npPlayBtn.innerHTML = '&#9654;';
+    npPlayBtn.textContent = '\u25B6';
   }
 });
 
@@ -1287,7 +1323,7 @@ npProgress.addEventListener('click', (e) => {
 });
 
 audioEl.addEventListener('ended', () => {
-  npPlayBtn.innerHTML = '&#9654;';
+  npPlayBtn.textContent = '\u25B6';
   npProgressFill.style.width = '100%';
   if (currentFeedItem) {
     updateFeedItemPlaying(currentFeedItem.id, false);
@@ -1311,6 +1347,35 @@ audioEl.addEventListener('loadedmetadata', () => {
     currentCallId = null;
     playNext();
   }
+});
+
+// Loading state — pulse progress bar while buffering
+audioEl.addEventListener('loadstart', () => npProgress.classList.add('loading'));
+audioEl.addEventListener('waiting', () => npProgress.classList.add('loading'));
+audioEl.addEventListener('canplay', () => npProgress.classList.remove('loading'));
+audioEl.addEventListener('playing', () => npProgress.classList.remove('loading'));
+
+// Error state — red X on play button
+audioEl.addEventListener('error', () => {
+  npProgress.classList.remove('loading');
+  npPlayBtn.textContent = '\u2715';
+  npPlayBtn.classList.add('error');
+  npTime.textContent = 'no audio';
+  if (scannerActive) setTimeout(playNext, 500);
+});
+
+// Playback speed cycling
+function applyPlaybackSpeed() {
+  audioEl.playbackRate = settings.playbackSpeed;
+  npSpeedBtn.textContent = settings.playbackSpeed === 1 ? '1x' : settings.playbackSpeed + 'x';
+  npSpeedBtn.classList.toggle('modified', settings.playbackSpeed !== 1);
+}
+
+npSpeedBtn.addEventListener('click', () => {
+  const idx = PLAYBACK_SPEEDS.indexOf(settings.playbackSpeed);
+  settings.playbackSpeed = PLAYBACK_SPEEDS[(idx + 1) % PLAYBACK_SPEEDS.length];
+  applyPlaybackSpeed();
+  saveSettings();
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1621,6 +1686,7 @@ function applySettings() {
   setShowEncrypted.checked = settings.showEncrypted;
   setCompact.checked = settings.compact;
   audioEl.volume = settings.volume / 100;
+  applyPlaybackSpeed();
   applyCompact();
 }
 
