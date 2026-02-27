@@ -18,8 +18,9 @@ import (
 )
 
 type Server struct {
-	http *http.Server
-	log  zerolog.Logger
+	http   *http.Server
+	log    zerolog.Logger
+	health *HealthHandler
 }
 
 type ServerOptions struct {
@@ -36,6 +37,11 @@ type ServerOptions struct {
 	OnSystemMerge func(sourceID, targetID int) // called after successful system merge to invalidate caches
 	TGCSVPaths    map[int]string               // system_id → CSV file path for talkgroup writeback
 	UnitCSVPaths  map[int]string               // system_id → CSV file path for unit tag writeback
+
+	// Update checker (opt-in)
+	UpdateCheckURL string // base URL for version check API
+	IngestModes    string // comma-separated active ingest modes
+	IsDocker       bool   // running inside Docker container
 }
 
 func NewServer(opts ServerOptions) *Server {
@@ -60,6 +66,9 @@ func NewServer(opts ServerOptions) *Server {
 
 	// Unauthenticated endpoints
 	health := NewHealthHandler(opts.DB, opts.MQTT, opts.Live, opts.Version, opts.StartTime)
+	if opts.UpdateCheckURL != "" {
+		health.ConfigureUpdateChecker(opts.UpdateCheckURL, opts.IngestModes, opts.IsDocker, opts.Log)
+	}
 	r.Get("/api/v1/health", health.ServeHTTP)
 
 	// Web auth bootstrap — returns the token for web UI pages.
@@ -154,9 +163,15 @@ func NewServer(opts ServerOptions) *Server {
 	}
 
 	return &Server{
-		http: srv,
-		log:  opts.Log,
+		http:   srv,
+		log:    opts.Log,
+		health: health,
 	}
+}
+
+// StartUpdateChecker begins periodic update checks if configured.
+func (s *Server) StartUpdateChecker(ctx context.Context) {
+	s.health.StartUpdateChecker(ctx)
 }
 
 func (s *Server) Start() error {

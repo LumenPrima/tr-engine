@@ -330,6 +330,7 @@ body::after {
           <div>
             <div class="health-card-status" id="health-label">—</div>
             <div class="health-card-meta" id="version-text">tr-engine</div>
+            <div class="health-card-meta" id="update-text"></div>
             <div class="health-card-meta" id="uptime-text"></div>
           </div>
         </div>
@@ -461,6 +462,18 @@ async function loadHealth() {
     $('health-dot').className = 'health-dot-lg ' + (d.status || 'unknown');
     $('health-label').textContent = d.status || 'unknown';
     if (d.uptime_seconds) $('uptime-text').textContent = 'uptime ' + fmtUp(d.uptime_seconds);
+    const upEl = $('update-text');
+    upEl.textContent = '';
+    if (d.update_available && d.latest_version) {
+      const cur = d.version ? (d.version.match(/v?\d+[\d.]+/) || [''])[0] : '';
+      const a = document.createElement('a');
+      a.href = d.release_url || '#';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.style.cssText = 'color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor';
+      a.textContent = cur ? cur + ' \u2192 ' + d.latest_version : d.latest_version + ' available';
+      upEl.appendChild(a);
+    }
     const sseEl = $('sse-status');
     const sseText = sseEl ? sseEl.textContent : 'connecting';
     const sseCls = sseEl ? sseEl.className : 'subsys-status loading';

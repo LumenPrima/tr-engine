@@ -88,6 +88,10 @@ type Config struct {
 	LLMModel   string        `env:"LLM_MODEL"`
 	LLMTimeout time.Duration `env:"LLM_TIMEOUT" envDefault:"30s"`
 
+	// Update checker (enabled by default — set UPDATE_CHECK=false to disable)
+	UpdateCheck    bool   `env:"UPDATE_CHECK" envDefault:"true"`
+	UpdateCheckURL string `env:"UPDATE_CHECK_URL" envDefault:"https://updates.luxprimatech.com/check"`
+
 	// Audio preprocessing (requires sox in PATH)
 	PreprocessAudio bool `env:"PREPROCESS_AUDIO" envDefault:"false"`
 

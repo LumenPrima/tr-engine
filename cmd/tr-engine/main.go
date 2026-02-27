@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -305,23 +306,39 @@ func main() {
 		log.Warn().Msg("WRITE_TOKEN not set — write endpoints accept the read token")
 	}
 
+	// Detect ingest modes and Docker for update checker
+	var ingestModes []string
+	if cfg.MQTTBrokerURL != "" {
+		ingestModes = append(ingestModes, "mqtt")
+	}
+	if cfg.WatchDir != "" {
+		ingestModes = append(ingestModes, "watch")
+	}
+	ingestModes = append(ingestModes, "upload") // always available
+	_, dockerErr := os.Stat("/.dockerenv")
+	isDocker := dockerErr == nil
+
 	// HTTP Server
 	httpLog := log.With().Str("component", "http").Logger()
 	srv := api.NewServer(api.ServerOptions{
-		Config:        cfg,
-		DB:            db,
-		MQTT:          mqtt,
-		Live:          pipeline,
-		Uploader:      pipeline, // Pipeline implements CallUploader via ProcessUpload
-		WebFiles:      trengine.WebFiles,
-		OpenAPISpec:   trengine.OpenAPISpec,
-		Version:       fmt.Sprintf("%s (commit=%s, built=%s)", version, commit, buildTime),
-		StartTime:     startTime,
-		Log:           httpLog,
-		OnSystemMerge: pipeline.RewriteSystemID,
-		TGCSVPaths:    tgCSVPaths,
-		UnitCSVPaths:  unitCSVPaths,
+		Config:         cfg,
+		DB:             db,
+		MQTT:           mqtt,
+		Live:           pipeline,
+		Uploader:       pipeline, // Pipeline implements CallUploader via ProcessUpload
+		WebFiles:       trengine.WebFiles,
+		OpenAPISpec:    trengine.OpenAPISpec,
+		Version:        fmt.Sprintf("%s (commit=%s, built=%s)", version, commit, buildTime),
+		StartTime:      startTime,
+		Log:            httpLog,
+		OnSystemMerge:  pipeline.RewriteSystemID,
+		TGCSVPaths:     tgCSVPaths,
+		UnitCSVPaths:   unitCSVPaths,
+		UpdateCheckURL: func() string { if cfg.UpdateCheck { return cfg.UpdateCheckURL }; return "" }(),
+		IngestModes:    strings.Join(ingestModes, ","),
+		IsDocker:       isDocker,
 	})
+	srv.StartUpdateChecker(ctx)
 
 	// Start HTTP server in background
 	errCh := make(chan error, 1)

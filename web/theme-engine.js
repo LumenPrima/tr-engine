@@ -333,6 +333,18 @@
 }
 .eh-picker .theme-btn:hover::after { opacity: 1; }
 
+/* Update badge */
+.eh-update-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  color: var(--bg); background: var(--accent);
+  padding: 3px 10px; border-radius: 10px;
+  text-decoration: none; white-space: nowrap;
+  transition: opacity 0.15s, background 0.3s;
+}
+.eh-update-badge:hover { opacity: 0.85; }
+[data-square-elements="true"] .eh-update-badge { border-radius: 0; }
+
 /* ── Mobile ── */
 @media (max-width: 600px) {
   .eh-header { height: 50px; padding: 0 12px; gap: 10px; }
@@ -642,6 +654,29 @@
     if (opts.header !== false) injectHeader();
     buildSwitcher(document.getElementById('eh-picker'));
     applyTheme(initialTheme);
+  }
+
+  // ── Update badge ──
+  function checkForUpdate() {
+    fetch('/api/v1/health')
+      .then(r => r.json())
+      .then(d => {
+        if (!d.update_available) return;
+        const right = document.querySelector('.eh-header-right');
+        if (!right || right.querySelector('.eh-update-badge')) return;
+        const badge = document.createElement('a');
+        badge.className = 'eh-update-badge';
+        badge.href = d.release_url || '#';
+        badge.target = '_blank';
+        badge.rel = 'noopener';
+        badge.textContent = 'Update: ' + (d.latest_version || 'new');
+        right.insertBefore(badge, right.firstChild);
+      })
+      .catch(() => {});
+  }
+  if (opts.header !== false) {
+    // Check after a short delay to avoid blocking page load
+    setTimeout(checkForUpdate, 2000);
   }
 
   // ── Public API ──
