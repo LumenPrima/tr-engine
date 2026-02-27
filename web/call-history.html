@@ -66,6 +66,9 @@
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     transition: background 0.5s, border-color 0.4s;
   }
+  .toolbar-row {
+    display: contents; /* invisible on desktop — children flow into parent flex */
+  }
 
   /* ── Range buttons ── */
   .range-btn {
@@ -363,6 +366,32 @@
     .detail-panel { grid-template-columns: 1fr; }
     .search-box { max-width: none; }
   }
+  @media (max-width: 600px) {
+    .toolbar {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      padding: 8px 12px;
+    }
+    .toolbar-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .range-btn, .toggle-btn {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .toolbar select,
+    .toolbar input[type="text"] {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 10px;
+    }
+    .search-box { width: 100%; max-width: none; min-width: 0; }
+    #sortSelect { width: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -371,28 +400,29 @@
 <div class="theme-label" id="themeLabel"></div>
 
 <div class="toolbar" id="toolbar">
-  <button class="range-btn" data-range="1h">1h</button>
-  <button class="range-btn" data-range="6h">6h</button>
-  <button class="range-btn active" data-range="24h">24h</button>
-  <button class="range-btn" data-range="7d">7d</button>
-
-  <select id="systemFilter">
-    <option value="">All Systems</option>
-  </select>
-
-  <input type="text" id="tgFilter" placeholder="Talkgroup ID" style="width:100px">
-  <input type="text" id="unitFilter" placeholder="Unit ID" style="width:80px">
-
-  <button class="toggle-btn" id="emergencyToggle">EMG</button>
-  <button class="toggle-btn enc" id="encryptedToggle">ENC</button>
-
-  <input type="text" id="transcriptSearch" class="search-box" placeholder="Search transcriptions...">
-
-  <select id="sortSelect">
-    <option value="-start_time">Newest</option>
-    <option value="start_time">Oldest</option>
-    <option value="-duration">Longest</option>
-  </select>
+  <div class="toolbar-row">
+    <button class="range-btn" data-range="1h">1h</button>
+    <button class="range-btn" data-range="6h">6h</button>
+    <button class="range-btn active" data-range="24h">24h</button>
+    <button class="range-btn" data-range="7d">7d</button>
+    <select id="systemFilter">
+      <option value="">All Systems</option>
+    </select>
+  </div>
+  <div class="toolbar-row">
+    <input type="text" id="tgFilter" placeholder="Talkgroup ID" style="width:100px">
+    <input type="text" id="unitFilter" placeholder="Unit ID" style="width:80px">
+    <button class="toggle-btn" id="emergencyToggle">EMG</button>
+    <button class="toggle-btn enc" id="encryptedToggle">ENC</button>
+  </div>
+  <div class="toolbar-row">
+    <input type="text" id="transcriptSearch" class="search-box" placeholder="Search transcriptions...">
+    <select id="sortSelect">
+      <option value="-start_time">Newest</option>
+      <option value="start_time">Oldest</option>
+      <option value="-duration">Longest</option>
+    </select>
+  </div>
 </div>
 
 <div class="content" id="content">

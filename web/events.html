@@ -144,6 +144,19 @@
     transition: all 0.5s; pointer-events: none; opacity: 0;
   }
   .theme-label.show { opacity: 1; }
+
+  /* ── Mobile ── */
+  @media (max-width: 600px) {
+    .toolbar {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      padding: 8px 12px;
+    }
+    .filters { gap: 6px; }
+    .filters label { padding: 4px 8px; font-size: 11px; }
+    .stats { margin-left: 0; font-size: 11px; }
+  }
 </style>
 </head>
 <body>
