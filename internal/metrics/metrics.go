@@ -106,6 +106,14 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush implements http.Flusher by delegating to the wrapped writer.
+// Required for SSE streaming through the metrics middleware.
+func (w *statusWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // Unwrap supports http.ResponseController and middleware that check for
 // wrapped writers (e.g. http.Flusher for SSE streaming).
 func (w *statusWriter) Unwrap() http.ResponseWriter {
