@@ -17,6 +17,7 @@ import (
 	"github.com/snarg/tr-engine/internal/database"
 	"github.com/snarg/tr-engine/internal/ingest"
 	"github.com/snarg/tr-engine/internal/mqttclient"
+	"github.com/snarg/tr-engine/internal/storage"
 	"github.com/snarg/tr-engine/internal/transcribe"
 	"github.com/snarg/tr-engine/internal/trconfig"
 )
@@ -110,6 +111,25 @@ func main() {
 		log.Fatal().Err(err).Msg("schema migration failed (run ALTER TABLE manually or grant ALTER privileges)")
 	}
 
+	// Audio storage (local disk default, optional S3)
+	store, bgServices, err := storage.New(cfg.S3, cfg.AudioDir, log)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize audio storage")
+	}
+	for _, svc := range bgServices {
+		svc.Start()
+		defer svc.Stop()
+	}
+	log.Info().Str("type", store.Type()).Msg("audio storage initialized")
+
+	// Async uploader (only for tiered stores in async mode)
+	var s3Uploader *storage.AsyncUploader
+	if tiered, ok := store.(*storage.TieredStore); ok && cfg.S3.UploadMode == "async" {
+		s3Uploader = storage.NewAsyncUploader(tiered.S3Store(), 500, log)
+		s3Uploader.Start(2)
+		// Stopped by pipeline.Stop()
+	}
+
 	// MQTT (optional — not needed when using watch mode)
 	var mqtt *mqttclient.Client
 	if cfg.MQTTBrokerURL != "" {
@@ -155,6 +175,7 @@ func main() {
 			DB:              db,
 			AudioDir:        cfg.AudioDir,
 			TRAudioDir:      cfg.TRAudioDir,
+			Store:           store,
 			Provider:        sttProvider,
 			ProviderTimeout: cfg.WhisperTimeout,
 			Temperature:     cfg.WhisperTemperature,
@@ -194,6 +215,8 @@ func main() {
 		RawExcludeTopics: cfg.RawExcludeTopics,
 		MergeP25Systems:  cfg.MergeP25Systems,
 		TranscribeOpts:   transcribeOpts,
+		Store:            store,
+		S3Uploader:       s3Uploader,
 		Log:              log,
 	})
 	if err := pipeline.Start(ctx); err != nil {
@@ -326,6 +349,7 @@ func main() {
 		MQTT:           mqtt,
 		Live:           pipeline,
 		Uploader:       pipeline, // Pipeline implements CallUploader via ProcessUpload
+		Store:          store,
 		WebFiles:       trengine.WebFiles,
 		OpenAPISpec:    trengine.OpenAPISpec,
 		Version:        fmt.Sprintf("%s (commit=%s, built=%s)", version, commit, buildTime),

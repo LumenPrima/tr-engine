@@ -103,7 +103,29 @@ type Config struct {
 	TranscribeQueueSize   int     `env:"TRANSCRIBE_QUEUE_SIZE" envDefault:"500"`
 	TranscribeMinDuration float64 `env:"TRANSCRIBE_MIN_DURATION" envDefault:"1.0"`
 	TranscribeMaxDuration float64 `env:"TRANSCRIBE_MAX_DURATION" envDefault:"300"`
+
+	// S3 audio storage (optional — local disk used when S3_BUCKET is empty)
+	S3 S3Config
 }
+
+// S3Config holds S3-compatible object storage settings for audio files.
+// All fields are optional — S3 is disabled when Bucket is empty.
+type S3Config struct {
+	Bucket         string        `env:"S3_BUCKET"`
+	Endpoint       string        `env:"S3_ENDPOINT"`
+	Region         string        `env:"S3_REGION" envDefault:"us-east-1"`
+	AccessKey      string        `env:"S3_ACCESS_KEY"`
+	SecretKey      string        `env:"S3_SECRET_KEY"`
+	Prefix         string        `env:"S3_PREFIX"`
+	PresignExpiry  time.Duration `env:"S3_PRESIGN_EXPIRY" envDefault:"1h"`
+	LocalCache     bool          `env:"S3_LOCAL_CACHE" envDefault:"true"`
+	CacheRetention time.Duration `env:"S3_CACHE_RETENTION" envDefault:"720h"` // 30d
+	CacheMaxGB     int           `env:"S3_CACHE_MAX_GB" envDefault:"0"`
+	UploadMode     string        `env:"S3_UPLOAD_MODE" envDefault:"async"`
+}
+
+// Enabled reports whether S3 audio storage is configured.
+func (c S3Config) Enabled() bool { return c.Bucket != "" }
 
 // Validate checks that at least one ingest source (MQTT, watch directory, or TR auto-discovery) is configured.
 func (c *Config) Validate() error {

@@ -479,43 +479,6 @@ func buildAudioRelPath(sysName string, startTime time.Time, filename string) str
 	return filepath.Join(sysName, dateDir, filename)
 }
 
-// saveAudioFile writes decoded audio to the filesystem.
-// Path: {audioDir}/{sysName}/{YYYY-MM-DD}/{filename}
-func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename string, audioType string, data []byte) (string, error) {
-	dateDir := startTime.Format("2006-01-02")
-	dir := filepath.Join(p.audioDir, sysName, dateDir)
-
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir %s: %w", dir, err)
-	}
-
-	filename = buildAudioFilename(filename, audioType, startTime)
-	path := filepath.Join(dir, filename)
-
-	// Write to a temp file then rename for atomicity — prevents concurrent
-	// HTTP audio serve from reading a partial/truncated file.
-	tmp, err := os.CreateTemp(dir, ".audio-*.tmp")
-	if err != nil {
-		return "", fmt.Errorf("create temp file in %s: %w", dir, err)
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("write %s: %w", tmpPath, err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("close %s: %w", tmpPath, err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("rename %s -> %s: %w", tmpPath, path, err)
-	}
-
-	return buildAudioRelPath(sysName, startTime, filename), nil
-}
-
 // saveAudio writes audio data through the storage abstraction.
 // For tiered stores in async mode: writes to local cache synchronously,
 // then enqueues S3 upload in the background.
