@@ -132,8 +132,10 @@ func NewServer(opts ServerOptions) *Server {
 		if opts.Config.MetricsEnabled {
 			r.Use(metrics.InstrumentHandler)
 		}
-		r.Use(BearerAuth(opts.Config.AuthToken, opts.Config.WriteToken))
-		r.Use(WriteAuth(opts.Config.WriteToken))
+		if opts.Config.AuthEnabled {
+			r.Use(BearerAuth(opts.Config.AuthToken, opts.Config.WriteToken))
+			r.Use(WriteAuth(opts.Config.WriteToken))
+		}
 		r.Use(ResponseTimeout(opts.Config.WriteTimeout))
 
 		// All API routes under /api/v1
