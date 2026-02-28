@@ -101,7 +101,11 @@ Conventional systems are 1:1 with sites.
 
 ## Schema Management
 
-**Auto-apply on startup:** `schema.sql` is embedded in the binary. On connect, `db.InitSchema()` checks if the `systems` table exists in `pg_tables`. If missing (fresh database), it executes the full embedded schema. If present, it's a no-op. This runs before `db.Migrate()` (incremental migrations).
+**Auto-apply on startup:** `schema.sql` is embedded in the binary. On connect, `db.InitSchema()` checks if the `systems` table exists in `pg_tables`. If missing (fresh database), it executes the full embedded schema. If present, it's a no-op. This runs before `db.Migrate()`.
+
+**Incremental migrations** (`internal/database/migrations.go`): `db.Migrate()` runs after `InitSchema()` on every startup. Each migration has a `check` query (returns true if already applied) and idempotent `sql`. Migrations handle schema changes that post-date the initial `schema.sql` — adding columns, replacing indexes, etc. To add a new migration, append to the `migrations` slice with a `name`, `sql` (use `IF NOT EXISTS`/`IF EXISTS`), and a `check` query. On failure, `MigrationError` prints the remaining SQL for manual application by a superuser.
+
+**Startup order:** Connect → `InitSchema` (first-run only) → `Migrate` (every startup, skips already-applied) → application boot.
 
 **Manual apply:** `psql -f schema.sql` still works for manual setup or inspection.
 
