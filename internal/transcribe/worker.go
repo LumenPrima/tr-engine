@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/snarg/tr-engine/internal/audio"
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/storage"
 )
 
 // Job represents a transcription job enqueued by the ingest pipeline.
@@ -45,6 +48,7 @@ type WorkerPoolOptions struct {
 	DB              *database.DB
 	AudioDir        string
 	TRAudioDir      string
+	Store           storage.AudioStore // if set, used instead of AudioDir for file resolution
 	Provider        Provider
 	ProviderTimeout time.Duration // used for per-job context timeout
 	Temperature     float64
@@ -187,8 +191,37 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 	ctx, cancel := context.WithTimeout(wp.ctx, wp.opts.ProviderTimeout+10*time.Second)
 	defer cancel()
 
-	// 1. Resolve audio file path
-	audioPath := audio.ResolveFile(wp.opts.AudioDir, wp.opts.TRAudioDir, job.AudioFilePath, job.CallFilename)
+	// 1. Resolve audio file
+	var audioPath string
+
+	if wp.opts.Store != nil && job.AudioFilePath != "" {
+		// Use storage abstraction — tries local cache first, then S3
+		if localPath := wp.opts.Store.LocalPath(job.AudioFilePath); localPath != "" {
+			audioPath = localPath
+		} else if reader, openErr := wp.opts.Store.Open(ctx, job.AudioFilePath); openErr == nil {
+			// Not in local cache — write to temp file for preprocessing/STT
+			tmpFile, tmpErr := os.CreateTemp("", "tr-audio-*.tmp")
+			if tmpErr != nil {
+				reader.Close()
+				return errorf("create temp for STT: %w", tmpErr)
+			}
+			if _, cpErr := io.Copy(tmpFile, reader); cpErr != nil {
+				reader.Close()
+				tmpFile.Close()
+				os.Remove(tmpFile.Name())
+				return errorf("copy audio to temp: %w", cpErr)
+			}
+			reader.Close()
+			tmpFile.Close()
+			audioPath = tmpFile.Name()
+			defer os.Remove(audioPath)
+		}
+	}
+
+	// Fallback to direct file resolution
+	if audioPath == "" {
+		audioPath = audio.ResolveFile(wp.opts.AudioDir, wp.opts.TRAudioDir, job.AudioFilePath, job.CallFilename)
+	}
 	if audioPath == "" {
 		return errorf("audio file not found: path=%q filename=%q", job.AudioFilePath, job.CallFilename)
 	}
