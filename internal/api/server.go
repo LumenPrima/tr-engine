@@ -18,6 +18,7 @@ import (
 	"github.com/snarg/tr-engine/internal/database"
 	"github.com/snarg/tr-engine/internal/metrics"
 	"github.com/snarg/tr-engine/internal/mqttclient"
+	"github.com/snarg/tr-engine/internal/storage"
 )
 
 type Server struct {
@@ -31,8 +32,9 @@ type ServerOptions struct {
 	DB            *database.DB
 	MQTT          *mqttclient.Client
 	Live          LiveDataSource
-	Uploader      CallUploader // nil if upload ingest not available
-	WebFiles      fs.FS        // embedded web/ directory
+	Uploader      CallUploader      // nil if upload ingest not available
+	Store         storage.AudioStore // audio storage backend (local, S3, or tiered)
+	WebFiles      fs.FS              // embedded web/ directory
 	OpenAPISpec   []byte       // embedded openapi.yaml
 	Version       string
 	StartTime     time.Time
@@ -139,7 +141,7 @@ func NewServer(opts ServerOptions) *Server {
 			NewSystemsHandler(opts.DB).Routes(r)
 			NewTalkgroupsHandler(opts.DB, opts.TGCSVPaths).Routes(r)
 			NewUnitsHandler(opts.DB, opts.UnitCSVPaths).Routes(r)
-			NewCallsHandler(opts.DB, opts.Config.AudioDir, opts.Config.TRAudioDir, opts.Live).Routes(r)
+			NewCallsHandler(opts.DB, opts.Config.AudioDir, opts.Config.TRAudioDir, opts.Store, opts.Live).Routes(r)
 			NewCallGroupsHandler(opts.DB, opts.Config.TRAudioDir).Routes(r)
 			NewStatsHandler(opts.DB).Routes(r)
 			NewRecordersHandler(opts.Live).Routes(r)

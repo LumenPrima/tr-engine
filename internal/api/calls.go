@@ -9,17 +9,19 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/snarg/tr-engine/internal/audio"
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/storage"
 )
 
 type CallsHandler struct {
 	db         *database.DB
 	audioDir   string
 	trAudioDir string
+	store      storage.AudioStore
 	live       LiveDataSource
 }
 
-func NewCallsHandler(db *database.DB, audioDir, trAudioDir string, live LiveDataSource) *CallsHandler {
-	return &CallsHandler{db: db, audioDir: audioDir, trAudioDir: trAudioDir, live: live}
+func NewCallsHandler(db *database.DB, audioDir, trAudioDir string, store storage.AudioStore, live LiveDataSource) *CallsHandler {
+	return &CallsHandler{db: db, audioDir: audioDir, trAudioDir: trAudioDir, store: store, live: live}
 }
 
 // enrichAudioURLs sets audio_url on calls that have a call_filename but no
@@ -176,14 +178,34 @@ func (h *CallsHandler) GetCallAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Try storage layer (local cache for tiered, local disk for local-only)
+	if audioPath != "" && h.store != nil {
+		if localFile := h.store.LocalPath(audioPath); localFile != "" {
+			h.serveLocalFile(w, r, localFile, id)
+			return
+		}
+	}
+
+	// 2. Try S3 presigned URL redirect (tiered/S3 stores only)
+	if audioPath != "" && h.store != nil {
+		if url, urlErr := h.store.URL(r.Context(), audioPath); urlErr == nil && url != "" {
+			http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+			return
+		}
+	}
+
+	// 3. Fall back to TR_AUDIO_DIR resolution (file watch mode)
 	fullPath := h.resolveAudioFile(audioPath, callFilename)
-	if fullPath == "" {
-		WriteError(w, http.StatusNotFound, "audio file not found on disk")
+	if fullPath != "" {
+		h.serveLocalFile(w, r, fullPath, id)
 		return
 	}
 
-	// Set content type based on extension
-	ext := strings.ToLower(filepath.Ext(fullPath))
+	WriteError(w, http.StatusNotFound, "audio file not found on disk")
+}
+
+func (h *CallsHandler) serveLocalFile(w http.ResponseWriter, r *http.Request, path string, callID int64) {
+	ext := strings.ToLower(filepath.Ext(path))
 	contentTypes := map[string]string{
 		".m4a": "audio/mp4",
 		".mp3": "audio/mpeg",
@@ -195,9 +217,8 @@ func (h *CallsHandler) GetCallAudio(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
-
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%d%s"`, id, ext))
-	http.ServeFile(w, r, fullPath)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%d%s"`, callID, ext))
+	http.ServeFile(w, r, path)
 }
 
 // resolveAudioFile finds the audio file on disk.
