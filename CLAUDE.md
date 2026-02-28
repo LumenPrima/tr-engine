@@ -21,13 +21,14 @@ Go was chosen over Node.js for multi-core utilization and headroom at high messa
 ## Key Files
 
 - `openapi.yaml` — Complete REST API specification (OpenAPI 3.0.3), including SSE event stream endpoint. This is the **source of truth** for API contracts.
-- `schema.sql` — PostgreSQL 18 DDL. All tables, indexes, triggers, partitioning, and helper functions. Run with `psql -f schema.sql`.
-- `.env` — Local environment config (gitignored). Contains `DATABASE_URL`, `MQTT_BROKER_URL`, credentials, and `HTTP_ADDR`.
-- `cmd/tr-engine/main.go` — Entry point. Startup order: config → logger → database → MQTT → pipeline → HTTP server. Graceful shutdown via SIGINT/SIGTERM with 10s timeout. Version injected via `-ldflags`.
+- `schema.sql` — PostgreSQL 18 DDL. All tables, indexes, triggers, partitioning, and helper functions. Embedded in the binary via `embed.go` and auto-applied on first startup when the database is empty. Can also be run manually with `psql -f schema.sql`.
+- `.env` — Local environment config (gitignored). Contains `DATABASE_URL`, `MQTT_BROKER_URL`, credentials, and `HTTP_ADDR`. Optional for Docker — all defaults are built into `docker-compose.yml`.
+- `embed.go` — Go embed directives for `web/*`, `openapi.yaml`, and `schema.sql`. Exposes `WebFiles`, `OpenAPISpec`, and `SchemaSQL` package-level variables.
+- `cmd/tr-engine/main.go` — Entry point. Startup order: config → logger → database → schema init → migrations → MQTT → pipeline → HTTP server. Graceful shutdown via SIGINT/SIGTERM with 10s timeout. Version injected via `-ldflags`.
 - `cmd/mqtt-dump/` — Dev tool to capture and display live MQTT traffic.
 - `cmd/dbcheck/` — DB inspection tool (table counts, call group analysis, cleanup).
 - `internal/config/config.go` — Env-based config (`DATABASE_URL`, `MQTT_BROKER_URL`, `HTTP_ADDR`, `AUTH_TOKEN`, `LOG_LEVEL`, timeouts). Uses `caarlos0/env/v11`.
-- `internal/database/` — pgxpool wrapper (20 max / 4 min conns, 2s health-check ping) plus query files for all tables: systems, sites, talkgroups, units, calls, call_groups, recorders, stats, etc.
+- `internal/database/` — pgxpool wrapper (20 max / 4 min conns, 2s health-check ping) plus query files for all tables: systems, sites, talkgroups, units, calls, call_groups, recorders, stats, etc. `schema.go` handles first-run schema initialization; `migrations.go` handles incremental schema changes.
 - `internal/mqttclient/client.go` — Paho MQTT client. Auto-reconnect (5s), QoS 0, `atomic.Bool` connection tracking.
 - `internal/ingest/` — Complete MQTT ingestion pipeline. Message routing (`router.go`), identity resolution (`identity.go`), event bus for SSE (`eventbus.go`), batch writers (`batcher.go`), and handlers for all message types (calls, units, recorders, rates, systems, config, audio, status, trunking messages, console logs). Raw archival supports three modes: disabled (`RAW_STORE=false`), allowlist (`RAW_INCLUDE_TOPICS` with `_unknown` for unrecognized topics), or denylist (`RAW_EXCLUDE_TOPICS`). Audio messages have base64 audio data stripped before raw archival since the audio is already saved to disk.
 - `internal/api/server.go` — Chi router + HTTP server lifecycle. All endpoints wired via handler `Routes()` methods.
@@ -98,11 +99,11 @@ Conventional systems are 1:1 with sites.
 | Logs | console_messages, plugin_statuses | 30 days |
 | Audit | system_merge_log, instance_configs | Forever (low volume) |
 
-## Schema Validation
+## Schema Management
 
-```bash
-psql -f schema.sql  # creates all tables, indexes, triggers, initial partitions
-```
+**Auto-apply on startup:** `schema.sql` is embedded in the binary. On connect, `db.InitSchema()` checks if the `systems` table exists in `pg_tables`. If missing (fresh database), it executes the full embedded schema. If present, it's a no-op. This runs before `db.Migrate()` (incremental migrations).
+
+**Manual apply:** `psql -f schema.sql` still works for manual setup or inspection.
 
 The schema creates initial partitions (current month + 3 months ahead). The `create_monthly_partition()` and `create_weekly_partition()` functions handle ongoing partition creation.
 
@@ -148,6 +149,8 @@ The `.env` file is auto-loaded from the current directory on startup (silent if 
 | `--env-file` | — | `.env` | Path to .env file |
 | `--version` | — | — | Print version and exit |
 
+**Docker Compose-only settings** (used by `docker-compose.yml` variable interpolation, ignored by the binary): `POSTGRES_USER` (default `trengine`), `POSTGRES_PASSWORD` (default `trengine`), `POSTGRES_DB` (default `trengine`) — configure both the postgres container and `DATABASE_URL` in one place; `HTTP_PORT` (default `8080`), `MQTT_PORT` (default `1883`) — host port mappings. Docker Compose works with zero `.env` — all defaults are built in.
+
 Additional env-only settings: `MQTT_TOPICS` (comma-separated MQTT topic filters, default `#`; match your TR plugin's `topic`/`unit_topic`/`message_topic` prefixes with `/#` wildcards to limit subscriptions), `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `HTTP_READ_TIMEOUT`, `HTTP_WRITE_TIMEOUT`, `HTTP_IDLE_TIMEOUT`, `AUTH_TOKEN` (read-only API token; if not set, a random token is auto-generated on each startup and logged — web UI pages receive it transparently via `GET /api/v1/auth-init`), `WRITE_TOKEN` (separate token for write operations — POST/PATCH/PUT/DELETE require this token when set; if not set, writes accept `AUTH_TOKEN` as before), `CORS_ORIGINS` (comma-separated allowed origins; empty = allow all `*`), `RATE_LIMIT_RPS` (per-IP requests/second, default `20`), `RATE_LIMIT_BURST` (per-IP burst size, default `40`), `RAW_STORE` (bool, default `true` — master switch to disable all raw MQTT archival), `RAW_INCLUDE_TOPICS` (comma-separated allowlist of handler names for raw archival; supports `_unknown` for unrecognized topics; takes priority over `RAW_EXCLUDE_TOPICS`), `RAW_EXCLUDE_TOPICS` (comma-separated denylist of handler names to exclude from raw archival), `WATCH_INSTANCE_ID` (instance ID for file-watched calls, default `file-watch`), `WATCH_BACKFILL_DAYS` (days of existing files to backfill on startup, default `7`; `0` = all, `-1` = none), `CSV_WRITEBACK` (bool, default `false` — when enabled, PATCH edits to talkgroup/unit alpha_tags are written back to TR's CSV files on disk; requires `TR_DIR`), `UPLOAD_INSTANCE_ID` (instance ID for HTTP-uploaded calls, default `http-upload`), `MERGE_P25_SYSTEMS` (bool, default `true` — when enabled, TR instances monitoring the same P25 network (same sysid/wacn) are auto-merged into one system with multiple sites; set to `false` to keep each instance's systems separate).
 
 **Ingest modes:** At least one of `MQTT_BROKER_URL`, `WATCH_DIR`, or `TR_DIR` must be set. HTTP upload mode is always available when a pipeline is running. Both MQTT and watch mode can run simultaneously. Watch mode only produces `call_end` events (files appear after calls complete). MQTT is the upgrade path for `call_start`, unit events, recorder state, and decode rates.
@@ -190,7 +193,7 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 - `theme-engine.js` injects a sticky header with a nav dropdown that fetches `/api/v1/pages` and renders links.
 - **Page visibility**: Users can hide pages from the nav dropdown via an inline "Manage pages" edit mode. Eye icons toggle visibility per page. State persists in `localStorage` key `eh-hidden-pages`. Hidden pages are still accessible by direct URL.
 - Dev mode (local `web/` directory on disk): new files picked up on next refresh, no rebuild.
-- Production: files embedded via `//go:embed web/*` in `embed.go`, rebuild required.
+- Production: files embedded via `//go:embed web/*` in `embed.go`, rebuild required. `embed.go` also embeds `openapi.yaml` and `schema.sql`.
 
 **Minimal template:**
 ```html
@@ -369,7 +372,6 @@ ssh root@tr-dashboard 'cd /data/tr-engine/v1/web && curl -s https://api.github.c
 ├── mqtt/                      # v0 embedded Mosquitto data
 └── v1/
     ├── docker-compose.yml     # PostgreSQL + tr-engine (no Mosquitto)
-    ├── schema.sql             # v1 schema (loaded on first DB init)
     ├── pgdata/                # PostgreSQL data (bind-mounted into container)
     ├── audio/                 # Call audio files (bind-mounted into container)
     └── web/                   # Bind-mounted into container, overrides embedded UI
