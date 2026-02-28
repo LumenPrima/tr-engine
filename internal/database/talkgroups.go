@@ -222,6 +222,15 @@ func (db *DB) UpsertTalkgroupDirectory(ctx context.Context, systemID, tgid int, 
 	})
 }
 
+// GetTalkgroupAlphaTag returns the current alpha_tag for a talkgroup.
+func (db *DB) GetTalkgroupAlphaTag(ctx context.Context, systemID, tgid int) (string, error) {
+	var tag string
+	err := db.Pool.QueryRow(ctx,
+		`SELECT COALESCE(alpha_tag, '') FROM talkgroups WHERE system_id = $1 AND tgid = $2`,
+		systemID, tgid).Scan(&tag)
+	return tag, err
+}
+
 // EnrichTalkgroupsFromDirectory fills missing talkgroup fields from the directory.
 // If tgid is 0, enriches all heard talkgroups in the system (bulk mode).
 // If tgid > 0, enriches only that specific talkgroup (per-call mode).

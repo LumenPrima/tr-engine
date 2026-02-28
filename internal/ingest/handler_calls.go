@@ -10,6 +10,24 @@ import (
 	"github.com/snarg/tr-engine/internal/database"
 )
 
+// upsertAndEnrichTalkgroup upserts a talkgroup, enriches it from the directory,
+// and returns the effective alpha tag (respects manual > csv > mqtt priority).
+func (p *Pipeline) upsertAndEnrichTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, tag, group, description string, eventTime time.Time) string {
+	effectiveTag := alphaTag
+	if dbTag, err := p.db.UpsertTalkgroup(ctx, systemID, tgid, alphaTag, tag, group, description, eventTime); err != nil {
+		p.log.Warn().Err(err).Int("tgid", tgid).Msg("failed to upsert talkgroup")
+	} else if dbTag != "" {
+		effectiveTag = dbTag
+	}
+	// Enrich from directory and read back enriched tag if still empty
+	if enriched, _ := p.db.EnrichTalkgroupsFromDirectory(ctx, systemID, tgid); enriched > 0 && effectiveTag == "" {
+		if dbTag, err := p.db.GetTalkgroupAlphaTag(ctx, systemID, tgid); err == nil && dbTag != "" {
+			effectiveTag = dbTag
+		}
+	}
+	return effectiveTag
+}
+
 func (p *Pipeline) handleCallStart(payload []byte) error {
 	var msg CallStartMsg
 	if err := json.Unmarshal(payload, &msg); err != nil {
@@ -27,18 +45,11 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		return fmt.Errorf("resolve identity: %w", err)
 	}
 
-	// Upsert talkgroup — capture effective tag from DB (respects manual > csv > mqtt)
+	// Upsert talkgroup + enrich from directory — capture effective tag
 	effectiveTgTag := call.TalkgroupAlphaTag
 	if call.Talkgroup > 0 {
-		if dbTag, err := p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
-			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
-		); err != nil {
-			p.log.Warn().Err(err).Int("tgid", call.Talkgroup).Msg("failed to upsert talkgroup")
-		} else if dbTag != "" {
-			effectiveTgTag = dbTag
-		}
-		// Enrich from directory (fills missing fields like mode, priority, description)
-		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
+		effectiveTgTag = p.upsertAndEnrichTalkgroup(ctx, identity.SystemID, call.Talkgroup,
+			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime)
 	}
 
 	// Upsert unit — capture effective tag from DB
@@ -297,13 +308,8 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 	effectiveTgTag := call.TalkgroupAlphaTag
 	effectiveUnitTag := call.UnitAlphaTag
 	if idErr == nil && call.Talkgroup > 0 {
-		if dbTag, upsertErr := p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
-			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
-		); upsertErr == nil && dbTag != "" {
-			effectiveTgTag = dbTag
-		}
-		// Enrich from directory (fills missing fields like mode, priority, description)
-		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
+		effectiveTgTag = p.upsertAndEnrichTalkgroup(ctx, identity.SystemID, call.Talkgroup,
+			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime)
 	}
 	if idErr == nil && call.Unit > 0 {
 		if dbTag, upsertErr := p.db.UpsertUnit(ctx, identity.SystemID, call.Unit,
@@ -416,16 +422,11 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 		row.UnitIDs = []int32{int32(call.Unit)}
 	}
 
-	// Upsert talkgroup — capture effective tag from DB
+	// Upsert talkgroup + enrich from directory — capture effective tag
 	effectiveTgTag := call.TalkgroupAlphaTag
 	if call.Talkgroup > 0 {
-		if dbTag, upsertErr := p.db.UpsertTalkgroup(ctx, identity.SystemID, call.Talkgroup,
-			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime,
-		); upsertErr == nil && dbTag != "" {
-			effectiveTgTag = dbTag
-		}
-		// Enrich from directory (fills missing fields like mode, priority, description)
-		_, _ = p.db.EnrichTalkgroupsFromDirectory(ctx, identity.SystemID, call.Talkgroup)
+		effectiveTgTag = p.upsertAndEnrichTalkgroup(ctx, identity.SystemID, call.Talkgroup,
+			call.TalkgroupAlphaTag, call.TalkgroupTag, call.TalkgroupGroup, call.TalkgroupDescription, startTime)
 	}
 
 	// Upsert unit — capture effective tag from DB

@@ -77,7 +77,7 @@ func Discover(trDir string, log zerolog.Logger) (*DiscoveryResult, error) {
 
 		if sys.TalkgroupsFile != "" {
 			tgPath := vm.Translate(sys.TalkgroupsFile)
-			tgs, tgErr := LoadTalkgroupCSV(tgPath)
+			tgs, skipped, tgErr := LoadTalkgroupCSV(tgPath)
 			if tgErr != nil {
 				log.Warn().Err(tgErr).
 					Str("system", sys.ShortName).
@@ -86,11 +86,21 @@ func Discover(trDir string, log zerolog.Logger) (*DiscoveryResult, error) {
 			} else {
 				ds.Talkgroups = tgs
 				ds.CSVPath = tgPath
-				log.Info().
+				ev := log.Info().
 					Str("system", sys.ShortName).
 					Int("talkgroups", len(tgs)).
-					Str("path", tgPath).
-					Msg("loaded talkgroup CSV")
+					Str("path", tgPath)
+				if skipped > 0 {
+					ev = ev.Int("skipped", skipped)
+				}
+				ev.Msg("loaded talkgroup CSV")
+				if skipped > 0 {
+					log.Warn().
+						Str("system", sys.ShortName).
+						Int("skipped", skipped).
+						Str("path", tgPath).
+						Msg("CSV rows skipped (malformed, missing/invalid Decimal, or tgid <= 0)")
+				}
 			}
 		}
 

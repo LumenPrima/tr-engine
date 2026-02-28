@@ -383,7 +383,7 @@ func (h *TalkgroupsHandler) ImportTalkgroupDirectory(w http.ResponseWriter, r *h
 	}
 	defer file.Close()
 
-	entries, err := trconfig.ParseTalkgroupCSV(file)
+	entries, skipped, err := trconfig.ParseTalkgroupCSV(file)
 	if err != nil {
 		WriteError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse CSV: %v", err))
 		return
@@ -404,11 +404,15 @@ func (h *TalkgroupsHandler) ImportTalkgroupDirectory(w http.ResponseWriter, r *h
 		imported++
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"imported":  imported,
 		"total":     len(entries),
 		"system_id": systemID,
-	})
+	}
+	if skipped > 0 {
+		resp["skipped"] = skipped
+	}
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 // Routes registers talkgroup routes on the given router.

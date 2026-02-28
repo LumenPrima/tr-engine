@@ -215,10 +215,11 @@ type TalkgroupEntry struct {
 
 // LoadTalkgroupCSV reads a trunk-recorder talkgroup CSV file.
 // It uses header-aware parsing so column order and optional columns don't matter.
-func LoadTalkgroupCSV(path string) ([]TalkgroupEntry, error) {
+// Returns (entries, skippedRows, error).
+func LoadTalkgroupCSV(path string) ([]TalkgroupEntry, int, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
+		return nil, 0, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
 	return ParseTalkgroupCSV(f)
@@ -333,7 +334,9 @@ func UpdateUnitCSV(path string, unitID int, alphaTag string) error {
 
 // ParseTalkgroupCSV parses trunk-recorder talkgroup CSV data from a reader.
 // Header-aware: matches columns by name, not position.
-func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, error) {
+// Returns (entries, skippedRows, error). Rows are skipped for malformed CSV,
+// missing/invalid Decimal column, or tgid <= 0.
+func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, int, error) {
 	r := csv.NewReader(reader)
 	r.TrimLeadingSpace = true
 	r.LazyQuotes = true
@@ -341,7 +344,7 @@ func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, error) {
 	// Read header row
 	header, err := r.Read()
 	if err != nil {
-		return nil, fmt.Errorf("read CSV header: %w", err)
+		return nil, 0, fmt.Errorf("read CSV header: %w", err)
 	}
 
 	// Build column index map (case-insensitive, trimmed)
@@ -353,25 +356,29 @@ func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, error) {
 	// Require at minimum the Decimal column
 	decIdx, ok := colIdx["decimal"]
 	if !ok {
-		return nil, fmt.Errorf("missing required 'Decimal' column in header")
+		return nil, 0, fmt.Errorf("missing required 'Decimal' column in header")
 	}
 
 	var entries []TalkgroupEntry
+	skipped := 0
 	for {
 		record, err := r.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			continue // skip malformed rows
+			skipped++
+			continue
 		}
 
 		// Parse tgid
 		if decIdx >= len(record) {
+			skipped++
 			continue
 		}
 		tgid, err := strconv.Atoi(strings.TrimSpace(record[decIdx]))
 		if err != nil || tgid <= 0 {
+			skipped++
 			continue
 		}
 
@@ -399,5 +406,5 @@ func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, error) {
 		entries = append(entries, entry)
 	}
 
-	return entries, nil
+	return entries, skipped, nil
 }

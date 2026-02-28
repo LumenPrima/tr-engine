@@ -173,14 +173,11 @@ func (p *Pipeline) createCallFromAudio(ctx context.Context, identity *ResolvedId
 		return 0, time.Time{}, "", fmt.Errorf("insert call from audio: %w", err)
 	}
 
-	// Upsert talkgroup — capture effective tag from DB
+	// Upsert talkgroup + enrich from directory — capture effective tag
 	effectiveTgTag := meta.TalkgroupTag
 	if meta.Talkgroup > 0 {
-		if dbTag, upsertErr := p.db.UpsertTalkgroup(ctx, identity.SystemID, meta.Talkgroup,
-			meta.TalkgroupTag, meta.TalkgroupGroupTag, meta.TalkgroupGroup, meta.TalkgroupDesc, startTime,
-		); upsertErr == nil && dbTag != "" {
-			effectiveTgTag = dbTag
-		}
+		effectiveTgTag = p.upsertAndEnrichTalkgroup(ctx, identity.SystemID, meta.Talkgroup,
+			meta.TalkgroupTag, meta.TalkgroupGroupTag, meta.TalkgroupGroup, meta.TalkgroupDesc, startTime)
 	}
 
 	// Create call group
