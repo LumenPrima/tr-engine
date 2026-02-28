@@ -48,6 +48,16 @@ CREATE INDEX IF NOT EXISTS idx_systems_sysid_wacn ON systems (sysid, wacn)
     WHERE system_type IN ('p25', 'smartnet') AND deleted_at IS NULL AND sysid <> '0'`,
 		check: `SELECT NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'uq_systems_sysid_wacn')`,
 	},
+	{
+		name:  "add decode_rates time-only index",
+		sql:   `CREATE INDEX IF NOT EXISTS idx_decode_rates_time ON decode_rates ("time" DESC)`,
+		check: `SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_decode_rates_time')`,
+	},
+	{
+		name:  "add recorder_snapshots time-only index",
+		sql:   `CREATE INDEX IF NOT EXISTS idx_recorder_snapshots_time ON recorder_snapshots ("time" DESC)`,
+		check: `SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_recorder_snapshots_time')`,
+	},
 }
 
 // Migrate runs all pending schema migrations.

@@ -494,6 +494,7 @@ CREATE TABLE decode_rates (
 );
 
 CREATE INDEX idx_decode_rates_system_time ON decode_rates (system_id, "time" DESC);
+CREATE INDEX idx_decode_rates_time ON decode_rates ("time" DESC);
 
 -- ============================================================
 -- 13. recorder_snapshots (state table with decimation)
@@ -517,6 +518,7 @@ CREATE TABLE recorder_snapshots (
 
 CREATE INDEX idx_recorder_snapshots_instance_time ON recorder_snapshots (instance_id, "time" DESC);
 CREATE INDEX idx_recorder_snapshots_recorder_time ON recorder_snapshots (recorder_id, "time" DESC);
+CREATE INDEX idx_recorder_snapshots_time ON recorder_snapshots ("time" DESC);
 
 -- ============================================================
 -- 14. trunking_messages (PARTITIONED BY RANGE on time, monthly)

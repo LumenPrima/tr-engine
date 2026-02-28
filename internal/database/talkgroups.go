@@ -479,35 +479,67 @@ func (db *DB) SearchTalkgroupDirectory(ctx context.Context, filter TalkgroupDire
 	return results, total, rows.Err()
 }
 
-// RefreshTalkgroupStats updates the cached stats columns on all talkgroups.
-// Designed to run periodically from the maintenance task (every few minutes).
-func (db *DB) RefreshTalkgroupStats(ctx context.Context) (int64, error) {
+// RefreshTalkgroupStatsHot updates the fast-changing stats (calls_1h, calls_24h)
+// by scanning only the last 24 hours of calls. Runs every 5 minutes.
+func (db *DB) RefreshTalkgroupStatsHot(ctx context.Context) (int64, error) {
 	tag, err := db.Pool.Exec(ctx, `
 		UPDATE talkgroups t SET
-			call_count_30d = COALESCE(cs.call_count, 0),
-			calls_1h       = COALESCE(cs.calls_1h, 0),
-			calls_24h      = COALESCE(cs.calls_24h, 0),
-			unit_count_30d = COALESCE(us.unit_count, 0),
+			calls_1h  = COALESCE(cs.calls_1h, 0),
+			calls_24h = COALESCE(cs.calls_24h, 0),
 			stats_updated_at = now()
 		FROM (
 			SELECT system_id, tgid,
-				count(*)::int AS call_count,
 				count(*) FILTER (WHERE start_time > now() - interval '1 hour')::int AS calls_1h,
-				count(*) FILTER (WHERE start_time > now() - interval '24 hours')::int AS calls_24h
+				count(*)::int AS calls_24h
+			FROM calls
+			WHERE start_time > now() - interval '24 hours'
+			GROUP BY system_id, tgid
+		) cs
+		WHERE t.system_id = cs.system_id AND t.tgid = cs.tgid
+		  AND (t.calls_1h IS DISTINCT FROM cs.calls_1h
+			OR t.calls_24h IS DISTINCT FROM cs.calls_24h)
+	`)
+	if err != nil {
+		return 0, err
+	}
+	// Zero out talkgroups that had activity but now have none in the 24h window
+	tagZero, err := db.Pool.Exec(ctx, `
+		UPDATE talkgroups SET calls_1h = 0, calls_24h = 0, stats_updated_at = now()
+		WHERE (calls_1h > 0 OR calls_24h > 0)
+		  AND NOT EXISTS (
+			SELECT 1 FROM calls c
+			WHERE c.system_id = talkgroups.system_id AND c.tgid = talkgroups.tgid
+			  AND c.start_time > now() - interval '24 hours')
+	`)
+	if err != nil {
+		return tag.RowsAffected(), err
+	}
+	return tag.RowsAffected() + tagZero.RowsAffected(), nil
+}
+
+// RefreshTalkgroupStatsCold updates the slow-changing stats (call_count_30d, unit_count_30d)
+// by scanning the last 30 days. Runs every hour.
+func (db *DB) RefreshTalkgroupStatsCold(ctx context.Context) (int64, error) {
+	tag, err := db.Pool.Exec(ctx, `
+		UPDATE talkgroups t SET
+			call_count_30d = COALESCE(cs.call_count, 0),
+			unit_count_30d = COALESCE(us.unit_count, 0),
+			stats_updated_at = now()
+		FROM (
+			SELECT system_id, tgid, count(*)::int AS call_count
 			FROM calls
 			WHERE start_time > now() - interval '30 days'
 			GROUP BY system_id, tgid
 		) cs
-		RIGHT JOIN (
+		FULL JOIN (
 			SELECT system_id, tgid, count(DISTINCT unit_rid)::int AS unit_count
 			FROM unit_events
 			WHERE tgid IS NOT NULL AND time > now() - interval '30 days'
 			GROUP BY system_id, tgid
 		) us USING (system_id, tgid)
-		WHERE t.system_id = us.system_id AND t.tgid = us.tgid
+		WHERE t.system_id = COALESCE(cs.system_id, us.system_id)
+		  AND t.tgid = COALESCE(cs.tgid, us.tgid)
 		  AND (t.call_count_30d IS DISTINCT FROM COALESCE(cs.call_count, 0)
-			OR t.calls_1h IS DISTINCT FROM COALESCE(cs.calls_1h, 0)
-			OR t.calls_24h IS DISTINCT FROM COALESCE(cs.calls_24h, 0)
 			OR t.unit_count_30d IS DISTINCT FROM COALESCE(us.unit_count, 0))
 	`)
 	if err != nil {

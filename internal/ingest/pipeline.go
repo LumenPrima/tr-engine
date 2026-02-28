@@ -543,37 +543,58 @@ func (p *Pipeline) runMaintenance() {
 	log.Info().Dur("elapsed_ms", time.Since(start)).Msg("partition maintenance complete")
 }
 
-// talkgroupStatsLoop refreshes cached talkgroup stats every 5 minutes.
+// talkgroupStatsLoop refreshes cached talkgroup stats on two cadences:
+// - Hot (calls_1h, calls_24h): every 5 minutes, scans only 24h of calls
+// - Cold (call_count_30d, unit_count_30d): every hour, scans 30 days
 func (p *Pipeline) talkgroupStatsLoop() {
 	log := p.log.With().Str("task", "tg-stats").Logger()
 
-	// Initial refresh on startup
-	p.refreshTalkgroupStats(log)
+	// Initial refresh: both hot and cold on startup
+	p.refreshTalkgroupStatsHot(log)
+	p.refreshTalkgroupStatsCold(log)
 
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
+	hotTicker := time.NewTicker(5 * time.Minute)
+	coldTicker := time.NewTicker(1 * time.Hour)
+	defer hotTicker.Stop()
+	defer coldTicker.Stop()
 
 	for {
 		select {
 		case <-p.ctx.Done():
 			return
-		case <-ticker.C:
-			p.refreshTalkgroupStats(log)
+		case <-coldTicker.C:
+			p.refreshTalkgroupStatsCold(log)
+		case <-hotTicker.C:
+			p.refreshTalkgroupStatsHot(log)
 		}
 	}
 }
 
-func (p *Pipeline) refreshTalkgroupStats(log zerolog.Logger) {
+func (p *Pipeline) refreshTalkgroupStatsHot(log zerolog.Logger) {
 	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
 	defer cancel()
 
-	updated, err := p.db.RefreshTalkgroupStats(ctx)
+	updated, err := p.db.RefreshTalkgroupStatsHot(ctx)
 	if err != nil {
-		log.Warn().Err(err).Msg("talkgroup stats refresh failed")
+		log.Warn().Err(err).Msg("talkgroup stats hot refresh failed")
 		return
 	}
 	if updated > 0 {
-		log.Info().Int64("updated", updated).Msg("talkgroup stats refreshed")
+		log.Info().Int64("updated", updated).Msg("talkgroup stats hot refreshed")
+	}
+}
+
+func (p *Pipeline) refreshTalkgroupStatsCold(log zerolog.Logger) {
+	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Minute)
+	defer cancel()
+
+	updated, err := p.db.RefreshTalkgroupStatsCold(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("talkgroup stats cold refresh failed")
+		return
+	}
+	if updated > 0 {
+		log.Info().Int64("updated", updated).Msg("talkgroup stats cold refreshed")
 	}
 }
 
