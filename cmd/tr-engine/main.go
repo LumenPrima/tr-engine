@@ -169,10 +169,15 @@ func main() {
 			log.Fatal().Msg("STT_PROVIDER=elevenlabs requires ELEVENLABS_API_KEY")
 		}
 		sttProvider = transcribe.NewElevenLabsClient(cfg.ElevenLabsAPIKey, cfg.ElevenLabsModel, cfg.ElevenLabsKeyterms, cfg.WhisperTimeout)
+	case "deepinfra":
+		if cfg.DeepInfraAPIKey == "" {
+			log.Fatal().Msg("STT_PROVIDER=deepinfra requires DEEPINFRA_STT_API_KEY")
+		}
+		sttProvider = transcribe.NewDeepInfraClient(cfg.DeepInfraAPIKey, cfg.DeepInfraModel, cfg.WhisperTimeout)
 	case "none", "":
 		// Transcription explicitly disabled
 	default:
-		log.Fatal().Str("provider", cfg.STTProvider).Msg("unknown STT_PROVIDER (valid: whisper, elevenlabs, none)")
+		log.Fatal().Str("provider", cfg.STTProvider).Msg("unknown STT_PROVIDER (valid: whisper, elevenlabs, deepinfra, none)")
 	}
 
 	if sttProvider != nil {
