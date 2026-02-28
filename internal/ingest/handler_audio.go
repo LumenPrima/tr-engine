@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/snarg/tr-engine/internal/database"
+	"github.com/snarg/tr-engine/internal/storage"
 )
 
 func (p *Pipeline) handleAudio(payload []byte) error {
@@ -57,7 +58,6 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 			inferredType = "wav"
 		}
 
-		// Prefer audio_type from metadata, fall back to whichever base64 field was populated
 		audioType := meta.AudioType
 		if audioType == "" {
 			audioType = inferredType
@@ -69,14 +69,18 @@ func (p *Pipeline) handleAudio(payload []byte) error {
 				p.log.Warn().Err(decErr).Msg("failed to decode audio base64")
 			} else {
 				audioSize = len(decoded)
-				audioPath, err = p.saveAudioFile(meta.ShortName, startTime, meta.Filename, audioType, decoded)
-				if err != nil {
+				filename := buildAudioFilename(meta.Filename, audioType, startTime)
+				audioKey := buildAudioRelPath(meta.ShortName, startTime, filename)
+				contentType := audioContentType(audioType)
+
+				if err := p.saveAudio(ctx, audioKey, decoded, contentType); err != nil {
 					p.log.Error().Err(err).Msg("failed to save audio file")
+				} else {
+					audioPath = audioKey
 				}
 			}
 		}
 
-		// Update call with audio path if we found the call
 		if callID > 0 && audioPath != "" {
 			if err := p.db.UpdateCallAudio(ctx, callID, callStartTime, audioPath, audioSize); err != nil {
 				p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to update call audio")
@@ -510,4 +514,38 @@ func (p *Pipeline) saveAudioFile(sysName string, startTime time.Time, filename s
 	}
 
 	return buildAudioRelPath(sysName, startTime, filename), nil
+}
+
+// saveAudio writes audio data through the storage abstraction.
+// For tiered stores in async mode: writes to local cache synchronously,
+// then enqueues S3 upload in the background.
+func (p *Pipeline) saveAudio(ctx context.Context, key string, data []byte, contentType string) error {
+	if p.uploader != nil {
+		// Async mode: cache locally first, then background S3 upload
+		if tiered, ok := p.store.(*storage.TieredStore); ok {
+			if err := tiered.SaveToCache(ctx, key, data, contentType); err != nil {
+				return err
+			}
+			p.uploader.Enqueue(key, data, contentType)
+			return nil
+		}
+	}
+	// Sync mode or non-tiered store
+	return p.store.Save(ctx, key, data, contentType)
+}
+
+// audioContentType returns the MIME type for an audio type string.
+func audioContentType(audioType string) string {
+	switch audioType {
+	case "m4a":
+		return "audio/mp4"
+	case "mp3":
+		return "audio/mpeg"
+	case "wav":
+		return "audio/wav"
+	case "ogg":
+		return "audio/ogg"
+	default:
+		return "application/octet-stream"
+	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/snarg/tr-engine/internal/api"
 	"github.com/snarg/tr-engine/internal/database"
 	"github.com/snarg/tr-engine/internal/metrics"
+	"github.com/snarg/tr-engine/internal/storage"
 	"github.com/snarg/tr-engine/internal/transcribe"
 )
 
@@ -23,6 +24,8 @@ type Pipeline struct {
 	log      zerolog.Logger
 	audioDir   string
 	trAudioDir string // when set, skip saving audio files (served from TR's filesystem)
+	store      storage.AudioStore
+	uploader   *storage.AsyncUploader // nil if not async mode
 
 	rawBatcher      *Batcher[database.RawMessageRow]
 	recorderBatcher *Batcher[database.RecorderSnapshotRow]
@@ -86,6 +89,8 @@ type PipelineOptions struct {
 	DB               *database.DB
 	AudioDir         string
 	TRAudioDir       string
+	Store            storage.AudioStore
+	S3Uploader       *storage.AsyncUploader // nil if not async mode or no S3
 	RawStore         bool
 	RawIncludeTopics string
 	RawExcludeTopics string
@@ -129,6 +134,8 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		log:             log,
 		audioDir:        opts.AudioDir,
 		trAudioDir:      opts.TRAudioDir,
+		store:           opts.Store,
+		uploader:        opts.S3Uploader,
 		rawStore:        rawStore,
 		rawInclude:      rawInclude,
 		rawExclude:      rawExclude,
@@ -371,6 +378,9 @@ func (p *Pipeline) Stop() {
 	}
 	if p.transcriber != nil {
 		p.transcriber.Stop()
+	}
+	if p.uploader != nil {
+		p.uploader.Stop()
 	}
 	p.rawBatcher.Stop()
 	p.recorderBatcher.Stop()

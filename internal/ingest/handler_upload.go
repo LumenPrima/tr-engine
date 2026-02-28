@@ -93,20 +93,22 @@ func (p *Pipeline) ProcessUploadedCall(ctx context.Context, instanceID string, m
 	if len(audioData) > 0 {
 		audioType := meta.AudioType
 		if audioType == "" {
-			// Infer from filename extension
 			if idx := strings.LastIndex(audioFilename, "."); idx >= 0 {
 				audioType = audioFilename[idx+1:]
 			}
 		}
 		if audioType == "" {
-			audioType = "m4a" // default
+			audioType = "m4a"
 		}
 
-		savedPath, saveErr := p.saveAudioFile(meta.ShortName, startTime, audioFilename, audioType, audioData)
-		if saveErr != nil {
-			p.log.Error().Err(saveErr).Int64("call_id", callID).Msg("failed to save uploaded audio file")
+		filename := buildAudioFilename(audioFilename, audioType, startTime)
+		audioKey := buildAudioRelPath(meta.ShortName, startTime, filename)
+		contentType := audioContentType(audioType)
+
+		if err := p.saveAudio(ctx, audioKey, audioData, contentType); err != nil {
+			p.log.Error().Err(err).Int64("call_id", callID).Msg("failed to save uploaded audio file")
 		} else {
-			audioPath = savedPath
+			audioPath = audioKey
 			if updateErr := p.db.UpdateCallAudio(ctx, callID, callStartTime, audioPath, len(audioData)); updateErr != nil {
 				p.log.Warn().Err(updateErr).Int64("call_id", callID).Msg("failed to update call audio path")
 			}
