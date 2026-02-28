@@ -89,6 +89,10 @@ CREATE DATABASE trengine OWNER trengine;
 
 ### Load the schema
 
+tr-engine auto-applies `schema.sql` on first startup when it detects an empty database — no manual step needed.
+
+To apply it manually instead (e.g., to inspect the schema before starting):
+
 ```bash
 psql -U trengine -d trengine -f schema.sql
 ```

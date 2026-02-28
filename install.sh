@@ -40,12 +40,10 @@ TR_DIR="$(pwd)"
 mkdir -p tr-engine
 
 echo "Downloading files..."
-curl -sf https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sql \
-  -o tr-engine/schema.sql
 curl -sf https://raw.githubusercontent.com/LumenPrima/tr-engine/master/sample.env \
   -o tr-engine/.env
 
-if [ ! -f tr-engine/schema.sql ] || [ ! -f tr-engine/.env ]; then
+if [ ! -f tr-engine/.env ]; then
   echo "Error: Failed to download files"
   rm -rf tr-engine
   exit 1
@@ -55,7 +53,7 @@ fi
 # Uncomment and set the values needed for this install.
 # Everything else stays commented as a reference for the user.
 sed -i.bak \
-  -e "s|^DATABASE_URL=.*|DATABASE_URL=postgres://trengine:trengine@postgres:5432/trengine?sslmode=disable|" \
+  -e "s|^DATABASE_URL=.*|# DATABASE_URL=  # set automatically by Docker Compose|" \
   -e "s|^MQTT_BROKER_URL=.*|# MQTT_BROKER_URL=tcp://localhost:1883|" \
   -e "s|^# TR_DIR=.*|TR_DIR=/trunk-recorder|" \
   tr-engine/.env
@@ -67,14 +65,13 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: trengine
-      POSTGRES_PASSWORD: trengine
-      POSTGRES_DB: trengine
+      POSTGRES_USER: \${POSTGRES_USER:-trengine}
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:-trengine}
+      POSTGRES_DB: \${POSTGRES_DB:-trengine}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trengine"]
+      test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER:-trengine}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -82,8 +79,11 @@ services:
   tr-engine:
     image: ghcr.io/lumenprima/tr-engine:latest
     ports:
-      - "8080:8080"
+      - "\${HTTP_PORT:-8080}:8080"
     env_file: .env
+    environment:
+      DATABASE_URL: postgres://\${POSTGRES_USER:-trengine}:\${POSTGRES_PASSWORD:-trengine}@postgres:5432/\${POSTGRES_DB:-trengine}?sslmode=disable
+      AUDIO_DIR: /data/audio
     volumes:
       - ${TR_DIR}:/trunk-recorder:ro
     depends_on:

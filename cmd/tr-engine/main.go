@@ -106,6 +106,11 @@ func main() {
 	}
 	defer db.Close()
 
+	// Auto-apply schema on fresh database (no-op if tables already exist)
+	if err := db.InitSchema(ctx, trengine.SchemaSQL); err != nil {
+		log.Fatal().Err(err).Msg("schema initialization failed")
+	}
+
 	// Run idempotent schema migrations — fatal on failure since queries depend on these columns
 	if err := db.Migrate(ctx); err != nil {
 		log.Fatal().Err(err).Msg("schema migration failed (run ALTER TABLE manually or grant ALTER privileges)")

@@ -1,6 +1,6 @@
 # Getting Started — Docker with Existing MQTT Broker
 
-Run tr-engine via Docker Compose, connecting to an MQTT broker you already have running (e.g., the one your trunk-recorder is already publishing to). You only need two files — no repo clone required.
+Run tr-engine via Docker Compose, connecting to an MQTT broker you already have running (e.g., the one your trunk-recorder is already publishing to). No repo clone required.
 
 > **Other installation methods:**
 > - **[Docker Compose (all-in-one)](./docker.md)** — includes its own MQTT broker
@@ -13,19 +13,36 @@ Run tr-engine via Docker Compose, connecting to an MQTT broker you already have 
 - A running **MQTT broker** that trunk-recorder is already publishing to (or use file watch mode instead — see [Configuration](#other-settings))
 - The broker's address, port, and credentials (if any)
 
-## 1. Create a project directory and grab the files
+## 1. Create a project directory
 
 ```bash
 mkdir tr-engine && cd tr-engine
-curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sql
 curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker-compose.yml
 ```
 
-> **Why download `schema.sql` separately?** The schema is embedded inside the tr-engine image, but PostgreSQL runs in a separate container and needs the file mounted into its init directory to set up tables on first boot. Docker Compose can't share files between containers, so it's mounted from the host.
+## 2. Configure your MQTT broker
 
-## 2. Edit `docker-compose.yml`
+Create a `.env` file with your broker details:
 
-Open `docker-compose.yml` and change the tr-engine `environment` section to point at your broker. Remove the `mosquitto` service and the `depends_on` reference to it — you don't need a bundled broker.
+```bash
+MQTT_BROKER_URL=tcp://192.168.1.50:1883
+MQTT_USERNAME=
+MQTT_PASSWORD=
+MQTT_TOPICS=trengine/#
+```
+
+| Variable | What to set |
+|----------|-------------|
+| `MQTT_BROKER_URL` | Your broker's address — e.g. `tcp://192.168.1.50:1883` |
+| `MQTT_USERNAME` | Broker credentials (leave empty for anonymous) |
+| `MQTT_PASSWORD` | Broker credentials (leave empty for anonymous) |
+| `MQTT_TOPICS` | Must match your TR plugin's topic prefix with `/#`. If your TR plugin uses `topic: "myradio/feeds"`, set this to `myradio/#` |
+
+See [`sample.env`](https://github.com/LumenPrima/tr-engine/blob/master/sample.env) for all available options.
+
+## 3. Edit `docker-compose.yml`
+
+Remove the `mosquitto` service and the `depends_on` reference to it — you don't need a bundled broker.
 
 Here's what the file should look like after editing:
 
@@ -34,14 +51,13 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: trengine
-      POSTGRES_PASSWORD: trengine
-      POSTGRES_DB: trengine
+      POSTGRES_USER: ${POSTGRES_USER:-trengine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trengine}
+      POSTGRES_DB: ${POSTGRES_DB:-trengine}
     volumes:
       - ./pgdata:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trengine"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trengine}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -49,15 +65,15 @@ services:
   tr-engine:
     image: ghcr.io/lumenprima/tr-engine:latest
     ports:
-      - "8080:8080"
+      - "${HTTP_PORT:-8080}:8080"
+    env_file:
+      - path: ./.env
+        required: false
     environment:
-      DATABASE_URL: postgres://trengine:trengine@postgres:5432/trengine?sslmode=disable
-      MQTT_BROKER_URL: tcp://192.168.1.50:1883
-      MQTT_USERNAME:
-      MQTT_PASSWORD:
-      MQTT_TOPICS: "trengine/#"
+      # Docker-internal: DATABASE_URL is built from POSTGRES_* vars above
+      DATABASE_URL: postgres://${POSTGRES_USER:-trengine}:${POSTGRES_PASSWORD:-trengine}@postgres:5432/${POSTGRES_DB:-trengine}?sslmode=disable
       AUDIO_DIR: /data/audio
-      LOG_LEVEL: info
+      # MQTT_BROKER_URL comes from .env — no override needed here
     volumes:
       - ./audio:/data/audio
       # Uncomment to live-edit web UI without rebuilding:
@@ -67,40 +83,29 @@ services:
         condition: service_healthy
 ```
 
-### What to change
-
-| Variable | What to set |
-|----------|-------------|
-| `MQTT_BROKER_URL` | Your broker's address — e.g. `tcp://192.168.1.50:1883` |
-| `MQTT_USERNAME` | Broker credentials (leave empty for anonymous) |
-| `MQTT_PASSWORD` | Broker credentials (leave empty for anonymous) |
-| `MQTT_TOPICS` | Must match your TR plugin's topic prefix with `/#`. If your TR plugin uses `topic: "myradio/feeds"`, set this to `myradio/#` |
+> **Note:** `DATABASE_URL` is built automatically from the `POSTGRES_*` variables — set credentials in one place via `.env`. `MQTT_BROKER_URL` is intentionally absent from the `environment` block so it picks up your value from `.env`.
 
 ### Broker on the Docker host
 
-If the MQTT broker runs on the same machine as Docker, use `host.docker.internal` and add `extra_hosts` to the tr-engine service:
+If the MQTT broker runs on the same machine as Docker, set `MQTT_BROKER_URL=tcp://host.docker.internal:1883` in your `.env` and add `extra_hosts` to the tr-engine service in `docker-compose.yml`:
 
 ```yaml
   tr-engine:
-    image: ghcr.io/lumenprima/tr-engine:latest
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    environment:
-      MQTT_BROKER_URL: tcp://host.docker.internal:1883
-      # ... rest of env vars
 ```
 
 On macOS and Windows, `host.docker.internal` works without `extra_hosts`. On Linux, the `extra_hosts` line is required.
 
-## 3. Start
+## 4. Start
 
 ```bash
 docker compose up -d
 ```
 
-On first run, PostgreSQL initializes from `schema.sql` (takes a few seconds). tr-engine waits for that to finish before starting.
+On first run, PostgreSQL starts with an empty database. tr-engine auto-applies the schema on first connect (takes a few seconds).
 
-## 4. Verify
+## 5. Verify
 
 ```bash
 # Check logs — look for "mqtt connected" and "subscribing"
@@ -132,30 +137,34 @@ docker compose exec postgres pg_dump -U trengine trengine > backup.sql
 
 ## Other settings
 
-Add any variable from [sample.env](https://github.com/LumenPrima/tr-engine/blob/master/sample.env) to the `environment` section in `docker-compose.yml`:
+Everything else is optional and has sensible defaults. Add any variable from [sample.env](https://github.com/LumenPrima/tr-engine/blob/master/sample.env) to your `.env` file:
 
-```yaml
-      AUTH_TOKEN: my-secret              # enable API authentication
-      # WRITE_TOKEN: my-write-secret     # separate token for write operations (recommended for public instances)
-      # CORS_ORIGINS: https://example.com  # restrict CORS (empty = allow all)
-      LOG_LEVEL: debug                   # more verbose logging
-      RAW_STORE: "false"                 # disable raw MQTT archival (saves disk)
-      RAW_EXCLUDE_TOPICS: trunking_message  # exclude high-volume raw archival
-      # TR_DIR: /tr-config              # auto-discover from TR's config.json
-      # WATCH_DIR: /tr-audio            # file watch mode (alternative to MQTT)
-      # WATCH_BACKFILL_DAYS: 7          # days to backfill on startup
+```bash
+AUTH_TOKEN=my-secret                # API authentication token
+# WRITE_TOKEN=my-write-secret       # separate token for write operations (recommended for public instances)
+# CORS_ORIGINS=https://example.com  # restrict CORS (empty = allow all)
+LOG_LEVEL=debug                     # more verbose logging
+RAW_STORE=false                     # disable raw MQTT archival (saves disk)
+RAW_EXCLUDE_TOPICS=trunking_message # exclude high-volume raw archival
+# TR_DIR=/tr-config                 # auto-discover from TR's config.json
+# WATCH_DIR=/tr-audio               # file watch mode (alternative to MQTT)
+# WATCH_BACKFILL_DAYS=7             # days to backfill on startup
 ```
 
 Then restart: `docker compose up -d`
 
 ### File watch mode and TR auto-discovery
 
-MQTT is optional — you can ingest calls by watching TR's audio directory instead (or in addition to MQTT). Bind-mount TR's directory into the container:
+MQTT is optional — you can ingest calls by watching TR's audio directory instead (or in addition to MQTT). Add to `.env` and bind-mount TR's directory in `docker-compose.yml`:
 
+In `.env`:
+```bash
+TR_DIR=/tr-config              # auto-discover everything from TR's config
+# or just: WATCH_DIR=/tr-audio  # watch audio directory only
+```
+
+In `docker-compose.yml`:
 ```yaml
-    environment:
-      TR_DIR: /tr-config              # auto-discover everything from TR's config
-      # or just: WATCH_DIR: /tr-audio  # watch audio directory only
     volumes:
       - /path/to/trunk-recorder:/tr-config:ro
 ```
@@ -166,11 +175,13 @@ MQTT is optional — you can ingest calls by watching TR's audio directory inste
 
 If trunk-recorder runs on the same machine (or its audio directory is accessible via a network mount), you can serve audio files directly from TR's filesystem instead of receiving them over MQTT as base64. This avoids encoding overhead and duplicate files.
 
-Bind-mount TR's audio directory into the container and set `TR_AUDIO_DIR`:
+Add to `.env`:
+```bash
+TR_AUDIO_DIR=/tr-audio
+```
 
+And bind-mount TR's audio directory in `docker-compose.yml`:
 ```yaml
-    environment:
-      TR_AUDIO_DIR: /tr-audio
     volumes:
       - ./audio:/data/audio
       - /path/to/trunk-recorder/audio:/tr-audio:ro

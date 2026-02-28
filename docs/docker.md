@@ -18,32 +18,19 @@ Run tr-engine with a single command. Docker Compose handles PostgreSQL, the MQTT
 - Docker and Docker Compose
 - A running trunk-recorder instance with the [MQTT Status plugin](https://github.com/TrunkRecorder/trunk-recorder-mqtt-status)
 
-## 1. Grab the files
+## 1. Download and start
 
 ```bash
 mkdir tr-engine && cd tr-engine
 curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker-compose.yml
-curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/schema.sql
-mkdir -p docker && curl -so docker/mosquitto.conf https://raw.githubusercontent.com/LumenPrima/tr-engine/master/docker/mosquitto.conf
-```
-
-Three files — that's all you need:
-- `docker-compose.yml` — orchestrates PostgreSQL, Mosquitto, and tr-engine
-- `schema.sql` — database schema, auto-loaded on first run
-- `docker/mosquitto.conf` — minimal Mosquitto config (anonymous access on port 1883)
-
-> **Why download `schema.sql` separately?** The schema is embedded inside the tr-engine image, but PostgreSQL runs in a separate container and needs the file mounted into its init directory to set up tables on first boot. Docker Compose can't share files between containers, so it's mounted from the host.
-
-## 2. Start
-
-```bash
 docker compose up -d
 ```
 
-On first run:
-- PostgreSQL starts and auto-loads `schema.sql`
-- Mosquitto starts on port **1883**
+That's it — one file, one command. On first run:
+- PostgreSQL starts and tr-engine auto-applies the database schema
+- Mosquitto starts on port **1883** (anonymous access)
 - tr-engine connects to both and starts listening
+- An API auth token is auto-generated and logged (see [Configuration](#configuration) to set a persistent one)
 
 Verify it's running:
 
@@ -72,9 +59,26 @@ In your trunk-recorder `config.json`, set the MQTT plugin's broker to your Docke
 
 Replace `YOUR_DOCKER_HOST` with the IP or hostname of the machine running Docker. If trunk-recorder runs on the same machine, use `localhost`.
 
-**The topic prefix is yours to choose.** tr-engine routes messages based on the trailing segments (e.g. `call_start`, `on`, `message`), not the prefix. Use any prefix you like — `trengine`, `myradio`, `robotastic` — as long as `MQTT_TOPICS` in `docker-compose.yml` matches with a `/#` wildcard. The default compose file uses `trengine/#` which matches the example above.
+**The topic prefix is yours to choose.** tr-engine routes messages based on the trailing segments (e.g. `call_start`, `on`, `message`), not the prefix. Use any prefix you like — `trengine`, `myradio`, `robotastic` — as long as `MQTT_TOPICS` in your `.env` matches with a `/#` wildcard. The default is `#` (all topics), which works fine for a dedicated broker.
 
 Once trunk-recorder connects, systems and talkgroups will auto-populate within seconds.
+
+### MQTT authentication
+
+By default, the bundled Mosquitto broker allows anonymous connections. To require authentication, set `MQTT_USERNAME` and `MQTT_PASSWORD` in your `.env`:
+
+```bash
+MQTT_USERNAME=myuser
+MQTT_PASSWORD=mypassword
+```
+
+The same credentials configure both the broker and tr-engine's connection to it. When set, Mosquitto creates a password file at startup and rejects anonymous connections. Update your trunk-recorder plugin config to match:
+
+```json
+"broker": "tcp://YOUR_DOCKER_HOST:1883",
+"mqtt_username": "myuser",
+"mqtt_password": "mypassword"
+```
 
 ### Raspberry Pi / ARM64 users
 
@@ -104,7 +108,7 @@ Two named volumes persist across restarts and upgrades:
 | `tr-engine-db` | PostgreSQL data | `/var/lib/postgresql/data` |
 | `tr-engine-audio` | Call audio files | `/data/audio` |
 
-To back up the database:
+To back up the database (use your `POSTGRES_USER`/`POSTGRES_DB` if you changed them):
 
 ```bash
 docker compose exec postgres pg_dump -U trengine trengine > backup.sql
@@ -112,32 +116,50 @@ docker compose exec postgres pg_dump -U trengine trengine > backup.sql
 
 ## Configuration
 
-Override tr-engine settings by editing the `environment` section in `docker-compose.yml`:
+tr-engine works with zero configuration — all defaults are built into `docker-compose.yml`. To customize, create a `.env` file next to your `docker-compose.yml`:
 
-```yaml
-environment:
-  DATABASE_URL: postgres://trengine:trengine@postgres:5432/trengine?sslmode=disable
-  MQTT_BROKER_URL: tcp://mosquitto:1883
-  MQTT_TOPICS: "trengine/#"
-  AUDIO_DIR: /data/audio
-  LOG_LEVEL: debug        # add any env var from sample.env
-  AUTH_TOKEN: my-secret   # enable API authentication
-  # WRITE_TOKEN: my-write-secret  # separate token for write operations (see below)
-  # CORS_ORIGINS: https://example.com  # restrict CORS (empty = allow all)
-  # TR_DIR: /tr-config    # auto-discover from TR's config.json (see below)
-  # WATCH_DIR: /tr-audio  # file watch mode (alternative to MQTT)
+```bash
+# Download the reference with all options documented
+curl -sO https://raw.githubusercontent.com/LumenPrima/tr-engine/master/sample.env
+cp sample.env .env
+# Edit .env with your settings, then: docker compose up -d
 ```
+
+Common settings:
+
+```bash
+AUTH_TOKEN=my-secret            # persistent API token (auto-generated if not set)
+MQTT_TOPICS=trengine/#          # match your TR plugin's topic prefix (default: #)
+# WRITE_TOKEN=my-write-secret   # separate token for write operations (see below)
+# CORS_ORIGINS=https://example.com  # restrict CORS (empty = allow all)
+LOG_LEVEL=info                  # debug, info, warn, error
+# TR_DIR=/tr-config             # auto-discover from TR's config.json (see below)
+# WATCH_DIR=/tr-audio           # file watch mode (alternative to MQTT)
+```
+
+Docker-specific settings (ignored when running the binary directly):
+
+```bash
+# POSTGRES_USER=trengine        # database credentials (default: trengine)
+# POSTGRES_PASSWORD=trengine    # used by both postgres container and DATABASE_URL
+# POSTGRES_DB=trengine
+# HTTP_PORT=8080                # host port for the web UI / API
+# MQTT_PORT=1883                # host port for the MQTT broker
+```
+
+See [`sample.env`](https://github.com/LumenPrima/tr-engine/blob/master/sample.env) for all available options with descriptions.
+
+> **Note:** `DATABASE_URL`, `MQTT_BROKER_URL`, and `AUDIO_DIR` are set automatically by `docker-compose.yml` and don't need to appear in `.env`. Database credentials flow from `POSTGRES_*` variables into both the postgres container and `DATABASE_URL` automatically.
 
 Then restart: `docker compose up -d`
 
 ### Securing a public-facing instance
 
-If your tr-engine instance is accessible from the internet, you should **always** set `WRITE_TOKEN`:
+If your tr-engine instance is accessible from the internet, you should **always** set `WRITE_TOKEN` in your `.env`:
 
-```yaml
-environment:
-  AUTH_TOKEN: my-read-token       # used by the web UI (served via /auth-init)
-  WRITE_TOKEN: my-write-secret    # required for all write operations
+```bash
+AUTH_TOKEN=my-read-token         # used by the web UI (served via /auth-init)
+WRITE_TOKEN=my-write-secret      # required for all write operations
 ```
 
 **Why this matters:** `AUTH_TOKEN` is automatically served to every browser that loads the web UI (via `GET /api/v1/auth-init`). Without `WRITE_TOKEN`, anyone who visits your dashboard can use that token to modify talkgroup names, merge systems, delete data, or upload arbitrary call recordings.
@@ -148,12 +170,15 @@ Use a strong, random value for `WRITE_TOKEN` and do **not** reuse your `AUTH_TOK
 
 ### TR auto-discovery (TR_DIR)
 
-The simplest setup if trunk-recorder's directory is accessible. Bind-mount TR's directory and set `TR_DIR`:
+The simplest setup if trunk-recorder's directory is accessible. Add `TR_DIR` to your `.env` and bind-mount TR's directory in `docker-compose.yml`:
 
+In `.env`:
+```bash
+TR_DIR=/tr-config
+```
+
+In `docker-compose.yml`, add a volume to the `tr-engine` service:
 ```yaml
-  tr-engine:
-    environment:
-      TR_DIR: /tr-config
     volumes:
       - /path/to/trunk-recorder:/tr-config:ro
       # If TR's audio is in a separate location, mount that too:
@@ -164,13 +189,15 @@ This auto-discovers `captureDir` from `config.json` (sets `WATCH_DIR` + `TR_AUDI
 
 ### File watch mode (WATCH_DIR)
 
-To watch TR's audio directory for new files without the full auto-discovery:
+To watch TR's audio directory for new files without the full auto-discovery, add to `.env`:
 
+```bash
+WATCH_DIR=/tr-audio
+# WATCH_BACKFILL_DAYS=7  # days to backfill on startup (0=all, -1=none)
+```
+
+And add a volume in `docker-compose.yml`:
 ```yaml
-  tr-engine:
-    environment:
-      WATCH_DIR: /tr-audio
-      # WATCH_BACKFILL_DAYS: 7  # days to backfill on startup (0=all, -1=none)
     volumes:
       - /path/to/trunk-recorder/audio:/tr-audio:ro
 ```
@@ -181,12 +208,13 @@ Watch mode only produces `call_end` events. For `call_start`, unit events, and r
 
 Instead of receiving audio over MQTT as base64, tr-engine can serve audio files directly from trunk-recorder's filesystem. This avoids the encoding overhead and eliminates duplicate files.
 
-To enable it, bind-mount trunk-recorder's audio directory into the tr-engine container and set `TR_AUDIO_DIR`:
+To enable it, add to `.env`:
+```bash
+TR_AUDIO_DIR=/tr-audio
+```
 
+And bind-mount TR's audio directory in `docker-compose.yml`:
 ```yaml
-  tr-engine:
-    environment:
-      TR_AUDIO_DIR: /tr-audio
     volumes:
       - /path/to/trunk-recorder/audio:/tr-audio:ro
 ```
@@ -197,67 +225,61 @@ Both modes coexist during a transition — existing MQTT-ingested audio still se
 
 ### Transcription (STT)
 
-Transcription is optional. Add STT environment variables to the `tr-engine` service to enable automatic transcription of call recordings. Three provider options:
+Transcription is optional. Add STT settings to your `.env` to enable automatic transcription of call recordings. Three provider options:
 
 **Local Whisper (self-hosted):**
 
-```yaml
-  tr-engine:
-    environment:
-      STT_PROVIDER: whisper
-      WHISPER_URL: http://whisper-server:8000/v1/audio/transcriptions
-      WHISPER_MODEL: deepdml/faster-whisper-large-v3-turbo-ct2
-      WHISPER_LANGUAGE: en
-      WHISPER_TEMPERATURE: "0.1"
-      TRANSCRIBE_WORKERS: 2
-      # Optional — can improve recognition of domain terms but may cause
-      # hallucinations (Whisper repeats prompt words even in silence).
-      # Test with your audio before enabling in production.
-      # WHISPER_PROMPT: "Police dispatch. Engine 7, Medic 23. 10-4, copy, en route."
-      # WHISPER_HOTWORDS: "Medic,Engine,Ladder,Rescue,10-4"
+```bash
+STT_PROVIDER=whisper
+WHISPER_URL=http://whisper-server:8000/v1/audio/transcriptions
+WHISPER_MODEL=deepdml/faster-whisper-large-v3-turbo-ct2
+WHISPER_LANGUAGE=en
+WHISPER_TEMPERATURE=0.1
+TRANSCRIBE_WORKERS=2
+# Optional — can improve recognition of domain terms but may cause
+# hallucinations (Whisper repeats prompt words even in silence).
+# Test with your audio before enabling in production.
+# WHISPER_PROMPT=Police dispatch. Engine 7, Medic 23. 10-4, copy, en route.
+# WHISPER_HOTWORDS=Medic,Engine,Ladder,Rescue,10-4
 ```
 
 Requires an OpenAI-compatible Whisper server (e.g., [speaches-ai](https://github.com/speaches-ai/speaches)). See `tools/whisper-server/` for a ready-made Docker Compose.
 
 **Remote Whisper (Groq, OpenAI, etc.):**
 
-```yaml
-  tr-engine:
-    environment:
-      STT_PROVIDER: whisper
-      WHISPER_URL: https://api.groq.com/openai/v1/audio/transcriptions
-      WHISPER_API_KEY: gsk_your_api_key_here
-      WHISPER_MODEL: whisper-large-v3-turbo
-      WHISPER_LANGUAGE: en
-      WHISPER_TEMPERATURE: "0.1"
-      TRANSCRIBE_WORKERS: 2
-      # Optional — see note above about hallucination risk.
-      # WHISPER_PROMPT: "Police dispatch. Engine 7, Medic 23. 10-4, copy, en route."
+```bash
+STT_PROVIDER=whisper
+WHISPER_URL=https://api.groq.com/openai/v1/audio/transcriptions
+WHISPER_API_KEY=gsk_your_api_key_here
+WHISPER_MODEL=whisper-large-v3-turbo
+WHISPER_LANGUAGE=en
+WHISPER_TEMPERATURE=0.1
+TRANSCRIBE_WORKERS=2
+# Optional — see note above about hallucination risk.
+# WHISPER_PROMPT=Police dispatch. Engine 7, Medic 23. 10-4, copy, en route.
 ```
 
 Works with any OpenAI-compatible API. For OpenAI, use `https://api.openai.com/v1/audio/transcriptions` and model `whisper-1`.
 
 **ElevenLabs:**
 
-```yaml
-  tr-engine:
-    environment:
-      STT_PROVIDER: elevenlabs
-      ELEVENLABS_API_KEY: sk_your_api_key_here
-      ELEVENLABS_MODEL: scribe_v2
-      TRANSCRIBE_WORKERS: 2
-      # Optional — boosts recognition of specific terms.
-      # Less prone to hallucination than Whisper prompts, but test first.
-      # ELEVENLABS_KEYTERMS: "Medic,Engine,Ladder,Rescue,10-4"
+```bash
+STT_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=sk_your_api_key_here
+ELEVENLABS_MODEL=scribe_v2
+TRANSCRIBE_WORKERS=2
+# Optional — boosts recognition of specific terms.
+# Less prone to hallucination than Whisper prompts, but test first.
+# ELEVENLABS_KEYTERMS=Medic,Engine,Ladder,Rescue,10-4
 ```
 
 **Common tuning (all providers):**
 
-```yaml
-      TRANSCRIBE_QUEUE_SIZE: 500       # max queued jobs (dropped when full)
-      TRANSCRIBE_MIN_DURATION: "1.0"   # skip calls shorter than 1s
-      TRANSCRIBE_MAX_DURATION: 300     # skip calls longer than 5min
-      # PREPROCESS_AUDIO: true         # bandpass filter + normalize (requires sox)
+```bash
+TRANSCRIBE_QUEUE_SIZE=500       # max queued jobs (dropped when full)
+TRANSCRIBE_MIN_DURATION=1.0     # skip calls shorter than 1s
+TRANSCRIBE_MAX_DURATION=300     # skip calls longer than 5min
+# PREPROCESS_AUDIO=true         # bandpass filter + normalize (requires sox)
 ```
 
 Transcription auto-triggers on every `call_end` within the min/max duration range. See `sample.env` for the full list of Whisper tuning parameters including anti-hallucination options.

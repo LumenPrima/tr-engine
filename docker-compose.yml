@@ -2,14 +2,13 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: trengine
-      POSTGRES_PASSWORD: trengine
-      POSTGRES_DB: trengine
+      POSTGRES_USER: ${POSTGRES_USER:-trengine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trengine}
+      POSTGRES_DB: ${POSTGRES_DB:-trengine}
     volumes:
       - tr-engine-db:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trengine"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trengine}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -17,9 +16,23 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
     ports:
-      - "1883:1883"
-    volumes:
-      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - "${MQTT_PORT:-1883}:1883"
+    env_file:
+      - path: ./.env
+        required: false
+    command: >-
+      sh -c '
+      CONF=/mosquitto/config/mosquitto.conf;
+      echo "listener 1883" > "$$CONF";
+      if [ -n "$$MQTT_USERNAME" ] && [ -n "$$MQTT_PASSWORD" ]; then
+        echo "allow_anonymous false" >> "$$CONF";
+        echo "password_file /mosquitto/config/passwd" >> "$$CONF";
+        mosquitto_passwd -b -c /mosquitto/config/passwd "$$MQTT_USERNAME" "$$MQTT_PASSWORD";
+      else
+        echo "allow_anonymous true" >> "$$CONF";
+      fi;
+      exec mosquitto -c "$$CONF"
+      '
 
   tr-engine:
     build:
@@ -28,18 +41,30 @@ services:
         VERSION: "${VERSION:-dev}"
     image: ghcr.io/lumenprima/tr-engine:latest
     ports:
-      - "8080:8080"
+      - "${HTTP_PORT:-8080}:8080"
+    env_file:
+      - path: ./.env
+        required: false
     environment:
-      DATABASE_URL: postgres://trengine:trengine@postgres:5432/trengine?sslmode=disable
+      # Docker-internal overrides — these reference sibling containers by name
+      # and take precedence over any values in .env
+      DATABASE_URL: postgres://${POSTGRES_USER:-trengine}:${POSTGRES_PASSWORD:-trengine}@postgres:5432/${POSTGRES_DB:-trengine}?sslmode=disable
       MQTT_BROKER_URL: tcp://mosquitto:1883
-      MQTT_USERNAME:
-      MQTT_PASSWORD:
-      MQTT_TOPICS: "trengine/#"
       AUDIO_DIR: /data/audio
     volumes:
       - tr-engine-audio:/data/audio
-      # Optional: mount a local web/ directory to override embedded UI files
-      # without rebuilding. Changes take effect on next browser request.
+      # Optional volume mounts — uncomment as needed:
+      #
+      # TR auto-discovery: reads config.json, imports talkgroup/unit CSVs,
+      # and auto-sets WATCH_DIR + TR_AUDIO_DIR. Set TR_DIR=/tr-config in .env.
+      # - /path/to/trunk-recorder:/tr-config:ro
+      #
+      # Filesystem audio: serve audio directly from TR's directory instead of
+      # receiving it over MQTT. Set TR_AUDIO_DIR=/tr-audio in .env.
+      # - /path/to/trunk-recorder/audio:/tr-audio:ro
+      #
+      # Web UI override: serve from local files instead of embedded.
+      # Changes take effect on next browser request, no restart needed.
       # - ./web:/opt/tr-engine/web
     depends_on:
       postgres:
