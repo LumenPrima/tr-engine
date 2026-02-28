@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // LocalStore stores audio files on the local filesystem.
@@ -18,8 +19,28 @@ func NewLocalStore(audioDir string) *LocalStore {
 	return &LocalStore{audioDir: audioDir}
 }
 
+// safePath resolves key to an absolute path under audioDir, rejecting path traversal.
+func (s *LocalStore) safePath(key string) (string, error) {
+	full := filepath.Join(s.audioDir, filepath.FromSlash(key))
+	abs, err := filepath.Abs(full)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %w", err)
+	}
+	base, err := filepath.Abs(s.audioDir)
+	if err != nil {
+		return "", fmt.Errorf("invalid base: %w", err)
+	}
+	if !strings.HasPrefix(abs, base+string(filepath.Separator)) && abs != base {
+		return "", fmt.Errorf("path traversal rejected: %q", key)
+	}
+	return abs, nil
+}
+
 func (s *LocalStore) Save(ctx context.Context, key string, data []byte, contentType string) error {
-	path := filepath.Join(s.audioDir, key)
+	path, err := s.safePath(key)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
@@ -48,7 +69,10 @@ func (s *LocalStore) Save(ctx context.Context, key string, data []byte, contentT
 }
 
 func (s *LocalStore) LocalPath(key string) string {
-	full := filepath.Join(s.audioDir, key)
+	full, err := s.safePath(key)
+	if err != nil {
+		return ""
+	}
 	if _, err := os.Stat(full); err == nil {
 		return full
 	}
@@ -60,11 +84,19 @@ func (s *LocalStore) URL(ctx context.Context, key string) (string, error) {
 }
 
 func (s *LocalStore) Open(ctx context.Context, key string) (io.ReadCloser, error) {
-	return os.Open(filepath.Join(s.audioDir, key))
+	path, err := s.safePath(key)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(path)
 }
 
 func (s *LocalStore) Exists(ctx context.Context, key string) bool {
-	_, err := os.Stat(filepath.Join(s.audioDir, key))
+	path, err := s.safePath(key)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
 	return err == nil
 }
 

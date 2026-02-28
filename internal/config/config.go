@@ -132,6 +132,9 @@ func (c *Config) Validate() error {
 	if c.MQTTBrokerURL == "" && c.WatchDir == "" && c.TRDir == "" {
 		return fmt.Errorf("at least one of MQTT_BROKER_URL, WATCH_DIR, or TR_DIR must be set")
 	}
+	if c.S3.Enabled() && c.S3.UploadMode != "async" && c.S3.UploadMode != "sync" {
+		return fmt.Errorf("S3_UPLOAD_MODE must be \"async\" or \"sync\", got %q", c.S3.UploadMode)
+	}
 	return nil
 }
 
