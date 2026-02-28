@@ -83,6 +83,10 @@ type Config struct {
 	ElevenLabsModel    string `env:"ELEVENLABS_MODEL" envDefault:"scribe_v2"`
 	ElevenLabsKeyterms string `env:"ELEVENLABS_KEYTERMS"`
 
+	// DeepInfra STT (alternative to Whisper; used when STT_PROVIDER=deepinfra)
+	DeepInfraAPIKey string `env:"DEEPINFRA_STT_API_KEY"`
+	DeepInfraModel  string `env:"DEEPINFRA_STT_MODEL" envDefault:"openai/whisper-large-v3-turbo"`
+
 	// LLM post-processing (optional — disabled when LLM_URL is empty; not yet implemented)
 	LLMUrl     string        `env:"LLM_URL"`
 	LLMModel   string        `env:"LLM_MODEL"`
