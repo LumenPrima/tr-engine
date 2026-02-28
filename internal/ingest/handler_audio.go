@@ -484,9 +484,9 @@ func buildAudioRelPath(sysName string, startTime time.Time, filename string) str
 // then enqueues S3 upload in the background.
 func (p *Pipeline) saveAudio(ctx context.Context, key string, data []byte, contentType string) error {
 	if p.uploader != nil {
-		// Async mode: cache locally first, then background S3 upload
+		// Async mode: save locally first, then background S3 upload
 		if tiered, ok := p.store.(*storage.TieredStore); ok {
-			if err := tiered.SaveToCache(ctx, key, data, contentType); err != nil {
+			if err := tiered.SaveLocal(ctx, key, data, contentType); err != nil {
 				return err
 			}
 			p.uploader.Enqueue(key, data, contentType)

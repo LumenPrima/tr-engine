@@ -59,9 +59,9 @@ func New(cfg config.S3Config, audioDir string, log zerolog.Logger) (AudioStore, 
 		return s3store, nil, nil
 	}
 
-	// Tiered mode: S3 primary + local NVMe cache
-	cache := NewLocalStore(audioDir)
-	tiered := NewTieredStore(s3store, cache, log)
+	// Tiered mode: local primary + S3 backup
+	local := NewLocalStore(audioDir)
+	tiered := NewTieredStore(s3store, local, log)
 
 	var services []BackgroundService
 

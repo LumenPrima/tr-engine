@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -186,10 +187,24 @@ func (h *CallsHandler) GetCallAudio(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Try S3 presigned URL redirect (tiered/S3 stores only)
+	// 2. Try storage Open (downloads from S3 and caches locally on tiered stores)
 	if audioPath != "" && h.store != nil {
-		if url, urlErr := h.store.URL(r.Context(), audioPath); urlErr == nil && url != "" {
-			http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		if rc, openErr := h.store.Open(r.Context(), audioPath); openErr == nil {
+			defer rc.Close()
+			ext := strings.ToLower(filepath.Ext(audioPath))
+			contentTypes := map[string]string{
+				".m4a": "audio/mp4",
+				".mp3": "audio/mpeg",
+				".wav": "audio/wav",
+				".ogg": "audio/ogg",
+			}
+			if ct, ok := contentTypes[ext]; ok {
+				w.Header().Set("Content-Type", ct)
+			} else {
+				w.Header().Set("Content-Type", "application/octet-stream")
+			}
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%d%s"`, id, ext))
+			io.Copy(w, rc)
 			return
 		}
 	}
