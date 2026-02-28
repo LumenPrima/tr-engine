@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -19,6 +20,7 @@ type UploadReconciler struct {
 	window   time.Duration
 	log      zerolog.Logger
 	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 // NewUploadReconciler creates a reconciler that checks for missing S3 uploads.
@@ -34,7 +36,7 @@ func NewUploadReconciler(cacheDir string, s3 *S3Store, log zerolog.Logger) *Uplo
 }
 
 func (r *UploadReconciler) Start() { go r.loop() }
-func (r *UploadReconciler) Stop()  { close(r.stop) }
+func (r *UploadReconciler) Stop()  { r.stopOnce.Do(func() { close(r.stop) }) }
 
 func (r *UploadReconciler) loop() {
 	// Delay first run to let startup uploads settle
@@ -73,7 +75,7 @@ func (r *UploadReconciler) reconcile() {
 			if !dateDir.IsDir() {
 				continue
 			}
-			dirDate, err := time.Parse("2006-01-02", dateDir.Name())
+			dirDate, err := time.ParseInLocation("2006-01-02", dateDir.Name(), time.Local)
 			if err == nil && dirDate.Before(cutoff) {
 				continue
 			}

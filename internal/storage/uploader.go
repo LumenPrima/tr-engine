@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -10,10 +12,11 @@ import (
 // AsyncUploader handles background S3 uploads without blocking the ingest pipeline.
 // Files are already cached locally before being enqueued here.
 type AsyncUploader struct {
-	s3   *S3Store
-	ch   chan uploadJob
-	log  zerolog.Logger
-	stop chan struct{}
+	s3       *S3Store
+	ch       chan uploadJob
+	log      zerolog.Logger
+	stopped  atomic.Bool
+	stopOnce sync.Once
 }
 
 type uploadJob struct {
@@ -25,16 +28,18 @@ type uploadJob struct {
 // NewAsyncUploader creates an async S3 uploader with the given buffer size.
 func NewAsyncUploader(s3 *S3Store, bufferSize int, log zerolog.Logger) *AsyncUploader {
 	return &AsyncUploader{
-		s3:   s3,
-		ch:   make(chan uploadJob, bufferSize),
-		log:  log.With().Str("component", "async-uploader").Logger(),
-		stop: make(chan struct{}),
+		s3:  s3,
+		ch:  make(chan uploadJob, bufferSize),
+		log: log.With().Str("component", "async-uploader").Logger(),
 	}
 }
 
-// Enqueue adds an S3 upload job. Non-blocking — drops with warning if full.
+// Enqueue adds an S3 upload job. Non-blocking — drops with warning if full or stopped.
 // Safe because the file is already in the local NVMe cache.
 func (u *AsyncUploader) Enqueue(key string, data []byte, contentType string) {
+	if u.stopped.Load() {
+		return
+	}
 	job := uploadJob{key: key, data: data, contentType: contentType}
 	select {
 	case u.ch <- job:
@@ -53,7 +58,8 @@ func (u *AsyncUploader) Start(workers int) {
 
 // Stop signals workers to drain. Call after closing the ingest pipeline.
 func (u *AsyncUploader) Stop() {
-	close(u.ch)
+	u.stopped.Store(true)
+	u.stopOnce.Do(func() { close(u.ch) })
 }
 
 func (u *AsyncUploader) worker() {

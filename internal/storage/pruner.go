@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -23,6 +24,7 @@ type CachePruner struct {
 	s3        *S3Store
 	log       zerolog.Logger
 	stop      chan struct{}
+	stopOnce  sync.Once
 }
 
 // NewCachePruner creates a cache pruner that evicts files by age and/or size.
@@ -43,7 +45,7 @@ func (p *CachePruner) Start() {
 }
 
 func (p *CachePruner) Stop() {
-	close(p.stop)
+	p.stopOnce.Do(func() { close(p.stop) })
 }
 
 func (p *CachePruner) loop() {
@@ -118,10 +120,15 @@ func (p *CachePruner) prune() {
 		}
 
 		if shouldPrune {
-			if p.s3 != nil && !p.s3.Exists(context.Background(), f.key) {
-				skippedNotInS3++
-				p.log.Warn().Str("key", f.key).Msg("skipping prune: file not in S3")
-				continue
+			if p.s3 != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				inS3 := p.s3.Exists(ctx, f.key)
+				cancel()
+				if !inS3 {
+					skippedNotInS3++
+					p.log.Warn().Str("key", f.key).Msg("skipping prune: file not in S3")
+					continue
+				}
 			}
 			if err := os.Remove(f.path); err == nil {
 				prunedCount++

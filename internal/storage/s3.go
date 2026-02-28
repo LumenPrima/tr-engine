@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -20,7 +21,7 @@ type S3Store struct {
 	presignClient *s3.PresignClient
 	bucket        string
 	prefix        string
-	presignExpiry config.S3Config
+	presignExpiry time.Duration
 	log           zerolog.Logger
 }
 
@@ -54,7 +55,7 @@ func NewS3Store(cfg config.S3Config, log zerolog.Logger) (*S3Store, error) {
 		presignClient: presignClient,
 		bucket:        cfg.Bucket,
 		prefix:        cfg.Prefix,
-		presignExpiry: cfg,
+		presignExpiry: cfg.PresignExpiry,
 		log:           log.With().Str("component", "s3-store").Logger(),
 	}, nil
 }
@@ -88,7 +89,7 @@ func (s *S3Store) URL(ctx context.Context, key string) (string, error) {
 		Bucket: &s.bucket,
 		Key:    &objKey,
 	}, func(opts *s3.PresignOptions) {
-		opts.Expires = s.presignExpiry.PresignExpiry
+		opts.Expires = s.presignExpiry
 	})
 	if err != nil {
 		return "", err
