@@ -116,7 +116,7 @@ func NewServer(opts ServerOptions) *Server {
 	// Detect web directory: prefer local web/ on disk for dev, fall back to embedded
 	var webFSys fs.FS
 	var webDir string
-	if info, err := os.Stat("web"); err == nil && info.IsDir() {
+	if info, err := os.Stat("web"); err == nil && info.IsDir() && fileExists("web/index.html") {
 		webFSys = os.DirFS("web")
 		if abs, err := filepath.Abs("web"); err == nil {
 			webDir = abs
@@ -251,5 +251,11 @@ func (a *liveDataMetricsAdapter) SSESubscriberCount() int {
 		return 0
 	}
 	return m.SSESubscribers
+}
+
+// fileExists returns true if the path exists and is a regular file.
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
