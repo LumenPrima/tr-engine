@@ -87,7 +87,7 @@ func (di *DeepInfraClient) Transcribe(ctx context.Context, audioPath string, opt
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
-	req.Header.Set("Authorization", "bearer "+di.apiKey)
+	req.Header.Set("Authorization", "Bearer "+di.apiKey)
 
 	resp, err := di.client.Do(req)
 	if err != nil {

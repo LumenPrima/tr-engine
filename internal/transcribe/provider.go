@@ -5,7 +5,7 @@ import "context"
 // Provider is the interface for speech-to-text backends.
 type Provider interface {
 	Transcribe(ctx context.Context, audioPath string, opts TranscribeOpts) (*Response, error)
-	Name() string  // "whisper", "elevenlabs"
+	Name() string  // "whisper", "elevenlabs", "deepinfra"
 	Model() string // model identifier for DB/logs
 }
 
