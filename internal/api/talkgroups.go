@@ -404,10 +404,16 @@ func (h *TalkgroupsHandler) ImportTalkgroupDirectory(w http.ResponseWriter, r *h
 		imported++
 	}
 
+	// Enrich heard talkgroups from the newly imported directory data
+	enriched, _ := h.db.EnrichTalkgroupsFromDirectory(r.Context(), systemID, 0)
+
 	resp := map[string]any{
 		"imported":  imported,
 		"total":     len(result.Entries),
 		"system_id": systemID,
+	}
+	if enriched > 0 {
+		resp["enriched"] = enriched
 	}
 	if result.Skipped > 0 {
 		resp["skipped"] = result.Skipped
