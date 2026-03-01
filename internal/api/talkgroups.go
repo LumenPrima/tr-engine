@@ -383,19 +383,19 @@ func (h *TalkgroupsHandler) ImportTalkgroupDirectory(w http.ResponseWriter, r *h
 	}
 	defer file.Close()
 
-	entries, skipped, err := trconfig.ParseTalkgroupCSV(file)
+	result, err := trconfig.ParseTalkgroupCSVDetailed(file)
 	if err != nil {
 		WriteError(w, http.StatusBadRequest, fmt.Sprintf("failed to parse CSV: %v", err))
 		return
 	}
 
-	if len(entries) == 0 {
+	if len(result.Entries) == 0 {
 		WriteError(w, http.StatusBadRequest, "CSV contains no valid talkgroup entries")
 		return
 	}
 
 	imported := 0
-	for _, tg := range entries {
+	for _, tg := range result.Entries {
 		if err := h.db.UpsertTalkgroupDirectory(r.Context(), systemID, tg.Tgid,
 			tg.AlphaTag, tg.Mode, tg.Description, tg.Tag, tg.Category, tg.Priority,
 		); err != nil {
@@ -406,11 +406,14 @@ func (h *TalkgroupsHandler) ImportTalkgroupDirectory(w http.ResponseWriter, r *h
 
 	resp := map[string]any{
 		"imported":  imported,
-		"total":     len(entries),
+		"total":     len(result.Entries),
 		"system_id": systemID,
 	}
-	if skipped > 0 {
-		resp["skipped"] = skipped
+	if result.Skipped > 0 {
+		resp["skipped"] = result.Skipped
+	}
+	if result.Duplicates > 0 {
+		resp["duplicates"] = result.Duplicates
 	}
 	WriteJSON(w, http.StatusOK, resp)
 }

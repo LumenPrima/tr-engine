@@ -215,14 +215,13 @@ type TalkgroupEntry struct {
 
 // LoadTalkgroupCSV reads a trunk-recorder talkgroup CSV file.
 // It uses header-aware parsing so column order and optional columns don't matter.
-// Returns (entries, skippedRows, error).
-func LoadTalkgroupCSV(path string) ([]TalkgroupEntry, int, error) {
+func LoadTalkgroupCSV(path string) (*CSVParseResult, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, 0, fmt.Errorf("open %s: %w", path, err)
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
-	return ParseTalkgroupCSV(f)
+	return ParseTalkgroupCSVDetailed(f)
 }
 
 // UnitEntry is a parsed row from trunk-recorder's unit tags CSV file.
@@ -332,11 +331,28 @@ func UpdateUnitCSV(path string, unitID int, alphaTag string) error {
 	return nil
 }
 
+// CSVParseResult holds the result of parsing a talkgroup CSV.
+type CSVParseResult struct {
+	Entries    []TalkgroupEntry
+	Skipped    int // malformed/invalid rows
+	Duplicates int // rows with a tgid already seen earlier in the file
+}
+
 // ParseTalkgroupCSV parses trunk-recorder talkgroup CSV data from a reader.
 // Header-aware: matches columns by name, not position.
 // Returns (entries, skippedRows, error). Rows are skipped for malformed CSV,
 // missing/invalid Decimal column, or tgid <= 0.
 func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, int, error) {
+	result, err := ParseTalkgroupCSVDetailed(reader)
+	if err != nil {
+		return nil, 0, err
+	}
+	return result.Entries, result.Skipped, nil
+}
+
+// ParseTalkgroupCSVDetailed parses trunk-recorder talkgroup CSV data and returns
+// detailed results including duplicate tgid counts.
+func ParseTalkgroupCSVDetailed(reader io.Reader) (*CSVParseResult, error) {
 	r := csv.NewReader(reader)
 	r.TrimLeadingSpace = true
 	r.LazyQuotes = true
@@ -344,7 +360,7 @@ func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, int, error) {
 	// Read header row
 	header, err := r.Read()
 	if err != nil {
-		return nil, 0, fmt.Errorf("read CSV header: %w", err)
+		return nil, fmt.Errorf("read CSV header: %w", err)
 	}
 
 	// Build column index map (case-insensitive, trimmed)
@@ -356,31 +372,37 @@ func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, int, error) {
 	// Require at minimum the Decimal column
 	decIdx, ok := colIdx["decimal"]
 	if !ok {
-		return nil, 0, fmt.Errorf("missing required 'Decimal' column in header")
+		return nil, fmt.Errorf("missing required 'Decimal' column in header")
 	}
 
 	var entries []TalkgroupEntry
-	skipped := 0
+	seen := make(map[int]bool)
+	result := &CSVParseResult{}
 	for {
 		record, err := r.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			skipped++
+			result.Skipped++
 			continue
 		}
 
 		// Parse tgid
 		if decIdx >= len(record) {
-			skipped++
+			result.Skipped++
 			continue
 		}
 		tgid, err := strconv.Atoi(strings.TrimSpace(record[decIdx]))
 		if err != nil || tgid <= 0 {
-			skipped++
+			result.Skipped++
 			continue
 		}
+
+		if seen[tgid] {
+			result.Duplicates++
+		}
+		seen[tgid] = true
 
 		entry := TalkgroupEntry{Tgid: tgid}
 
@@ -406,5 +428,6 @@ func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, int, error) {
 		entries = append(entries, entry)
 	}
 
-	return entries, skipped, nil
+	result.Entries = entries
+	return result, nil
 }

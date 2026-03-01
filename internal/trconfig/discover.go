@@ -77,29 +77,40 @@ func Discover(trDir string, log zerolog.Logger) (*DiscoveryResult, error) {
 
 		if sys.TalkgroupsFile != "" {
 			tgPath := vm.Translate(sys.TalkgroupsFile)
-			tgs, skipped, tgErr := LoadTalkgroupCSV(tgPath)
+			result, tgErr := LoadTalkgroupCSV(tgPath)
 			if tgErr != nil {
 				log.Warn().Err(tgErr).
 					Str("system", sys.ShortName).
 					Str("path", tgPath).
 					Msg("failed to load talkgroup CSV")
 			} else {
-				ds.Talkgroups = tgs
+				ds.Talkgroups = result.Entries
 				ds.CSVPath = tgPath
 				ev := log.Info().
 					Str("system", sys.ShortName).
-					Int("talkgroups", len(tgs)).
+					Int("talkgroups", len(result.Entries)).
 					Str("path", tgPath)
-				if skipped > 0 {
-					ev = ev.Int("skipped", skipped)
+				if result.Skipped > 0 {
+					ev = ev.Int("skipped", result.Skipped)
+				}
+				if result.Duplicates > 0 {
+					ev = ev.Int("duplicates", result.Duplicates)
 				}
 				ev.Msg("loaded talkgroup CSV")
-				if skipped > 0 {
+				if result.Skipped > 0 {
 					log.Warn().
 						Str("system", sys.ShortName).
-						Int("skipped", skipped).
+						Int("skipped", result.Skipped).
 						Str("path", tgPath).
 						Msg("CSV rows skipped (malformed, missing/invalid Decimal, or tgid <= 0)")
+				}
+				if result.Duplicates > 0 {
+					log.Warn().
+						Str("system", sys.ShortName).
+						Int("duplicates", result.Duplicates).
+						Int("unique", len(result.Entries)-result.Duplicates).
+						Str("path", tgPath).
+						Msg("CSV contains duplicate tgids (last entry wins)")
 				}
 			}
 		}
