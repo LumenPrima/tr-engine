@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -26,15 +27,24 @@ type DeepInfraClient struct {
 
 // deepInfraResponse is the JSON response from the DeepInfra inference API.
 type deepInfraResponse struct {
-	Text     string          `json:"text"`
-	Language string          `json:"language"`
-	Duration float64         `json:"duration"`
-	Words    []deepInfraWord `json:"words"`
+	Text     string             `json:"text"`
+	Language string             `json:"language"`
+	Duration float64            `json:"duration"`
+	Words    []deepInfraWord    `json:"words"`
+	Segments []deepInfraSegment `json:"segments"`
 }
 
 // deepInfraWord is a word with timestamps from DeepInfra.
 // Note: DeepInfra uses "text" for the word field, not "word" like OpenAI.
 type deepInfraWord struct {
+	Text  string  `json:"text"`
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+}
+
+// deepInfraSegment is a segment-level timestamp from DeepInfra.
+// Used as fallback when word-level timestamps are not returned.
+type deepInfraSegment struct {
 	Text  string  `json:"text"`
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
@@ -110,13 +120,20 @@ func (di *DeepInfraClient) Transcribe(ctx context.Context, audioPath string, opt
 	}
 
 	// Convert DeepInfra word format (uses "text") to our common Word type (uses "Word")
-	words := make([]Word, len(result.Words))
-	for i, dw := range result.Words {
-		words[i] = Word{
-			Word:  dw.Text,
-			Start: dw.Start,
-			End:   dw.End,
+	var words []Word
+	if len(result.Words) > 0 {
+		words = make([]Word, len(result.Words))
+		for i, dw := range result.Words {
+			words[i] = Word{
+				Word:  dw.Text,
+				Start: dw.Start,
+				End:   dw.End,
+			}
 		}
+	} else if len(result.Segments) > 0 {
+		// Fallback: split segment text into individual words and interpolate
+		// timestamps evenly across each segment's time range.
+		words = wordsFromSegments(result.Segments)
 	}
 
 	return &Response{
@@ -125,4 +142,30 @@ func (di *DeepInfraClient) Transcribe(ctx context.Context, audioPath string, opt
 		Duration: result.Duration,
 		Words:    words,
 	}, nil
+}
+
+// wordsFromSegments synthesizes word-level entries from segment-level timestamps.
+// Each segment's text is split into words, and timestamps are interpolated evenly
+// across the segment's time range. This gives approximate word timing for unit
+// attribution when the API doesn't return word-level data.
+func wordsFromSegments(segments []deepInfraSegment) []Word {
+	var words []Word
+	for _, seg := range segments {
+		text := strings.TrimSpace(seg.Text)
+		if text == "" {
+			continue
+		}
+		tokens := strings.Fields(text)
+		n := len(tokens)
+		dur := seg.End - seg.Start
+		wordDur := dur / float64(n)
+		for i, tok := range tokens {
+			words = append(words, Word{
+				Word:  tok,
+				Start: seg.Start + float64(i)*wordDur,
+				End:   seg.Start + float64(i+1)*wordDur,
+			})
+		}
+	}
+	return words
 }
