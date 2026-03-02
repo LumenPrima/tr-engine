@@ -900,47 +900,60 @@ func parseInstanceMap(s string) map[string]string {
 	return m
 }
 
-// rewriteInstanceID replaces the instance_id value in a JSON payload using
-// targeted bytes.Replace. This avoids a full JSON round-trip, preserving
-// exact key ordering and number precision.
+// rewriteInstanceID replaces ALL instance_id values in a JSON payload.
+// Some TR messages have nested instance_id fields (e.g. signal events have one
+// inside the signal object and one at the envelope level). Both must be rewritten.
 func rewriteInstanceID(payload []byte, newID string) []byte {
-	// Find "instance_id" key and extract its current value for replacement.
-	// Handles both "instance_id":"value" and "instance_id": "value".
-	idx := bytes.Index(payload, []byte(`"instance_id"`))
-	if idx < 0 {
-		return payload
-	}
+	newIDBytes := []byte(newID)
+	result := payload
+	searchFrom := 0
 
-	// Skip past the key and colon to find the value
-	rest := payload[idx+len(`"instance_id"`):]
-	// Skip whitespace and colon
-	i := 0
-	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == ':') {
-		i++
-	}
-	if i >= len(rest) || rest[i] != '"' {
-		return payload // value isn't a string
-	}
-
-	// Find the closing quote of the value
-	valStart := i + 1
-	valEnd := valStart
-	for valEnd < len(rest) && rest[valEnd] != '"' {
-		if rest[valEnd] == '\\' {
-			valEnd++ // skip escaped char
+	for {
+		idx := bytes.Index(result[searchFrom:], []byte(`"instance_id"`))
+		if idx < 0 {
+			break
 		}
-		valEnd++
+		idx += searchFrom
+
+		// Skip past the key to find colon and value
+		rest := result[idx+len(`"instance_id"`):]
+		i := 0
+		for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == ':') {
+			i++
+		}
+		if i >= len(rest) || rest[i] != '"' {
+			searchFrom = idx + len(`"instance_id"`)
+			continue
+		}
+
+		// Find the closing quote of the value
+		valStart := i + 1
+		valEnd := valStart
+		for valEnd < len(rest) && rest[valEnd] != '"' {
+			if rest[valEnd] == '\\' {
+				valEnd++
+			}
+			valEnd++
+		}
+
+		oldVal := rest[valStart:valEnd]
+		if string(oldVal) == newID {
+			searchFrom = idx + len(`"instance_id"`) + valEnd + 1
+			continue
+		}
+
+		// Build replacement: splice newID in place of oldVal
+		replaceStart := idx + len(`"instance_id"`) + valStart
+		replaceEnd := idx + len(`"instance_id"`) + valEnd
+		newResult := make([]byte, 0, len(result)-len(oldVal)+len(newIDBytes))
+		newResult = append(newResult, result[:replaceStart]...)
+		newResult = append(newResult, newIDBytes...)
+		newResult = append(newResult, result[replaceEnd:]...)
+		result = newResult
+		searchFrom = replaceStart + len(newIDBytes) + 1
 	}
 
-	oldVal := string(rest[valStart:valEnd])
-	if oldVal == newID {
-		return payload // already correct
-	}
-
-	// Replace first occurrence of the full key-value pattern
-	old := []byte(`"instance_id"` + string(rest[:i]) + `"` + oldVal + `"`)
-	new := []byte(`"instance_id"` + string(rest[:i]) + `"` + newID + `"`)
-	return bytes.Replace(payload, old, new, 1)
+	return result
 }
 
 // parseHandlerSet splits a comma-separated string into a set of handler names.
