@@ -2150,7 +2150,7 @@ paths:
             Supports compound syntax with `:` to filter on event
             subtypes. For example, `unit_event:call` matches only unit
             call events, while plain `unit_event` matches all unit event
-            subtypes (on, off, call, end, join, location, ackresp, data).
+            subtypes (on, off, call, end, join, location, ackresp, data, signal).
             Compound and plain values can be mixed:
             `unit_event:call,unit_event:end,call_start`.
           schema:
@@ -2624,7 +2624,7 @@ components:
 
     EventType:
       type: string
-      enum: [on, off, join, call, end, data, ans_req, location, ackresp]
+      enum: [on, off, join, call, end, data, ans_req, location, ackresp, signal]
       description: |
         Unit event types from trunk-recorder MQTT:
         - **on**: unit registration (radio powered on / entering system)
@@ -2636,6 +2636,7 @@ components:
         - **ans_req**: answer request
         - **location**: unit location update
         - **ackresp**: acknowledge response
+        - **signal**: in-band signaling decode (MDC1200, FleetSync, STAR)
 
     CallState:
       type: string
@@ -3262,6 +3263,25 @@ components:
         metadata_json:
           type: object
           additionalProperties: true
+          description: |
+            Signal events store `signaling_type` and `signal_type` here.
+            Example: `{"signaling_type": "MDC1200", "signal_type": "normal"}`
+
+        # Signal-specific fields (present only for event_type=signal, via SSE)
+        signaling_type:
+          type: string
+          description: |
+            Decoder type for signal events: `MDC1200`, `FLEETSYNC`, `STAR`,
+            or `unknown` (P25 systems where TR passes null).
+            Only present in SSE payloads for `unit_event:signal` events.
+          example: MDC1200
+        signal_type:
+          type: string
+          description: |
+            Signal meaning: `normal` (PTT ID), `emergency`, `emergency_ack`,
+            `radio_check`, `radio_stun`, `radio_revive`, and their `_ack`/`_pre` variants.
+            Only present in SSE payloads for `unit_event:signal` events.
+          example: normal
 
     CallFrequency:
       type: object
@@ -4382,7 +4402,7 @@ components:
         - **call_start**: new call recording began
         - **call_update**: call updated (new transmission, freq change)
         - **call_end**: call recording completed, audio available
-        - **unit_event**: unit lifecycle event (on/off/join/call/end/etc.)
+        - **unit_event**: unit lifecycle event (on/off/join/call/end/signal/etc.)
         - **recorder_update**: recorder hardware state changed
         - **rate_update**: decode rate update from a system
         - **trunking_message**: P25 control channel message
