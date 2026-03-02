@@ -58,6 +58,17 @@ CREATE INDEX IF NOT EXISTS idx_systems_sysid_wacn ON systems (sysid, wacn)
 		sql:   `CREATE INDEX IF NOT EXISTS idx_recorder_snapshots_time ON recorder_snapshots ("time" DESC)`,
 		check: `SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_recorder_snapshots_time')`,
 	},
+	{
+		name: "expand system_type CHECK for conventional variants",
+		sql: `ALTER TABLE systems DROP CONSTRAINT IF EXISTS systems_system_type_check;
+ALTER TABLE systems ADD CONSTRAINT systems_system_type_check
+    CHECK (system_type IN ('p25', 'smartnet', 'conventional', 'conventionalP25', 'conventionalDMR', 'conventionalSIGMF'))`,
+		check: `SELECT EXISTS (
+    SELECT 1 FROM information_schema.check_constraints
+    WHERE constraint_name = 'systems_system_type_check'
+      AND check_clause LIKE '%conventionalP25%'
+)`,
+	},
 }
 
 // Migrate runs all pending schema migrations.

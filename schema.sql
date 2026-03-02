@@ -53,7 +53,7 @@ CREATE TRIGGER trg_instances_updated_at
 
 CREATE TABLE systems (
     system_id    serial       PRIMARY KEY,
-    system_type  text         NOT NULL CHECK (system_type IN ('p25', 'smartnet', 'conventional')),
+    system_type  text         NOT NULL CHECK (system_type IN ('p25', 'smartnet', 'conventional', 'conventionalP25', 'conventionalDMR', 'conventionalSIGMF')),
     name         text,
     sysid        text         NOT NULL DEFAULT '0',
     wacn         text         NOT NULL DEFAULT '0',
