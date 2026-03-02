@@ -359,7 +359,7 @@ func (h *TalkgroupsHandler) ImportTalkgroupDirectory(w http.ResponseWriter, r *h
 		systemID = id
 	} else if name, ok := QueryString(r, "system_name"); ok && name != "" {
 		// Find or create system by name
-		id, _, err := h.db.FindOrCreateSystem(r.Context(), "csv-import", name)
+		id, _, err := h.db.FindOrCreateSystem(r.Context(), "csv-import", name, "")
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to resolve system %q: %v", name, err))
 			return

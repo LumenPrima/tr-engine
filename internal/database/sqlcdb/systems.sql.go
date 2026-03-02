@@ -11,12 +11,17 @@ import (
 
 const createSystem = `-- name: CreateSystem :one
 INSERT INTO systems (system_type, name, sysid, wacn)
-VALUES ('p25', $1, '0', '0')
+VALUES ($1, $2, '0', '0')
 RETURNING system_id
 `
 
-func (q *Queries) CreateSystem(ctx context.Context, name *string) (int, error) {
-	row := q.db.QueryRow(ctx, createSystem, name)
+type CreateSystemParams struct {
+	SystemType string
+	Name       *string
+}
+
+func (q *Queries) CreateSystem(ctx context.Context, arg CreateSystemParams) (int, error) {
+	row := q.db.QueryRow(ctx, createSystem, arg.SystemType, arg.Name)
 	var system_id int
 	err := row.Scan(&system_id)
 	return system_id, err

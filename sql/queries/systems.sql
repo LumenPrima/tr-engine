@@ -7,7 +7,7 @@ LIMIT 1;
 
 -- name: CreateSystem :one
 INSERT INTO systems (system_type, name, sysid, wacn)
-VALUES ('p25', $1, '0', '0')
+VALUES (@system_type, @name, '0', '0')
 RETURNING system_id;
 
 -- name: UpdateSystemIdentity :exec

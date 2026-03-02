@@ -103,7 +103,7 @@ func (r *IdentityResolver) Resolve(ctx context.Context, instanceID, sysName stri
 	}
 
 	// Find or create system
-	systemID, sysid, err := r.db.FindOrCreateSystem(ctx, instanceID, sysName)
+	systemID, sysid, err := r.db.FindOrCreateSystem(ctx, instanceID, sysName, "")
 	if err != nil {
 		return nil, fmt.Errorf("find/create system %q/%q: %w", instanceID, sysName, err)
 	}

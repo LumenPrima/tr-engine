@@ -19,7 +19,8 @@ type System struct {
 
 // FindOrCreateSystem finds an existing system by (instance_id, sys_name) via the sites table,
 // or creates a new one. Returns the system_id and sysid (P25 system identifier).
-func (db *DB) FindOrCreateSystem(ctx context.Context, instanceID, sysName string) (int, string, error) {
+// systemType is used when creating a new system; if empty, defaults to "conventional".
+func (db *DB) FindOrCreateSystem(ctx context.Context, instanceID, sysName, systemType string) (int, string, error) {
 	row, err := db.Q.FindSystemViaSite(ctx, sqlcdb.FindSystemViaSiteParams{
 		InstanceID: instanceID,
 		ShortName:  sysName,
@@ -28,8 +29,19 @@ func (db *DB) FindOrCreateSystem(ctx context.Context, instanceID, sysName string
 		return row.SystemID, row.Sysid, nil
 	}
 
+	// Default to "conventional" for new systems — UpdateSystemIdentity will
+	// correct this when the system info message arrives. "conventional" is a
+	// safer default than "p25" since conventional systems may never send a
+	// system info message with sysid/wacn.
+	if systemType == "" {
+		systemType = "conventional"
+	}
+
 	// Create new system
-	systemID, err := db.Q.CreateSystem(ctx, &sysName)
+	systemID, err := db.Q.CreateSystem(ctx, sqlcdb.CreateSystemParams{
+		SystemType: systemType,
+		Name:       &sysName,
+	})
 	if err != nil {
 		return 0, "", fmt.Errorf("create system %q: %w", sysName, err)
 	}
