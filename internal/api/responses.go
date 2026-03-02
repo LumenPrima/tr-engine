@@ -277,6 +277,23 @@ func QueryIntList(r *http.Request, name string) []int {
 	return result
 }
 
+// QueryInt64List extracts a comma-separated list of int64s from a query param.
+func QueryInt64List(r *http.Request, name string) []int64 {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	var result []int64
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if n, err := strconv.ParseInt(p, 10, 64); err == nil {
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
 // QueryIntListAliased tries each name in order, returning the first non-empty result.
 // This lets endpoints accept both singular and plural param names (e.g. tgid and tgids).
 func QueryIntListAliased(r *http.Request, names ...string) []int {

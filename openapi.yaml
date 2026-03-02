@@ -1533,6 +1533,35 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
+  /transcriptions/batch:
+    get:
+      operationId: getBatchTranscriptions
+      summary: Batch-fetch primary transcriptions for multiple calls
+      description: |
+        Returns the primary transcription text and segments for up to 500 call IDs
+        in a single request. Designed for frontends that need to hydrate transcriptions
+        for a list of calls (e.g., chat-style views). Returns only call_id, text, and
+        segments (from words->'segments') — use GET /calls/{id}/transcription for
+        full transcription details.
+      tags: [Transcriptions]
+      parameters:
+        - name: call_ids
+          in: query
+          required: true
+          description: Comma-separated list of call IDs (max 500).
+          schema:
+            type: string
+            example: "48531,48532,48533"
+      responses:
+        "200":
+          description: Batch transcription results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchTranscriptionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
   /transcriptions/queue:
     get:
       operationId: getTranscriptionQueueStatus
@@ -3784,6 +3813,47 @@ components:
           type: integer
         offset:
           type: integer
+
+    BatchTranscriptionResponse:
+      type: object
+      required: [transcriptions]
+      properties:
+        transcriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BatchTranscriptionItem"
+
+    BatchTranscriptionItem:
+      type: object
+      required: [call_id, text]
+      properties:
+        call_id:
+          type: integer
+          format: int64
+        text:
+          type: string
+        segments:
+          type: array
+          description: Word segments with unit attribution (from words->'segments').
+          nullable: true
+          items:
+            type: object
+            properties:
+              src:
+                type: integer
+                description: Unit/radio ID.
+              src_tag:
+                type: string
+                description: Unit alpha tag.
+              start:
+                type: number
+                description: Segment start in seconds.
+              end:
+                type: number
+                description: Segment end in seconds.
+              text:
+                type: string
+                description: Transcribed text for this segment.
 
     TranscriptionQueueStats:
       type: object

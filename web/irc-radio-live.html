@@ -3402,35 +3402,21 @@ function drainPendingTranscriptions(callIds, chanName) {
 async function fetchTranscriptionsForCalls(callIds) {
   if (callIds.length === 0) return;
 
-  // Validate all IDs are integers before building SQL
   const safeIds = callIds.filter(id => Number.isInteger(id) && id > 0);
   if (safeIds.length === 0) return;
 
-  // Try batch via /query first, fall back to individual fetches
+  // Batch via /transcriptions/batch, fall back to individual fetches
   const txMap = new Map();
   let batchOk = false;
 
   try {
-    const idList = safeIds.join(',');
-    const resp = await fetch(`${API_BASE}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sql: `SELECT call_id, text, words->'segments' as segments FROM transcriptions WHERE call_id IN (${idList}) AND is_primary = true`,
-      }),
-    });
+    const resp = await fetch(`${API_BASE}/transcriptions/batch?call_ids=${safeIds.join(',')}`);
     if (resp.ok) {
       batchOk = true;
       const data = await resp.json();
-      const rows = data.rows || [];
-      const cols = data.columns || [];
-      const ci = {};
-      cols.forEach((c, i) => ci[c] = i);
-      for (const row of rows) {
-        const cid = row[ci.call_id];
-        const rawSeg = row[ci.segments];
-        const segments = Array.isArray(rawSeg) ? rawSeg : [];
-        txMap.set(cid, { text: row[ci.text] || '', segments });
+      for (const t of (data.transcriptions || [])) {
+        const segments = Array.isArray(t.segments) ? t.segments : [];
+        txMap.set(t.call_id, { text: t.text || '', segments });
       }
     }
   } catch (err) { /* fall through to individual fetches */ }

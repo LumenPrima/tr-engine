@@ -315,6 +315,45 @@ func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter Tra
 	return hits, total, rows.Err()
 }
 
+// BatchTranscriptionRow is a lightweight transcription for batch fetches.
+type BatchTranscriptionRow struct {
+	CallID   int64           `json:"call_id"`
+	Text     string          `json:"text"`
+	Segments json.RawMessage `json:"segments"`
+}
+
+// GetBatchTranscriptions returns primary transcriptions for multiple call IDs.
+// Only returns call_id, text, and words->'segments' — the minimal shape needed by frontends.
+func (db *DB) GetBatchTranscriptions(ctx context.Context, callIDs []int64) ([]BatchTranscriptionRow, error) {
+	if len(callIDs) == 0 {
+		return []BatchTranscriptionRow{}, nil
+	}
+
+	query := `
+		SELECT call_id, COALESCE(text, '') AS text, words->'segments' AS segments
+		FROM transcriptions
+		WHERE call_id = ANY($1) AND is_primary = true`
+
+	rows, err := db.Pool.Query(ctx, query, callIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []BatchTranscriptionRow
+	for rows.Next() {
+		var r BatchTranscriptionRow
+		if err := rows.Scan(&r.CallID, &r.Text, &r.Segments); err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	if result == nil {
+		result = []BatchTranscriptionRow{}
+	}
+	return result, rows.Err()
+}
+
 // GetCallForTranscription returns a lightweight call view for the transcription worker.
 func (db *DB) GetCallForTranscription(ctx context.Context, callID int64) (*CallTranscriptionInfo, error) {
 	row, err := db.Q.GetCallForTranscription(ctx, callID)

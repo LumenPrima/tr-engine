@@ -25,6 +25,7 @@ func (h *TranscriptionsHandler) Routes(r chi.Router) {
 	r.Post("/calls/{id}/transcription/verify", h.VerifyTranscription)
 	r.Post("/calls/{id}/transcription/reject", h.RejectTranscription)
 	r.Post("/calls/{id}/transcription/exclude", h.ExcludeFromDataset)
+	r.Get("/transcriptions/batch", h.GetBatchTranscriptions)
 	r.Get("/transcriptions/search", h.SearchTranscriptions)
 	r.Get("/transcriptions/queue", h.GetQueueStats)
 }
@@ -181,6 +182,28 @@ func (h *TranscriptionsHandler) setTranscriptionStatus(w http.ResponseWriter, r 
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"call_id": call.CallID,
 		"status":  status,
+	})
+}
+
+// GetBatchTranscriptions returns primary transcriptions for multiple call IDs.
+func (h *TranscriptionsHandler) GetBatchTranscriptions(w http.ResponseWriter, r *http.Request) {
+	callIDs := QueryInt64List(r, "call_ids")
+	if len(callIDs) == 0 {
+		WriteError(w, http.StatusBadRequest, "call_ids parameter is required")
+		return
+	}
+	if len(callIDs) > 500 {
+		WriteError(w, http.StatusBadRequest, "call_ids limited to 500")
+		return
+	}
+
+	results, err := h.db.GetBatchTranscriptions(r.Context(), callIDs)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to get transcriptions")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"transcriptions": results,
 	})
 }
 
