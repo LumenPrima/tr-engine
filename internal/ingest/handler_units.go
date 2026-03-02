@@ -66,6 +66,11 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 		return fmt.Errorf("resolve identity: %w", err)
 	}
 
+	// Skip invalid unit IDs — conventional systems send -1
+	if data.Unit <= 0 {
+		return nil
+	}
+
 	// Upsert talkgroup if present — capture effective tag from DB
 	effectiveTgTag := data.TalkgroupAlphaTag
 	if data.Talkgroup > 0 {
