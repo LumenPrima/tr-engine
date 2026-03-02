@@ -598,6 +598,7 @@ const EVENT_TYPES = {
   unit_location: { label:'unit loc',    color:'linear-gradient(135deg, #fb923c, #f97316)' },
   unit_ackresp:  { label:'unit ack',    color:'linear-gradient(135deg, #fbbf24, #f59e0b)' },
   unit_data:     { label:'unit data',   color:'linear-gradient(135deg, #2dd4bf, #14b8a6)' },
+  unit_signal:   { label:'unit sig',   color:'linear-gradient(135deg, #f59e0b, #d97706)' },
 };
 const eventBuckets = {};
 for (const t of Object.keys(EVENT_TYPES)) eventBuckets[t] = [];
@@ -642,7 +643,7 @@ renderRateBars();
 /* ═══ Streak Engine ═══ */
 const streakCanvas = document.getElementById('streak-canvas'), sCtx = streakCanvas.getContext('2d');
 let streaks = [], streakRAF = null, lastStreakTime = 0;
-const STREAK_COLORS = { call:{r:217,g:70,b:239}, end:{r:232,g:121,b:249}, on:{r:167,g:139,b:250}, off:{r:196,g:181,b:253}, join:{r:244,g:114,b:182}, location:{r:251,g:146,b:60}, ackresp:{r:251,g:191,b:36}, data:{r:45,g:212,b:191}, default:{r:96,g:165,b:250} };
+const STREAK_COLORS = { call:{r:217,g:70,b:239}, end:{r:232,g:121,b:249}, on:{r:167,g:139,b:250}, off:{r:196,g:181,b:253}, join:{r:244,g:114,b:182}, location:{r:251,g:146,b:60}, ackresp:{r:251,g:191,b:36}, data:{r:45,g:212,b:191}, signal:{r:245,g:158,b:11}, default:{r:96,g:165,b:250} };
 
 function resizeStreakCanvas() { streakCanvas.width = window.innerWidth; streakCanvas.height = window.innerHeight; }
 resizeStreakCanvas(); window.addEventListener('resize', resizeStreakCanvas);

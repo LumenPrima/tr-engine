@@ -454,6 +454,7 @@
   .event-pill.end { background: color-mix(in srgb, var(--text-muted) 20%, transparent); color: var(--text-muted); }
   .event-pill.ackresp { background: color-mix(in srgb, var(--cyan) 20%, transparent); color: var(--cyan); }
   .event-pill.data { background: color-mix(in srgb, var(--magenta) 20%, transparent); color: var(--magenta); }
+  .event-pill.signal { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); }
 
   /* ── Status dot ── */
   .status-dot {
@@ -2706,7 +2707,7 @@
     /* Filter buttons */
     var filterDiv = document.createElement('div');
     filterDiv.className = 'filter-btns';
-    ['All', 'Call', 'Join', 'Location', 'On', 'Off'].forEach(function(label) {
+    ['All', 'Call', 'Join', 'Location', 'On', 'Off', 'Signal'].forEach(function(label) {
       var btn = document.createElement('button');
       btn.className = 'filter-btn' + (label === 'All' ? ' active' : '');
       btn.textContent = label;

@@ -711,6 +711,7 @@ body::after {
 .unit-event-type.state-affiliated { background: var(--cyan); color: #000; }
 .unit-event-type.state-location { background: var(--orange); color: #000; }
 .unit-event-type.state-data { background: color-mix(in srgb, var(--orange) 65%, var(--bg-surface)); color: #000; }
+.unit-event-type.state-signal { background: var(--orange); color: #000; }
 .unit-event-type.state-off { background: var(--text-faint); color: var(--bg-surface); }
 .unit-event-tg {
   color: var(--text-muted); white-space: nowrap; overflow: hidden;
@@ -1546,6 +1547,7 @@ function eventTypeStateClass(eventType) {
     case 'off': return 'state-off';
     case 'location': return 'state-location';
     case 'ackresp': case 'data': return 'state-data';
+    case 'signal': return 'state-signal';
     default: return 'state-affiliated';
   }
 }
@@ -3845,6 +3847,33 @@ function handleUnitEvent(evt) {
     case 'data':
     case 'ans_req': {
       // Data/signaling — silent
+      break;
+    }
+
+    case 'signal': {
+      // Analog signaling (MDC1200, FleetSync, STAR) — show in channel
+      if (!chanName && tgid) {
+        chanName = ensureChannel({
+          system_id: systemId, tgid,
+          alpha_tag: evt.tg_alpha_tag, description: evt.tg_description,
+          tag: '', group: 'Ungrouped',
+        });
+        renderTree();
+      }
+      if (chanName) {
+        const ck = unitKey(systemId, unitId);
+        const ch = channels.get(chanName);
+        if (ch && !ch.users.has(ck)) {
+          const role = roleForNick(nick);
+          ch.users.set(ck, { nick, prefix: role === 'op' ? '@' : '', role, unitId, systemId, affiliated: false, online: true });
+          if (chanName === activeChannel) renderNicklist();
+        }
+        const sigType = (evt.signal_type || 'signal').toUpperCase();
+        addMsg(chanName, {
+          ts: ts(), kind: 'notice',
+          text: `${nick} sent ${sigType} signal`,
+        });
+      }
       break;
     }
 

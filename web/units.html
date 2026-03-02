@@ -129,6 +129,7 @@
   .legend-dot.state-affiliated { background: var(--info); }
   .legend-dot.state-location { background: var(--warning); }
   .legend-dot.state-data { background: color-mix(in srgb, var(--warning) 65%, var(--text-muted)); }
+  .legend-dot.state-signal { background: var(--warning); }
   .legend-dot.state-idle { background: color-mix(in srgb, var(--info) 45%, var(--text-faint)); }
   .legend-dot.state-off { background: var(--text-faint); opacity: 0.45; }
 
@@ -261,6 +262,10 @@
   .unit.state-data {
     background: color-mix(in srgb, var(--warning) 10%, transparent);
     color: color-mix(in srgb, var(--warning) 65%, var(--text-muted));
+  }
+  .unit.state-signal {
+    background: color-mix(in srgb, var(--warning) 18%, transparent);
+    color: var(--warning);
   }
   .unit.state-idle {
     background: color-mix(in srgb, var(--info) 7%, transparent);
@@ -425,6 +430,9 @@
   .unit-event-type.state-data {
     background: color-mix(in srgb, var(--warning) 65%, var(--bg-tile)); color: #000;
   }
+  .unit-event-type.state-signal {
+    background: var(--warning); color: #000;
+  }
   .unit-event-type.state-off {
     background: var(--text-faint); color: var(--bg-tile);
   }
@@ -491,6 +499,7 @@
     <span class="legend-item"><span class="legend-dot state-affiliated"></span>Affiliated</span>
     <span class="legend-item"><span class="legend-dot state-location"></span>Location</span>
     <span class="legend-item"><span class="legend-dot state-data"></span>Data</span>
+    <span class="legend-item"><span class="legend-dot state-signal"></span>Signal</span>
     <span class="legend-item"><span class="legend-dot state-off"></span>Off</span>
     <span class="legend-item"><span class="legend-dot state-idle"></span>Idle</span>
   </div>
@@ -956,6 +965,7 @@ function eventTypeStateClass(eventType) {
     case 'off': return 'state-off';
     case 'location': return 'state-location';
     case 'ackresp': case 'data': return 'state-data';
+    case 'signal': return 'state-signal';
     default: return 'state-affiliated';
   }
 }
