@@ -175,6 +175,11 @@ type MqttRawMessage struct {
 	ProcessError *string
 }
 
+type PgStatUserTable struct {
+	Relname  *string
+	NLiveTup *int64
+}
+
 // Plugin status log. Retention: 30 days. Purge: DELETE WHERE time < now() - interval '30 days'.
 type PluginStatus struct {
 	ID         int64
@@ -256,6 +261,11 @@ type Talkgroup struct {
 	FirstSeen      pgtype.Timestamptz
 	LastSeen       pgtype.Timestamptz
 	SearchVector   interface{}
+	CallCount30d   int
+	Calls1h        int
+	Calls24h       int
+	UnitCount30d   int
+	StatsUpdatedAt pgtype.Timestamptz
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
 }

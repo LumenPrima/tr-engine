@@ -17,6 +17,14 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- trigram indexes for ILIKE search
 
+-- Stub for pg_stat_user_tables so sqlc can parse queries that reference it.
+-- On a real PostgreSQL instance, this is a no-op (CREATE ... IF NOT EXISTS)
+-- because the system catalog view already exists.
+CREATE TABLE IF NOT EXISTS pg_stat_user_tables (
+    relname text,
+    n_live_tup bigint
+);
+
 -- ============================================================
 -- Generic Trigger: set_updated_at()
 -- ============================================================
