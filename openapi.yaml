@@ -2609,8 +2609,11 @@ components:
 
     SystemType:
       type: string
-      enum: [p25, smartnet, conventional]
-      description: Radio system protocol type
+      enum: [p25, smartnet, conventional, conventionalP25, conventionalDMR, conventionalSIGMF]
+      description: |
+        Radio system protocol type. The conventional variants indicate
+        conventional monitoring of digital channels (P25, DMR) or SigMF
+        recording sources, as opposed to pure analog conventional.
 
     TalkgroupMode:
       type: string
