@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="card-title" content="Analytics">
+    <meta name="card-description" content="Historical activity charts and system metrics">
+    <title>Analytics — tr-engine</title>
+    <script src="auth.js?v=1"></script>
+    <script src="theme-config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-body);
+            line-height: 1.5;
+            min-height: 100vh;
+            padding-top: 72px;
+        }
+
+        .analytics-wrap {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px 20px 60px;
+        }
+
+        /* ── Page Header ── */
+        .page-header {
+            margin-bottom: 28px;
+        }
+        .page-header h1 {
+            font-family: var(--font-display);
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.02em;
+        }
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-top: 4px;
+        }
+        .page-header .timeframe {
+            display: inline-block;
+            background: var(--accent-dim);
+            color: var(--accent-light);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: var(--radius-sm);
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        /* ── Stat Cards ── */
+        .stat-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+            margin-bottom: 28px;
+        }
+        .stat-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .stat-card:hover {
+            border-color: var(--border-hover);
+            box-shadow: var(--shadow-panel-hover);
+        }
+        .stat-card .label {
+            font-size: 0.7rem;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        .stat-card .value {
+            font-family: var(--font-display);
+            font-size: 1.65rem;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.1;
+        }
+        .stat-card .sub {
+            font-size: 0.75rem;
+            color: var(--text-faint);
+            margin-top: 4px;
+            font-family: var(--font-mono);
+        }
+        .stat-card .sub .up { color: var(--success); }
+        .stat-card .sub .dn { color: var(--danger); }
+
+        /* ── Chart Grid ── */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+        }
+        .chart-grid .span-full { grid-column: 1 / -1; }
+
+        .chart-panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px 22px 18px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+        .chart-panel:hover {
+            border-color: var(--border-hover);
+            box-shadow: var(--shadow-panel-hover);
+        }
+        .chart-panel h2 {
+            font-family: var(--font-display);
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+        .chart-panel .chart-sub {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            margin-bottom: 16px;
+        }
+        .chart-panel canvas {
+            width: 100% !important;
+        }
+
+        /* ── Heatmap ── */
+        .heatmap-container {
+            position: relative;
+            width: 100%;
+            overflow-x: auto;
+        }
+        .heatmap-grid {
+            display: grid;
+            grid-template-columns: 42px repeat(24, 1fr);
+            gap: 3px;
+            min-width: 560px;
+        }
+        .hm-label {
+            font-size: 0.65rem;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 6px;
+            white-space: nowrap;
+        }
+        .hm-label.top {
+            justify-content: center;
+            padding: 0;
+        }
+        .hm-cell {
+            aspect-ratio: 1;
+            border-radius: 3px;
+            min-height: 22px;
+            transition: transform 0.15s, opacity 0.15s;
+            cursor: default;
+            position: relative;
+        }
+        .hm-cell:hover {
+            transform: scale(1.2);
+            z-index: 2;
+        }
+        .hm-cell[data-tip]:hover::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-elevated);
+            color: var(--text);
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            padding: 3px 7px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            white-space: nowrap;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .hm-legend {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
+            font-size: 0.65rem;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+            justify-content: flex-end;
+        }
+        .hm-legend-bar {
+            display: flex;
+            gap: 2px;
+        }
+        .hm-legend-bar span {
+            width: 14px;
+            height: 10px;
+            border-radius: 2px;
+        }
+
+        /* ── Top Talkgroups List ── */
+        .tg-list { list-style: none; }
+        .tg-list li {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+        }
+        .tg-list li:last-child { border-bottom: none; }
+        .tg-info .tg-name {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .tg-info .tg-desc {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+        .tg-bar-wrap {
+            width: 120px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tg-bar-track {
+            flex: 1;
+            height: 6px;
+            background: var(--bg-elevated);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .tg-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .tg-bar-wrap .tg-count {
+            font-size: 0.72rem;
+            font-family: var(--font-mono);
+            color: var(--text-mid);
+            min-width: 36px;
+            text-align: right;
+        }
+
+        /* ── Loading / Error ── */
+        .chart-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 180px;
+            color: var(--text-faint);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+        }
+        .chart-loading .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .chart-error {
+            color: var(--danger);
+            font-size: 0.8rem;
+            font-family: var(--font-mono);
+            padding: 20px;
+            text-align: center;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 900px) {
+            .chart-grid { grid-template-columns: 1fr; }
+            .chart-grid .span-full { grid-column: 1; }
+            .stat-row { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <div class="analytics-wrap">
+        <div class="page-header">
+            <h1>Analytics</h1>
+            <p>System activity overview <span class="timeframe" id="timeframe-label">loading…</span></p>
+        </div>
+
+        <!-- Stat Cards -->
+        <div class="stat-row" id="stat-row">
+            <div class="stat-card"><div class="label">Total Calls</div><div class="value" id="s-total">—</div><div class="sub" id="s-total-sub"></div></div>
+            <div class="stat-card"><div class="label">Last 24 h</div><div class="value" id="s-24h">—</div><div class="sub" id="s-24h-sub"></div></div>
+            <div class="stat-card"><div class="label">Last Hour</div><div class="value" id="s-1h">—</div><div class="sub" id="s-1h-sub"></div></div>
+            <div class="stat-card"><div class="label">Talkgroups</div><div class="value" id="s-tg">—</div><div class="sub" id="s-tg-sub"></div></div>
+            <div class="stat-card"><div class="label">Units</div><div class="value" id="s-units">—</div><div class="sub" id="s-units-sub"></div></div>
+            <div class="stat-card"><div class="label">Audio Hours</div><div class="value" id="s-hours">—</div><div class="sub" id="s-hours-sub"></div></div>
+        </div>
+
+        <!-- Charts -->
+        <div class="chart-grid">
+
+            <!-- Hourly Call Volume (7d) -->
+            <div class="chart-panel span-full">
+                <h2>Call Volume</h2>
+                <div class="chart-sub">Hourly call count — last 7 days</div>
+                <div id="volume-loading" class="chart-loading"><span class="spinner"></span>Loading…</div>
+                <div id="volume-chart-wrap" style="display:none;position:relative;height:220px"><canvas id="chart-volume"></canvas></div>
+            </div>
+
+            <!-- Daily Overview -->
+            <div class="chart-panel">
+                <h2>Daily Overview</h2>
+                <div class="chart-sub">Calls &amp; active talkgroups per day</div>
+                <div id="daily-loading" class="chart-loading"><span class="spinner"></span>Loading…</div>
+                <div id="daily-chart-wrap" style="display:none;position:relative;height:260px"><canvas id="chart-daily"></canvas></div>
+            </div>
+
+            <!-- Category Breakdown (doughnut) -->
+            <div class="chart-panel">
+                <h2>Category Breakdown</h2>
+                <div class="chart-sub">Calls by talkgroup tag — 24 h</div>
+                <div id="cat-loading" class="chart-loading"><span class="spinner"></span>Loading…</div>
+                <div id="cat-chart-wrap" style="display:none;position:relative;height:260px"><canvas id="chart-category"></canvas></div>
+            </div>
+
+            <!-- Activity Heatmap -->
+            <div class="chart-panel span-full">
+                <h2>Activity Heatmap</h2>
+                <div class="chart-sub">Calls by hour &amp; day of week — last 7 days (ET)</div>
+                <div id="heatmap-loading" class="chart-loading"><span class="spinner"></span>Loading…</div>
+                <div id="heatmap-wrap" class="heatmap-container" style="display:none"></div>
+            </div>
+
+            <!-- Top Talkgroups -->
+            <div class="chart-panel span-full">
+                <h2>Top Talkgroups</h2>
+                <div class="chart-sub">Busiest channels — 24 h</div>
+                <div id="tg-loading" class="chart-loading"><span class="spinner"></span>Loading…</div>
+                <ul class="tg-list" id="tg-list" style="display:none"></ul>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="theme-engine.js?v=2"></script>
+    <script>
+    (function () {
+        'use strict';
+
+        /* ─── Helpers ─── */
+        const $ = (s) => document.querySelector(s);
+        const fmt = (n) => n == null ? '—' : n.toLocaleString();
+        const pct = (a, b) => b ? ((a - b) / b * 100).toFixed(1) : null;
+
+        function api(path) {
+            return fetch('/api/v1' + path).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+        }
+        /* ─── Theme-aware colours ─── */
+        function css(v) {
+            return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+        }
+        function palette() {
+            return {
+                accent:   css('--accent')       || '#6366f1',
+                accentL:  css('--accent-light')  || '#818cf8',
+                accentD:  css('--accent-dim')    || '#3730a3',
+                accentG:  css('--accent-glow')   || 'rgba(99,102,241,.35)',
+                success:  css('--success')       || '#22c55e',
+                warning:  css('--warning')       || '#eab308',
+                danger:   css('--danger')        || '#ef4444',
+                info:     css('--info')          || '#06b6d4',
+                text:     css('--text')          || '#e2e8f0',
+                textMid:  css('--text-mid')      || '#94a3b8',
+                textMute: css('--text-muted')    || '#64748b',
+                textFaint:css('--text-faint')    || '#475569',
+                border:   css('--border')        || '#334155',
+                bgSurf:   css('--bg-surface')    || '#1e293b',
+                bgElev:   css('--bg-elevated')   || '#334155',
+            };
+        }
+
+        const CAT_COLORS = [
+            '#6366f1','#06b6d4','#22c55e','#f59e0b','#ef4444',
+            '#ec4899','#8b5cf6','#14b8a6','#f97316','#64748b',
+            '#a78bfa','#38bdf8'
+        ];
+
+        /* ─── Chart.js defaults ─── */
+        function applyChartDefaults() {
+            const p = palette();
+            Chart.defaults.color = p.textMid;
+            Chart.defaults.borderColor = p.border;
+            Chart.defaults.font.family = css('--font-mono') || 'monospace';
+            Chart.defaults.font.size = 11;
+            Chart.defaults.plugins.legend.labels.boxWidth = 12;
+            Chart.defaults.plugins.legend.labels.padding = 14;
+            Chart.defaults.plugins.tooltip.backgroundColor = p.bgElev;
+            Chart.defaults.plugins.tooltip.titleColor = p.text;
+            Chart.defaults.plugins.tooltip.bodyColor = p.textMid;
+            Chart.defaults.plugins.tooltip.borderColor = p.border;
+            Chart.defaults.plugins.tooltip.borderWidth = 1;
+            Chart.defaults.plugins.tooltip.cornerRadius = 6;
+            Chart.defaults.plugins.tooltip.padding = 10;
+        }
+
+        /* ─── 1. Stats Cards ─── */
+        async function loadStats() {
+            try {
+                const d = await api('/stats');
+                $('#s-total').textContent = fmt(d.total_calls);
+                $('#s-24h').textContent   = fmt(d.calls_24h);
+                $('#s-1h').textContent    = fmt(d.calls_1h);
+                $('#s-tg').textContent    = fmt(d.talkgroups);
+                $('#s-units').textContent = fmt(d.units);
+                $('#s-hours').textContent = d.total_duration_hours != null
+                    ? d.total_duration_hours.toFixed(1)
+                    : '—';
+
+                // subtext
+                const sys = (d.system_activity || []).filter(s => s.calls_1h > 0);
+                if (sys.length) {
+                    const names = sys.map(s => s.system_name).join(', ');
+                    $('#s-total-sub').textContent = sys.length + ' active system' + (sys.length>1?'s':'');
+                    const totalActive = sys.reduce((a,s)=>a+s.active_talkgroups, 0);
+                    const totalUnits = sys.reduce((a,s)=>a+s.active_units, 0);
+                    $('#s-tg-sub').textContent = totalActive + ' active now';
+                    $('#s-units-sub').textContent = totalUnits + ' active now';
+                }
+                $('#timeframe-label').textContent = 'live';
+            } catch (e) {
+                console.error('stats', e);
+            }
+        }
+
+        /* ─── 2. Hourly Volume (7d) ─── */
+        async function loadVolume() {
+            const el = $('#chart-volume'), loader = $('#volume-loading'), wrap = $('#volume-chart-wrap');
+            try {
+                const data = await api('/stats/call-volume?interval=hour&days=7');
+                const rows = data.buckets;
+                loader.style.display = 'none';
+                wrap.style.display = '';
+                const p = palette();
+
+                new Chart(el.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: rows.map(r => r.time),
+                        datasets: [{
+                            label: 'Calls / hour',
+                            data: rows.map(r => r.calls),
+                            borderColor: p.accent,
+                            backgroundColor: p.accentG,
+                            fill: true,
+                            tension: 0.35,
+                            pointRadius: 0,
+                            pointHitRadius: 8,
+                            borderWidth: 2,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: (items) => {
+                                        const d = new Date(items[0].label);
+                                        return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) +
+                                            ' ' + d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'category',
+                                ticks: {
+                                    maxTicksLimit: 14,
+                                    callback: function(val, i) {
+                                        const d = new Date(this.getLabelForValue(val));
+                                        return d.getHours() === 0
+                                            ? d.toLocaleDateString('en-US', { month:'short', day:'numeric' })
+                                            : '';
+                                    }
+                                },
+                                grid: { display: false }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                ticks: { maxTicksLimit: 6 },
+                                grid: { color: p.border + '44' }
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                loader.innerHTML = '<span class="chart-error">Failed to load</span>';
+                console.error('volume', e);
+            }
+        }
+
+        /* ─── 3. Daily Overview ─── */
+        async function loadDaily() {
+            const el = $('#chart-daily'), loader = $('#daily-loading'), wrap = $('#daily-chart-wrap');
+            try {
+                const data = await api('/stats/daily-overview?days=14');
+                const rows = data.days;
+                loader.style.display = 'none';
+                wrap.style.display = '';
+                const p = palette();
+
+                new Chart(el.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: rows.map(r => {
+                            const d = new Date(r.date + 'T00:00:00');
+                            return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+                        }),
+                        datasets: [
+                            {
+                                label: 'Calls',
+                                data: rows.map(r => r.calls),
+                                backgroundColor: p.accent + 'aa',
+                                borderColor: p.accent,
+                                borderWidth: 1,
+                                borderRadius: 4,
+                                yAxisID: 'y',
+                                order: 2,
+                            },
+                            {
+                                label: 'Active TGs',
+                                data: rows.map(r => r.active_talkgroups),
+                                type: 'line',
+                                borderColor: p.success,
+                                backgroundColor: 'transparent',
+                                borderWidth: 2,
+                                tension: 0.3,
+                                pointRadius: 3,
+                                pointBackgroundColor: p.success,
+                                yAxisID: 'y1',
+                                order: 1,
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: { legend: { position: 'bottom' } },
+                        scales: {
+                            x: { grid: { display: false } },
+                            y: {
+                                beginAtZero: true,
+                                position: 'left',
+                                ticks: { maxTicksLimit: 5 },
+                                grid: { color: p.border + '44' },
+                                title: { display: true, text: 'Calls', color: p.textMute, font: { size: 10 } }
+                            },
+                            y1: {
+                                beginAtZero: true,
+                                position: 'right',
+                                ticks: { maxTicksLimit: 5 },
+                                grid: { drawOnChartArea: false },
+                                title: { display: true, text: 'Talkgroups', color: p.textMute, font: { size: 10 } }
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                loader.innerHTML = '<span class="chart-error">Failed to load</span>';
+                console.error('daily', e);
+            }
+        }
+
+        /* ─── 4. Category Doughnut ─── */
+        async function loadCategory() {
+            const el = $('#chart-category'), loader = $('#cat-loading'), wrap = $('#cat-chart-wrap');
+            try {
+                const data = await api('/stats/category-breakdown?hours=24&limit=10');
+                const rows = data.categories;
+                loader.style.display = 'none';
+                wrap.style.display = '';
+                const p = palette();
+
+                new Chart(el.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: rows.map(r => r.tag),
+                        datasets: [{
+                            data: rows.map(r => r.calls),
+                            backgroundColor: CAT_COLORS.slice(0, rows.length),
+                            borderColor: p.bgSurf,
+                            borderWidth: 2,
+                            hoverBorderColor: p.text,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '58%',
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: {
+                                    padding: 10,
+                                    font: { size: 10.5 },
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+                                        const pct = (ctx.raw / total * 100).toFixed(1);
+                                        return ` ${ctx.label}: ${fmt(ctx.raw)} (${pct}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                loader.innerHTML = '<span class="chart-error">Failed to load</span>';
+                console.error('category', e);
+            }
+        }
+
+        /* ─── 5. Heatmap ─── */
+        async function loadHeatmap() {
+            const wrap = $('#heatmap-wrap'), loader = $('#heatmap-loading');
+            try {
+                const data = await api('/stats/call-heatmap?days=7&tz=America/New_York');
+                const rows = data.cells;
+                loader.style.display = 'none';
+                wrap.style.display = '';
+                const p = palette();
+
+                // Build lookup
+                const map = {};
+                let maxVal = 1;
+                rows.forEach(r => {
+                    const k = r.dow + '-' + r.hour;
+                    map[k] = r.calls;
+                    if (r.calls > maxVal) maxVal = r.calls;
+                });
+
+                const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                const grid = document.createElement('div');
+                grid.className = 'heatmap-grid';
+
+                // Header row: empty corner + 24 hour labels
+                grid.appendChild(Object.assign(document.createElement('div'), { className: 'hm-label' }));
+                for (let h = 0; h < 24; h++) {
+                    const lbl = document.createElement('div');
+                    lbl.className = 'hm-label top';
+                    lbl.textContent = h === 0 ? '12a' : h < 12 ? h + 'a' : h === 12 ? '12p' : (h-12) + 'p';
+                    // Only show every other label on small screens
+                    if (h % 3 !== 0) lbl.style.opacity = '0.5';
+                    grid.appendChild(lbl);
+                }
+
+                // Data rows
+                for (let d = 0; d < 7; d++) {
+                    const dayLbl = document.createElement('div');
+                    dayLbl.className = 'hm-label';
+                    dayLbl.textContent = dayNames[d];
+                    grid.appendChild(dayLbl);
+
+                    for (let h = 0; h < 24; h++) {
+                        const val = map[d + '-' + h] || 0;
+                        const intensity = val / maxVal;
+                        const cell = document.createElement('div');
+                        cell.className = 'hm-cell';
+                        cell.dataset.tip = `${dayNames[d]} ${h}:00 — ${fmt(val)} calls`;
+
+                        // Color gradient from dim to accent
+                        if (val === 0) {
+                            cell.style.background = p.bgElev;
+                        } else {
+                            const alpha = 0.15 + intensity * 0.85;
+                            cell.style.background = p.accent;
+                            cell.style.opacity = alpha;
+                        }
+                        grid.appendChild(cell);
+                    }
+                }
+                wrap.appendChild(grid);
+
+                // Legend
+                const legend = document.createElement('div');
+                legend.className = 'hm-legend';
+                legend.innerHTML = '<span>Less</span><div class="hm-legend-bar"></div><span>More</span>';
+                const bar = legend.querySelector('.hm-legend-bar');
+                for (let i = 0; i < 6; i++) {
+                    const s = document.createElement('span');
+                    const alpha = i === 0 ? 0 : (0.15 + (i / 5) * 0.85);
+                    s.style.background = i === 0 ? p.bgElev : p.accent;
+                    if (i > 0) s.style.opacity = alpha;
+                    bar.appendChild(s);
+                }
+                wrap.appendChild(legend);
+            } catch (e) {
+                loader.innerHTML = '<span class="chart-error">Failed to load</span>';
+                console.error('heatmap', e);
+            }
+        }
+
+        /* ─── 6. Top Talkgroups ─── */
+        async function loadTopTG() {
+            const list = $('#tg-list'), loader = $('#tg-loading');
+            try {
+                const data = await api('/stats/talkgroup-activity?limit=12&sort=calls');
+                const items = data.activity || [];
+                loader.style.display = 'none';
+                list.style.display = '';
+                const p = palette();
+                const maxCalls = items.length ? items[0].call_count : 1;
+
+                const tagColors = {
+                    'Law Dispatch': p.accent,
+                    'Law Tac':      p.accentL,
+                    'Fire Dispatch': p.danger,
+                    'Fire-Tac':     '#f97316',
+                    'EMS Dispatch': p.success,
+                    'Public Works': p.warning,
+                    'Corrections':  '#8b5cf6',
+                    'Transportation':'#14b8a6',
+                    'Interop':      p.info,
+                };
+
+                items.forEach(tg => {
+                    const pctW = (tg.call_count / maxCalls * 100).toFixed(1);
+                    const color = tagColors[tg.tg_tag] || p.textMid;
+                    const hours = (tg.total_duration / 3600).toFixed(1);
+                    const li = document.createElement('li');
+                    li.innerHTML =
+                        `<div class="tg-info">
+                            <div class="tg-name">${esc(tg.tg_alpha_tag || 'TG ' + tg.tgid)}</div>
+                            <div class="tg-desc">${esc(tg.tg_description || tg.tg_tag || '')} · ${hours}h audio</div>
+                        </div>
+                        <div class="tg-bar-wrap">
+                            <div class="tg-bar-track">
+                                <div class="tg-bar-fill" style="width:${pctW}%;background:${color}"></div>
+                            </div>
+                            <span class="tg-count">${fmt(tg.call_count)}</span>
+                        </div>`;
+                    list.appendChild(li);
+                });
+            } catch (e) {
+                loader.innerHTML = '<span class="chart-error">Failed to load</span>';
+                console.error('topTG', e);
+            }
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        /* ─── Init ─── */
+        applyChartDefaults();
+        loadStats();
+        loadVolume();
+        loadDaily();
+        loadCategory();
+        loadHeatmap();
+        loadTopTG();
+
+        // Re-apply chart defaults on theme change (if theme engine fires an event)
+        window.addEventListener('theme-changed', () => {
+            applyChartDefaults();
+            // Reload to re-render with new colors
+            location.reload();
+        });
+    })();
+    </script>
+</body>
+</html>

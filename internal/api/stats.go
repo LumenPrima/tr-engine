@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/snarg/tr-engine/internal/database"
@@ -176,11 +177,126 @@ func (h *StatsHandler) GetTalkgroupActivity(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// GetCallVolume returns hourly or daily call counts over a time range.
+func (h *StatsHandler) GetCallVolume(w http.ResponseWriter, r *http.Request) {
+	filter := database.CallVolumeFilter{}
+	if v, ok := QueryString(r, "interval"); ok {
+		if v != "hour" && v != "day" {
+			WriteError(w, http.StatusBadRequest, "interval must be 'hour' or 'day'")
+			return
+		}
+		filter.Interval = v
+	}
+	if v, ok := QueryInt(r, "days"); ok {
+		if v < 1 || v > 90 {
+			WriteError(w, http.StatusBadRequest, "days must be between 1 and 90")
+			return
+		}
+		filter.Days = v
+	}
+	filter.SystemIDs = QueryIntList(r, "system_id")
+
+	buckets, err := h.db.GetCallVolume(r.Context(), filter)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to get call volume")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"buckets": buckets})
+}
+
+// GetDailyOverview returns daily call aggregates with active talkgroup counts.
+func (h *StatsHandler) GetDailyOverview(w http.ResponseWriter, r *http.Request) {
+	filter := database.DailyOverviewFilter{}
+	if v, ok := QueryInt(r, "days"); ok {
+		if v < 1 || v > 90 {
+			WriteError(w, http.StatusBadRequest, "days must be between 1 and 90")
+			return
+		}
+		filter.Days = v
+	}
+	filter.SystemIDs = QueryIntList(r, "system_id")
+
+	days, err := h.db.GetDailyOverview(r.Context(), filter)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to get daily overview")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"days": days})
+}
+
+// GetCategoryBreakdown returns calls grouped by talkgroup tag.
+func (h *StatsHandler) GetCategoryBreakdown(w http.ResponseWriter, r *http.Request) {
+	filter := database.CategoryBreakdownFilter{}
+	if v, ok := QueryInt(r, "hours"); ok {
+		if v < 1 || v > 720 {
+			WriteError(w, http.StatusBadRequest, "hours must be between 1 and 720")
+			return
+		}
+		filter.Hours = v
+	}
+	if v, ok := QueryInt(r, "limit"); ok {
+		if v < 1 || v > 100 {
+			WriteError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+			return
+		}
+		filter.Limit = v
+	}
+	filter.SystemIDs = QueryIntList(r, "system_id")
+
+	categories, err := h.db.GetCategoryBreakdown(r.Context(), filter)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to get category breakdown")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"categories": categories})
+}
+
+// GetCallHeatmap returns day-of-week × hour-of-day call counts.
+func (h *StatsHandler) GetCallHeatmap(w http.ResponseWriter, r *http.Request) {
+	filter := database.CallHeatmapFilter{}
+	if v, ok := QueryInt(r, "days"); ok {
+		if v < 1 || v > 90 {
+			WriteError(w, http.StatusBadRequest, "days must be between 1 and 90")
+			return
+		}
+		filter.Days = v
+	}
+	if v, ok := QueryString(r, "tz"); ok {
+		filter.Timezone = v
+	}
+	filter.SystemIDs = QueryIntList(r, "system_id")
+
+	cells, err := h.db.GetCallHeatmap(r.Context(), filter)
+	if err != nil {
+		// Invalid timezone returns a PG error — surface as 400
+		if isInvalidTimezone(err) {
+			WriteError(w, http.StatusBadRequest, "invalid timezone")
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, "failed to get call heatmap")
+		return
+	}
+	tz := filter.Timezone
+	if tz == "" {
+		tz = "UTC"
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"cells": cells, "timezone": tz})
+}
+
+// isInvalidTimezone checks if a PG error is due to an invalid timezone name.
+func isInvalidTimezone(err error) bool {
+	return strings.Contains(err.Error(), "time zone")
+}
+
 // Routes registers stats routes on the given router.
 func (h *StatsHandler) Routes(r chi.Router) {
 	r.Get("/stats", h.GetStats)
 	r.Get("/stats/rates", h.GetDecodeRates)
 	r.Get("/stats/talkgroup-activity", h.GetTalkgroupActivity)
+	r.Get("/stats/call-volume", h.GetCallVolume)
+	r.Get("/stats/daily-overview", h.GetDailyOverview)
+	r.Get("/stats/category-breakdown", h.GetCategoryBreakdown)
+	r.Get("/stats/call-heatmap", h.GetCallHeatmap)
 	r.Get("/trunking-messages", h.ListTrunkingMessages)
 	r.Get("/console-messages", h.ListConsoleMessages)
 }

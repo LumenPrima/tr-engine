@@ -499,12 +499,27 @@ function buildCard(sys) {
     body.appendChild(sitesRow);
   }
 
-  // Recorders
+  // Recorders — filter by type to match system type
   const instanceIds = [...new Set((sys.sites || []).map(s => s.instance_id).filter(Boolean))];
-  const sysRecs = [];
+  const allInstanceRecs = [];
   for (const iid of instanceIds) {
-    if (recorders[iid]) sysRecs.push(...recorders[iid]);
+    if (recorders[iid]) allInstanceRecs.push(...recorders[iid]);
   }
+  // When an instance has multiple systems, filter recorders by type
+  const sysType = (sys.system_type || '').toLowerCase();
+  const isConventional = sysType.startsWith('conventional');
+  const multiSystem = instanceIds.some(iid => {
+    const otherSys = systems.filter(s => s.system_id !== sys.system_id && (s.sites || []).some(st => st.instance_id === iid));
+    return otherSys.length > 0;
+  });
+  const sysRecs = multiSystem
+    ? allInstanceRecs.filter(r => {
+        const rt = (r.type || '').toLowerCase();
+        return isConventional
+          ? (rt.startsWith('analog') || rt === 'sigmf')
+          : (!rt.startsWith('analog') && rt !== 'sigmf');
+      })
+    : allInstanceRecs;
 
   if (sysRecs.length) {
     sysRecs.sort((a, b) => (a.rec_num ?? 0) - (b.rec_num ?? 0));

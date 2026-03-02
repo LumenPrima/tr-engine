@@ -184,6 +184,223 @@ func (db *DB) GetTalkgroupActivity(ctx context.Context, filter TalkgroupActivity
 	return results, total, rows.Err()
 }
 
+// CallVolumeFilter specifies filters for the call volume summary.
+type CallVolumeFilter struct {
+	Interval  string // "hour" or "day"
+	Days      int    // lookback days (1–90)
+	SystemIDs []int
+}
+
+// CallVolumeBucket represents one time bucket of call volume.
+type CallVolumeBucket struct {
+	Time        time.Time `json:"time"`
+	Calls       int       `json:"calls"`
+	AvgDuration float64   `json:"avg_duration"`
+}
+
+// GetCallVolume returns call counts bucketed by hour or day.
+func (db *DB) GetCallVolume(ctx context.Context, f CallVolumeFilter) ([]CallVolumeBucket, error) {
+	interval := "hour"
+	if f.Interval == "day" {
+		interval = "day"
+	}
+	days := f.Days
+	if days < 1 {
+		days = 7
+	}
+
+	query := fmt.Sprintf(`
+		SELECT date_trunc('%s', start_time) AS bucket,
+			count(*) AS calls,
+			COALESCE(round(avg(duration)::numeric, 1), 0) AS avg_dur
+		FROM calls
+		WHERE start_time > now() - make_interval(days => $1)
+		  AND ($2::int[] IS NULL OR system_id = ANY($2))
+		GROUP BY 1 ORDER BY 1
+	`, interval)
+
+	rows, err := db.Pool.Query(ctx, query, days, pqIntArray(f.SystemIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var buckets []CallVolumeBucket
+	for rows.Next() {
+		var b CallVolumeBucket
+		if err := rows.Scan(&b.Time, &b.Calls, &b.AvgDuration); err != nil {
+			return nil, err
+		}
+		buckets = append(buckets, b)
+	}
+	if buckets == nil {
+		buckets = []CallVolumeBucket{}
+	}
+	return buckets, rows.Err()
+}
+
+// DailyOverviewFilter specifies filters for the daily overview.
+type DailyOverviewFilter struct {
+	Days      int // lookback days (1–90)
+	SystemIDs []int
+}
+
+// DailyOverviewRow represents one day of the daily overview.
+type DailyOverviewRow struct {
+	Date             string  `json:"date"`
+	Calls            int     `json:"calls"`
+	TotalHours       float64 `json:"total_hours"`
+	ActiveTalkgroups int     `json:"active_talkgroups"`
+}
+
+// GetDailyOverview returns daily call aggregates.
+func (db *DB) GetDailyOverview(ctx context.Context, f DailyOverviewFilter) ([]DailyOverviewRow, error) {
+	days := f.Days
+	if days < 1 {
+		days = 14
+	}
+
+	query := `
+		SELECT date_trunc('day', start_time)::date AS day,
+			count(*) AS calls,
+			COALESCE(round(sum(duration)::numeric / 3600, 1), 0) AS total_hours,
+			count(DISTINCT tgid) AS active_tgs
+		FROM calls
+		WHERE start_time > now() - make_interval(days => $1)
+		  AND ($2::int[] IS NULL OR system_id = ANY($2))
+		GROUP BY 1 ORDER BY 1`
+
+	rows, err := db.Pool.Query(ctx, query, days, pqIntArray(f.SystemIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []DailyOverviewRow
+	for rows.Next() {
+		var r DailyOverviewRow
+		var d time.Time
+		if err := rows.Scan(&d, &r.Calls, &r.TotalHours, &r.ActiveTalkgroups); err != nil {
+			return nil, err
+		}
+		r.Date = d.Format("2006-01-02")
+		result = append(result, r)
+	}
+	if result == nil {
+		result = []DailyOverviewRow{}
+	}
+	return result, rows.Err()
+}
+
+// CategoryBreakdownFilter specifies filters for the category breakdown.
+type CategoryBreakdownFilter struct {
+	Hours     int // lookback hours (1–720)
+	Limit     int // max categories (1–100)
+	SystemIDs []int
+}
+
+// CategoryBreakdownRow represents one tag category.
+type CategoryBreakdownRow struct {
+	Tag   string  `json:"tag"`
+	Calls int     `json:"calls"`
+	Hours float64 `json:"hours"`
+}
+
+// GetCategoryBreakdown returns calls grouped by tg_tag.
+func (db *DB) GetCategoryBreakdown(ctx context.Context, f CategoryBreakdownFilter) ([]CategoryBreakdownRow, error) {
+	hours := f.Hours
+	if hours < 1 {
+		hours = 24
+	}
+	limit := f.Limit
+	if limit < 1 {
+		limit = 10
+	}
+
+	query := `
+		SELECT COALESCE(NULLIF(tg_tag, ''), 'Unknown') AS tag,
+			count(*) AS calls,
+			COALESCE(round(sum(duration)::numeric / 3600, 1), 0) AS hours
+		FROM calls
+		WHERE start_time > now() - make_interval(hours => $1)
+		  AND ($2::int[] IS NULL OR system_id = ANY($2))
+		GROUP BY 1 ORDER BY 2 DESC
+		LIMIT $3`
+
+	rows, err := db.Pool.Query(ctx, query, hours, pqIntArray(f.SystemIDs), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CategoryBreakdownRow
+	for rows.Next() {
+		var r CategoryBreakdownRow
+		if err := rows.Scan(&r.Tag, &r.Calls, &r.Hours); err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	if result == nil {
+		result = []CategoryBreakdownRow{}
+	}
+	return result, rows.Err()
+}
+
+// CallHeatmapFilter specifies filters for the call heatmap.
+type CallHeatmapFilter struct {
+	Days      int    // lookback days (1–90)
+	Timezone  string // IANA timezone name
+	SystemIDs []int
+}
+
+// CallHeatmapCell represents one dow×hour cell.
+type CallHeatmapCell struct {
+	DOW  int `json:"dow"`
+	Hour int `json:"hour"`
+	Call int `json:"calls"`
+}
+
+// GetCallHeatmap returns day-of-week × hour-of-day call counts.
+func (db *DB) GetCallHeatmap(ctx context.Context, f CallHeatmapFilter) ([]CallHeatmapCell, error) {
+	days := f.Days
+	if days < 1 {
+		days = 7
+	}
+	tz := f.Timezone
+	if tz == "" {
+		tz = "UTC"
+	}
+
+	query := `
+		SELECT extract(dow FROM start_time AT TIME ZONE $1)::int AS dow,
+			extract(hour FROM start_time AT TIME ZONE $1)::int AS hour,
+			count(*) AS calls
+		FROM calls
+		WHERE start_time > now() - make_interval(days => $2)
+		  AND ($3::int[] IS NULL OR system_id = ANY($3))
+		GROUP BY 1, 2 ORDER BY 1, 2`
+
+	rows, err := db.Pool.Query(ctx, query, tz, days, pqIntArray(f.SystemIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cells []CallHeatmapCell
+	for rows.Next() {
+		var c CallHeatmapCell
+		if err := rows.Scan(&c.DOW, &c.Hour, &c.Call); err != nil {
+			return nil, err
+		}
+		cells = append(cells, c)
+	}
+	if cells == nil {
+		cells = []CallHeatmapCell{}
+	}
+	return cells, rows.Err()
+}
+
 // DecodeRateFilter specifies time range for decode rate queries.
 type DecodeRateFilter struct {
 	StartTime *time.Time

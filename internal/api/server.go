@@ -153,13 +153,7 @@ func NewServer(opts ServerOptions) *Server {
 			NewAdminHandler(opts.DB, opts.OnSystemMerge).Routes(r)
 			r.Post("/pages", SavePageHandler(webDir))
 
-			// Query endpoint requires auth unless AUTH_ENABLED=false
-			r.Group(func(r chi.Router) {
-				if opts.Config.AuthEnabled {
-					r.Use(RequireAuth(opts.Config.AuthToken))
-				}
-				NewQueryHandler(opts.DB).Routes(r)
-			})
+			NewQueryHandler(opts.DB).Routes(r)
 		})
 	})
 

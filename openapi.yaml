@@ -1941,6 +1941,181 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /stats/call-volume:
+    get:
+      operationId: getCallVolume
+      summary: Hourly or daily call volume
+      description: Returns call counts bucketed by hour or day over a time range.
+      tags: [stats]
+      parameters:
+        - name: interval
+          in: query
+          description: Bucket size — "hour" (default) or "day".
+          schema:
+            type: string
+            enum: [hour, day]
+            default: hour
+        - name: days
+          in: query
+          description: Lookback period in days (1–90). Default 7.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+        - name: system_id
+          in: query
+          description: Filter by system ID(s), comma-separated.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buckets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CallVolumeBucket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /stats/daily-overview:
+    get:
+      operationId: getDailyOverview
+      summary: Daily call overview
+      description: Returns daily call aggregates with distinct talkgroup counts.
+      tags: [stats]
+      parameters:
+        - name: days
+          in: query
+          description: Lookback period in days (1–90). Default 14.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 14
+        - name: system_id
+          in: query
+          description: Filter by system ID(s), comma-separated.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  days:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DailyOverviewRow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /stats/category-breakdown:
+    get:
+      operationId: getCategoryBreakdown
+      summary: Calls by talkgroup tag
+      description: Returns call counts grouped by talkgroup tag (category).
+      tags: [stats]
+      parameters:
+        - name: hours
+          in: query
+          description: Lookback period in hours (1–720). Default 24.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 720
+            default: 24
+        - name: limit
+          in: query
+          description: Maximum categories to return (1–100). Default 10.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: system_id
+          in: query
+          description: Filter by system ID(s), comma-separated.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CategoryBreakdownRow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /stats/call-heatmap:
+    get:
+      operationId: getCallHeatmap
+      summary: Activity heatmap
+      description: |
+        Returns day-of-week × hour-of-day call counts for building
+        an activity heatmap. The timezone parameter controls which
+        IANA timezone the bucketing is performed in.
+      tags: [stats]
+      parameters:
+        - name: days
+          in: query
+          description: Lookback period in days (1–90). Default 7.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+        - name: tz
+          in: query
+          description: IANA timezone name for bucketing. Default "UTC".
+          schema:
+            type: string
+            default: UTC
+        - name: system_id
+          in: query
+          description: Filter by system ID(s), comma-separated.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cells:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CallHeatmapCell"
+                  timezone:
+                    type: string
+                    description: The timezone used for bucketing.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   # ----------------------------------------------------------
   # Recorders
   # ----------------------------------------------------------
@@ -4276,6 +4451,69 @@ components:
         last_call:
           type: string
           format: date-time
+
+    CallVolumeBucket:
+      type: object
+      properties:
+        time:
+          type: string
+          format: date-time
+        calls:
+          type: integer
+          example: 42
+        avg_duration:
+          type: number
+          description: Average call duration in seconds
+          example: 8.3
+
+    DailyOverviewRow:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2026-03-01"
+        calls:
+          type: integer
+          example: 1250
+        total_hours:
+          type: number
+          description: Total call duration in hours
+          example: 4.2
+        active_talkgroups:
+          type: integer
+          example: 87
+
+    CategoryBreakdownRow:
+      type: object
+      properties:
+        tag:
+          type: string
+          example: "Law Dispatch"
+        calls:
+          type: integer
+          example: 523
+        hours:
+          type: number
+          description: Total call duration in hours
+          example: 1.8
+
+    CallHeatmapCell:
+      type: object
+      properties:
+        dow:
+          type: integer
+          description: Day of week (0=Sunday, 6=Saturday)
+          minimum: 0
+          maximum: 6
+        hour:
+          type: integer
+          description: Hour of day (0–23)
+          minimum: 0
+          maximum: 23
+        calls:
+          type: integer
+          example: 15
 
     EncryptionStatsResponse:
       type: object
