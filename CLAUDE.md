@@ -407,6 +407,18 @@ ssh root@tr-dashboard "caddy validate --config /etc/caddy/Caddyfile && systemctl
 
 DNS is managed via Cloudflare (proxied). SSL mode is set globally to Full — no per-domain page rules needed.
 
+**Auth header injection:** The `tr-dashboard.luxprimatech.com` block injects the read token (`AUTH_TOKEN`) into proxied `/api/*` requests — but only when the browser doesn't send its own `Authorization` header. This is critical for two-tier auth:
+
+```
+@no_auth not header Authorization *
+request_header @no_auth Authorization "Bearer {read_token}"
+```
+
+- **No token from browser** → Caddy injects read token → reads work seamlessly via `auth.js`
+- **Write token from browser** → Caddy passes it through untouched → writes work
+
+Without the `@no_auth` matcher, Caddy would unconditionally overwrite the header, replacing the browser's write token with the read token and breaking all write operations. The `tr-engine.luxprimatech.com` direct-access domain has no injection — callers provide their own token.
+
 ## Known trunk-recorder Issues (Potential Upstream Bug Reports)
 
 ### unit_event:end lags call_end by 3-4 seconds

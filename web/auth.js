@@ -10,6 +10,12 @@
  * 4. Patches EventSource to append ?token= on same-origin URLs
  * 5. On 401 response, shows a token prompt modal → saves → reloads
  *
+ * Caddy interaction: When behind a reverse proxy (e.g. tr-dashboard domain),
+ * Caddy conditionally injects the read token for unauthenticated requests.
+ * This script's fetch patch only sets Authorization when the caller hasn't
+ * already set one, so a page that explicitly sends a write token will have it
+ * passed through by both auth.js and Caddy unchanged.
+ *
  * Pages don't need to change their fetch() or EventSource calls at all.
  */
 (function () {
