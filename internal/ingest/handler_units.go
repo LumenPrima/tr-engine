@@ -170,8 +170,34 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 			row.TransmissionFilename = data.TransmissionFilename
 		}
 
+		// Signal events: store signaling_type and signal_type in metadata_json
+		if eventType == "signal" && data.SignalingType != "" {
+			meta := map[string]string{
+				"signaling_type": data.SignalingType,
+				"signal_type":    data.SignalType,
+			}
+			if b, err := json.Marshal(meta); err == nil {
+				row.MetadataJSON = b
+			}
+		}
+
 		if err := p.db.InsertUnitEvent(ctx, row); err != nil {
 			return fmt.Errorf("insert unit event: %w", err)
+		}
+
+		ssePayload := map[string]any{
+			"event_type":     eventType,
+			"system_id":      identity.SystemID,
+			"unit_id":        data.Unit,
+			"unit_alpha_tag": effectiveUnitTag,
+			"tgid":           data.Talkgroup,
+			"tg_alpha_tag":   effectiveTgTag,
+			"time":           ts,
+			"incident_data":  data.IncidentData,
+		}
+		if eventType == "signal" {
+			ssePayload["signaling_type"] = data.SignalingType
+			ssePayload["signal_type"] = data.SignalType
 		}
 
 		p.PublishEvent(EventData{
@@ -182,16 +208,7 @@ func (p *Pipeline) handleUnitEvent(topic string, payload []byte) error {
 			Tgid:      data.Talkgroup,
 			UnitID:    data.Unit,
 			Emergency: data.Emergency,
-			Payload: map[string]any{
-				"event_type":     eventType,
-				"system_id":      identity.SystemID,
-				"unit_id":        data.Unit,
-				"unit_alpha_tag": effectiveUnitTag,
-				"tgid":           data.Talkgroup,
-				"tg_alpha_tag":   effectiveTgTag,
-				"time":           ts,
-				"incident_data":  data.IncidentData,
-			},
+			Payload:   ssePayload,
 		})
 	}
 

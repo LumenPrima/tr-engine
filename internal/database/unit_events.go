@@ -205,6 +205,7 @@ type UnitEventRow struct {
 	SysNum               *int16
 	SysName              string
 	IncidentData         json.RawMessage
+	MetadataJSON         json.RawMessage
 }
 
 func (db *DB) InsertUnitEvent(ctx context.Context, e *UnitEventRow) error {
@@ -233,6 +234,7 @@ func (db *DB) InsertUnitEvent(ctx context.Context, e *UnitEventRow) error {
 		SysNum:               e.SysNum,
 		SysName:              &e.SysName,
 		Incidentdata:         e.IncidentData,
+		MetadataJson:         e.MetadataJSON,
 	})
 }
 

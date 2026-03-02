@@ -19,7 +19,7 @@ INSERT INTO unit_events (
     "position", length, error_count, spike_count, sample_count,
     transmission_filename, talkgroup_patches,
     instance_id, sys_num, sys_name,
-    incidentdata
+    incidentdata, metadata_json
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9,
@@ -27,7 +27,7 @@ INSERT INTO unit_events (
     $14, $15, $16, $17, $18,
     $19, $20,
     $21, $22, $23,
-    $24
+    $24, $25
 )
 `
 
@@ -56,6 +56,7 @@ type InsertUnitEventParams struct {
 	SysNum               *int16
 	SysName              *string
 	Incidentdata         []byte
+	MetadataJson         []byte
 }
 
 func (q *Queries) InsertUnitEvent(ctx context.Context, arg InsertUnitEventParams) error {
@@ -84,6 +85,7 @@ func (q *Queries) InsertUnitEvent(ctx context.Context, arg InsertUnitEventParams
 		arg.SysNum,
 		arg.SysName,
 		arg.Incidentdata,
+		arg.MetadataJson,
 	)
 	return err
 }

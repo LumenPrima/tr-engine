@@ -166,6 +166,9 @@ type UnitEventData struct {
 	SampleCount          int     `json:"sample_count"`
 	TransmissionFilename string          `json:"transmission_filename"`
 	IncidentData         json.RawMessage `json:"incidentdata,omitempty"`
+	// Signal-specific fields (from signal events)
+	SignalingType string `json:"signaling_type,omitempty"`
+	SignalType    string `json:"signal_type,omitempty"`
 }
 
 // UnitEventMsg wraps a unit event message. The event data is keyed by the event type.
