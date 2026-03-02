@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -44,6 +45,9 @@ type Pipeline struct {
 	rawStore   bool            // false = disable all raw archival
 	rawInclude map[string]bool // if non-empty, allowlist mode (only these handlers)
 	rawExclude map[string]bool // if non-empty, denylist mode (skip these handlers)
+
+	// MQTT instance_id rewrite: topic prefix → override instance_id
+	instancePrefixMap map[string]string
 
 	// P25 system merging
 	mergeP25Systems bool // when false, systems with same sysid/wacn stay separate
@@ -94,7 +98,8 @@ type PipelineOptions struct {
 	RawStore         bool
 	RawIncludeTopics string
 	RawExcludeTopics string
-	MergeP25Systems  bool // auto-merge systems with same sysid/wacn (default true)
+	MergeP25Systems  bool   // auto-merge systems with same sysid/wacn (default true)
+	MQTTInstanceMap  string // "prefix:instance_id,prefix:instance_id"
 	TranscribeOpts   *transcribe.WorkerPoolOptions // nil = transcription disabled
 	Log              zerolog.Logger
 }
@@ -128,6 +133,16 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		log.Info().Msg("P25 system auto-merge disabled (MERGE_P25_SYSTEMS=false)")
 	}
 
+	// Parse MQTT_INSTANCE_MAP: "prefix:instance_id,prefix:instance_id"
+	instancePrefixMap := parseInstanceMap(opts.MQTTInstanceMap)
+	if len(instancePrefixMap) > 0 {
+		pairs := make([]string, 0, len(instancePrefixMap))
+		for prefix, id := range instancePrefixMap {
+			pairs = append(pairs, prefix+"→"+id)
+		}
+		log.Info().Strs("mappings", pairs).Msg("MQTT instance_id rewrite active")
+	}
+
 	p := &Pipeline{
 		db:              opts.DB,
 		identity:        NewIdentityResolver(opts.DB, log),
@@ -136,10 +151,11 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		trAudioDir:      opts.TRAudioDir,
 		store:           opts.Store,
 		uploader:        opts.S3Uploader,
-		rawStore:        rawStore,
-		rawInclude:      rawInclude,
-		rawExclude:      rawExclude,
-		mergeP25Systems: opts.MergeP25Systems,
+		rawStore:          rawStore,
+		rawInclude:        rawInclude,
+		rawExclude:        rawExclude,
+		instancePrefixMap: instancePrefixMap,
+		mergeP25Systems:   opts.MergeP25Systems,
 		activeCalls:  newActiveCallMap(),
 		affiliations: newAffiliationMap(),
 		eventBus:    NewEventBus(4096), // ~60s of events at high rate
@@ -675,6 +691,15 @@ func (p *Pipeline) HandleMessage(topic string, payload []byte) {
 
 	route := ParseTopic(topic)
 
+	// Rewrite instance_id based on topic prefix (before any unmarshalling)
+	if len(p.instancePrefixMap) > 0 {
+		if prefix, _, ok := strings.Cut(topic, "/"); ok {
+			if newID, mapped := p.instancePrefixMap[prefix]; mapped {
+				payload = rewriteInstanceID(payload, newID)
+			}
+		}
+	}
+
 	// Best-effort extract instance_id for archival
 	var env Envelope
 	_ = json.Unmarshal(payload, &env)
@@ -854,6 +879,68 @@ func (p *Pipeline) archiveRaw(handler, topic string, payload []byte, instanceID 
 		ReceivedAt: time.Now(),
 		InstanceID: instanceID,
 	})
+}
+
+// parseInstanceMap parses "prefix:instance_id,prefix:instance_id" into a map.
+func parseInstanceMap(s string) map[string]string {
+	m := make(map[string]string)
+	if s == "" {
+		return m
+	}
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if prefix, id, ok := strings.Cut(pair, ":"); ok {
+			prefix = strings.TrimSpace(prefix)
+			id = strings.TrimSpace(id)
+			if prefix != "" && id != "" {
+				m[prefix] = id
+			}
+		}
+	}
+	return m
+}
+
+// rewriteInstanceID replaces the instance_id value in a JSON payload using
+// targeted bytes.Replace. This avoids a full JSON round-trip, preserving
+// exact key ordering and number precision.
+func rewriteInstanceID(payload []byte, newID string) []byte {
+	// Find "instance_id" key and extract its current value for replacement.
+	// Handles both "instance_id":"value" and "instance_id": "value".
+	idx := bytes.Index(payload, []byte(`"instance_id"`))
+	if idx < 0 {
+		return payload
+	}
+
+	// Skip past the key and colon to find the value
+	rest := payload[idx+len(`"instance_id"`):]
+	// Skip whitespace and colon
+	i := 0
+	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == ':') {
+		i++
+	}
+	if i >= len(rest) || rest[i] != '"' {
+		return payload // value isn't a string
+	}
+
+	// Find the closing quote of the value
+	valStart := i + 1
+	valEnd := valStart
+	for valEnd < len(rest) && rest[valEnd] != '"' {
+		if rest[valEnd] == '\\' {
+			valEnd++ // skip escaped char
+		}
+		valEnd++
+	}
+
+	oldVal := string(rest[valStart:valEnd])
+	if oldVal == newID {
+		return payload // already correct
+	}
+
+	// Replace first occurrence of the full key-value pattern
+	old := []byte(`"instance_id"` + string(rest[:i]) + `"` + oldVal + `"`)
+	new := []byte(`"instance_id"` + string(rest[:i]) + `"` + newID + `"`)
+	return bytes.Replace(payload, old, new, 1)
 }
 
 // parseHandlerSet splits a comma-separated string into a set of handler names.

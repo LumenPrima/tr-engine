@@ -14,7 +14,8 @@ import (
 type Config struct {
 	DatabaseURL   string `env:"DATABASE_URL,required"`
 	MQTTBrokerURL string `env:"MQTT_BROKER_URL"`
-	MQTTTopics    string `env:"MQTT_TOPICS" envDefault:"#"`
+	MQTTTopics       string `env:"MQTT_TOPICS" envDefault:"#"`
+	MQTTInstanceMap  string `env:"MQTT_INSTANCE_MAP"` // "prefix:instance_id,prefix:instance_id"
 	MQTTClientID  string `env:"MQTT_CLIENT_ID" envDefault:"tr-engine"`
 	MQTTUsername  string `env:"MQTT_USERNAME"`
 	MQTTPassword  string `env:"MQTT_PASSWORD"`

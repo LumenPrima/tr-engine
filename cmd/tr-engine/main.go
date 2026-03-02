@@ -224,6 +224,7 @@ func main() {
 		RawIncludeTopics: cfg.RawIncludeTopics,
 		RawExcludeTopics: cfg.RawExcludeTopics,
 		MergeP25Systems:  cfg.MergeP25Systems,
+		MQTTInstanceMap:  cfg.MQTTInstanceMap,
 		TranscribeOpts:   transcribeOpts,
 		Store:            store,
 		S3Uploader:       s3Uploader,
