@@ -250,7 +250,8 @@ function formatDetail(type, d) {
       return `<span class="dim">rec${d.rec_num}</span>` +
         ` <span class="val">${esc(d.rec_state || '?')}</span>` +
         (d.freq ? ` <span class="dim">freq=</span>${(d.freq / 1e6).toFixed(4)}` : '') +
-        (d.tg_alpha_tag ? ` <span class="dim">tg=</span>${esc(d.tg_alpha_tag)}` : '');
+        (d.tg_alpha_tag ? ` <span class="dim">tg=</span>${esc(d.tg_alpha_tag)}` : '') +
+        (d.system_id ? ` <span class="dim">sys=</span>${d.system_id}` : '');
     case 'rate_update':
       return `<span class="dim">decode_rate=</span><span class="val">${d.decode_rate != null ? d.decode_rate : '?'}</span>` +
         (d.control_channel ? ` <span class="dim">cc=</span>${(d.control_channel / 1e6).toFixed(4)}` : '');

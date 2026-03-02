@@ -505,7 +505,9 @@ function buildCard(sys) {
   for (const iid of instanceIds) {
     if (recorders[iid]) allInstanceRecs.push(...recorders[iid]);
   }
-  // When an instance has multiple systems, filter recorders by type
+  // Match recorders to system: use system_id when available (enriched from
+  // active calls or conventional freq map), fall back to type-based heuristic
+  // for idle recorders that have no system_id yet.
   const sysType = (sys.system_type || '').toLowerCase();
   const isConventional = sysType.startsWith('conventional');
   const multiSystem = instanceIds.some(iid => {
@@ -514,6 +516,7 @@ function buildCard(sys) {
   });
   const sysRecs = multiSystem
     ? allInstanceRecs.filter(r => {
+        if (r.system_id != null) return r.system_id === sys.system_id;
         const rt = (r.type || '').toLowerCase();
         return isConventional
           ? (rt.startsWith('analog') || rt === 'sigmf')
