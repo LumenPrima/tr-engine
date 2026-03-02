@@ -20,7 +20,7 @@ Go was chosen over Node.js for multi-core utilization and headroom at high messa
 
 ## Key Files
 
-- `openapi.yaml` — Complete REST API specification (OpenAPI 3.0.3), including SSE event stream endpoint. This is the **source of truth** for API contracts.
+- `openapi.yaml` — Complete REST API specification (OpenAPI 3.0.3), including SSE event stream endpoint. This is the **source of truth** for API contracts. **IMPORTANT: When adding or modifying API endpoints, request/response schemas, event types, enums, or SSE payload fields, always update `openapi.yaml` to match.** This includes new unit event subtypes, new query parameters, new schema properties, and changes to enum values (e.g., `EventType`, `SystemType`, `SSEEventType`).
 - `schema.sql` — PostgreSQL 18 DDL. All tables, indexes, triggers, partitioning, and helper functions. Embedded in the binary via `embed.go` and auto-applied on first startup when the database is empty. Can also be run manually with `psql -f schema.sql`.
 - `.env` — Local environment config (gitignored). Contains `DATABASE_URL`, `MQTT_BROKER_URL`, credentials, and `HTTP_ADDR`. Optional for Docker — all defaults are built into `docker-compose.yml`.
 - `embed.go` — Go embed directives for `web/*`, `openapi.yaml`, and `schema.sql`. Exposes `WebFiles`, `OpenAPISpec`, and `SchemaSQL` package-level variables.
