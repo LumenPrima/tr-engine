@@ -286,18 +286,26 @@ func BearerAuth(tokens ...string) func(http.Handler) http.Handler {
 
 // WriteAuth requires the write token for mutating HTTP methods (POST, PATCH, PUT, DELETE).
 // Read methods (GET, HEAD, OPTIONS) pass through unconditionally.
-// If writeToken is empty, all methods pass through (no write protection).
-func WriteAuth(writeToken string) func(http.Handler) http.Handler {
+//   - writeToken set: mutations must provide it
+//   - writeToken empty + authToken set: mutations blocked (read-only mode)
+//   - both empty: all methods pass through (no auth configured)
+func WriteAuth(writeToken, authToken string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if writeToken == "" {
-				next.ServeHTTP(w, r)
+			if writeToken == "" && authToken == "" {
+				next.ServeHTTP(w, r) // no auth at all
 				return
 			}
 
 			switch r.Method {
 			case "GET", "HEAD", "OPTIONS":
 				next.ServeHTTP(w, r)
+				return
+			}
+
+			if writeToken == "" {
+				// Auth enabled but no WRITE_TOKEN → read-only
+				WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, "write operations require WRITE_TOKEN")
 				return
 			}
 

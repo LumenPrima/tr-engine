@@ -4,6 +4,7 @@ Run tr-engine via Docker Compose, connecting to an MQTT broker you already have 
 
 > **Other installation methods:**
 > - **[Docker Compose (all-in-one)](./docker.md)** — includes its own MQTT broker
+> - **[Full stack (HTTPS + Dashboard)](./docker-full-stack.md)** — production deployment with Caddy, Mosquitto, tr-dashboard, and Prometheus metrics
 > - **[Build from source](./getting-started.md)** — compile everything yourself
 > - **[Binary releases](./binary-releases.md)** — download a pre-built binary
 

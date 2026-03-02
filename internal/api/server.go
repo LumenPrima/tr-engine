@@ -99,12 +99,11 @@ func NewServer(opts ServerOptions) *Server {
 	}
 
 	// Upload endpoint with custom auth (accepts form field key/api_key)
-	// Uploads are write operations — require WRITE_TOKEN when set, else AUTH_TOKEN.
+	// Uploads are write operations — require WRITE_TOKEN when set.
+	// When auth is enabled but WRITE_TOKEN is not set, uploads are blocked
+	// (UploadAuth with empty token rejects all requests).
 	if opts.Uploader != nil {
 		uploadToken := opts.Config.WriteToken
-		if uploadToken == "" {
-			uploadToken = opts.Config.AuthToken
-		}
 		uploadHandler := NewUploadHandler(opts.Uploader, opts.Config.UploadInstanceID, opts.Log)
 		r.Group(func(r chi.Router) {
 			r.Use(MaxBodySize(50 << 20)) // 50 MB for audio uploads
@@ -134,7 +133,7 @@ func NewServer(opts ServerOptions) *Server {
 		}
 		if opts.Config.AuthEnabled {
 			r.Use(BearerAuth(opts.Config.AuthToken, opts.Config.WriteToken))
-			r.Use(WriteAuth(opts.Config.WriteToken))
+			r.Use(WriteAuth(opts.Config.WriteToken, opts.Config.AuthToken))
 		}
 		r.Use(ResponseTimeout(opts.Config.WriteTimeout))
 

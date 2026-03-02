@@ -5,6 +5,7 @@ This guide walks through setting up tr-engine from scratch on bare metal: instal
 > **Other installation methods:**
 > - **[Docker Compose](./docker.md)** — single `docker compose up` with everything pre-configured
 > - **[Docker with existing MQTT](./docker-external-mqtt.md)** — Docker Compose connecting to a broker you already run
+> - **[Full stack (HTTPS + Dashboard)](./docker-full-stack.md)** — production deployment with Caddy, Mosquitto, tr-dashboard, and Prometheus metrics
 > - **[Binary releases](./binary-releases.md)** — download a pre-built binary, just add PostgreSQL and MQTT
 
 ## Architecture
@@ -218,7 +219,7 @@ AUDIO_DIR=./audio
 # WRITE_TOKEN=my-write-secret    # separate token for write operations
 ```
 
-> **Public-facing instances:** If your tr-engine is accessible from the internet, **always set `WRITE_TOKEN`**. The `AUTH_TOKEN` is served to every browser via `/api/v1/auth-init` so the web UI works without a login prompt. Without `WRITE_TOKEN`, anyone who visits your dashboard can use that token to modify talkgroups, merge systems, or upload calls. Setting `WRITE_TOKEN` makes the web UI read-only while only trusted services can write.
+> **Public-facing instances:** When auth is enabled (the default), the API runs in **read-only mode** unless `WRITE_TOKEN` is set — all POST, PUT, PATCH, and DELETE requests are rejected with 403. This prevents the browser-visible `AUTH_TOKEN` (served via `/api/v1/auth-init`) from granting write access. Set `WRITE_TOKEN` to a strong, random value to enable writes for trusted services (trunk-recorder upload plugins, admin scripts).
 
 `MQTT_TOPICS` must match the topic prefixes from your TR plugin config. If all your TR topics share a common root (e.g. `topic: "trengine/feeds"`, `unit_topic: "trengine/units"`), a single wildcard like `trengine/#` covers everything. If they differ, comma-separate them: `MQTT_TOPICS=prefix1/#,prefix2/#`.
 

@@ -10,6 +10,7 @@ Run tr-engine with a single command. Docker Compose handles PostgreSQL, the MQTT
 
 > **Other installation methods:**
 > - **[Docker with existing MQTT](./docker-external-mqtt.md)** — connect to a broker you already run instead of bundling one
+> - **[Full stack (HTTPS + Dashboard)](./docker-full-stack.md)** — production deployment with Caddy, Mosquitto, tr-dashboard, and Prometheus metrics
 > - **[Build from source](./getting-started.md)** — compile everything yourself from scratch
 > - **[Binary release](./binary-releases.md)** — download a pre-built binary, just add PostgreSQL and MQTT
 
@@ -162,9 +163,9 @@ AUTH_TOKEN=my-read-token         # used by the web UI (served via /auth-init)
 WRITE_TOKEN=my-write-secret      # required for all write operations
 ```
 
-**Why this matters:** `AUTH_TOKEN` is automatically served to every browser that loads the web UI (via `GET /api/v1/auth-init`). Without `WRITE_TOKEN`, anyone who visits your dashboard can use that token to modify talkgroup names, merge systems, delete data, or upload arbitrary call recordings.
+**Why this matters:** `AUTH_TOKEN` is automatically served to every browser that loads the web UI (via `GET /api/v1/auth-init`). When auth is enabled (the default), the API runs in **read-only mode** unless `WRITE_TOKEN` is set — all POST, PUT, PATCH, and DELETE requests are rejected with a 403 error. This includes call uploads from trunk-recorder.
 
-Setting `WRITE_TOKEN` makes the web UI read-only. Only services that know the write token (trunk-recorder upload plugins, admin scripts) can perform write operations (POST, PUT, PATCH, DELETE). The web UI continues to work normally for viewing data.
+Setting `WRITE_TOKEN` unlocks write operations for clients that present it. The web UI continues to work normally for viewing data using `AUTH_TOKEN`.
 
 Use a strong, random value for `WRITE_TOKEN` and do **not** reuse your `AUTH_TOKEN`.
 
