@@ -53,13 +53,20 @@ type Pipeline struct {
 	mergeP25Systems bool // when false, systems with same sysid/wacn stay separate
 
 	// Transcription worker pool (optional, nil if WHISPER_URL not set)
-	transcriber *transcribe.WorkerPool
+	transcriber          *transcribe.WorkerPool
+	transcribeIncludeTGs map[string]bool // allowlist: "tgid" or "systemID:tgid"
+	transcribeExcludeTGs map[string]bool // denylist: "tgid" or "systemID:tgid"
 
 	// File watcher (optional, nil if WATCH_DIR not set)
 	watcher *FileWatcher
 
 	// Recorder cache: recorder_id → latest state
 	recorderCache sync.Map
+
+	// Conventional freq→talkgroup map: freq (Hz) → conventionalFreqEntry
+	// Populated from call_start/call_end for conventional/analog calls.
+	// Used as enrichment fallback for AnalogC recorders when no active call matches.
+	conventionalFreqMap sync.Map
 
 	// TR instance status cache: instance_id → trInstanceStatusEntry
 	trInstanceStatus sync.Map
@@ -98,10 +105,12 @@ type PipelineOptions struct {
 	RawStore         bool
 	RawIncludeTopics string
 	RawExcludeTopics string
-	MergeP25Systems  bool   // auto-merge systems with same sysid/wacn (default true)
-	MQTTInstanceMap  string // "prefix:instance_id,prefix:instance_id"
-	TranscribeOpts   *transcribe.WorkerPoolOptions // nil = transcription disabled
-	Log              zerolog.Logger
+	MergeP25Systems    bool   // auto-merge systems with same sysid/wacn (default true)
+	MQTTInstanceMap    string // "prefix:instance_id,prefix:instance_id"
+	TranscribeOpts     *transcribe.WorkerPoolOptions // nil = transcription disabled
+	TranscribeInclude  string // comma-separated TGID allowlist for transcription
+	TranscribeExclude  string // comma-separated TGID denylist for transcription
+	Log                zerolog.Logger
 }
 
 func NewPipeline(opts PipelineOptions) *Pipeline {
@@ -143,6 +152,23 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		log.Info().Strs("mappings", pairs).Msg("MQTT instance_id rewrite active")
 	}
 
+	// Parse transcription talkgroup filter
+	transcribeInclude := parseHandlerSet(opts.TranscribeInclude)
+	transcribeExclude := parseHandlerSet(opts.TranscribeExclude)
+	if len(transcribeInclude) > 0 {
+		ids := make([]string, 0, len(transcribeInclude))
+		for id := range transcribeInclude {
+			ids = append(ids, id)
+		}
+		log.Info().Strs("tgids", ids).Msg("transcription talkgroup allowlist active")
+	} else if len(transcribeExclude) > 0 {
+		ids := make([]string, 0, len(transcribeExclude))
+		for id := range transcribeExclude {
+			ids = append(ids, id)
+		}
+		log.Info().Strs("tgids", ids).Msg("transcription talkgroup denylist active")
+	}
+
 	p := &Pipeline{
 		db:              opts.DB,
 		identity:        NewIdentityResolver(opts.DB, log),
@@ -156,6 +182,8 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		rawExclude:        rawExclude,
 		instancePrefixMap: instancePrefixMap,
 		mergeP25Systems:   opts.MergeP25Systems,
+		transcribeIncludeTGs: transcribeInclude,
+		transcribeExcludeTGs: transcribeExclude,
 		activeCalls:  newActiveCallMap(),
 		affiliations: newAffiliationMap(),
 		eventBus:    NewEventBus(4096), // ~60s of events at high rate
@@ -204,6 +232,9 @@ func (p *Pipeline) Start(ctx context.Context) error {
 
 	if err := p.backfillAffiliations(ctx); err != nil {
 		p.log.Warn().Err(err).Msg("affiliation backfill failed, continuing with empty map")
+	}
+	if err := p.seedConventionalFreqMap(ctx); err != nil {
+		p.log.Warn().Err(err).Msg("conventional freq map seed failed, will populate from live calls")
 	}
 	go p.statsLoop()
 	go p.maintenanceLoop()
@@ -305,6 +336,10 @@ func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, syste
 	if dur < float32(p.transcriber.MinDuration()) || dur > float32(p.transcriber.MaxDuration()) {
 		return
 	}
+	// Talkgroup filter: check allowlist/denylist
+	if !p.shouldTranscribeTG(systemID, meta.Talkgroup) {
+		return
+	}
 	job := transcribe.Job{
 		CallID:        callID,
 		CallStartTime: startTime,
@@ -327,6 +362,21 @@ func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, syste
 	if !p.transcriber.Enqueue(job) {
 		p.log.Warn().Int64("call_id", callID).Msg("transcription queue full, skipping")
 	}
+}
+
+// shouldTranscribeTG checks talkgroup include/exclude filters.
+// Supports plain TGIDs ("24513") and system-scoped ("1:24513").
+// Include takes priority when both are set.
+func (p *Pipeline) shouldTranscribeTG(systemID, tgid int) bool {
+	if len(p.transcribeIncludeTGs) == 0 && len(p.transcribeExcludeTGs) == 0 {
+		return true
+	}
+	plain := fmt.Sprintf("%d", tgid)
+	scoped := fmt.Sprintf("%d:%d", systemID, tgid)
+	if len(p.transcribeIncludeTGs) > 0 {
+		return p.transcribeIncludeTGs[plain] || p.transcribeIncludeTGs[scoped]
+	}
+	return !p.transcribeExcludeTGs[plain] && !p.transcribeExcludeTGs[scoped]
 }
 
 // insertSourceTranscription inserts a pre-generated transcript directly, bypassing the STT queue.
@@ -1002,6 +1052,13 @@ func stripAudioBase64(payload []byte) []byte {
 }
 
 // activeCallMap tracks in-flight calls: tr_call_id → call metadata for API display.
+// conventionalFreqEntry maps a conventional frequency to its talkgroup identity.
+type conventionalFreqEntry struct {
+	SystemID   int
+	Tgid       int
+	TgAlphaTag string
+}
+
 type activeCallEntry struct {
 	CallID        int64
 	StartTime     time.Time
@@ -1413,6 +1470,39 @@ func (p *Pipeline) backfillAffiliations(ctx context.Context) error {
 	return nil
 }
 
+// seedConventionalFreqMap loads freq→talkgroup mappings from recent conventional calls
+// so that AnalogC recorder enrichment works immediately on restart.
+func (p *Pipeline) seedConventionalFreqMap(ctx context.Context) error {
+	query := `
+		SELECT DISTINCT ON (freq) freq, system_id, tgid, COALESCE(tg_alpha_tag, '') AS tg_alpha_tag
+		FROM calls
+		WHERE (conventional = true OR analog = true)
+		  AND freq > 0 AND tgid > 0
+		  AND start_time > now() - interval '30 days'
+		ORDER BY freq, start_time DESC`
+
+	rows, err := p.db.Pool.Query(ctx, query)
+	if err != nil {
+		return fmt.Errorf("seed conventional freq map: %w", err)
+	}
+	defer rows.Close()
+
+	var count int
+	for rows.Next() {
+		var freq int64
+		var e conventionalFreqEntry
+		if err := rows.Scan(&freq, &e.SystemID, &e.Tgid, &e.TgAlphaTag); err != nil {
+			return err
+		}
+		p.conventionalFreqMap.Store(freq, e)
+		count++
+	}
+	if count > 0 {
+		p.log.Info().Int("frequencies", count).Msg("conventional freq→talkgroup map seeded from DB")
+	}
+	return rows.Err()
+}
+
 // UnitAffiliations returns the current talkgroup affiliation state for all tracked units.
 func (p *Pipeline) UnitAffiliations() []api.UnitAffiliationData {
 	entries := p.affiliations.All()
@@ -1456,10 +1546,20 @@ func (p *Pipeline) UpdateRecorderCache(instanceID string, rec database.RecorderS
 	}
 	if rec.Freq > 0 {
 		if call, ok := p.activeCalls.FindByFreq(rec.Freq); ok {
+			data.SystemID = &call.SystemID
 			data.Tgid = &call.Tgid
 			data.TgAlphaTag = &call.TgAlphaTag
 			data.UnitID = &call.Unit
 			data.UnitAlphaTag = &call.UnitAlphaTag
+		} else if strings.Contains(rec.Type, "Analog") {
+			// AnalogC recorders are permanently parked on a frequency.
+			// Fall back to the conventional freq map when no active call matches.
+			if v, ok := p.conventionalFreqMap.Load(rec.Freq); ok {
+				e := v.(conventionalFreqEntry)
+				data.SystemID = &e.SystemID
+				data.Tgid = &e.Tgid
+				data.TgAlphaTag = &e.TgAlphaTag
+			}
 		}
 	}
 	p.recorderCache.Store(key, data)

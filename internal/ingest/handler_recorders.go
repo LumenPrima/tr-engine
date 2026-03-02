@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/snarg/tr-engine/internal/database"
@@ -68,10 +69,19 @@ func (p *Pipeline) processRecorder(instanceID string, rec RecorderData, ts time.
 	freq := int64(rec.Freq)
 	if freq > 0 {
 		if call, ok := p.activeCalls.FindByFreq(freq); ok {
+			payload["system_id"] = call.SystemID
 			payload["tgid"] = call.Tgid
 			payload["tg_alpha_tag"] = call.TgAlphaTag
 			payload["unit_id"] = call.Unit
 			payload["unit_alpha_tag"] = call.UnitAlphaTag
+		} else if strings.Contains(rec.Type, "Analog") {
+			// AnalogC recorders: fall back to conventional freq→talkgroup map
+			if v, ok := p.conventionalFreqMap.Load(freq); ok {
+				e := v.(conventionalFreqEntry)
+				payload["system_id"] = e.SystemID
+				payload["tgid"] = e.Tgid
+				payload["tg_alpha_tag"] = e.TgAlphaTag
+			}
 		}
 	}
 

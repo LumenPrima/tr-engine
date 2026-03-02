@@ -109,6 +109,10 @@ type Config struct {
 	TranscribeMinDuration float64 `env:"TRANSCRIBE_MIN_DURATION" envDefault:"1.0"`
 	TranscribeMaxDuration float64 `env:"TRANSCRIBE_MAX_DURATION" envDefault:"300"`
 
+	// Transcription talkgroup filtering
+	TranscribeIncludeTGIDs string `env:"TRANSCRIBE_INCLUDE_TGIDS"` // allowlist: only transcribe these TGIDs
+	TranscribeExcludeTGIDs string `env:"TRANSCRIBE_EXCLUDE_TGIDS"` // denylist: skip these TGIDs
+
 	// S3 audio storage (optional — local disk used when S3_BUCKET is empty)
 	S3 S3Config
 }

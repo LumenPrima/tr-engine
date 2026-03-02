@@ -108,6 +108,7 @@ type RecorderStateData struct {
 	Duration     float32 `json:"duration"`
 	Count        int     `json:"count"`
 	Squelched    bool    `json:"squelched"`
+	SystemID     *int    `json:"system_id,omitempty"`
 	Tgid         *int    `json:"tgid,omitempty"`
 	TgAlphaTag   *string `json:"tg_alpha_tag,omitempty"`
 	UnitID       *int    `json:"unit_id,omitempty"`

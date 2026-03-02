@@ -181,6 +181,15 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 		AudioType:     call.AudioType,
 	})
 
+	// Update conventional freq→talkgroup map for AnalogC recorder enrichment
+	if (call.Conventional || call.Analog) && freq > 0 && call.Talkgroup > 0 {
+		p.conventionalFreqMap.Store(freq, conventionalFreqEntry{
+			SystemID:   identity.SystemID,
+			Tgid:       call.Talkgroup,
+			TgAlphaTag: effectiveTgTag,
+		})
+	}
+
 	// Create call group
 	cgID, err := p.db.UpsertCallGroup(ctx, identity.SystemID, call.Talkgroup, startTime,
 		call.TalkgroupAlphaTag, call.TalkgroupDescription, call.TalkgroupTag, call.TalkgroupGroup,
@@ -513,6 +522,15 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 	} else {
 		_ = p.db.SetCallGroupID(ctx, callID, startTime, cgID)
 		_ = p.db.SetCallGroupPrimary(ctx, cgID, callID)
+	}
+
+	// Update conventional freq→talkgroup map for AnalogC recorder enrichment
+	if (call.Conventional || call.Analog) && freq > 0 && call.Talkgroup > 0 {
+		p.conventionalFreqMap.Store(freq, conventionalFreqEntry{
+			SystemID:   identity.SystemID,
+			Tgid:       call.Talkgroup,
+			TgAlphaTag: effectiveTgTag,
+		})
 	}
 
 	p.log.Debug().
