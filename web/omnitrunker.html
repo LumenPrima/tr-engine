@@ -316,6 +316,12 @@
     .controls-bar { gap: 8px; padding: 4px 12px; }
     th, td { padding: 3px 4px; font-size: 11px; }
     .badge { min-width: 70px; font-size: 10px; }
+    /* Hide Mode column in Active Voice Channels */
+    #channels-table th:nth-child(8),
+    #channels-table td:nth-child(8) { display: none; }
+    /* Hide Site column in Unit Activity */
+    #activity-table th:nth-child(3),
+    #activity-table td:nth-child(3) { display: none; }
   }
 </style>
 </head>
@@ -446,14 +452,6 @@ const activeChannels = new Map();
 // Seen systems for filter dropdown
 const seenSystems = new Map(); // system_id -> system_name
 
-// ── XSS-safe text escaping (same pattern as events.html) ──
-function esc(s) {
-  if (s == null) return '';
-  const div = document.createElement('div');
-  div.textContent = String(s);
-  return div.innerHTML;
-}
-
 function setStatus(state, text) {
   statusDot.className = 'status-dot ' + state;
   statusText.textContent = text;
@@ -494,8 +492,12 @@ function mapAudioType(audioType) {
   return String(audioType);
 }
 
+// System name lookup (populated from /api/v1/systems on load)
+const systemNames = new Map();
 function getSystemName(data) {
-  return data.system_name || ('sys-' + (data.system_id || '?'));
+  if (data.system_name) return data.system_name;
+  if (data.system_id && systemNames.has(data.system_id)) return systemNames.get(data.system_id);
+  return 'sys-' + (data.system_id || '?');
 }
 
 function getSiteName(data) {
@@ -653,10 +655,15 @@ function addActiveChannel(data) {
 
   let entry = activeChannels.get(callId);
   if (entry) {
-    // Update existing row
+    // Update existing row — cancel fade if re-activated
     entry.data = data;
     entry.startTime = data.start_time || entry.startTime;
+    entry.fading = false;
+    entry.row.classList.remove('fading');
+    entry.row.style.opacity = '';
     renderChannelRow(entry);
+    applyChannelSystemFilter(entry);
+    updateChannelsEmptyState();
     return;
   }
 
@@ -665,9 +672,10 @@ function addActiveChannel(data) {
   row.dataset.callId = String(callId);
   if (data.system_id) row.dataset.systemId = String(data.system_id);
 
-  entry = { data: data, row: row, startTime: data.start_time, fading: false };
+  entry = { data: data, row: row, startTime: data.start_time, fading: false, elapsedCell: null };
   activeChannels.set(callId, entry);
   renderChannelRow(entry);
+  entry.elapsedCell = row.querySelector('.elapsed-cell');
   applyChannelSystemFilter(entry);
 
   channelsBody.appendChild(row);
@@ -692,6 +700,7 @@ function renderChannelRow(entry) {
   for (const cell of cells) {
     row.appendChild(cell);
   }
+  entry.elapsedCell = row.querySelector('.elapsed-cell');
 }
 
 function removeActiveChannel(data) {
@@ -826,9 +835,8 @@ function addActivityRow(eventType, data) {
 setInterval(function() {
   for (const entry of activeChannels.values()) {
     if (entry.fading) continue;
-    const cell = entry.row.querySelector('.elapsed-cell');
-    if (cell) {
-      cell.textContent = formatElapsed(entry.startTime);
+    if (entry.elapsedCell) {
+      entry.elapsedCell.textContent = formatElapsed(entry.startTime);
     }
   }
 }, 1000);
@@ -958,6 +966,21 @@ function connect() {
     }
   });
 }
+
+// Fetch system names for friendly display
+fetch('/api/v1/systems')
+  .then(function(r) { return r.ok ? r.json() : []; })
+  .then(function(systems) {
+    if (Array.isArray(systems)) {
+      for (const s of systems) {
+        if (s.id && s.name) {
+          systemNames.set(s.id, s.name);
+          trackSystem({ system_id: s.id, system_name: s.name });
+        }
+      }
+    }
+  })
+  .catch(function() { /* ignore — fallback to sys-N */ });
 
 connect();
 </script>
