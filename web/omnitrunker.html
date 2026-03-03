@@ -980,13 +980,16 @@ function connect() {
 
 // Fetch system names for friendly display
 fetch('/api/v1/systems')
-  .then(function(r) { return r.ok ? r.json() : []; })
-  .then(function(systems) {
+  .then(function(r) { return r.ok ? r.json() : {}; })
+  .then(function(resp) {
+    var systems = resp.systems || resp;
     if (Array.isArray(systems)) {
       for (const s of systems) {
-        if (s.id && s.name) {
-          systemNames.set(s.id, s.name);
-          trackSystem({ system_id: s.id, system_name: s.name });
+        var id = s.system_id || s.id;
+        var name = s.name || s.short_name;
+        if (id && name) {
+          systemNames.set(id, name);
+          trackSystem({ system_id: id, system_name: name });
         }
       }
     }
