@@ -149,9 +149,25 @@ type TranscriptionStatusData struct {
 
 // TranscriptionQueueStatsData reports transcription queue statistics.
 type TranscriptionQueueStatsData struct {
-	Pending   int   `json:"pending"`
-	Completed int64 `json:"completed"`
-	Failed    int64 `json:"failed"`
+	Pending     int                           `json:"pending"`
+	Completed   int64                         `json:"completed"`
+	Failed      int64                         `json:"failed"`
+	Performance *TranscriptionPerformanceData `json:"performance,omitempty"`
+}
+
+// TranscriptionPerformanceData reports aggregate STT performance.
+type TranscriptionPerformanceData struct {
+	SampleSize       int                                    `json:"sample_size"`
+	AvgRealTimeRatio *float64                               `json:"avg_real_time_ratio"`
+	AvgProviderMs    *float64                               `json:"avg_provider_ms"`
+	ByProvider       map[string]TranscriptionProviderMetrics `json:"by_provider,omitempty"`
+}
+
+// TranscriptionProviderMetrics reports per-provider metrics.
+type TranscriptionProviderMetrics struct {
+	Count            int      `json:"count"`
+	AvgRealTimeRatio *float64 `json:"avg_real_time_ratio"`
+	AvgProviderMs    *float64 `json:"avg_provider_ms"`
 }
 
 // IngestMetricsData provides pipeline state for Prometheus metrics.

@@ -320,11 +320,32 @@ func (p *Pipeline) TranscriptionQueueStats() *api.TranscriptionQueueStatsData {
 		return nil
 	}
 	stats := p.transcriber.Stats()
-	return &api.TranscriptionQueueStatsData{
+	result := &api.TranscriptionQueueStatsData{
 		Pending:   stats.Pending,
 		Completed: stats.Completed,
 		Failed:    stats.Failed,
 	}
+
+	if perf := p.transcriber.Performance(); perf != nil {
+		pd := &api.TranscriptionPerformanceData{
+			SampleSize:       perf.SampleSize,
+			AvgRealTimeRatio: perf.AvgRealTimeRatio,
+			AvgProviderMs:    perf.AvgProviderMs,
+		}
+		if len(perf.ByProvider) > 0 {
+			pd.ByProvider = make(map[string]api.TranscriptionProviderMetrics, len(perf.ByProvider))
+			for name, m := range perf.ByProvider {
+				pd.ByProvider[name] = api.TranscriptionProviderMetrics{
+					Count:            m.Count,
+					AvgRealTimeRatio: m.AvgRealTimeRatio,
+					AvgProviderMs:    m.AvgProviderMs,
+				}
+			}
+		}
+		result.Performance = pd
+	}
+
+	return result
 }
 
 // enqueueTranscription is called by ingest handlers when a call has audio ready.
