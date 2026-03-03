@@ -332,6 +332,9 @@
     /* Hide Site column in Unit Activity */
     #activity-table th:nth-child(3),
     #activity-table td:nth-child(3) { display: none; }
+    /* Shorten encrypted badge */
+    .encrypted-badge { font-size: 0; padding: 1px 4px; }
+    .encrypted-badge::after { content: attr(data-short); font-size: 9px; }
   }
 </style>
 </head>
@@ -651,6 +654,7 @@ function buildChannelCells(d, entry) {
     const badge = document.createElement('span');
     badge.className = 'encrypted-badge';
     badge.textContent = 'ENCRYPTED';
+    badge.dataset.short = 'ENC';
     c8.appendChild(badge);
   }
   cells.push(c8);
