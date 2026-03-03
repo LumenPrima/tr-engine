@@ -3694,6 +3694,16 @@ components:
           type: integer
           description: Transcription processing time in milliseconds
           example: 1500
+        provider_ms:
+          type: integer
+          nullable: true
+          description: Time spent in the STT provider call in milliseconds (excludes file I/O, preprocessing, DB writes)
+          example: 1200
+        real_time_ratio:
+          type: number
+          nullable: true
+          description: "Ratio of provider processing time to call audio duration. Values < 1.0 mean faster than real-time. Computed as provider_ms / (call_duration * 1000)."
+          example: 0.42
         created_at:
           type: string
           format: date-time
@@ -3870,6 +3880,38 @@ components:
         failed:
           type: integer
           example: 12
+        performance:
+          type: object
+          nullable: true
+          description: Aggregate STT performance from the last 100 completions
+          properties:
+            sample_size:
+              type: integer
+              example: 100
+            avg_real_time_ratio:
+              type: number
+              nullable: true
+              example: 0.38
+            avg_provider_ms:
+              type: number
+              nullable: true
+              example: 1150
+            by_provider:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 85
+                  avg_real_time_ratio:
+                    type: number
+                    nullable: true
+                    example: 0.35
+                  avg_provider_ms:
+                    type: number
+                    nullable: true
+                    example: 1050
 
     StatusChangeResponse:
       type: object
