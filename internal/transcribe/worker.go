@@ -40,6 +40,124 @@ type QueueStats struct {
 	Failed    int64 `json:"failed"`
 }
 
+// ProviderPerformance reports aggregate STT provider performance.
+type ProviderPerformance struct {
+	SampleSize       int                        `json:"sample_size"`
+	AvgRealTimeRatio *float64                   `json:"avg_real_time_ratio"`
+	AvgProviderMs    *float64                   `json:"avg_provider_ms"`
+	ByProvider       map[string]ProviderMetrics `json:"by_provider,omitempty"`
+}
+
+// ProviderMetrics reports per-provider aggregate metrics.
+type ProviderMetrics struct {
+	Count            int      `json:"count"`
+	AvgRealTimeRatio *float64 `json:"avg_real_time_ratio"`
+	AvgProviderMs    *float64 `json:"avg_provider_ms"`
+}
+
+// completionRecord is a single entry in the performance ring buffer.
+type completionRecord struct {
+	providerMs   int64
+	callDuration float32 // seconds
+	provider     string
+	model        string
+}
+
+const perfRingSize = 100
+
+// perfRing is a fixed-size circular buffer for recent completion metrics.
+type perfRing struct {
+	mu    sync.Mutex
+	buf   [perfRingSize]completionRecord
+	pos   int
+	count int
+}
+
+func (r *perfRing) push(rec completionRecord) {
+	r.mu.Lock()
+	r.buf[r.pos] = rec
+	r.pos = (r.pos + 1) % perfRingSize
+	if r.count < perfRingSize {
+		r.count++
+	}
+	r.mu.Unlock()
+}
+
+func (r *perfRing) snapshot() []completionRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]completionRecord, r.count)
+	if r.count < perfRingSize {
+		copy(out, r.buf[:r.count])
+	} else {
+		n := copy(out, r.buf[r.pos:])
+		copy(out[n:], r.buf[:r.pos])
+	}
+	return out
+}
+
+func (r *perfRing) performance() *ProviderPerformance {
+	records := r.snapshot()
+	if len(records) == 0 {
+		return nil
+	}
+
+	perf := &ProviderPerformance{
+		SampleSize: len(records),
+		ByProvider: make(map[string]ProviderMetrics),
+	}
+
+	var totalProviderMs float64
+	var totalRatio float64
+	var ratioCount int
+
+	byProvider := make(map[string]struct {
+		count      int
+		providerMs float64
+		ratio      float64
+		ratioCount int
+	})
+
+	for _, rec := range records {
+		totalProviderMs += float64(rec.providerMs)
+		if rec.callDuration > 0 {
+			ratio := float64(rec.providerMs) / (float64(rec.callDuration) * 1000)
+			totalRatio += ratio
+			ratioCount++
+		}
+
+		entry := byProvider[rec.provider]
+		entry.count++
+		entry.providerMs += float64(rec.providerMs)
+		if rec.callDuration > 0 {
+			ratio := float64(rec.providerMs) / (float64(rec.callDuration) * 1000)
+			entry.ratio += ratio
+			entry.ratioCount++
+		}
+		byProvider[rec.provider] = entry
+	}
+
+	avgMs := totalProviderMs / float64(len(records))
+	perf.AvgProviderMs = &avgMs
+	if ratioCount > 0 {
+		avgRatio := totalRatio / float64(ratioCount)
+		perf.AvgRealTimeRatio = &avgRatio
+	}
+
+	for name, entry := range byProvider {
+		m := ProviderMetrics{Count: entry.count}
+		avgMs := entry.providerMs / float64(entry.count)
+		m.AvgProviderMs = &avgMs
+		if entry.ratioCount > 0 {
+			avgRatio := entry.ratio / float64(entry.ratioCount)
+			m.AvgRealTimeRatio = &avgRatio
+		}
+		perf.ByProvider[name] = m
+	}
+
+	return perf
+}
+
 // EventPublishFunc is a callback for publishing SSE events.
 type EventPublishFunc func(eventType string, systemID, tgid int, payload map[string]any)
 
@@ -88,6 +206,7 @@ type WorkerPool struct {
 	stopped   atomic.Bool
 	completed atomic.Int64
 	failed    atomic.Int64
+	perf      perfRing
 }
 
 // NewWorkerPool creates a new transcription worker pool.
@@ -155,6 +274,11 @@ func (wp *WorkerPool) Stats() QueueStats {
 		Completed: wp.completed.Load(),
 		Failed:    wp.failed.Load(),
 	}
+}
+
+// Performance returns aggregate provider performance metrics from recent completions.
+func (wp *WorkerPool) Performance() *ProviderPerformance {
+	return wp.perf.performance()
 }
 
 // MinDuration returns the minimum call duration for transcription.
@@ -239,6 +363,7 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 	}
 
 	// 3. Send to STT provider
+	providerStart := time.Now()
 	resp, err := wp.provider.Transcribe(ctx, transcribePath, TranscribeOpts{
 		Temperature:                   wp.opts.Temperature,
 		Language:                      wp.opts.Language,
@@ -253,6 +378,7 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 		MaxNewTokens:                  wp.opts.MaxNewTokens,
 		VadFilter:                     wp.opts.VadFilter,
 	})
+	providerMs := int(time.Since(providerStart).Milliseconds())
 	if err != nil {
 		return errorf("%s: %w", wp.provider.Name(), err)
 	}
@@ -296,6 +422,7 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 		Provider:      wp.provider.Name(),
 		WordCount:     wordCount,
 		DurationMs:    durationMs,
+		ProviderMs:    &providerMs,
 		Words:         wordsJSON,
 	}
 
@@ -304,9 +431,17 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 		return errorf("db insert: %w", err)
 	}
 
+	// Track provider performance
+	wp.perf.push(completionRecord{
+		providerMs:   int64(providerMs),
+		callDuration: job.Duration,
+		provider:     wp.provider.Name(),
+		model:        wp.provider.Model(),
+	})
+
 	// 6. Publish SSE event
 	if wp.opts.PublishEvent != nil {
-		wp.opts.PublishEvent("transcription", job.SystemID, job.Tgid, map[string]any{
+		payload := map[string]any{
 			"call_id":     job.CallID,
 			"system_id":   job.SystemID,
 			"tgid":        job.Tgid,
@@ -315,7 +450,12 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 			"segments":    len(tw.Segments),
 			"model":       wp.provider.Model(),
 			"duration_ms": durationMs,
-		})
+			"provider_ms": providerMs,
+		}
+		if job.Duration > 0 {
+			payload["real_time_ratio"] = float64(providerMs) / (float64(job.Duration) * 1000)
+		}
+		wp.opts.PublishEvent("transcription", job.SystemID, job.Tgid, payload)
 	}
 
 	log.Debug().
@@ -324,6 +464,7 @@ func (wp *WorkerPool) processJob(log zerolog.Logger, job Job) error {
 		Int("words", wordCount).
 		Int("segments", len(tw.Segments)).
 		Int("duration_ms", durationMs).
+		Int("provider_ms", providerMs).
 		Msg("transcription complete")
 
 	return nil
