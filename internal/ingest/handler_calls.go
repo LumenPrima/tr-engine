@@ -358,6 +358,21 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 				"incident_data":  call.IncidentData,
 			},
 		})
+
+		// Enqueue for transcription in TR_AUDIO_DIR mode.
+		// When audio comes via MQTT, handleAudio enqueues instead.
+		if p.trAudioDir != "" && !call.Encrypted && call.CallFilename != "" {
+			meta := &AudioMetadata{
+				Talkgroup:         call.Talkgroup,
+				CallLength:        int(call.Length),
+				Filename:          call.CallFilename,
+				TalkgroupTag:      effectiveTgTag,
+				TalkgroupDesc:     call.TalkgroupDescription,
+				TalkgroupGroupTag: call.TalkgroupTag,
+				TalkgroupGroup:    call.TalkgroupGroup,
+			}
+			p.enqueueTranscription(entry.CallID, entry.StartTime, identity.SystemID, "", meta)
+		}
 	}
 
 	return nil
@@ -501,6 +516,20 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 			},
 		})
 
+		// Enqueue for transcription in TR_AUDIO_DIR mode
+		if p.trAudioDir != "" && !call.Encrypted && call.CallFilename != "" {
+			meta := &AudioMetadata{
+				Talkgroup:         call.Talkgroup,
+				CallLength:        int(call.Length),
+				Filename:          call.CallFilename,
+				TalkgroupTag:      effectiveTgTag,
+				TalkgroupDesc:     call.TalkgroupDescription,
+				TalkgroupGroupTag: call.TalkgroupTag,
+				TalkgroupGroup:    call.TalkgroupGroup,
+			}
+			p.enqueueTranscription(existingID, existingST, identity.SystemID, "", meta)
+		}
+
 		return nil
 	}
 
@@ -561,6 +590,20 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 			"incident_data":  call.IncidentData,
 		},
 	})
+
+	// Enqueue for transcription in TR_AUDIO_DIR mode
+	if p.trAudioDir != "" && !call.Encrypted && call.CallFilename != "" {
+		meta := &AudioMetadata{
+			Talkgroup:         call.Talkgroup,
+			CallLength:        int(call.Length),
+			Filename:          call.CallFilename,
+			TalkgroupTag:      effectiveTgTag,
+			TalkgroupDesc:     call.TalkgroupDescription,
+			TalkgroupGroupTag: call.TalkgroupTag,
+			TalkgroupGroup:    call.TalkgroupGroup,
+		}
+		p.enqueueTranscription(callID, startTime, identity.SystemID, "", meta)
+	}
 
 	return nil
 }

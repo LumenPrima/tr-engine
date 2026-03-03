@@ -332,6 +332,11 @@ func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, syste
 	if p.transcriber == nil {
 		return
 	}
+	// Skip if neither an audio file path nor a call filename is available —
+	// the transcription worker would fail to resolve the audio.
+	if audioFilePath == "" && meta.Filename == "" {
+		return
+	}
 	dur := float32(meta.CallLength)
 	if dur < float32(p.transcriber.MinDuration()) || dur > float32(p.transcriber.MaxDuration()) {
 		return

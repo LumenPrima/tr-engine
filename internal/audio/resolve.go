@@ -22,10 +22,20 @@ func containedIn(path, dir string) bool {
 
 // ResolveFile finds an audio file on disk given the tr-engine managed path
 // and/or trunk-recorder's call_filename.
-// Priority: 1) audioDir/audioPath  2) trAudioDir + call_filename
+// Priority: 1) absolute path within allowed dir  2) audioDir/audioPath  3) trAudioDir + call_filename
 // All resolved paths are validated to be within their respective allowed directories.
 func ResolveFile(audioDir, trAudioDir, audioPath, callFilename string) string {
-	// 1) tr-engine managed audio file
+	// 1) Absolute audioPath within an allowed directory (e.g. from file watcher)
+	if audioPath != "" && filepath.IsAbs(audioPath) {
+		if (audioDir != "" && containedIn(audioPath, audioDir)) ||
+			(trAudioDir != "" && containedIn(audioPath, trAudioDir)) {
+			if _, err := os.Stat(audioPath); err == nil {
+				return audioPath
+			}
+		}
+	}
+
+	// 2) tr-engine managed audio file (relative path under audioDir)
 	if audioPath != "" && audioDir != "" {
 		full := filepath.Join(audioDir, audioPath)
 		if containedIn(full, audioDir) {
