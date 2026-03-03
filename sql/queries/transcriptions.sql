@@ -6,8 +6,8 @@ WHERE call_id = $1 AND call_start_time = $2 AND is_primary = true;
 INSERT INTO transcriptions (
     call_id, call_start_time, text, source, is_primary,
     confidence, language, model, provider,
-    word_count, duration_ms, words
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    word_count, duration_ms, provider_ms, words
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id;
 
 -- name: UpdateCallTranscriptionDenorm :exec
@@ -30,7 +30,7 @@ WHERE id = (
 -- name: GetPrimaryTranscription :one
 SELECT id, call_id, text, source, is_primary,
     confidence, language, model, provider,
-    word_count, duration_ms, words, created_at
+    word_count, duration_ms, provider_ms, words, created_at
 FROM transcriptions
 WHERE call_id = $1 AND is_primary = true
 ORDER BY created_at DESC
@@ -39,7 +39,7 @@ LIMIT 1;
 -- name: ListTranscriptionsByCall :many
 SELECT id, call_id, text, source, is_primary,
     confidence, language, model, provider,
-    word_count, duration_ms, words, created_at
+    word_count, duration_ms, provider_ms, words, created_at
 FROM transcriptions
 WHERE call_id = $1
 ORDER BY created_at DESC;

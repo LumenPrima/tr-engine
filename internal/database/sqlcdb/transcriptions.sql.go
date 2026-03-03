@@ -83,7 +83,7 @@ func (q *Queries) GetCallForTranscription(ctx context.Context, callID int64) (Ge
 const getPrimaryTranscription = `-- name: GetPrimaryTranscription :one
 SELECT id, call_id, text, source, is_primary,
     confidence, language, model, provider,
-    word_count, duration_ms, words, created_at
+    word_count, duration_ms, provider_ms, words, created_at
 FROM transcriptions
 WHERE call_id = $1 AND is_primary = true
 ORDER BY created_at DESC
@@ -102,6 +102,7 @@ type GetPrimaryTranscriptionRow struct {
 	Provider   *string
 	WordCount  *int32
 	DurationMs *int32
+	ProviderMs *int32
 	Words      []byte
 	CreatedAt  pgtype.Timestamptz
 }
@@ -121,6 +122,7 @@ func (q *Queries) GetPrimaryTranscription(ctx context.Context, callID int64) (Ge
 		&i.Provider,
 		&i.WordCount,
 		&i.DurationMs,
+		&i.ProviderMs,
 		&i.Words,
 		&i.CreatedAt,
 	)
@@ -131,8 +133,8 @@ const insertTranscriptionRow = `-- name: InsertTranscriptionRow :one
 INSERT INTO transcriptions (
     call_id, call_start_time, text, source, is_primary,
     confidence, language, model, provider,
-    word_count, duration_ms, words
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    word_count, duration_ms, provider_ms, words
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id
 `
 
@@ -148,6 +150,7 @@ type InsertTranscriptionRowParams struct {
 	Provider      *string
 	WordCount     *int32
 	DurationMs    *int32
+	ProviderMs    *int32
 	Words         []byte
 }
 
@@ -164,6 +167,7 @@ func (q *Queries) InsertTranscriptionRow(ctx context.Context, arg InsertTranscri
 		arg.Provider,
 		arg.WordCount,
 		arg.DurationMs,
+		arg.ProviderMs,
 		arg.Words,
 	)
 	var id int
@@ -174,7 +178,7 @@ func (q *Queries) InsertTranscriptionRow(ctx context.Context, arg InsertTranscri
 const listTranscriptionsByCall = `-- name: ListTranscriptionsByCall :many
 SELECT id, call_id, text, source, is_primary,
     confidence, language, model, provider,
-    word_count, duration_ms, words, created_at
+    word_count, duration_ms, provider_ms, words, created_at
 FROM transcriptions
 WHERE call_id = $1
 ORDER BY created_at DESC
@@ -192,6 +196,7 @@ type ListTranscriptionsByCallRow struct {
 	Provider   *string
 	WordCount  *int32
 	DurationMs *int32
+	ProviderMs *int32
 	Words      []byte
 	CreatedAt  pgtype.Timestamptz
 }
@@ -217,6 +222,7 @@ func (q *Queries) ListTranscriptionsByCall(ctx context.Context, callID int64) ([
 			&i.Provider,
 			&i.WordCount,
 			&i.DurationMs,
+			&i.ProviderMs,
 			&i.Words,
 			&i.CreatedAt,
 		); err != nil {

@@ -296,6 +296,7 @@ type Transcription struct {
 	Provider      *string
 	WordCount     *int32
 	DurationMs    *int32
+	ProviderMs    *int32
 	Words         []byte
 	SearchVector  interface{}
 	CreatedAt     pgtype.Timestamptz
