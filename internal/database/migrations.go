@@ -69,6 +69,11 @@ ALTER TABLE systems ADD CONSTRAINT systems_system_type_check
       AND check_clause LIKE '%conventionalP25%'
 )`,
 	},
+	{
+		name:  "add provider_ms to transcriptions",
+		sql:   `ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS provider_ms int`,
+		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transcriptions' AND column_name = 'provider_ms')`,
+	},
 }
 
 // Migrate runs all pending schema migrations.

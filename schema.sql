@@ -460,6 +460,7 @@ CREATE TABLE transcriptions (
     provider        text,
     word_count      int,
     duration_ms     int,
+    provider_ms     int,
     words           jsonb,
     search_vector   tsvector,
     created_at      timestamptz  NOT NULL DEFAULT now(),
