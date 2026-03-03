@@ -248,7 +248,7 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 - Warmup gate — buffers non-identity MQTT messages on fresh start until system registration establishes real P25 sysid/wacn, preventing duplicate system creation from early calls. Conventional systems release the gate immediately when their type is detected (no sysid to wait for). 5s timeout fallback if no system info arrives. Skipped on restart when identity cache loads from DB.
 - Recorder enrichment — SSE `recorder_update` events and REST recorder cache are enriched with `tgid`, `tg_alpha_tag`, `unit_id`, `unit_alpha_tag` by matching recorder frequency against active calls.
 - Theme engine — `theme-config.js` + `theme-engine.js` provide 11 switchable themes, sticky header with nav dropdown, keyboard shortcut (Ctrl+Shift+T), and page visibility management (hide/show pages per-browser via localStorage).
-- Transcription pipeline — pluggable STT providers (`STT_PROVIDER`): `whisper` (self-hosted or cloud Whisper-compatible API), `elevenlabs` (ElevenLabs Scribe API), `deepinfra` (DeepInfra hosted Whisper). Configurable workers, queue size, duration filters, anti-hallucination parameters.
+- Transcription pipeline — pluggable STT providers (`STT_PROVIDER`): `whisper` (self-hosted or cloud Whisper-compatible API), `elevenlabs` (ElevenLabs Scribe API), `deepinfra` (DeepInfra hosted Whisper). Configurable workers, queue size, duration filters, anti-hallucination parameters. Performance tracking: `provider_ms` isolates STT call time from total `duration_ms`; queue stats endpoint includes rolling real-time ratio averages.
 
 **Not yet done:**
 - Test coverage for unit-events and affiliations endpoints
