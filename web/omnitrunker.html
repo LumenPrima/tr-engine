@@ -326,15 +326,14 @@
     .controls-bar { gap: 8px; padding: 4px 12px; }
     th, td { padding: 3px 4px; font-size: 11px; }
     .badge { min-width: 70px; font-size: 10px; }
-    /* Hide Mode column in Active Voice Channels */
+    /* Hide Mode and Encryption columns in Active Voice Channels */
     #channels-table th:nth-child(8),
-    #channels-table td:nth-child(8) { display: none; }
+    #channels-table td:nth-child(8),
+    #channels-table th:nth-child(9),
+    #channels-table td:nth-child(9) { display: none; }
     /* Hide Site column in Unit Activity */
     #activity-table th:nth-child(3),
     #activity-table td:nth-child(3) { display: none; }
-    /* Shorten encrypted badge */
-    .encrypted-badge { font-size: 0; padding: 1px 4px; }
-    .encrypted-badge::after { content: attr(data-short); font-size: 9px; }
   }
 </style>
 </head>
