@@ -588,11 +588,7 @@ function trackSystem(data) {
 
 // ── Active Voice Channels ──
 function updateChannelsEmptyState() {
-  let visibleCount = 0;
-  for (const ch of activeChannels.values()) {
-    if (!ch.fading) visibleCount++;
-  }
-  channelsEmpty.style.display = visibleCount === 0 ? '' : 'none';
+  channelsEmpty.style.display = activeChannels.size === 0 ? '' : 'none';
 }
 
 function buildChannelCells(d, entry) {
