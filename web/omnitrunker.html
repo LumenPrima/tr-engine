@@ -294,6 +294,15 @@
     font-style: italic;
   }
 
+  .credit {
+    padding: 4px 16px;
+    font-size: 10px;
+    color: var(--text-faint);
+    text-align: right;
+  }
+  .credit a { color: var(--text-muted); text-decoration: none; }
+  .credit a:hover { color: var(--accent); text-decoration: underline; }
+
   /* ── Theme Label ── */
   .theme-label {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -410,6 +419,7 @@
       </table>
     </div>
   </div>
+  <div class="credit">Shamelessly ripped off: <a href="https://github.com/taclane/tr-web" target="_blank" rel="noopener">taclane/tr-web</a> &amp; <a href="https://www.unitrunker.com/" target="_blank" rel="noopener">UniTrunker</a></div>
 </div>
 
 <div id="auth-prompt" class="auth-prompt">
