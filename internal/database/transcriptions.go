@@ -23,6 +23,7 @@ type TranscriptionRow struct {
 	Provider      string
 	WordCount     int
 	DurationMs    int
+	ProviderMs    *int
 	Words         json.RawMessage // word-level timestamps with unit attribution
 }
 
@@ -39,6 +40,7 @@ type TranscriptionAPI struct {
 	Provider   string          `json:"provider,omitempty"`
 	WordCount  int             `json:"word_count"`
 	DurationMs int             `json:"duration_ms"`
+	ProviderMs *int            `json:"provider_ms,omitempty"`
 	Words      json.RawMessage `json:"words,omitempty"`
 	CreatedAt  time.Time       `json:"created_at"`
 }
@@ -112,6 +114,10 @@ func primaryTranscriptionToAPI(r sqlcdb.GetPrimaryTranscriptionRow) Transcriptio
 	if r.DurationMs != nil {
 		t.DurationMs = int(*r.DurationMs)
 	}
+	if r.ProviderMs != nil {
+		pm := int(*r.ProviderMs)
+		t.ProviderMs = &pm
+	}
 	if r.CreatedAt.Valid {
 		t.CreatedAt = r.CreatedAt.Time
 	}
@@ -145,6 +151,10 @@ func listTranscriptionToAPI(r sqlcdb.ListTranscriptionsByCallRow) TranscriptionA
 	if r.DurationMs != nil {
 		t.DurationMs = int(*r.DurationMs)
 	}
+	if r.ProviderMs != nil {
+		pm := int(*r.ProviderMs)
+		t.ProviderMs = &pm
+	}
 	if r.CreatedAt.Valid {
 		t.CreatedAt = r.CreatedAt.Time
 	}
@@ -176,6 +186,11 @@ func (db *DB) InsertTranscription(ctx context.Context, row *TranscriptionRow) (i
 
 	wc := int32(row.WordCount)
 	dm := int32(row.DurationMs)
+	var pm *int32
+	if row.ProviderMs != nil {
+		v := int32(*row.ProviderMs)
+		pm = &v
+	}
 	id, err := qtx.InsertTranscriptionRow(ctx, sqlcdb.InsertTranscriptionRowParams{
 		CallID:        row.CallID,
 		CallStartTime: pgtype.Timestamptz{Time: row.CallStartTime, Valid: true},
@@ -188,6 +203,7 @@ func (db *DB) InsertTranscription(ctx context.Context, row *TranscriptionRow) (i
 		Provider:      &row.Provider,
 		WordCount:     &wc,
 		DurationMs:    &dm,
+		ProviderMs:    pm,
 		Words:         row.Words,
 	})
 	if err != nil {
@@ -280,7 +296,7 @@ func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter Tra
 	dataQuery := `
 		SELECT t.id, t.call_id, t.text, t.source, t.is_primary,
 			t.confidence, t.language, t.model, t.provider,
-			t.word_count, t.duration_ms, t.words, t.created_at,
+			t.word_count, t.duration_ms, t.provider_ms, t.words, t.created_at,
 			ts_rank(t.search_vector, plainto_tsquery('english', $1)) AS rank,
 			c.system_id, COALESCE(c.system_name, ''), c.tgid,
 			COALESCE(c.tg_alpha_tag, ''), c.start_time, c.duration
@@ -300,7 +316,7 @@ func (db *DB) SearchTranscriptions(ctx context.Context, query string, filter Tra
 		if err := rows.Scan(
 			&h.ID, &h.CallID, &h.Text, &h.Source, &h.IsPrimary,
 			&h.Confidence, &h.Language, &h.Model, &h.Provider,
-			&h.WordCount, &h.DurationMs, &h.Words, &h.CreatedAt,
+			&h.WordCount, &h.DurationMs, &h.ProviderMs, &h.Words, &h.CreatedAt,
 			&h.Rank,
 			&h.CallSystemID, &h.CallSystemName, &h.CallTgid,
 			&h.CallTgAlphaTag, &h.CallStartTime, &h.CallDuration,
