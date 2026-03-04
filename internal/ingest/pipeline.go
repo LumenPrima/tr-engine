@@ -87,6 +87,20 @@ type Pipeline struct {
 
 	msgCount     atomic.Int64
 	handlerCount sync.Map // handler name → *atomic.Int64
+
+	// Maintenance state
+	maintenanceRunning atomic.Bool
+	lastMaintenance    atomic.Pointer[api.MaintenanceRunData]
+	retentionCfg       retentionConfig
+}
+
+// retentionConfig holds configurable retention durations for maintenance tasks.
+type retentionConfig struct {
+	RawMessages  time.Duration
+	ConsoleLogs  time.Duration
+	PluginStatus time.Duration
+	Checkpoints  time.Duration
+	StaleCalls   time.Duration
 }
 
 // bufferedMsg holds a message deferred during warmup.
@@ -110,7 +124,13 @@ type PipelineOptions struct {
 	TranscribeOpts     *transcribe.WorkerPoolOptions // nil = transcription disabled
 	TranscribeInclude  string // comma-separated TGID allowlist for transcription
 	TranscribeExclude  string // comma-separated TGID denylist for transcription
-	Log                zerolog.Logger
+	// Configurable retention durations for maintenance tasks
+	RetentionRawMessages  time.Duration
+	RetentionConsoleLogs  time.Duration
+	RetentionPluginStatus time.Duration
+	RetentionCheckpoints  time.Duration
+	RetentionStaleCalls   time.Duration
+	Log                   zerolog.Logger
 }
 
 func NewPipeline(opts PipelineOptions) *Pipeline {
@@ -184,6 +204,13 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		mergeP25Systems:   opts.MergeP25Systems,
 		transcribeIncludeTGs: transcribeInclude,
 		transcribeExcludeTGs: transcribeExclude,
+		retentionCfg: retentionConfig{
+			RawMessages:  opts.RetentionRawMessages,
+			ConsoleLogs:  opts.RetentionConsoleLogs,
+			PluginStatus: opts.RetentionPluginStatus,
+			Checkpoints:  opts.RetentionCheckpoints,
+			StaleCalls:   opts.RetentionStaleCalls,
+		},
 		activeCalls:  newActiveCallMap(),
 		affiliations: newAffiliationMap(),
 		eventBus:    NewEventBus(4096), // ~60s of events at high rate
@@ -530,9 +557,33 @@ func (p *Pipeline) maintenanceLoop() {
 }
 
 func (p *Pipeline) runMaintenance() {
+	result, err := p.runMaintenanceWithResult()
+	if err != nil {
+		p.log.Warn().Err(err).Msg("maintenance run failed")
+		return
+	}
+	p.log.Info().
+		Int64("duration_ms", result.DurationMs).
+		Int("partitions_created", result.PartitionsCreated).
+		Int("partitions_dropped", len(result.PartitionsDropped)).
+		Msg("partition maintenance complete")
+}
+
+func (p *Pipeline) runMaintenanceWithResult() (*api.MaintenanceRunData, error) {
+	if !p.maintenanceRunning.CompareAndSwap(false, true) {
+		return nil, fmt.Errorf("maintenance already running")
+	}
+	defer p.maintenanceRunning.Store(false)
+
 	log := p.log.With().Str("task", "maintenance").Logger()
 	start := time.Now()
 	log.Info().Msg("partition maintenance starting")
+
+	result := api.MaintenanceRunData{
+		StartedAt:  start,
+		Decimation: make(map[string]api.DecimationResult),
+		Purged:     make(map[string]int64),
+	}
 
 	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Minute)
 	defer cancel()
@@ -541,22 +592,28 @@ func (p *Pipeline) runMaintenance() {
 	monthlyTables := []string{"calls", "call_frequencies", "call_transmissions", "unit_events", "trunking_messages"}
 	for _, table := range monthlyTables {
 		partDate := beginningOfMonth(time.Now()).AddDate(0, 3, 0)
-		result, err := p.db.CreateMonthlyPartition(ctx, table, partDate)
+		res, err := p.db.CreateMonthlyPartition(ctx, table, partDate)
 		if err != nil {
 			log.Warn().Err(err).Str("table", table).Msg("failed to create monthly partition")
 		} else {
-			log.Debug().Str("result", result).Str("table", table).Msg("monthly partition")
+			log.Debug().Str("result", res).Str("table", table).Msg("monthly partition")
+			if !strings.Contains(res, "already exists") {
+				result.PartitionsCreated++
+			}
 		}
 	}
 
 	// 2. Create weekly partitions 3 weeks ahead
 	for weekOffset := 0; weekOffset <= 3; weekOffset++ {
 		weekDate := time.Now().AddDate(0, 0, weekOffset*7)
-		result, err := p.db.CreateWeeklyPartition(ctx, "mqtt_raw_messages", weekDate)
+		res, err := p.db.CreateWeeklyPartition(ctx, "mqtt_raw_messages", weekDate)
 		if err != nil {
 			log.Warn().Err(err).Int("week_offset", weekOffset).Msg("failed to create weekly partition")
 		} else {
-			log.Debug().Str("result", result).Msg("weekly partition")
+			log.Debug().Str("result", res).Msg("weekly partition")
+			if !strings.Contains(res, "already exists") {
+				result.PartitionsCreated++
+			}
 		}
 	}
 
@@ -565,15 +622,21 @@ func (p *Pipeline) runMaintenance() {
 		{"recorder_snapshots", "time"},
 		{"decode_rates", "time"},
 	} {
-		result, err := p.db.DecimateStateTable(ctx, spec.table, spec.col)
+		decRes, err := p.db.DecimateStateTable(ctx, spec.table, spec.col)
 		if err != nil {
 			log.Warn().Err(err).Str("table", spec.table).Msg("decimation failed")
-		} else if result.Deleted1w > 0 || result.Deleted1m > 0 {
-			log.Info().
-				Str("table", spec.table).
-				Int64("deleted_1w", result.Deleted1w).
-				Int64("deleted_1m", result.Deleted1m).
-				Msg("decimation complete")
+		} else {
+			if decRes.Deleted1w > 0 || decRes.Deleted1m > 0 {
+				log.Info().
+					Str("table", spec.table).
+					Int64("deleted_1w", decRes.Deleted1w).
+					Int64("deleted_1m", decRes.Deleted1m).
+					Msg("decimation complete")
+			}
+			result.Decimation[spec.table] = api.DecimationResult{
+				Phase1Deleted: decRes.Deleted1w,
+				Phase2Deleted: decRes.Deleted1m,
+			}
 		}
 	}
 
@@ -583,41 +646,51 @@ func (p *Pipeline) runMaintenance() {
 		col       string
 		retention time.Duration
 	}{
-		{"console_messages", "log_time", 30 * 24 * time.Hour},
-		{"plugin_statuses", "time", 30 * 24 * time.Hour},
-		{"call_active_checkpoints", "snapshot_time", 7 * 24 * time.Hour},
+		{"console_messages", "log_time", p.retentionCfg.ConsoleLogs},
+		{"plugin_statuses", "time", p.retentionCfg.PluginStatus},
+		{"call_active_checkpoints", "snapshot_time", p.retentionCfg.Checkpoints},
 	} {
 		n, err := p.db.PurgeOlderThan(ctx, spec.table, spec.col, spec.retention)
 		if err != nil {
 			log.Warn().Err(err).Str("table", spec.table).Msg("purge failed")
-		} else if n > 0 {
-			log.Info().Str("table", spec.table).Int64("deleted", n).Msg("purged old rows")
+		} else {
+			if n > 0 {
+				log.Info().Str("table", spec.table).Int64("deleted", n).Msg("purged old rows")
+			}
+			result.Purged[spec.table] = n
 		}
 	}
 
-	// 5. Drop old weekly partitions (raw MQTT, 7-day retention)
-	dropped, err := p.db.DropOldWeeklyPartitions(ctx, "mqtt_raw_messages", 7*24*time.Hour)
+	// 5. Drop old weekly partitions (raw MQTT)
+	dropped, err := p.db.DropOldWeeklyPartitions(ctx, "mqtt_raw_messages", p.retentionCfg.RawMessages)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to drop old weekly partitions")
 	}
 	for _, name := range dropped {
 		log.Info().Str("partition", name).Msg("dropped old weekly partition")
 	}
+	result.PartitionsDropped = dropped
 
-	// 6. Purge stale RECORDING calls (call_start with no call_end or audio after 1 hour)
-	stalePurged, err := p.db.PurgeStaleCalls(ctx, 1*time.Hour)
+	// 6. Purge stale RECORDING calls (call_start with no call_end or audio)
+	stalePurged, err := p.db.PurgeStaleCalls(ctx, p.retentionCfg.StaleCalls)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to purge stale calls")
-	} else if stalePurged > 0 {
-		log.Info().Int64("deleted", stalePurged).Msg("purged stale RECORDING calls")
+	} else {
+		if stalePurged > 0 {
+			log.Info().Int64("deleted", stalePurged).Msg("purged stale RECORDING calls")
+		}
+		result.Purged["stale_calls"] = stalePurged
 	}
 
 	// 7. Clean up orphaned call_groups (no calls reference them)
 	orphansPurged, err := p.db.PurgeOrphanCallGroups(ctx)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to purge orphan call_groups")
-	} else if orphansPurged > 0 {
-		log.Info().Int64("deleted", orphansPurged).Msg("purged orphan call_groups")
+	} else {
+		if orphansPurged > 0 {
+			log.Info().Int64("deleted", orphansPurged).Msg("purged orphan call_groups")
+		}
+		result.Purged["orphan_call_groups"] = orphansPurged
 	}
 
 	// 8. Expire stale entries from in-memory active calls map (calls older than 1 hour)
@@ -632,7 +705,30 @@ func (p *Pipeline) runMaintenance() {
 		log.Info().Int("expired", staleMapEntries).Msg("expired stale active calls from memory")
 	}
 
-	log.Info().Dur("elapsed_ms", time.Since(start)).Msg("partition maintenance complete")
+	result.DurationMs = time.Since(start).Milliseconds()
+	p.lastMaintenance.Store(&result)
+	return &result, nil
+}
+
+// MaintenanceStatus returns the current maintenance configuration and last run results.
+func (p *Pipeline) MaintenanceStatus() *api.MaintenanceStatusData {
+	return &api.MaintenanceStatusData{
+		Config: api.MaintenanceConfigData{
+			RetentionRawMessages:  p.retentionCfg.RawMessages.String(),
+			RetentionConsoleLogs:  p.retentionCfg.ConsoleLogs.String(),
+			RetentionPluginStatus: p.retentionCfg.PluginStatus.String(),
+			RetentionCheckpoints:  p.retentionCfg.Checkpoints.String(),
+			RetentionStaleCalls:   p.retentionCfg.StaleCalls.String(),
+			Schedule:              "every 24h",
+		},
+		LastRun: p.lastMaintenance.Load(),
+	}
+}
+
+// RunMaintenance triggers an immediate maintenance run.
+// Returns the results, or an error if maintenance is already running.
+func (p *Pipeline) RunMaintenance(ctx context.Context) (*api.MaintenanceRunData, error) {
+	return p.runMaintenanceWithResult()
 }
 
 // talkgroupStatsLoop refreshes cached talkgroup stats on two cadences:
