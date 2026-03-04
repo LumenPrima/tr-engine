@@ -3056,6 +3056,25 @@ async function bootstrapAffiliations() {
   }
 }
 
+async function bootstrapUnitNicks() {
+  serverMsg('Fetching unit directory...');
+  try {
+    const data = await fetchJSON('/units?limit=5000');
+    const units = data.units || [];
+    let seeded = 0;
+    for (const u of units) {
+      if (u.alpha_tag && u.alpha_tag.trim()) {
+        const nick = toNick(u.alpha_tag, u.unit_id);
+        unitNickCache.set(unitKey(u.system_id, u.unit_id), nick);
+        seeded++;
+      }
+    }
+    serverMsg(`Seeded ${seeded} unit nicks from directory`);
+  } catch (err) {
+    serverMsg(`ERROR fetching units: ${err.message}`);
+  }
+}
+
 async function bootstrapRecentCalls() {
   serverMsg('Fetching recent activity (30 min)...');
   try {
@@ -4550,8 +4569,9 @@ async function init() {
   serverMsg(`API: ${API_BASE}`);
   serverMsg('');
 
-  // Bootstrap: channels → affiliations → recent calls → SSE
+  // Bootstrap: channels → unit nicks → affiliations → recent calls → SSE
   await bootstrapChannels();
+  await bootstrapUnitNicks();
   await bootstrapAffiliations();
   await bootstrapRecentCalls();
 

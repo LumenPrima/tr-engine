@@ -1273,11 +1273,11 @@ function playCall(callId, nick, channel, feedItem) {
   npPlayBtn.textContent = '\u23F3';
 
   audioEl.volume = settings.volume / 100;
-  audioEl.playbackRate = settings.playbackSpeed;
   const authToken = window.trAuth && window.trAuth.getToken();
   const audioSrc = `${API_BASE}/calls/${callId}/audio`;
   audioEl.src = authToken ? audioSrc + '?token=' + encodeURIComponent(authToken) : audioSrc;
   audioEl.load();
+  audioEl.playbackRate = settings.playbackSpeed;
   audioEl.play().then(() => {
     npPlayBtn.textContent = '\u23F8';
     startProgressUpdate();
@@ -1723,6 +1723,21 @@ async function bootstrapChannels() {
   }
 }
 
+async function bootstrapUnitNicks() {
+  try {
+    const data = await fetchJSON('/units?limit=5000');
+    const units = data.units || [];
+    for (const u of units) {
+      if (u.alpha_tag && u.alpha_tag.trim()) {
+        const nick = toNick(u.alpha_tag, u.unit_id);
+        unitNickCache.set(`${u.system_id}:${u.unit_id}`, nick);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch unit nicks:', err);
+  }
+}
+
 /** Convert an API call object into a feed item (does not add it). */
 function callToFeedItem(call) {
   const chanName = resolveChannel(call.system_id, call.tgid);
@@ -2060,6 +2075,7 @@ async function init() {
   updateNpIdleText();
 
   await bootstrapChannels();
+  await bootstrapUnitNicks();
   await fillFeedViewport();
 
   connectSSE();
