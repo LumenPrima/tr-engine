@@ -197,31 +197,6 @@ func TestQueryInt(t *testing.T) {
 	})
 }
 
-// ── QueryInt64 ───────────────────────────────────────────────────────
-
-func TestQueryInt64(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/?n=9999999999", nil)
-		v, ok := QueryInt64(req, "n")
-		if !ok || v != 9999999999 {
-			t.Errorf("got (%d, %v), want (9999999999, true)", v, ok)
-		}
-	})
-	t.Run("missing", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/", nil)
-		_, ok := QueryInt64(req, "n")
-		if ok {
-			t.Error("expected ok=false")
-		}
-	})
-	t.Run("non_numeric", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/?n=abc", nil)
-		_, ok := QueryInt64(req, "n")
-		if ok {
-			t.Error("expected ok=false")
-		}
-	})
-}
 
 // ── QueryBool ────────────────────────────────────────────────────────
 

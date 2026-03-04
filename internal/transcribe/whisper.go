@@ -203,11 +203,7 @@ func (wc *WhisperClient) Transcribe(ctx context.Context, audioPath string, opts 
 	// Convert internal types to common Response/Word types
 	words := make([]Word, len(result.Words))
 	for i, ww := range result.Words {
-		words[i] = Word{
-			Word:  ww.Word,
-			Start: ww.Start,
-			End:   ww.End,
-		}
+		words[i] = Word(ww)
 	}
 
 	return &Response{

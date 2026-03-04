@@ -31,13 +31,13 @@ func main() {
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "fix-dupes" {
-		dryRun := !(len(os.Args) > 2 && os.Args[2] == "apply")
+		dryRun := len(os.Args) <= 2 || os.Args[2] != "apply"
 		fixDuplicateCalls(ctx, pool, dryRun)
 		return
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "fix-unresolved" {
-		dryRun := !(len(os.Args) > 2 && os.Args[2] == "apply")
+		dryRun := len(os.Args) <= 2 || os.Args[2] != "apply"
 		fixUnresolvedCalls(ctx, pool, dryRun)
 		return
 	}
