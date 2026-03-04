@@ -17,7 +17,7 @@ SELECT
     COALESCE((SELECT sum(t.calls_1h) FROM talkgroups t WHERE t.system_id = s.system_id), 0)::int AS calls_1h,
     COALESCE((SELECT sum(t.calls_24h) FROM talkgroups t WHERE t.system_id = s.system_id), 0)::int AS calls_24h,
     (SELECT count(*)::int FROM talkgroups t WHERE t.system_id = s.system_id AND t.calls_1h > 0) AS active_talkgroups,
-    COALESCE((SELECT sum(t.unit_count_30d) FROM talkgroups t WHERE t.system_id = s.system_id), 0)::int AS active_units
+    (SELECT count(*)::int FROM units u WHERE u.system_id = s.system_id AND u.last_seen > now() - interval '1 hour') AS active_units
 FROM systems s
 WHERE s.deleted_at IS NULL
 ORDER BY s.system_id;
