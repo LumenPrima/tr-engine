@@ -43,6 +43,13 @@ type LiveDataSource interface {
 	// IngestMetrics returns pipeline metrics for the Prometheus collector.
 	// Returns nil if the pipeline is not running.
 	IngestMetrics() *IngestMetricsData
+
+	// MaintenanceStatus returns the current maintenance config and last run results.
+	MaintenanceStatus() *MaintenanceStatusData
+
+	// RunMaintenance triggers an immediate maintenance run.
+	// Returns the results, or an error if maintenance is already running.
+	RunMaintenance(ctx context.Context) (*MaintenanceRunData, error)
 }
 
 // CallUploader processes an uploaded call (audio + metadata).
@@ -176,6 +183,38 @@ type IngestMetricsData struct {
 	ActiveCalls    int
 	HandlerCounts  map[string]int64
 	SSESubscribers int
+}
+
+// MaintenanceStatusData reports the current maintenance configuration and last run results.
+type MaintenanceStatusData struct {
+	Config  MaintenanceConfigData `json:"config"`
+	LastRun *MaintenanceRunData   `json:"last_run"`
+}
+
+// MaintenanceConfigData reports the active retention settings.
+type MaintenanceConfigData struct {
+	RetentionRawMessages  string `json:"retention_raw_messages"`
+	RetentionConsoleLogs  string `json:"retention_console_logs"`
+	RetentionPluginStatus string `json:"retention_plugin_status"`
+	RetentionCheckpoints  string `json:"retention_checkpoints"`
+	RetentionStaleCalls   string `json:"retention_stale_calls"`
+	Schedule              string `json:"schedule"`
+}
+
+// MaintenanceRunData reports the results of a single maintenance run.
+type MaintenanceRunData struct {
+	StartedAt         time.Time                   `json:"started_at"`
+	DurationMs        int64                       `json:"duration_ms"`
+	Decimation        map[string]DecimationResult `json:"decimation"`
+	Purged            map[string]int64            `json:"purged"`
+	PartitionsCreated int                         `json:"partitions_created"`
+	PartitionsDropped []string                    `json:"partitions_dropped"`
+}
+
+// DecimationResult reports rows deleted in each decimation phase.
+type DecimationResult struct {
+	Phase1Deleted int64 `json:"phase1_deleted"`
+	Phase2Deleted int64 `json:"phase2_deleted"`
 }
 
 // EventFilter specifies which events an SSE subscriber wants to receive.
