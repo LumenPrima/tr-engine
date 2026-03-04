@@ -103,6 +103,13 @@ type Config struct {
 	// Audio preprocessing (requires sox in PATH)
 	PreprocessAudio bool `env:"PREPROCESS_AUDIO" envDefault:"false"`
 
+	// Retention / maintenance
+	RetentionRawMessages  time.Duration `env:"RETENTION_RAW_MESSAGES" envDefault:"168h"`   // 7d
+	RetentionConsoleLogs  time.Duration `env:"RETENTION_CONSOLE_LOGS" envDefault:"720h"`   // 30d
+	RetentionPluginStatus time.Duration `env:"RETENTION_PLUGIN_STATUS" envDefault:"720h"`  // 30d
+	RetentionCheckpoints  time.Duration `env:"RETENTION_CHECKPOINTS" envDefault:"168h"`    // 7d
+	RetentionStaleCalls   time.Duration `env:"RETENTION_STALE_CALLS" envDefault:"1h"`
+
 	// Transcription worker pool
 	TranscribeWorkers     int     `env:"TRANSCRIBE_WORKERS" envDefault:"2"`
 	TranscribeQueueSize   int     `env:"TRANSCRIBE_QUEUE_SIZE" envDefault:"500"`
