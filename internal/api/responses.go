@@ -202,18 +202,6 @@ func QueryInt(r *http.Request, name string) (int, bool) {
 	return n, true
 }
 
-// QueryInt64 extracts an int64 query parameter.
-func QueryInt64(r *http.Request, name string) (int64, bool) {
-	v := r.URL.Query().Get(name)
-	if v == "" {
-		return 0, false
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	return n, true
-}
 
 // QueryBool extracts a boolean query parameter.
 func QueryBool(r *http.Request, name string) (bool, bool) {

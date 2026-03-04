@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 )
 
@@ -26,10 +25,6 @@ func NewUploadHandler(uploader CallUploader, instanceID string, log zerolog.Logg
 	}
 }
 
-// Routes registers the upload endpoint.
-func (h *UploadHandler) Routes(r chi.Router) {
-	r.Post("/call-upload", h.Upload)
-}
 
 // Upload handles POST /api/v1/call-upload.
 // Accepts multipart form uploads in rdio-scanner or OpenMHz format.

@@ -99,19 +99,6 @@ func CORSWithOrigins(origins []string) func(http.Handler) http.Handler {
 	}
 }
 
-// RequireAuth rejects all requests when no auth token is configured.
-// Used for sensitive endpoints (like /query) that should never be open.
-func RequireAuth(token string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if token == "" {
-				WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, "this endpoint requires AUTH_TOKEN to be configured")
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
 
 // RateLimiter returns middleware that applies per-IP rate limiting.
 // rps is requests per second, burst is the maximum burst size.

@@ -338,17 +338,6 @@ type CSVParseResult struct {
 	Duplicates int // rows with a tgid already seen earlier in the file
 }
 
-// ParseTalkgroupCSV parses trunk-recorder talkgroup CSV data from a reader.
-// Header-aware: matches columns by name, not position.
-// Returns (entries, skippedRows, error). Rows are skipped for malformed CSV,
-// missing/invalid Decimal column, or tgid <= 0.
-func ParseTalkgroupCSV(reader io.Reader) ([]TalkgroupEntry, int, error) {
-	result, err := ParseTalkgroupCSVDetailed(reader)
-	if err != nil {
-		return nil, 0, err
-	}
-	return result.Entries, result.Skipped, nil
-}
 
 // ParseTalkgroupCSVDetailed parses trunk-recorder talkgroup CSV data and returns
 // detailed results including duplicate tgid counts.
