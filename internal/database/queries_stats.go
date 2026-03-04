@@ -403,6 +403,7 @@ func (db *DB) GetCallHeatmap(ctx context.Context, f CallHeatmapFilter) ([]CallHe
 
 // DecodeRateFilter specifies time range for decode rate queries.
 type DecodeRateFilter struct {
+	SystemIDs []int
 	StartTime *time.Time
 	EndTime   *time.Time
 	Limit     int
@@ -410,12 +411,13 @@ type DecodeRateFilter struct {
 
 // DecodeRateAPI represents a decode rate for API responses.
 type DecodeRateAPI struct {
-	Time          time.Time `json:"time"`
-	SystemID      *int      `json:"system_id,omitempty"`
-	SystemName    string    `json:"system_name,omitempty"`
-	Sysid         string    `json:"sysid,omitempty"`
-	DecodeRate    float32   `json:"decode_rate"`
-	TotalMessages int64     `json:"total_messages"`
+	Time              time.Time `json:"time"`
+	SystemID          *int      `json:"system_id,omitempty"`
+	SystemName        string    `json:"system_name,omitempty"`
+	Sysid             string    `json:"sysid,omitempty"`
+	DecodeRate        float32   `json:"decode_rate"`
+	DecodeRateInterval float32  `json:"decode_rate_interval"`
+	ControlChannel    int64     `json:"control_channel"`
 }
 
 // GetDecodeRates returns decode rate measurements.
@@ -427,14 +429,20 @@ func (db *DB) GetDecodeRates(ctx context.Context, filter DecodeRateFilter) ([]De
 
 	query := `
 		SELECT d.time, d.system_id, COALESCE(s.name, ''), COALESCE(s.sysid, ''),
-			d.decode_rate, d.control_channel
+			d.decode_rate, d.decode_rate_interval, d.control_channel
 		FROM decode_rates d
 		LEFT JOIN systems s ON s.system_id = d.system_id
 		WHERE ($1::timestamptz IS NULL OR d.time >= $1)
 		  AND ($2::timestamptz IS NULL OR d.time <= $2)
-		ORDER BY d.time DESC LIMIT $3`
+		  AND ($3::int[] IS NULL OR d.system_id = ANY($3))
+		ORDER BY d.time DESC LIMIT $4`
 
-	rows, err := db.Pool.Query(ctx, query, filter.StartTime, filter.EndTime, limit)
+	var systemIDs []int
+	if len(filter.SystemIDs) > 0 {
+		systemIDs = filter.SystemIDs
+	}
+
+	rows, err := db.Pool.Query(ctx, query, filter.StartTime, filter.EndTime, systemIDs, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +452,7 @@ func (db *DB) GetDecodeRates(ctx context.Context, filter DecodeRateFilter) ([]De
 	for rows.Next() {
 		var r DecodeRateAPI
 		if err := rows.Scan(&r.Time, &r.SystemID, &r.SystemName, &r.Sysid,
-			&r.DecodeRate, &r.TotalMessages); err != nil {
+			&r.DecodeRate, &r.DecodeRateInterval, &r.ControlChannel); err != nil {
 			return nil, err
 		}
 		rates = append(rates, r)

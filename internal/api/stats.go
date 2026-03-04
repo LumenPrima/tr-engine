@@ -29,6 +29,7 @@ func (h *StatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 // GetDecodeRates returns decode rate measurements over time.
 func (h *StatsHandler) GetDecodeRates(w http.ResponseWriter, r *http.Request) {
 	filter := database.DecodeRateFilter{}
+	filter.SystemIDs = QueryIntList(r, "system_id")
 	if t, ok := QueryTime(r, "start_time"); ok {
 		filter.StartTime = &t
 	}

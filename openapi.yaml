@@ -1878,6 +1878,12 @@ paths:
       parameters:
         - $ref: "#/components/parameters/startTime"
         - $ref: "#/components/parameters/endTime"
+        - name: system_id
+          in: query
+          description: Filter by system ID(s). Comma-separated for multiple.
+          schema:
+            type: string
+            example: "1"
         - name: limit
           in: query
           description: Maximum number of rate entries to return (1-10000)
@@ -4572,12 +4578,16 @@ components:
           example: "348"
         decode_rate:
           type: number
-          description: Decode success rate (0.0 - 1.0)
+          description: Cumulative decode success rate (0.0 - 1.0)
           example: 0.98
-        total_messages:
+        decode_rate_interval:
+          type: number
+          description: Decode success rate for this measurement interval
+          example: 0.95
+        control_channel:
           type: integer
-          description: Total messages in this measurement period
-          example: 5000
+          description: Control channel frequency (Hz)
+          example: 859562500
 
     TalkgroupActivity:
       type: object
