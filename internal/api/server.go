@@ -150,7 +150,7 @@ func NewServer(opts ServerOptions) *Server {
 			NewUnitEventsHandler(opts.DB).Routes(r)
 			NewAffiliationsHandler(opts.Live).Routes(r)
 			NewTranscriptionsHandler(opts.DB, opts.Live).Routes(r)
-			NewAdminHandler(opts.DB, opts.OnSystemMerge).Routes(r)
+			NewAdminHandler(opts.DB, opts.Live, opts.OnSystemMerge).Routes(r)
 			r.Post("/pages", SavePageHandler(webDir))
 
 			NewQueryHandler(opts.DB).Routes(r)

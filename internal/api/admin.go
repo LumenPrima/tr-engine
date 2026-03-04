@@ -9,11 +9,12 @@ import (
 
 type AdminHandler struct {
 	db            *database.DB
+	live          LiveDataSource
 	onSystemMerge func(sourceID, targetID int)
 }
 
-func NewAdminHandler(db *database.DB, onSystemMerge func(int, int)) *AdminHandler {
-	return &AdminHandler{db: db, onSystemMerge: onSystemMerge}
+func NewAdminHandler(db *database.DB, live LiveDataSource, onSystemMerge func(int, int)) *AdminHandler {
+	return &AdminHandler{db: db, live: live, onSystemMerge: onSystemMerge}
 }
 
 // MergeSystems merges two systems.
@@ -60,7 +61,33 @@ func (h *AdminHandler) MergeSystems(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetMaintenance returns current maintenance config and last run results.
+func (h *AdminHandler) GetMaintenance(w http.ResponseWriter, r *http.Request) {
+	if h.live == nil {
+		WriteError(w, http.StatusServiceUnavailable, "pipeline not running")
+		return
+	}
+	status := h.live.MaintenanceStatus()
+	WriteJSON(w, http.StatusOK, status)
+}
+
+// RunMaintenance triggers an immediate maintenance run.
+func (h *AdminHandler) RunMaintenance(w http.ResponseWriter, r *http.Request) {
+	if h.live == nil {
+		WriteError(w, http.StatusServiceUnavailable, "pipeline not running")
+		return
+	}
+	result, err := h.live.RunMaintenance(r.Context())
+	if err != nil {
+		WriteError(w, http.StatusConflict, err.Error())
+		return
+	}
+	WriteJSON(w, http.StatusOK, result)
+}
+
 // Routes registers admin routes on the given router.
 func (h *AdminHandler) Routes(r chi.Router) {
 	r.Post("/admin/systems/merge", h.MergeSystems)
+	r.Get("/admin/maintenance", h.GetMaintenance)
+	r.Post("/admin/maintenance", h.RunMaintenance)
 }
