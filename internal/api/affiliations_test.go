@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,8 @@ func (m *mockLiveData) TranscriptionStatus() *TranscriptionStatusData   { return
 func (m *mockLiveData) EnqueueTranscription(int64) bool                 { return false }
 func (m *mockLiveData) TranscriptionQueueStats() *TranscriptionQueueStatsData { return nil }
 func (m *mockLiveData) IngestMetrics() *IngestMetricsData                     { return nil }
+func (m *mockLiveData) MaintenanceStatus() *MaintenanceStatusData             { return nil }
+func (m *mockLiveData) RunMaintenance(context.Context) (*MaintenanceRunData, error) { return nil, nil }
 
 // affiliationsResponse matches the JSON shape returned by ListAffiliations.
 type affiliationsResponse struct {
