@@ -2656,6 +2656,62 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /admin/maintenance:
+    get:
+      operationId: getMaintenanceStatus
+      summary: Get maintenance status and config
+      description: |
+        Returns the current maintenance configuration (retention periods)
+        and the results of the last maintenance run. Maintenance runs
+        automatically every 24 hours on startup.
+      tags: [admin]
+      responses:
+        "200":
+          description: Maintenance status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Pipeline not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: runMaintenance
+      summary: Trigger immediate maintenance run
+      description: |
+        Triggers an immediate maintenance run (partition creation,
+        decimation, data purging). Returns the results when complete.
+        Returns 409 if a maintenance run is already in progress.
+      tags: [admin]
+      responses:
+        "200":
+          description: Maintenance run completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Maintenance already running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Pipeline not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 # ============================================================
 # COMPONENTS
 # ============================================================
@@ -4917,3 +4973,97 @@ components:
           type: integer
           description: Number of rows returned.
           example: 2
+
+    MaintenanceStatus:
+      type: object
+      properties:
+        config:
+          $ref: "#/components/schemas/MaintenanceConfig"
+        last_run:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MaintenanceRun"
+          description: Results of the last maintenance run. Null if no run has completed since startup.
+
+    MaintenanceConfig:
+      type: object
+      description: Active retention settings for automatic maintenance.
+      properties:
+        retention_raw_messages:
+          type: string
+          description: "Raw MQTT message retention (Go duration, e.g. 168h = 7 days)"
+          example: "168h0m0s"
+        retention_console_logs:
+          type: string
+          description: "Console log retention (Go duration, e.g. 720h = 30 days)"
+          example: "720h0m0s"
+        retention_plugin_status:
+          type: string
+          description: "Plugin status retention (Go duration)"
+          example: "720h0m0s"
+        retention_checkpoints:
+          type: string
+          description: "Active call checkpoint retention (Go duration)"
+          example: "168h0m0s"
+        retention_stale_calls:
+          type: string
+          description: "Stale incomplete call retention (Go duration)"
+          example: "1h0m0s"
+        schedule:
+          type: string
+          description: Maintenance run schedule
+          example: "every 24h"
+
+    MaintenanceRun:
+      type: object
+      description: Results of a single maintenance run.
+      properties:
+        started_at:
+          type: string
+          format: date-time
+          description: When the maintenance run started
+        duration_ms:
+          type: integer
+          description: Total run duration in milliseconds
+          example: 1234
+        partitions_created:
+          type: integer
+          description: Number of new partitions created
+          example: 0
+        partitions_dropped:
+          type: array
+          items:
+            type: string
+          description: Names of old partitions that were dropped
+          example: ["mqtt_raw_messages_w2026_07"]
+        decimation:
+          type: object
+          description: Per-table decimation results
+          additionalProperties:
+            $ref: "#/components/schemas/DecimationResult"
+          example:
+            recorder_snapshots: { phase1_deleted: 500, phase2_deleted: 120 }
+            decode_rates: { phase1_deleted: 300, phase2_deleted: 80 }
+        purged:
+          type: object
+          description: Per-table purge row counts
+          additionalProperties:
+            type: integer
+          example:
+            console_messages: 42
+            plugin_statuses: 0
+            call_active_checkpoints: 15
+            stale_calls: 3
+            orphan_call_groups: 1
+
+    DecimationResult:
+      type: object
+      properties:
+        phase1_deleted:
+          type: integer
+          description: "Rows deleted in phase 1 (1 week – 1 month old: keep 1 per minute)"
+          example: 500
+        phase2_deleted:
+          type: integer
+          description: "Rows deleted in phase 2 (>1 month old: keep 1 per hour)"
+          example: 120
