@@ -31,6 +31,13 @@ type Config struct {
 	// HTTP upload ingest mode (rdio-scanner / OpenMHz compatible)
 	UploadInstanceID string `env:"UPLOAD_INSTANCE_ID" envDefault:"http-upload"`
 
+	// Live audio streaming (simplestream UDP ingest → WebSocket relay)
+	StreamListen      string        `env:"STREAM_LISTEN"`                              // UDP listen address, e.g. ":9123". Feature disabled if empty.
+	StreamSampleRate  int           `env:"STREAM_SAMPLE_RATE" envDefault:"8000"`        // Default PCM sample rate (8000 P25, 16000 analog)
+	StreamOpusBitrate int           `env:"STREAM_OPUS_BITRATE" envDefault:"16000"`      // Opus encoder bitrate in bps
+	StreamMaxClients  int           `env:"STREAM_MAX_CLIENTS" envDefault:"50"`          // Max concurrent WebSocket listeners
+	StreamIdleTimeout time.Duration `env:"STREAM_IDLE_TIMEOUT" envDefault:"30s"`        // Tear down per-TG encoder after idle
+
 	// TR auto-discovery (reads trunk-recorder's config.json + docker-compose.yaml)
 	TRDir        string `env:"TR_DIR"`
 	CSVWriteback bool   `env:"CSV_WRITEBACK" envDefault:"false"` // write edits back to TR's CSV files on disk
@@ -165,6 +172,7 @@ type Overrides struct {
 	WatchDir      string
 	TRDir         string
 	WhisperURL    string
+	StreamListen  string
 }
 
 // Load reads configuration from .env file, environment variables, and CLI overrides.
@@ -209,6 +217,9 @@ func Load(overrides Overrides) (*Config, error) {
 	}
 	if overrides.WhisperURL != "" {
 		cfg.WhisperURL = overrides.WhisperURL
+	}
+	if overrides.StreamListen != "" {
+		cfg.StreamListen = overrides.StreamListen
 	}
 
 	// When auth is explicitly disabled, clear any tokens so middleware passes everything through.

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestLoad(t *testing.T) {
@@ -105,6 +106,63 @@ func TestLoadMissingRequired(t *testing.T) {
 	_, err := Load(Overrides{EnvFile: "nonexistent.env"})
 	if err == nil {
 		t.Error("expected error when required env vars are missing")
+	}
+}
+
+func TestStreamConfig(t *testing.T) {
+	cleanup := setEnvs(t, map[string]string{
+		"DATABASE_URL":       "postgres://localhost/test",
+		"MQTT_BROKER_URL":    "tcp://localhost:1883",
+		"STREAM_LISTEN":      ":9123",
+		"STREAM_OPUS_BITRATE": "24000",
+		"STREAM_MAX_CLIENTS": "25",
+		"STREAM_IDLE_TIMEOUT": "45s",
+	})
+	defer cleanup()
+
+	cfg, err := Load(Overrides{EnvFile: "nonexistent.env"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.StreamListen != ":9123" {
+		t.Errorf("StreamListen = %q, want :9123", cfg.StreamListen)
+	}
+	if cfg.StreamOpusBitrate != 24000 {
+		t.Errorf("StreamOpusBitrate = %d, want 24000", cfg.StreamOpusBitrate)
+	}
+	if cfg.StreamMaxClients != 25 {
+		t.Errorf("StreamMaxClients = %d, want 25", cfg.StreamMaxClients)
+	}
+	if cfg.StreamIdleTimeout != 45*time.Second {
+		t.Errorf("StreamIdleTimeout = %v, want 45s", cfg.StreamIdleTimeout)
+	}
+}
+
+func TestStreamConfigDefaults(t *testing.T) {
+	cleanup := setEnvs(t, map[string]string{
+		"DATABASE_URL":    "postgres://localhost/test",
+		"MQTT_BROKER_URL": "tcp://localhost:1883",
+	})
+	defer cleanup()
+
+	cfg, err := Load(Overrides{EnvFile: "nonexistent.env"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.StreamListen != "" {
+		t.Errorf("StreamListen = %q, want empty", cfg.StreamListen)
+	}
+	if cfg.StreamSampleRate != 8000 {
+		t.Errorf("StreamSampleRate = %d, want 8000", cfg.StreamSampleRate)
+	}
+	if cfg.StreamOpusBitrate != 16000 {
+		t.Errorf("StreamOpusBitrate = %d, want 16000", cfg.StreamOpusBitrate)
+	}
+	if cfg.StreamMaxClients != 50 {
+		t.Errorf("StreamMaxClients = %d, want 50", cfg.StreamMaxClients)
+	}
+	if cfg.StreamIdleTimeout != 30*time.Second {
+		t.Errorf("StreamIdleTimeout = %v, want 30s", cfg.StreamIdleTimeout)
 	}
 }
 

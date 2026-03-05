@@ -43,6 +43,7 @@ func main() {
 	flag.StringVar(&overrides.WatchDir, "watch-dir", "", "Watch TR audio directory for new files (overrides WATCH_DIR)")
 	flag.StringVar(&overrides.TRDir, "tr-dir", "", "Path to trunk-recorder directory for auto-discovery (overrides TR_DIR)")
 	flag.StringVar(&overrides.WhisperURL, "whisper-url", "", "Whisper API URL for transcription (overrides WHISPER_URL)")
+	flag.StringVar(&overrides.StreamListen, "stream-listen", "", "UDP listen address for simplestream audio (overrides STREAM_LISTEN)")
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.Parse()
 
