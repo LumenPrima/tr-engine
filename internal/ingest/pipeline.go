@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/snarg/tr-engine/internal/api"
+	"github.com/snarg/tr-engine/internal/audio"
 	"github.com/snarg/tr-engine/internal/database"
 	"github.com/snarg/tr-engine/internal/metrics"
 	"github.com/snarg/tr-engine/internal/storage"
@@ -40,6 +41,10 @@ type Pipeline struct {
 
 	// Event bus for SSE subscribers
 	eventBus *EventBus
+
+	// Live audio streaming (optional, nil if STREAM_LISTEN not set)
+	audioBus    *audio.AudioBus
+	audioRouter *audio.AudioRouter
 
 	// Raw archival config
 	rawStore   bool            // false = disable all raw archival
@@ -130,7 +135,10 @@ type PipelineOptions struct {
 	RetentionPluginStatus time.Duration
 	RetentionCheckpoints  time.Duration
 	RetentionStaleCalls   time.Duration
-	Log                   zerolog.Logger
+	// Live audio streaming
+	StreamListen      string
+	StreamIdleTimeout time.Duration
+	Log               zerolog.Logger
 }
 
 func NewPipeline(opts PipelineOptions) *Pipeline {
@@ -189,9 +197,20 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		log.Info().Strs("tgids", ids).Msg("transcription talkgroup denylist active")
 	}
 
+	identity := NewIdentityResolver(opts.DB, log)
+
+	// Only create audio streaming infrastructure if STREAM_LISTEN is configured
+	var audioBus *audio.AudioBus
+	var audioRouter *audio.AudioRouter
+	if opts.StreamListen != "" {
+		audioBus = audio.NewAudioBus()
+		audioRouter = audio.NewAudioRouter(audioBus, identity, opts.StreamIdleTimeout)
+		log.Info().Msg("live audio streaming infrastructure initialized")
+	}
+
 	p := &Pipeline{
 		db:              opts.DB,
-		identity:        NewIdentityResolver(opts.DB, log),
+		identity:        identity,
 		log:             log,
 		audioDir:        opts.AudioDir,
 		trAudioDir:      opts.TRAudioDir,
@@ -214,6 +233,8 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		activeCalls:  newActiveCallMap(),
 		affiliations: newAffiliationMap(),
 		eventBus:    NewEventBus(4096), // ~60s of events at high rate
+		audioBus:    audioBus,
+		audioRouter: audioRouter,
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -270,6 +291,9 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	go p.affiliationEvictionLoop()
 	if p.transcriber != nil {
 		p.transcriber.Start()
+	}
+	if p.audioRouter != nil {
+		go p.audioRouter.Run(ctx)
 	}
 	p.log.Info().Msg("ingest pipeline started")
 	return nil
@@ -373,6 +397,48 @@ func (p *Pipeline) TranscriptionQueueStats() *api.TranscriptionQueueStatsData {
 	}
 
 	return result
+}
+
+// SubscribeAudio subscribes to live audio frames matching the filter.
+func (p *Pipeline) SubscribeAudio(filter audio.AudioFilter) (<-chan audio.AudioFrame, func()) {
+	if p.audioBus == nil {
+		ch := make(chan audio.AudioFrame)
+		close(ch)
+		return ch, func() {}
+	}
+	return p.audioBus.Subscribe(filter)
+}
+
+// UpdateAudioFilter changes the filter for an existing audio subscriber.
+func (p *Pipeline) UpdateAudioFilter(ch <-chan audio.AudioFrame, filter audio.AudioFilter) {
+	if p.audioBus != nil {
+		p.audioBus.UpdateFilter(ch, filter)
+	}
+}
+
+// AudioStreamEnabled returns true if live audio streaming is configured.
+func (p *Pipeline) AudioStreamEnabled() bool {
+	return p.audioBus != nil
+}
+
+// AudioStreamStatus returns the current state of live audio streaming.
+func (p *Pipeline) AudioStreamStatus() *api.AudioStreamStatusData {
+	if p.audioBus == nil {
+		return &api.AudioStreamStatusData{Enabled: false}
+	}
+	return &api.AudioStreamStatusData{
+		Enabled:          true,
+		ActiveEncoders:   p.audioRouter.ActiveStreamCount(),
+		ConnectedClients: p.audioBus.SubscriberCount(),
+	}
+}
+
+// AudioRouterInput returns the chunk input channel, or nil if streaming is disabled.
+func (p *Pipeline) AudioRouterInput() chan<- audio.AudioChunk {
+	if p.audioRouter == nil {
+		return nil
+	}
+	return p.audioRouter.Input()
 }
 
 // enqueueTranscription is called by ingest handlers when a call has audio ready.

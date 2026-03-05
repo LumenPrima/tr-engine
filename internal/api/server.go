@@ -33,6 +33,7 @@ type ServerOptions struct {
 	MQTT          *mqttclient.Client
 	Live          LiveDataSource
 	Uploader      CallUploader      // nil if upload ingest not available
+	AudioStreamer AudioStreamer      // nil if live audio streaming not configured
 	Store         storage.AudioStore // audio storage backend (local, S3, or tiered)
 	WebFiles      fs.FS              // embedded web/ directory
 	OpenAPISpec   []byte       // embedded openapi.yaml
@@ -147,6 +148,9 @@ func NewServer(opts ServerOptions) *Server {
 			NewStatsHandler(opts.DB).Routes(r)
 			NewRecordersHandler(opts.Live).Routes(r)
 			NewEventsHandler(opts.Live).Routes(r)
+			if opts.AudioStreamer != nil {
+				NewAudioStreamHandler(opts.AudioStreamer, opts.Config.StreamMaxClients).Routes(r)
+			}
 			NewUnitEventsHandler(opts.DB).Routes(r)
 			NewAffiliationsHandler(opts.Live).Routes(r)
 			NewTranscriptionsHandler(opts.DB, opts.Live).Routes(r)

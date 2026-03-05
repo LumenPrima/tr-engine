@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	trengine "github.com/snarg/tr-engine"
 	"github.com/snarg/tr-engine/internal/api"
+	"github.com/snarg/tr-engine/internal/audio"
 	"github.com/snarg/tr-engine/internal/config"
 	"github.com/snarg/tr-engine/internal/database"
 	"github.com/snarg/tr-engine/internal/ingest"
@@ -248,6 +249,8 @@ func main() {
 		RetentionPluginStatus: cfg.RetentionPluginStatus,
 		RetentionCheckpoints:  cfg.RetentionCheckpoints,
 		RetentionStaleCalls:   cfg.RetentionStaleCalls,
+		StreamListen:      cfg.StreamListen,
+		StreamIdleTimeout: cfg.StreamIdleTimeout,
 		Store:            store,
 		S3Uploader:       s3Uploader,
 		Log:              log,
@@ -348,6 +351,19 @@ func main() {
 		log.Info().Str("watch_dir", cfg.WatchDir).Str("instance_id", cfg.WatchInstanceID).Msg("file watcher started")
 	}
 
+	// Start live audio streaming if configured
+	if cfg.StreamListen != "" {
+		src := audio.NewSimplestreamSource(cfg.StreamListen, cfg.StreamSampleRate)
+		if input := pipeline.AudioRouterInput(); input != nil {
+			go func() {
+				if err := src.Start(ctx, input); err != nil {
+					log.Error().Err(err).Msg("simplestream source failed")
+				}
+			}()
+			log.Info().Str("addr", cfg.StreamListen).Msg("live audio streaming enabled (simplestream UDP)")
+		}
+	}
+
 	// Auth status
 	if !cfg.AuthEnabled {
 		log.Warn().Msg("AUTH_ENABLED=false — API authentication is disabled, all endpoints are open")
@@ -382,6 +398,7 @@ func main() {
 		MQTT:           mqtt,
 		Live:           pipeline,
 		Uploader:       pipeline, // Pipeline implements CallUploader via ProcessUpload
+		AudioStreamer:  pipeline, // Pipeline implements AudioStreamer via AudioBus
 		Store:          store,
 		WebFiles:       trengine.WebFiles,
 		OpenAPISpec:    trengine.OpenAPISpec,
