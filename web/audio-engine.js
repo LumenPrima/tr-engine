@@ -18,6 +18,7 @@ class AudioEngine {
     this.lastSubscription = null;
     this.listeners = {};
     this._intentionalClose = false;
+    this._serverAudioFormat = null; // set by server 'config' message; null = auto-detect
   }
 
   // Event emitter
@@ -207,6 +208,12 @@ class AudioEngine {
       case 'keepalive':
         this.emit('status', { connected: true, active_streams: msg.active_streams });
         break;
+      case 'config':
+        if (msg.audio_format) {
+          this._serverAudioFormat = msg.audio_format;
+        }
+        this.emit('config', msg);
+        break;
     }
   }
 
@@ -219,19 +226,92 @@ class AudioEngine {
     // timestamp at offset 6 (4 bytes) - available for latency measurement
     // seq at offset 10 (2 bytes) - available for gap detection
 
-    var pcmData = new Int16Array(buffer, 12);
+    var audioData = buffer.slice(12);
+    var audioLen = audioData.byteLength;
 
     if (!this.tgNodes.has(tgid)) {
       this._createTG(tgid);
     }
 
+    // Determine format: use server-sent config if available, otherwise auto-detect.
+    // PCM frames are 320+ bytes (160+ int16 samples at 8kHz/20ms),
+    // Opus frames are typically 10-80 bytes after compression.
+    var format = this._serverAudioFormat;
+    if (!format) {
+      format = (audioLen >= 160) ? 'pcm' : 'opus';
+    }
+
+    if (format === 'pcm') {
+      var pcmData = new Int16Array(audioData);
+      this._feedPCM(tgid, pcmData, 8000);
+    } else if (audioLen > 0) {
+      this._decodeOpus(tgid, new Uint8Array(audioData));
+    }
+  }
+
+  _feedPCM(tgid, int16Samples, sampleRate) {
     var nodes = this.tgNodes.get(tgid);
+    if (!nodes) return;
     nodes.worklet.port.postMessage({
       type: 'audio',
-      samples: pcmData,
-      sampleRate: 8000,
+      samples: int16Samples,
+      sampleRate: sampleRate,
     });
     nodes.lastActivity = Date.now();
+  }
+
+  async _decodeOpus(tgid, opusData) {
+    var nodes = this.tgNodes.get(tgid);
+    if (!nodes) return;
+
+    // Lazy-init Opus decoder for this TG
+    if (!nodes.opusDecoder) {
+      if (typeof AudioDecoder === 'undefined') {
+        // Browser doesn't support WebCodecs (e.g. Firefox) — drop Opus frames
+        console.warn('AudioDecoder not available; Opus frames will be dropped');
+        return;
+      }
+
+      try {
+        var self = this;
+        var currentTgid = tgid;
+        nodes.opusDecoder = new AudioDecoder({
+          output: function(audioData) {
+            // Convert decoded AudioData to Float32Array, then to Int16
+            var float32 = new Float32Array(audioData.numberOfFrames);
+            audioData.copyTo(float32, { planeIndex: 0 });
+            var int16 = new Int16Array(float32.length);
+            for (var i = 0; i < float32.length; i++) {
+              int16[i] = Math.max(-32768, Math.min(32767, Math.round(float32[i] * 32768)));
+            }
+            self._feedPCM(currentTgid, int16, audioData.sampleRate);
+            audioData.close();
+          },
+          error: function(e) {
+            console.error('Opus decode error:', e);
+          }
+        });
+
+        nodes.opusDecoder.configure({
+          codec: 'opus',
+          sampleRate: 8000,
+          numberOfChannels: 1,
+        });
+      } catch (e) {
+        console.error('Failed to create Opus decoder:', e);
+        return;
+      }
+    }
+
+    try {
+      nodes.opusDecoder.decode(new EncodedAudioChunk({
+        type: 'key',
+        timestamp: 0,
+        data: opusData,
+      }));
+    } catch (e) {
+      // Ignore decode errors for individual frames
+    }
   }
 
   _createTG(tgid) {
@@ -280,6 +360,9 @@ class AudioEngine {
     nodes.worklet.disconnect();
     nodes.compressor.disconnect();
     nodes.gain.disconnect();
+    if (nodes.opusDecoder) {
+      try { nodes.opusDecoder.close(); } catch (e) { /* ignore */ }
+    }
     this.tgNodes.delete(tgid);
     this.emit('tg_removed', { tgid: tgid });
   }
