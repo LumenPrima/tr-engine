@@ -225,15 +225,17 @@
   tr:hover td { background: var(--bg-surface); }
 
   /* ── Channel table column widths ── */
-  #channels-table th:nth-child(1), #channels-table td:nth-child(1) { width: 12%; }
-  #channels-table th:nth-child(2), #channels-table td:nth-child(2) { width: 10%; }
-  #channels-table th:nth-child(3), #channels-table td:nth-child(3) { width: 7%; }
-  #channels-table th:nth-child(4), #channels-table td:nth-child(4) { width: 18%; }
-  #channels-table th:nth-child(5), #channels-table td:nth-child(5) { width: 8%; }
-  #channels-table th:nth-child(6), #channels-table td:nth-child(6) { width: 15%; }
-  #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 8%; }
-  #channels-table th:nth-child(8), #channels-table td:nth-child(8) { width: 8%; }
-  #channels-table th:nth-child(9), #channels-table td:nth-child(9) { width: 14%; }
+  #channels-table th:nth-child(1), #channels-table td:nth-child(1) { width: 4%; text-align: center; overflow: visible; }
+  #channels-table th:nth-child(2), #channels-table td:nth-child(2) { width: 4%; text-align: center; overflow: visible; }
+  #channels-table th:nth-child(3), #channels-table td:nth-child(3) { width: 12%; }
+  #channels-table th:nth-child(4), #channels-table td:nth-child(4) { width: 8%; }
+  #channels-table th:nth-child(5), #channels-table td:nth-child(5) { width: 6%; }
+  #channels-table th:nth-child(6), #channels-table td:nth-child(6) { width: 17%; }
+  #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 7%; }
+  #channels-table th:nth-child(8), #channels-table td:nth-child(8) { width: 14%; }
+  #channels-table th:nth-child(9), #channels-table td:nth-child(9) { width: 6%; }
+  #channels-table th:nth-child(10), #channels-table td:nth-child(10) { width: 7%; }
+  #channels-table th:nth-child(11), #channels-table td:nth-child(11) { width: 9%; }
 
   /* ── Activity table column widths ── */
   #activity-table th:nth-child(1), #activity-table td:nth-child(1) { width: 8%; }
@@ -303,6 +305,111 @@
   .credit a { color: var(--text-muted); text-decoration: none; }
   .credit a:hover { color: var(--accent); text-decoration: underline; }
 
+  /* ── Listen Toggle ── */
+  .listen-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 1px solid var(--text-faint);
+    color: var(--text-faint);
+    padding: 3px 12px;
+    border-radius: 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .listen-toggle .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-faint);
+    transition: background 0.2s;
+  }
+  .listen-toggle.active {
+    border-color: var(--success);
+    color: var(--success);
+  }
+  .listen-toggle.active .dot {
+    background: var(--success);
+    animation: pulse 1.5s infinite;
+  }
+
+  /* ── Audio Controls ── */
+  .audio-controls {
+    display: none;
+    align-items: center;
+    gap: 8px;
+  }
+  .audio-controls.visible { display: flex; }
+
+  .vol-slider {
+    width: 60px; height: 3px;
+    -webkit-appearance: none; appearance: none;
+    background: var(--border); border-radius: 2px; outline: none;
+  }
+  .vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    background: var(--accent); border-radius: 50%; cursor: pointer;
+  }
+  .vol-slider::-moz-range-thumb {
+    width: 12px; height: 12px;
+    background: var(--accent); border-radius: 50%; cursor: pointer; border: none;
+  }
+
+  .audio-status {
+    font-size: 10px;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .audio-status.streaming { color: var(--success); }
+
+  /* ── Speaker Icon Column ── */
+  .spk-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 14px; padding: 0 2px; line-height: 1;
+    color: var(--text-muted);
+    transition: color 0.15s, opacity 0.15s;
+  }
+  .spk-btn:hover { color: var(--accent); }
+  .spk-btn.muted { opacity: 0.35; }
+
+  /* ── Pan Indicator ── */
+  .pan-indicator {
+    display: inline-block;
+    width: 33px; height: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    position: relative;
+    vertical-align: middle;
+  }
+  .pan-indicator .pan-dot {
+    position: absolute;
+    top: 0px;
+    width: 4px; height: 4px;
+    background: var(--accent);
+    border-radius: 50%;
+    transition: left 0.2s ease;
+  }
+  .pan-indicator .pan-center {
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--border);
+  }
+
+  /* ── Audio Glow on Active Rows ── */
+  .channel-row.audio-active {
+    background: color-mix(in srgb, var(--success) 10%, transparent);
+  }
+  .channel-row.audio-active td:first-child {
+    box-shadow: inset 3px 0 0 var(--success);
+  }
+
   /* ── Theme Label ── */
   .theme-label {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -313,6 +420,222 @@
     transition: all 0.5s; pointer-events: none; opacity: 0;
   }
   .theme-label.show { opacity: 1; }
+
+  /* ── Settings Drawer ── */
+  .settings-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100;
+  }
+  .settings-overlay.open { display: block; }
+  .settings-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(340px, 85vw);
+    background: var(--bg-surface);
+    z-index: 101;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .settings-panel.open { transform: translateX(0); }
+
+  .settings-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+  }
+  .settings-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    flex: 1;
+  }
+  .settings-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px;
+  }
+  .settings-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+  .settings-scroll::-webkit-scrollbar { width: 4px; }
+  .settings-scroll::-webkit-scrollbar-track { background: transparent; }
+  .settings-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .settings-group {
+    margin-bottom: 20px;
+  }
+  .settings-group-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  }
+  .settings-label { font-size: 14px; color: var(--text); }
+  .settings-sublabel { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+  /* Toggle switch */
+  .toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+  .toggle input { display: none; }
+  .toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle input:checked + .toggle-track { background: var(--accent); }
+  .toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: var(--text);
+    border-radius: 50%;
+    transition: transform 0.2s;
+    pointer-events: none;
+  }
+  .toggle input:checked ~ .toggle-thumb { transform: translateX(20px); }
+
+  /* ── Gear Button ── */
+  .gear-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: var(--radius-xs);
+    transition: color 0.15s, border-color 0.15s;
+    line-height: 1;
+  }
+  .gear-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* ── TG Selection List ── */
+  .tg-search {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  .tg-search:focus { outline: none; border-color: var(--accent); }
+  .tg-search::placeholder { color: var(--text-faint); }
+
+  .tg-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .tg-actions button {
+    flex: 1;
+    padding: 4px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .tg-actions button:hover { background: var(--bg-surface); border-color: var(--border-hover); }
+
+  .tg-list {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    background: var(--bg);
+  }
+  .tg-list::-webkit-scrollbar { width: 4px; }
+  .tg-list::-webkit-scrollbar-track { background: transparent; }
+  .tg-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .tg-system-header {
+    padding: 4px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--bg) 95%, transparent);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  .tg-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 25%, transparent);
+  }
+  .tg-item:hover { background: var(--bg-surface); }
+  .tg-item input[type="checkbox"] { accent-color: var(--accent); flex-shrink: 0; }
+  .tg-item-tgid { font-size: 12px; color: var(--accent); min-width: 48px; }
+  .tg-item-tag { font-size: 12px; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tg-count { font-size: 11px; color: var(--text-faint); margin-bottom: 6px; }
+
+  /* ── Column Visibility ── */
+  .hide-col-channel #channels-table th:nth-child(4), .hide-col-channel #channels-table td:nth-child(4) { display: none; }
+  .hide-col-source #channels-table th:nth-child(7), .hide-col-source #channels-table td:nth-child(7) { display: none; }
+  .hide-col-unit-alias #channels-table th:nth-child(8), .hide-col-unit-alias #channels-table td:nth-child(8) { display: none; }
+  .hide-col-mode #channels-table th:nth-child(10), .hide-col-mode #channels-table td:nth-child(10) { display: none; }
+  .hide-col-encryption #channels-table th:nth-child(11), .hide-col-encryption #channels-table td:nth-child(11) { display: none; }
+
+  /* ── Volume slider in settings ── */
+  .settings-vol-slider {
+    width: 120px; height: 3px;
+    -webkit-appearance: none; appearance: none;
+    background: var(--border); border-radius: 2px; outline: none;
+  }
+  .settings-vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--accent); border-radius: 50%; cursor: pointer;
+  }
+  .settings-vol-slider::-moz-range-thumb {
+    width: 14px; height: 14px;
+    background: var(--accent); border-radius: 50%; cursor: pointer; border: none;
+  }
 
   /* ── Mobile ── */
   @media (max-width: 600px) {
@@ -326,11 +649,13 @@
     .controls-bar { gap: 8px; padding: 4px 12px; }
     th, td { padding: 3px 4px; font-size: 11px; }
     .badge { min-width: 70px; font-size: 10px; }
-    /* Hide Mode and Encryption columns in Active Voice Channels */
-    #channels-table th:nth-child(8),
-    #channels-table td:nth-child(8),
+    /* Hide Speaker, Mode and Encryption columns in Active Voice Channels */
+    #channels-table th:nth-child(1),
+    #channels-table td:nth-child(1),
     #channels-table th:nth-child(9),
-    #channels-table td:nth-child(9) { display: none; }
+    #channels-table td:nth-child(9),
+    #channels-table th:nth-child(10),
+    #channels-table td:nth-child(10) { display: none; }
     /* Hide Site column in Unit Activity */
     #activity-table th:nth-child(3),
     #activity-table td:nth-child(3) { display: none; }
@@ -349,6 +674,18 @@
   <select id="system-filter">
     <option value="">All Systems</option>
   </select>
+  <button class="listen-toggle" id="listen-toggle">
+    <span class="dot"></span>
+    <span id="listen-label">LISTEN</span>
+  </button>
+  <div class="audio-controls" id="audio-controls">
+    <input type="range" class="vol-slider" id="master-vol" min="0" max="100" value="80" title="Volume">
+    <label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer" title="Auto-spread channels across stereo field">
+      <input type="checkbox" id="auto-pan-toggle" checked style="margin:0"> Pan
+    </label>
+    <span class="audio-status" id="audio-status">--</span>
+  </div>
+  <button class="gear-btn" id="settings-btn" title="Settings">&#9881;</button>
   <div class="stats"><span id="event-count">0</span> events</div>
 </div>
 
@@ -360,6 +697,8 @@
       <table id="channels-table">
         <thead>
           <tr>
+            <th title="Audio"></th>
+            <th title="Pan">L/R</th>
             <th>System</th>
             <th>Channel</th>
             <th>TG</th>
@@ -372,7 +711,7 @@
           </tr>
         </thead>
         <tbody id="channels-body">
-          <tr id="channels-empty"><td colspan="9" class="empty-state">Waiting for active calls...</td></tr>
+          <tr id="channels-empty"><td colspan="11" class="empty-state">Waiting for active calls...</td></tr>
         </tbody>
       </table>
     </div>
@@ -433,6 +772,98 @@
   </div>
 </div>
 
+<div class="settings-overlay" id="settings-overlay"></div>
+<div class="settings-panel" id="settings-panel">
+  <div class="settings-header">
+    <div class="settings-title">Settings</div>
+    <button class="settings-close" id="settings-close">&times;</button>
+  </div>
+  <div class="settings-scroll">
+    <div class="settings-group">
+      <div class="settings-group-title">Talkgroup Selection</div>
+      <input type="text" class="tg-search" id="tg-search" placeholder="Search by TGID or alpha tag...">
+      <div class="tg-actions">
+        <button id="tg-select-all">Select All</button>
+        <button id="tg-select-none">Select None</button>
+      </div>
+      <div class="tg-count" id="tg-count">0 selected</div>
+      <div class="tg-list" id="tg-list"></div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-group-title">Audio</div>
+      <div class="settings-row">
+        <div class="settings-label">Master Volume</div>
+        <input type="range" class="settings-vol-slider" id="set-volume" min="0" max="100" value="80">
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Auto-pan</div>
+          <div class="settings-sublabel">Spread channels across stereo field</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="set-auto-pan" checked>
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-group-title">Display</div>
+      <div class="settings-row">
+        <div class="settings-label">Show Channel column</div>
+        <label class="toggle">
+          <input type="checkbox" id="col-channel" checked data-col="channel">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div class="settings-label">Show Source column</div>
+        <label class="toggle">
+          <input type="checkbox" id="col-source" checked data-col="source">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div class="settings-label">Show Unit Alias column</div>
+        <label class="toggle">
+          <input type="checkbox" id="col-unit-alias" checked data-col="unit-alias">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div class="settings-label">Show Mode column</div>
+        <label class="toggle">
+          <input type="checkbox" id="col-mode" checked data-col="mode">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div class="settings-label">Show Encryption column</div>
+        <label class="toggle">
+          <input type="checkbox" id="col-encryption" checked data-col="encryption">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Activity feed max rows</div>
+        </div>
+        <select id="set-buffer-size" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-xs);padding:3px 8px;font-family:var(--font-mono);font-size:12px;">
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200" selected>200</option>
+          <option value="500">500</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="theme-label" id="themeLabel"></div>
 
 <script>
@@ -457,13 +888,16 @@ const authSubmit = document.getElementById('auth-submit');
 let eventSource = null;
 let lastEventId = '';
 let totalCount = 0;
+let eventCountDirty = false;
 let authToken = localStorage.getItem('tr-engine-token') || '';
 let everConnected = false;
 
-// Active calls: call_id -> { data, row, startTime, fading }
+// Active calls: call_id -> { data, row, startTimeMs, fading, lastAudioTime, lastElapsedText, panDot, wasAudioActive }
 const activeChannels = new Map();
 // Seen systems for filter dropdown
 const seenSystems = new Map(); // system_id -> system_name
+// Talkgroup metadata cache: "system_id:tgid" -> { alpha_tag, description, group, tag }
+const tgCache = new Map();
 
 function setStatus(state, text) {
   statusDot.className = 'status-dot ' + state;
@@ -478,22 +912,19 @@ function formatTime(ts) {
   return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function formatElapsed(startTime) {
-  if (!startTime) return '';
-  const now = Date.now();
-  const start = new Date(startTime).getTime();
-  if (isNaN(start)) return '';
-  const secs = Math.max(0, Math.floor((now - start) / 1000));
+function parseStartTimeMs(startTime) {
+  if (!startTime) return 0;
+  var t = new Date(startTime).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+function formatElapsedMs(startMs) {
+  if (!startMs) return '';
+  var secs = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
   if (secs < 60) return secs + 's';
-  if (secs < 3600) {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return m + ':' + String(s).padStart(2, '0');
-  }
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = secs % 60;
-  return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  if (secs < 3600) return Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+  var h = Math.floor(secs / 3600);
+  return h + ':' + String(Math.floor((secs % 3600) / 60)).padStart(2, '0') + ':' + String(secs % 60).padStart(2, '0');
 }
 
 function mapAudioType(audioType) {
@@ -599,6 +1030,40 @@ function buildChannelCells(d, entry) {
 
   const cells = [];
 
+  // Speaker icon (audio mute toggle)
+  const cSpk = document.createElement('td');
+  cSpk.style.textAlign = 'center';
+  if (d.tgid != null) {
+    const spk = document.createElement('button');
+    spk.className = 'spk-btn';
+    spk.dataset.tgid = String(d.tgid);
+    var isMuted = window._omniAudio && window._omniAudio.isMuted(d.tgid);
+    spk.textContent = isMuted ? '\uD83D\uDD07' : '\uD83D\uDD0A';
+    if (isMuted) spk.classList.add('muted');
+    spk.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (window._omniAudio) window._omniAudio.toggleMute(d.tgid);
+    });
+    cSpk.appendChild(spk);
+  }
+  cells.push(cSpk);
+
+  // Pan indicator
+  const cPan = document.createElement('td');
+  cPan.style.textAlign = 'center';
+  cPan.className = 'pan-cell';
+  const panBar = document.createElement('span');
+  panBar.className = 'pan-indicator';
+  const panCenter = document.createElement('span');
+  panCenter.className = 'pan-center';
+  panBar.appendChild(panCenter);
+  const panDot = document.createElement('span');
+  panDot.className = 'pan-dot';
+  panDot.style.left = '14px'; // center default
+  panBar.appendChild(panDot);
+  cPan.appendChild(panBar);
+  cells.push(cPan);
+
   // System
   const c0 = document.createElement('td');
   c0.textContent = getSystemName(d);
@@ -635,7 +1100,7 @@ function buildChannelCells(d, entry) {
   // Elapsed
   const c6 = document.createElement('td');
   c6.className = 'elapsed-cell';
-  c6.textContent = formatElapsed(entry.startTime);
+  c6.textContent = formatElapsedMs(entry.startTimeMs);
   cells.push(c6);
 
   // Mode
@@ -663,11 +1128,29 @@ function addActiveChannel(data) {
 
   trackSystem(data);
 
+  // Check if an audio-generated row already exists for this tgid — promote it
+  if (data.tgid && data.system_id) {
+    var audioKey = 'audio-' + data.system_id + '-' + data.tgid;
+    var audioEntry = activeChannels.get(audioKey);
+    if (audioEntry && !audioEntry.fading) {
+      // Promote: remove old key, re-key under call_id with richer data
+      activeChannels.delete(audioKey);
+      audioEntry.data = data;
+      audioEntry.startTimeMs = parseStartTimeMs(data.start_time) || audioEntry.startTimeMs;
+      audioEntry.row.dataset.callId = String(callId);
+      renderChannelRow(audioEntry);
+      applyChannelSystemFilter(audioEntry);
+      activeChannels.set(callId, audioEntry);
+      updateChannelsEmptyState();
+      return;
+    }
+  }
+
   let entry = activeChannels.get(callId);
   if (entry) {
     // Update existing row — cancel fade if re-activated
     entry.data = data;
-    entry.startTime = data.start_time || entry.startTime;
+    entry.startTimeMs = parseStartTimeMs(data.start_time) || entry.startTimeMs;
     entry.fading = false;
     entry.row.classList.remove('fading');
     entry.row.style.opacity = '';
@@ -682,10 +1165,60 @@ function addActiveChannel(data) {
   row.dataset.callId = String(callId);
   if (data.system_id) row.dataset.systemId = String(data.system_id);
 
-  entry = { data: data, row: row, startTime: data.start_time, fading: false, elapsedCell: null };
+  entry = { data: data, row: row, startTimeMs: parseStartTimeMs(data.start_time), fading: false, elapsedCell: null, panDot: null, wasAudioActive: false, lastAudioTime: 0, lastElapsedText: '' };
   activeChannels.set(callId, entry);
   renderChannelRow(entry);
   entry.elapsedCell = row.querySelector('.elapsed-cell');
+  entry.panDot = row.querySelector('.pan-dot');
+  applyChannelSystemFilter(entry);
+
+  channelsBody.appendChild(row);
+  updateChannelsEmptyState();
+}
+
+// Create a channel row from audio frames (no MQTT required)
+function addAudioChannel(tgid, systemId) {
+  var channelKey = 'audio-' + systemId + '-' + tgid;
+
+  // Already exists (audio-keyed or real call_id with same tgid)?
+  if (activeChannels.has(channelKey)) {
+    var existing = activeChannels.get(channelKey);
+    existing.lastAudioTime = Date.now();
+    return;
+  }
+  // Check if a real call_id entry already covers this tgid
+  for (var e of activeChannels.values()) {
+    if (e.data.tgid === tgid && e.data.system_id === systemId && !e.fading) {
+      e.lastAudioTime = Date.now();
+      return;
+    }
+  }
+
+  // Look up metadata from talkgroup cache
+  var meta = tgCache.get(systemId + ':' + tgid) || {};
+  var sysName = systemNames.get(systemId) || 'sys-' + systemId;
+
+  var data = {
+    call_id: channelKey,
+    system_id: systemId,
+    system_name: sysName,
+    tgid: tgid,
+    tg_alpha_tag: meta.alpha_tag || '',
+    start_time: new Date().toISOString(),
+  };
+
+  trackSystem(data);
+
+  var row = document.createElement('tr');
+  row.className = 'channel-row';
+  row.dataset.callId = channelKey;
+  row.dataset.systemId = String(systemId);
+
+  var entry = { data: data, row: row, startTimeMs: parseStartTimeMs(data.start_time), fading: false, elapsedCell: null, panDot: null, wasAudioActive: false, lastAudioTime: Date.now(), lastElapsedText: '' };
+  activeChannels.set(channelKey, entry);
+  renderChannelRow(entry);
+  entry.elapsedCell = row.querySelector('.elapsed-cell');
+  entry.panDot = row.querySelector('.pan-dot');
   applyChannelSystemFilter(entry);
 
   channelsBody.appendChild(row);
@@ -702,15 +1235,60 @@ function renderChannelRow(entry) {
     row.classList.remove('emergency');
   }
 
-  // Clear existing cells
-  while (row.firstChild) row.removeChild(row.firstChild);
-
-  // Build cells using safe DOM methods
-  const cells = buildChannelCells(d, entry);
-  for (const cell of cells) {
-    row.appendChild(cell);
+  // First render: build all cells
+  if (!row.firstChild) {
+    const cells = buildChannelCells(d, entry);
+    for (const cell of cells) {
+      row.appendChild(cell);
+    }
+    entry.elapsedCell = row.querySelector('.elapsed-cell');
+    entry.panDot = row.querySelector('.pan-dot');
+    return;
   }
-  entry.elapsedCell = row.querySelector('.elapsed-cell');
+
+  // Subsequent renders: update changed cells in-place (skip full teardown)
+  const ch = row.children;
+  if (ch.length < 11) {
+    // Fallback: full rebuild if unexpected structure
+    while (row.firstChild) row.removeChild(row.firstChild);
+    const cells = buildChannelCells(d, entry);
+    for (const cell of cells) row.appendChild(cell);
+    entry.elapsedCell = row.querySelector('.elapsed-cell');
+    entry.panDot = row.querySelector('.pan-dot');
+    return;
+  }
+  // Update speaker icon (col 0)
+  var spk = ch[0].querySelector('.spk-btn');
+  if (spk && d.tgid != null) {
+    var isMuted = window._omniAudio && window._omniAudio.isMuted(d.tgid);
+    spk.textContent = isMuted ? '\uD83D\uDD07' : '\uD83D\uDD0A';
+    if (isMuted) spk.classList.add('muted'); else spk.classList.remove('muted');
+  }
+  // col 1 (pan) - no update needed
+  // col 2 (system) - rarely changes
+  var sysName = getSystemName(d);
+  if (ch[2].textContent !== sysName) ch[2].textContent = sysName;
+  // col 3 (freq)
+  var freq = d.freq ? (d.freq / 1e6).toFixed(4) : '';
+  if (ch[3].textContent !== freq) ch[3].textContent = freq;
+  // col 4 (tgid)
+  var tgStr = d.tgid != null ? String(d.tgid) : '';
+  if (ch[4].textContent !== tgStr) ch[4].textContent = tgStr;
+  // col 5 (alpha tag)
+  var alpha = d.tg_alpha_tag || '';
+  if (ch[5].textContent !== alpha) ch[5].textContent = alpha;
+  // col 6 (source unit)
+  var unitStr = d.unit != null ? String(d.unit) : '';
+  var unitSpan = ch[6].querySelector('.val');
+  if (unitSpan && unitSpan.textContent !== unitStr) unitSpan.textContent = unitStr;
+  // col 7 (unit alias)
+  var unitAlias = d.unit_alpha_tag || '';
+  if (ch[7].textContent !== unitAlias) ch[7].textContent = unitAlias;
+  // col 8 (elapsed) - handled by timer
+  // col 9 (mode)
+  var mode = mapAudioType(d.audio_type);
+  if (ch[9].textContent !== mode) ch[9].textContent = mode;
+  // col 10 (encryption) - skip, rarely changes
 }
 
 function removeActiveChannel(data) {
@@ -824,7 +1402,7 @@ function addActivityRow(eventType, data) {
   if (!matchesSystemFilter(data)) return;
 
   totalCount++;
-  eventCountEl.textContent = totalCount;
+  if (!eventCountDirty) { eventCountDirty = true; requestAnimationFrame(function() { eventCountEl.textContent = totalCount; eventCountDirty = false; }); }
 
   const row = buildActivityRow(eventType, data);
   activityBody.insertBefore(row, activityBody.firstChild);
@@ -841,15 +1419,7 @@ function addActivityRow(eventType, data) {
   }
 }
 
-// ── Elapsed Timer ──
-setInterval(function() {
-  for (const entry of activeChannels.values()) {
-    if (entry.fading) continue;
-    if (entry.elapsedCell) {
-      entry.elapsedCell.textContent = formatElapsed(entry.startTime);
-    }
-  }
-}, 1000);
+// Elapsed timer merged into unified update loop below (audio status poll)
 
 // ── System Filter ──
 systemFilter.addEventListener('change', function() {
@@ -995,7 +1565,550 @@ fetch('/api/v1/systems')
   })
   .catch(function() { /* ignore — fallback to sys-N */ });
 
+// Fetch talkgroup metadata cache for audio-driven channel creation
+fetch('/api/v1/talkgroups?limit=5000')
+  .then(function(r) { return r.ok ? r.json() : {}; })
+  .then(function(resp) {
+    var tgs = resp.talkgroups || resp;
+    if (Array.isArray(tgs)) {
+      for (var i = 0; i < tgs.length; i++) {
+        var tg = tgs[i];
+        var sysId = tg.system_id;
+        var tgid = tg.tgid;
+        if (sysId && tgid) {
+          tgCache.set(sysId + ':' + tgid, {
+            alpha_tag: tg.alpha_tag || '',
+            description: tg.description || '',
+            group: tg.group || '',
+            tag: tg.tag || '',
+          });
+        }
+      }
+    }
+  })
+  .catch(function() { /* ignore — audio channels will show without metadata */ });
+
 connect();
+
+// ── Stale Row Cleanup (15s) ──
+// SSE and WebSocket audio handle all additions. This only removes rows that got stuck.
+setInterval(function() {
+  var now = Date.now();
+  var toRemove = [];
+  for (var pair of activeChannels) {
+    var key = pair[0];
+    var ent = pair[1];
+    if (ent.fading) continue;
+
+    var age = ent.startTimeMs ? now - ent.startTimeMs : 0;
+    var hasRecentAudio = ent.lastAudioTime && (now - ent.lastAudioTime < 10000);
+
+    // Remove rows older than 5 minutes with no recent audio
+    if (age > 300000 && !hasRecentAudio) {
+      toRemove.push(key);
+    }
+  }
+
+  for (var r = 0; r < toRemove.length; r++) {
+    var staleEntry = activeChannels.get(toRemove[r]);
+    if (staleEntry) {
+      staleEntry.fading = true;
+      staleEntry.row.classList.add('fading');
+      (function(k, e) {
+        setTimeout(function() {
+          if (e.row.parentNode) e.row.parentNode.removeChild(e.row);
+          activeChannels.delete(k);
+          updateChannelsEmptyState();
+        }, 5000);
+      })(toRemove[r], staleEntry);
+    }
+  }
+  if (toRemove.length) updateChannelsEmptyState();
+}, 15000);
+</script>
+<script src="audio-engine.js"></script>
+<script>
+// ── Live Audio Integration ──
+(function() {
+  const listenToggle = document.getElementById('listen-toggle');
+  const listenLabel = document.getElementById('listen-label');
+  const audioControls = document.getElementById('audio-controls');
+  const masterVol = document.getElementById('master-vol');
+  const autoPanToggle = document.getElementById('auto-pan-toggle');
+  const audioStatusEl = document.getElementById('audio-status');
+
+  let engine = null;
+  let listening = false;
+  const selectedTGs = new Set(); // selected TGs play audio (inverted from old muted model)
+
+  // Settings drawer refs
+  const settingsOverlay = document.getElementById('settings-overlay');
+  const settingsPanel = document.getElementById('settings-panel');
+  const settingsBtn = document.getElementById('settings-btn');
+  const settingsClose = document.getElementById('settings-close');
+  const tgSearchInput = document.getElementById('tg-search');
+  const tgListEl = document.getElementById('tg-list');
+  const tgCountEl = document.getElementById('tg-count');
+  const tgSelectAllBtn = document.getElementById('tg-select-all');
+  const tgSelectNoneBtn = document.getElementById('tg-select-none');
+  const setVolumeEl = document.getElementById('set-volume');
+  const setAutoPanEl = document.getElementById('set-auto-pan');
+  const setBufferSizeEl = document.getElementById('set-buffer-size');
+
+  // ── Persist / Restore Settings ──
+  function loadSettings() {
+    try {
+      var saved = JSON.parse(localStorage.getItem('omni-settings') || '{}');
+      if (saved.volume != null) { masterVol.value = saved.volume; setVolumeEl.value = saved.volume; }
+      if (Array.isArray(saved.selected)) saved.selected.forEach(function(t) { selectedTGs.add(t); });
+      if (saved.autoPan === false) autoPanToggle.checked = false;
+      if (saved.bufferSize) { bufferSizeSelect.value = saved.bufferSize; setBufferSizeEl.value = saved.bufferSize; }
+      if (Array.isArray(saved.hiddenColumns)) {
+        saved.hiddenColumns.forEach(function(col) {
+          document.body.classList.add('hide-col-' + col);
+          var toggle = document.getElementById('col-' + col);
+          if (toggle) toggle.checked = false;
+        });
+      }
+    } catch (e) {}
+  }
+
+  function saveSettings() {
+    try {
+      var obj = {
+        volume: parseInt(masterVol.value),
+        selected: Array.from(selectedTGs),
+        autoPan: autoPanToggle.checked,
+        bufferSize: bufferSizeSelect.value,
+        hiddenColumns: getHiddenColumns()
+      };
+      localStorage.setItem('omni-settings', JSON.stringify(obj));
+    } catch (e) {}
+  }
+
+  function saveSelectedState() {
+    saveSettings();
+    updateTGCount();
+    updateTGListChecks();
+  }
+
+  function getHiddenColumns() {
+    var cols = [];
+    var toggles = document.querySelectorAll('[data-col]');
+    for (var i = 0; i < toggles.length; i++) {
+      if (!toggles[i].checked) cols.push(toggles[i].dataset.col);
+    }
+    return cols;
+  }
+
+  // Load on init
+  loadSettings();
+
+  // ── Audio status helpers ──
+  var lastAudioStatusText = '', lastAudioStatusCls = '';
+  function setAudioStatus(text, cls) {
+    if (text === lastAudioStatusText && cls === lastAudioStatusCls) return;
+    lastAudioStatusText = text;
+    lastAudioStatusCls = cls;
+    audioStatusEl.textContent = text;
+    audioStatusEl.className = 'audio-status' + (cls ? ' ' + cls : '');
+  }
+
+  function updateTGCount() {
+    tgCountEl.textContent = selectedTGs.size + ' selected';
+  }
+  updateTGCount();
+
+  function getSubscribeFilter() {
+    var sel = getSelectedSystem();
+    return sel ? { systems: [parseInt(sel)] } : {};
+  }
+
+  // ── Audio engine lifecycle ──
+  async function startListening() {
+    if (engine) return;
+    engine = new AudioEngine();
+
+    engine.on('status', function(s) {
+      // status is handled by the 250ms poll below
+    });
+
+    engine.on('error', function() {
+      setAudioStatus('error');
+    });
+
+    engine.on('tg_created', function(ev) {
+      // Selection model: mute everything not in selectedTGs
+      engine.setMute(ev.tgid, !selectedTGs.has(ev.tgid));
+      // Create channel row from audio frame (works without MQTT)
+      if (ev.tgid && ev.systemId) {
+        addAudioChannel(ev.tgid, ev.systemId);
+      }
+      highlightAudioTG(ev.tgid, true);
+    });
+
+    engine.on('tg_removed', function(ev) {
+      highlightAudioTG(ev.tgid, false);
+    });
+
+    await engine.start();
+    engine.setMasterVolume(parseInt(masterVol.value) / 100);
+    engine.setAutoPan(autoPanToggle.checked);
+    setAutoPanEl.checked = autoPanToggle.checked;
+    var sel = getSelectedSystem();
+    engine.subscribe(sel ? { systems: [parseInt(sel)] } : {});
+
+    listening = true;
+    listenToggle.classList.add('active');
+    listenLabel.textContent = 'LISTENING';
+    audioControls.classList.add('visible');
+    setAudioStatus('connecting...');
+  }
+
+  function stopListening() {
+    if (engine) {
+      engine.stop();
+      engine = null;
+    }
+    listening = false;
+    listenToggle.classList.remove('active');
+    listenLabel.textContent = 'LISTEN';
+    audioControls.classList.remove('visible');
+    setAudioStatus('--');
+
+    var rows = document.querySelectorAll('.channel-row.audio-active');
+    for (var i = 0; i < rows.length; i++) rows[i].classList.remove('audio-active');
+  }
+
+  listenToggle.addEventListener('click', function() {
+    if (listening) stopListening(); else startListening();
+  });
+
+  // ── Volume + pan controls (toolbar) ──
+  masterVol.addEventListener('input', function() {
+    if (engine) engine.setMasterVolume(parseInt(masterVol.value) / 100);
+    setVolumeEl.value = masterVol.value;
+    saveSettings();
+  });
+
+  autoPanToggle.addEventListener('change', function() {
+    if (engine) engine.setAutoPan(autoPanToggle.checked);
+    setAutoPanEl.checked = autoPanToggle.checked;
+    saveSettings();
+  });
+
+  // ── Highlight channel rows with active audio ──
+  function highlightAudioTG(tgid, active) {
+    for (var entry of activeChannels.values()) {
+      if (entry.data.tgid === tgid) {
+        if (active) entry.row.classList.add('audio-active');
+        else entry.row.classList.remove('audio-active');
+      }
+    }
+  }
+
+  // Update subscription when system filter changes
+  systemFilter.addEventListener('change', function() {
+    if (engine && listening) {
+      engine.subscribe(getSubscribeFilter());
+    }
+  });
+
+  // ── Expose for buildChannelCells (selection model) ──
+  window._omniAudio = {
+    isListening: function() { return listening; },
+    isMuted: function(tgid) { return !selectedTGs.has(tgid); },
+    toggleMute: function(tgid) {
+      if (selectedTGs.has(tgid)) {
+        selectedTGs.delete(tgid);
+        if (engine) engine.setMute(tgid, true);
+      } else {
+        selectedTGs.add(tgid);
+        if (engine) engine.setMute(tgid, false);
+      }
+      saveSelectedState();
+      // Update speaker icons for all rows with this tgid
+      updateSpeakerIcon(tgid);
+    }
+  };
+
+  // ── Unified update loop (250ms audio poll + 1s elapsed timer) ──
+  // Batches all periodic DOM writes into a single requestAnimationFrame per tick.
+  var lastElapsedTick = 0;
+  setInterval(function() {
+    var now = Date.now();
+    var doElapsed = (now - lastElapsedTick >= 1000);
+
+    // Audio poll (only when engine active)
+    var tgActivity = null, tgPan = null;
+    if (engine && listening) {
+      var active = engine.getActiveTGs();
+      tgActivity = new Map();
+      tgPan = new Map();
+      for (var i = 0; i < active.length; i++) {
+        tgActivity.set(active[i].tgid, active[i].lastActivity);
+        tgPan.set(active[i].tgid, active[i].pan);
+      }
+    }
+
+    // Batch all DOM writes into one rAF
+    requestAnimationFrame(function() {
+      var voiceCount = 0;
+      for (var entry of activeChannels.values()) {
+        if (entry.fading) continue;
+
+        // Elapsed timer (1s throttle)
+        if (doElapsed && entry.elapsedCell) {
+          var txt = formatElapsedMs(entry.startTimeMs);
+          if (txt !== entry.lastElapsedText) {
+            entry.lastElapsedText = txt;
+            entry.elapsedCell.textContent = txt;
+          }
+        }
+
+        // Audio activity + pan (only when engine running)
+        if (tgActivity && entry.row.style.display !== 'none') {
+          var lastAct = tgActivity.get(entry.data.tgid);
+          var hasVoice = !!(lastAct && (now - lastAct < 500));
+          if (hasVoice !== entry.wasAudioActive) {
+            entry.wasAudioActive = hasVoice;
+            if (hasVoice) entry.row.classList.add('audio-active');
+            else entry.row.classList.remove('audio-active');
+          }
+          if (hasVoice) {
+            entry.lastAudioTime = now;
+            voiceCount++;
+          }
+          var panVal = tgPan.get(entry.data.tgid);
+          if (panVal !== undefined && entry.panDot) {
+            var newLeft = (14 + panVal * 14) + 'px';
+            if (entry.panDot.style.left !== newLeft) entry.panDot.style.left = newLeft;
+          }
+        }
+      }
+
+      // Status text (skip if unchanged)
+      if (tgActivity) {
+        var selCount = selectedTGs.size;
+        if (voiceCount > 0) {
+          setAudioStatus(voiceCount + ' active (' + selCount + ' selected)', 'streaming');
+        } else if (selCount > 0) {
+          setAudioStatus('idle (' + selCount + ' selected)', '');
+        } else {
+          setAudioStatus('idle (none selected)', '');
+        }
+      }
+    });
+
+    if (doElapsed) lastElapsedTick = now;
+
+    // TG lifecycle (outside rAF — these trigger addAudioChannel which does its own DOM work)
+    if (engine && listening) {
+      var active = engine.getActiveTGs();
+      for (var j = 0; j < active.length; j++) {
+        if (now - active[j].lastActivity > 30000) {
+          engine._removeTG(active[j].tgid);
+        } else if (now - active[j].lastActivity < 3000 && active[j].systemId) {
+          addAudioChannel(active[j].tgid, active[j].systemId);
+        }
+      }
+    }
+  }, 250);
+
+  // ═══════════════════════════════════════════════════════════════
+  // SETTINGS DRAWER
+  // ═══════════════════════════════════════════════════════════════
+
+  function openSettings() {
+    renderTGList();
+    settingsOverlay.classList.add('open');
+    settingsPanel.classList.add('open');
+  }
+
+  function closeSettings() {
+    settingsOverlay.classList.remove('open');
+    settingsPanel.classList.remove('open');
+  }
+
+  settingsBtn.addEventListener('click', openSettings);
+  settingsClose.addEventListener('click', closeSettings);
+  settingsOverlay.addEventListener('click', closeSettings);
+
+  // ── TG List Rendering ──
+  function renderTGList(filter) {
+    while (tgListEl.firstChild) tgListEl.removeChild(tgListEl.firstChild);
+    var filterLower = (filter || tgSearchInput.value || '').toLowerCase();
+
+    // Group TGs by system
+    var bySystem = new Map();
+    for (var pair of tgCache) {
+      var parts = pair[0].split(':');
+      var sysId = parseInt(parts[0]);
+      var tgid = parseInt(parts[1]);
+      var meta = pair[1];
+      // Apply search filter
+      if (filterLower) {
+        var matchesTgid = String(tgid).indexOf(filterLower) !== -1;
+        var matchesTag = (meta.alpha_tag || '').toLowerCase().indexOf(filterLower) !== -1;
+        if (!matchesTgid && !matchesTag) continue;
+      }
+      if (!bySystem.has(sysId)) bySystem.set(sysId, []);
+      bySystem.get(sysId).push({ tgid: tgid, alpha_tag: meta.alpha_tag || '', group: meta.group || '' });
+    }
+
+    // Sort systems and TGs
+    var sortedSystems = Array.from(bySystem.keys()).sort(function(a, b) { return a - b; });
+    for (var s = 0; s < sortedSystems.length; s++) {
+      var sid = sortedSystems[s];
+      var sysName = systemNames.get(sid) || 'System ' + sid;
+      var tgs = bySystem.get(sid);
+      tgs.sort(function(a, b) { return a.tgid - b.tgid; });
+
+      // System header
+      var header = document.createElement('div');
+      header.className = 'tg-system-header';
+      header.textContent = sysName + ' (' + tgs.length + ')';
+      tgListEl.appendChild(header);
+
+      // TG items
+      for (var t = 0; t < tgs.length; t++) {
+        var tg = tgs[t];
+        var item = document.createElement('div');
+        item.className = 'tg-item';
+        item.dataset.tgid = String(tg.tgid);
+
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = selectedTGs.has(tg.tgid);
+        item.appendChild(cb);
+
+        var tgidSpan = document.createElement('span');
+        tgidSpan.className = 'tg-item-tgid';
+        tgidSpan.textContent = String(tg.tgid);
+        item.appendChild(tgidSpan);
+
+        var tagSpan = document.createElement('span');
+        tagSpan.className = 'tg-item-tag';
+        tagSpan.textContent = tg.alpha_tag || '\u2014';
+        item.appendChild(tagSpan);
+
+        // Click handler (closure for tgid)
+        (function(tgid, checkbox) {
+          item.addEventListener('click', function(e) {
+            if (e.target === checkbox) {
+              // Checkbox clicked directly — use its new state
+              if (checkbox.checked) selectedTGs.add(tgid);
+              else selectedTGs.delete(tgid);
+            } else {
+              // Row clicked — toggle
+              if (selectedTGs.has(tgid)) {
+                selectedTGs.delete(tgid);
+                checkbox.checked = false;
+              } else {
+                selectedTGs.add(tgid);
+                checkbox.checked = true;
+              }
+            }
+            if (engine) engine.setMute(tgid, !selectedTGs.has(tgid));
+            saveSelectedState();
+            updateSpeakerIcon(tgid);
+          });
+        })(tg.tgid, cb);
+
+        tgListEl.appendChild(item);
+      }
+    }
+
+    if (tgListEl.children.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'padding:16px;text-align:center;color:var(--text-faint);font-size:12px;';
+      empty.textContent = tgCache.size === 0 ? 'No talkgroups loaded yet' : 'No matches';
+      tgListEl.appendChild(empty);
+    }
+  }
+
+  function updateSpeakerIcon(tgid) {
+    var rows = document.querySelectorAll('.channel-row');
+    for (var i = 0; i < rows.length; i++) {
+      var spk = rows[i].querySelector('.spk-btn');
+      if (spk && parseInt(spk.dataset.tgid) === tgid) {
+        var muted = !selectedTGs.has(tgid);
+        spk.textContent = muted ? '\uD83D\uDD07' : '\uD83D\uDD0A';
+        spk.classList.toggle('muted', muted);
+      }
+    }
+  }
+
+  function updateTGListChecks() {
+    var items = tgListEl.querySelectorAll('.tg-item');
+    for (var i = 0; i < items.length; i++) {
+      var tgid = parseInt(items[i].dataset.tgid);
+      var cb = items[i].querySelector('input[type="checkbox"]');
+      if (cb) cb.checked = selectedTGs.has(tgid);
+    }
+  }
+
+  // Search filter
+  tgSearchInput.addEventListener('input', function() {
+    renderTGList(tgSearchInput.value.trim());
+  });
+
+  // Select All / None
+  tgSelectAllBtn.addEventListener('click', function() {
+    for (var pair of tgCache) {
+      var tgid = parseInt(pair[0].split(':')[1]);
+      selectedTGs.add(tgid);
+      if (engine) engine.setMute(tgid, false);
+    }
+    saveSelectedState();
+    renderTGList(tgSearchInput.value.trim());
+  });
+
+  tgSelectNoneBtn.addEventListener('click', function() {
+    var prev = Array.from(selectedTGs);
+    selectedTGs.clear();
+    for (var i = 0; i < prev.length; i++) {
+      if (engine) engine.setMute(prev[i], true);
+      updateSpeakerIcon(prev[i]);
+    }
+    saveSelectedState();
+    renderTGList(tgSearchInput.value.trim());
+  });
+
+  // ── Settings drawer: Audio controls ──
+  setVolumeEl.addEventListener('input', function() {
+    masterVol.value = setVolumeEl.value;
+    if (engine) engine.setMasterVolume(parseInt(setVolumeEl.value) / 100);
+    saveSettings();
+  });
+
+  setAutoPanEl.addEventListener('change', function() {
+    autoPanToggle.checked = setAutoPanEl.checked;
+    if (engine) engine.setAutoPan(setAutoPanEl.checked);
+    saveSettings();
+  });
+
+  // ── Settings drawer: Buffer size ──
+  setBufferSizeEl.addEventListener('change', function() {
+    bufferSizeSelect.value = setBufferSizeEl.value;
+    bufferSizeSelect.dispatchEvent(new Event('change'));
+    saveSettings();
+  });
+
+  // ── Settings drawer: Column visibility ──
+  var colToggles = document.querySelectorAll('[data-col]');
+  for (var ci = 0; ci < colToggles.length; ci++) {
+    colToggles[ci].addEventListener('change', function() {
+      var col = this.dataset.col;
+      if (this.checked) {
+        document.body.classList.remove('hide-col-' + col);
+      } else {
+        document.body.classList.add('hide-col-' + col);
+      }
+      saveSettings();
+    });
+  }
+})();
 </script>
 <script src="theme-engine.js?v=2"></script>
 </body>
