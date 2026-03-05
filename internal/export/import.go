@@ -52,8 +52,10 @@ func ImportMetadata(ctx context.Context, db *database.DB, r io.Reader, opts Impo
 	defer gz.Close()
 	tr := tar.NewReader(gz)
 
-	// Read all files into memory (metadata is small, typically <10MB)
+	// Read files from archive. Audio files are extracted to disk (they can be
+	// several GB total); all other entries are small metadata and loaded into memory.
 	files := make(map[string][]byte)
+	var audioExtracted, audioSkipped int
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -62,6 +64,38 @@ func ImportMetadata(ctx context.Context, db *database.DB, r io.Reader, opts Impo
 		if err != nil {
 			return nil, fmt.Errorf("read tar: %w", err)
 		}
+
+		// Extract audio files to disk instead of loading into memory
+		if strings.HasPrefix(hdr.Name, "audio/") && hdr.Typeflag == tar.TypeReg {
+			if opts.AudioDir != "" && !opts.DryRun {
+				relPath := strings.TrimPrefix(hdr.Name, "audio/")
+				destPath := filepath.Join(opts.AudioDir, filepath.FromSlash(relPath))
+				// Create parent directories
+				if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+					log.Warn().Err(err).Str("path", relPath).Msg("failed to create audio directory")
+					continue
+				}
+				// Skip if file already exists (idempotent)
+				if _, err := os.Stat(destPath); err == nil {
+					audioSkipped++
+					continue
+				}
+				outFile, err := os.Create(destPath)
+				if err != nil {
+					log.Warn().Err(err).Str("path", relPath).Msg("failed to extract audio file")
+					continue
+				}
+				if _, err := io.Copy(outFile, tr); err != nil {
+					outFile.Close()
+					log.Warn().Err(err).Str("path", relPath).Msg("failed to write audio file")
+					continue
+				}
+				outFile.Close()
+				audioExtracted++
+			}
+			continue
+		}
+
 		data, err := io.ReadAll(tr)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", hdr.Name, err)
@@ -137,6 +171,10 @@ func ImportMetadata(ctx context.Context, db *database.DB, r io.Reader, opts Impo
 		if _, err := db.RefreshTalkgroupStatsCold(ctx); err != nil {
 			log.Warn().Err(err).Msg("post-import: cold stats refresh failed")
 		}
+	}
+
+	if audioExtracted > 0 || audioSkipped > 0 {
+		log.Info().Int("extracted", audioExtracted).Int("skipped", audioSkipped).Msg("audio file import")
 	}
 
 	return result, nil

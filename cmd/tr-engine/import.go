@@ -20,6 +20,7 @@ func runImport(args []string, overrides config.Overrides) {
 	file := fs.String("file", "", "Archive file path (required)")
 	mode := fs.String("mode", "metadata", "Import mode: full, metadata, calls")
 	dryRun := fs.Bool("dry-run", false, "Show what would be imported without making changes")
+	audioDir := fs.String("audio-dir", "", "Directory to extract audio files to (default: from config AUDIO_DIR)")
 	fs.StringVar(&overrides.EnvFile, "env-file", overrides.EnvFile, "Path to .env file")
 	fs.StringVar(&overrides.DatabaseURL, "database-url", overrides.DatabaseURL, "PostgreSQL connection URL")
 	fs.Parse(args)
@@ -65,9 +66,16 @@ func runImport(args []string, overrides config.Overrides) {
 	}
 	defer f.Close()
 
+	// Determine audio directory
+	importAudioDir := *audioDir
+	if importAudioDir == "" {
+		importAudioDir = cfg.AudioDir
+	}
+
 	opts := export.ImportOptions{
-		Mode:   *mode,
-		DryRun: *dryRun,
+		Mode:     *mode,
+		DryRun:   *dryRun,
+		AudioDir: importAudioDir,
 	}
 
 	action := "importing"
