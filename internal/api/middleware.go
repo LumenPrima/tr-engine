@@ -149,7 +149,8 @@ func ResponseTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip streaming endpoints
 			if strings.HasSuffix(r.URL.Path, "/events/stream") ||
-				strings.HasSuffix(r.URL.Path, "/audio") {
+				strings.HasSuffix(r.URL.Path, "/audio") ||
+				strings.HasSuffix(r.URL.Path, "/audio/live") {
 				next.ServeHTTP(w, r)
 				return
 			}

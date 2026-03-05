@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"time"
+
+	"github.com/snarg/tr-engine/internal/audio"
 )
 
 // LiveDataSource provides real-time data from the ingest pipeline to the API layer.
@@ -215,6 +217,23 @@ type MaintenanceRunData struct {
 type DecimationResult struct {
 	Phase1Deleted int64 `json:"phase1_deleted"`
 	Phase2Deleted int64 `json:"phase2_deleted"`
+}
+
+// AudioStreamer provides live audio streaming capabilities.
+type AudioStreamer interface {
+	SubscribeAudio(filter audio.AudioFilter) (<-chan audio.AudioFrame, func())
+	UpdateAudioFilter(ch <-chan audio.AudioFrame, filter audio.AudioFilter)
+	AudioStreamEnabled() bool
+	AudioStreamStatus() *AudioStreamStatusData
+}
+
+// AudioStreamStatusData reports the status of the live audio streaming subsystem.
+type AudioStreamStatusData struct {
+	Enabled          bool   `json:"enabled"`
+	Listen           string `json:"listen,omitempty"`
+	ActiveEncoders   int    `json:"active_encoders"`
+	ConnectedClients int    `json:"connected_clients"`
+	LastChunkReceived string `json:"last_chunk_received,omitempty"`
 }
 
 // EventFilter specifies which events an SSE subscriber wants to receive.
