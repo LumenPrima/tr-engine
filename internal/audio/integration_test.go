@@ -15,7 +15,7 @@ func TestEndToEndPCMFlow(t *testing.T) {
 		},
 	}
 
-	router := NewAudioRouter(bus, lookup, 30*time.Second)
+	router := NewAudioRouter(bus, lookup, 30*time.Second, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go router.Run(ctx)

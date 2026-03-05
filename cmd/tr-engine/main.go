@@ -251,6 +251,7 @@ func main() {
 		RetentionStaleCalls:   cfg.RetentionStaleCalls,
 		StreamListen:      cfg.StreamListen,
 		StreamIdleTimeout: cfg.StreamIdleTimeout,
+		StreamOpusBitrate: cfg.StreamOpusBitrate,
 		Store:            store,
 		S3Uploader:       s3Uploader,
 		Log:              log,

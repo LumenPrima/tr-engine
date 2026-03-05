@@ -24,29 +24,35 @@ type activeStream struct {
 }
 
 // AudioRouter receives AudioChunks, resolves identity (shortName to system/site),
-// deduplicates multi-site streams, and publishes AudioFrames to the AudioBus.
+// deduplicates multi-site streams, encodes audio, and publishes AudioFrames to the AudioBus.
 type AudioRouter struct {
-	bus         *AudioBus
-	identity    IdentityLookup
-	idleTimeout time.Duration
-	log         zerolog.Logger
+	bus          *AudioBus
+	identity     IdentityLookup
+	idleTimeout  time.Duration
+	opusBitrate  int // 0 = PCM passthrough, >0 = Opus requested (falls back to PCM if unavailable)
+	log          zerolog.Logger
 
 	input chan AudioChunk
 
 	mu            sync.RWMutex
 	activeStreams map[string]*activeStream // key: "systemID:tgid"
+	encoders      map[string]AudioEncoder  // key: "systemID:tgid"
 }
 
 // NewAudioRouter creates an AudioRouter that resolves identity, deduplicates
-// multi-site streams, and publishes frames to the given AudioBus.
-func NewAudioRouter(bus *AudioBus, identity IdentityLookup, idleTimeout time.Duration) *AudioRouter {
+// multi-site streams, encodes audio, and publishes frames to the given AudioBus.
+// opusBitrate controls encoding: 0 = PCM passthrough, >0 = Opus encoding (falls
+// back to PCM passthrough if Opus is not available in this build).
+func NewAudioRouter(bus *AudioBus, identity IdentityLookup, idleTimeout time.Duration, opusBitrate int) *AudioRouter {
 	return &AudioRouter{
 		bus:           bus,
 		identity:      identity,
 		idleTimeout:   idleTimeout,
+		opusBitrate:   opusBitrate,
 		log:           zerolog.Nop(),
 		input:         make(chan AudioChunk, 256),
 		activeStreams: make(map[string]*activeStream),
+		encoders:      make(map[string]AudioEncoder),
 	}
 }
 
@@ -150,7 +156,22 @@ func (r *AudioRouter) processChunk(chunk AudioChunk) {
 	}
 
 	seq := stream.seq
+
+	// Get or create encoder for this stream.
+	enc, ok := r.encoders[key]
+	if !ok {
+		enc = NewEncoder(chunk.SampleRate, r.opusBitrate, r.log)
+		r.encoders[key] = enc
+	}
 	r.mu.Unlock()
+
+	// Encode audio data.
+	data, format, err := enc.Encode(chunk.Data)
+	if err != nil {
+		r.log.Error().Err(err).Str("key", key).Msg("encoding failed, using raw PCM")
+		data = chunk.Data
+		format = chunk.Format
+	}
 
 	// Build and publish frame.
 	frame := AudioFrame{
@@ -158,14 +179,14 @@ func (r *AudioRouter) processChunk(chunk AudioChunk) {
 		TGID:     chunk.TGID,
 		UnitID:   chunk.UnitID,
 		Seq:      seq,
-		Format:   chunk.Format,
-		Data:     chunk.Data,
+		Format:   format,
+		Data:     data,
 	}
 
 	r.bus.Publish(frame)
 }
 
-// cleanupIdle removes streams that have been idle longer than idleTimeout.
+// cleanupIdle removes streams and their encoders that have been idle longer than idleTimeout.
 func (r *AudioRouter) cleanupIdle() {
 	now := time.Now()
 
@@ -174,6 +195,10 @@ func (r *AudioRouter) cleanupIdle() {
 
 	for key, stream := range r.activeStreams {
 		if now.Sub(stream.lastChunk) > r.idleTimeout {
+			if enc, ok := r.encoders[key]; ok {
+				enc.Close()
+				delete(r.encoders, key)
+			}
 			delete(r.activeStreams, key)
 		}
 	}

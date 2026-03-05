@@ -43,7 +43,7 @@ func TestRouterResolvesIdentity(t *testing.T) {
 			"butco": {systemID: 1, siteID: 10},
 		},
 	}
-	router := NewAudioRouter(bus, mock, 10*time.Second)
+	router := NewAudioRouter(bus, mock, 10*time.Second, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -83,7 +83,7 @@ func TestRouterDropsUnknownSystem(t *testing.T) {
 			"butco": {systemID: 1, siteID: 10},
 		},
 	}
-	router := NewAudioRouter(bus, mock, 10*time.Second)
+	router := NewAudioRouter(bus, mock, 10*time.Second, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -110,7 +110,7 @@ func TestRouterDeduplicatesMultiSite(t *testing.T) {
 			"warco": {systemID: 1, siteID: 20},
 		},
 	}
-	router := NewAudioRouter(bus, mock, 10*time.Second)
+	router := NewAudioRouter(bus, mock, 10*time.Second, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -166,7 +166,7 @@ func TestRouterIdleStreamRelease(t *testing.T) {
 		},
 	}
 	// Use 100ms idle timeout for fast test
-	router := NewAudioRouter(bus, mock, 100*time.Millisecond)
+	router := NewAudioRouter(bus, mock, 100*time.Millisecond, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -220,7 +220,7 @@ func TestRouterActiveStreams(t *testing.T) {
 			"butco": {systemID: 1, siteID: 10},
 		},
 	}
-	router := NewAudioRouter(bus, mock, 10*time.Second)
+	router := NewAudioRouter(bus, mock, 10*time.Second, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
