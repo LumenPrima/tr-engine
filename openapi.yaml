@@ -2408,6 +2408,80 @@ paths:
           $ref: "#/components/responses/InternalError"
 
   # ----------------------------------------------------------
+  # Live Audio (WebSocket)
+  # ----------------------------------------------------------
+  /audio/live:
+    get:
+      operationId: streamAudioLive
+      summary: Live audio stream (WebSocket)
+      description: |
+        WebSocket upgrade endpoint for real-time audio streaming. Clients
+        receive live radio audio as binary frames with a compact header.
+
+        > **Note:** This feature is only available when `STREAM_LISTEN` is
+        > configured to point at a trunk-recorder audio stream source.
+        > Returns 404 when not enabled.
+
+        **Connection lifecycle:**
+        1. Client opens a WebSocket connection to this endpoint.
+        2. Client sends a JSON text frame to subscribe to specific talkgroups:
+           `{"type": "subscribe", "tgids": [1001, 1002], "systems": [1]}`
+        3. Server pushes binary audio frames and JSON control frames.
+        4. Client sends `{"type": "unsubscribe"}` to stop receiving audio.
+
+        **Binary audio frames (server → client):**
+        Each binary frame contains a 12-byte header followed by audio data:
+
+        | Offset | Size | Type | Field |
+        |--------|------|------|-------|
+        | 0–1 | 2 | uint16 BE | system_id |
+        | 2–5 | 4 | uint32 BE | tgid |
+        | 6–9 | 4 | uint32 BE | timestamp (ms since connection) |
+        | 10–11 | 2 | uint16 BE | seq (per-connection sequence number) |
+        | 12+ | variable | bytes | audio data (PCM int16 LE or Opus) |
+
+        **JSON text frames (server → client):**
+        - Keepalive (every 15s): `{"type": "keepalive", "active_streams": 2}`
+        - Call start: `{"type": "call_start", "system_id": 1, "tgid": 9178, ...}`
+        - Call end: `{"type": "call_end", "system_id": 1, "tgid": 9178, ...}`
+
+        **JSON text frames (client → server):**
+        - Subscribe: `{"type": "subscribe", "tgids": [1001, 1002], "systems": [1]}`
+        - Unsubscribe: `{"type": "unsubscribe"}`
+
+      tags: [events]
+      parameters:
+        - name: token
+          in: query
+          description: |
+            Authentication token. Alternative to the `Authorization: Bearer`
+            header for WebSocket connections where custom headers are not
+            supported.
+          schema:
+            type: string
+      responses:
+        "101":
+          description: WebSocket upgrade successful
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Live audio streaming not enabled (STREAM_LISTEN not configured)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Maximum audio stream clients reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ----------------------------------------------------------
   # Pages (Web UI metadata)
   # ----------------------------------------------------------
   /pages:
@@ -4240,6 +4314,32 @@ components:
           type: string
           description: URL to the release page. Only present when an update is available.
           example: "https://github.com/LumenPrima/tr-engine/releases/tag/v0.9.0"
+        audio_stream:
+          type: object
+          description: Live audio streaming status. Only present when STREAM_LISTEN is configured.
+          properties:
+            enabled:
+              type: boolean
+              description: Whether live audio streaming is enabled
+              example: true
+            listen:
+              type: string
+              description: The audio stream source address
+              example: "localhost:9123"
+            active_encoders:
+              type: integer
+              description: Number of active audio encoders (one per talkgroup with active audio)
+              example: 3
+            connected_clients:
+              type: integer
+              description: Number of connected WebSocket clients
+              example: 5
+            last_chunk_received:
+              type: string
+              format: date-time
+              nullable: true
+              description: ISO 8601 timestamp of the last audio chunk received from the stream source. Null if no chunks have been received yet.
+              example: "2026-03-05T14:30:00Z"
 
     # --- Paginated list responses ---
 
