@@ -547,3 +547,174 @@ func (db *DB) RefreshTalkgroupStatsCold(ctx context.Context) (int64, error) {
 	}
 	return tag.RowsAffected(), nil
 }
+
+// TalkgroupExport contains fields needed for export (no stats, no search vectors).
+type TalkgroupExport struct {
+	SystemID       int
+	Tgid           int
+	AlphaTag       string
+	AlphaTagSource string
+	Tag            string
+	Group          string
+	Description    string
+	Mode           string
+	Priority       *int
+	FirstSeen      *time.Time
+	LastSeen       *time.Time
+}
+
+// ExportTalkgroups returns all talkgroups for the given systems, suitable for export.
+func (db *DB) ExportTalkgroups(ctx context.Context, systemIDs []int) ([]TalkgroupExport, error) {
+	// Check if alpha_tag_source column exists (added by migration)
+	hasSource := db.columnExists(ctx, "talkgroups", "alpha_tag_source")
+
+	var query string
+	if hasSource {
+		query = `SELECT system_id, tgid,
+			COALESCE(alpha_tag, ''), COALESCE(alpha_tag_source, ''),
+			COALESCE(tag, ''), COALESCE("group", ''), COALESCE(description, ''),
+			COALESCE(mode, ''), priority, first_seen, last_seen
+			FROM talkgroups WHERE ($1::int[] IS NULL OR system_id = ANY($1))
+			ORDER BY system_id, tgid`
+	} else {
+		query = `SELECT system_id, tgid,
+			COALESCE(alpha_tag, ''), '',
+			COALESCE(tag, ''), COALESCE("group", ''), COALESCE(description, ''),
+			COALESCE(mode, ''), priority, first_seen, last_seen
+			FROM talkgroups WHERE ($1::int[] IS NULL OR system_id = ANY($1))
+			ORDER BY system_id, tgid`
+	}
+
+	rows, err := db.Pool.Query(ctx, query, pqIntArray(systemIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []TalkgroupExport
+	for rows.Next() {
+		var tg TalkgroupExport
+		if err := rows.Scan(
+			&tg.SystemID, &tg.Tgid,
+			&tg.AlphaTag, &tg.AlphaTagSource,
+			&tg.Tag, &tg.Group, &tg.Description,
+			&tg.Mode, &tg.Priority, &tg.FirstSeen, &tg.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, tg)
+	}
+	return result, rows.Err()
+}
+
+// TalkgroupDirectoryExport contains fields needed for directory export.
+type TalkgroupDirectoryExport struct {
+	SystemID    int
+	Tgid        int
+	AlphaTag    string
+	Mode        string
+	Description string
+	Tag         string
+	Category    string
+	Priority    *int
+}
+
+// ExportTalkgroupDirectory returns all directory entries for the given systems.
+// Returns empty slice if the talkgroup_directory table doesn't exist.
+func (db *DB) ExportTalkgroupDirectory(ctx context.Context, systemIDs []int) ([]TalkgroupDirectoryExport, error) {
+	if !db.tableExists(ctx, "talkgroup_directory") {
+		return nil, nil
+	}
+	rows, err := db.Pool.Query(ctx, `
+		SELECT system_id, tgid,
+			COALESCE(alpha_tag, ''), COALESCE(mode, ''),
+			COALESCE(description, ''), COALESCE(tag, ''),
+			COALESCE(category, ''), priority
+		FROM talkgroup_directory
+		WHERE ($1::int[] IS NULL OR system_id = ANY($1))
+		ORDER BY system_id, tgid
+	`, pqIntArray(systemIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []TalkgroupDirectoryExport
+	for rows.Next() {
+		var td TalkgroupDirectoryExport
+		if err := rows.Scan(
+			&td.SystemID, &td.Tgid,
+			&td.AlphaTag, &td.Mode, &td.Description,
+			&td.Tag, &td.Category, &td.Priority,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, td)
+	}
+	return result, rows.Err()
+}
+
+// ImportUpsertTalkgroup upserts a talkgroup from an export archive.
+// Respects alpha_tag_source priority: manual > csv > mqtt > directory.
+// Always enriches empty description/tag/group/mode fields regardless of source priority.
+func (db *DB) ImportUpsertTalkgroup(ctx context.Context, systemID, tgid int,
+	alphaTag, alphaTagSource, tag, group, description, mode string, priority *int,
+	firstSeen, lastSeen *time.Time) error {
+
+	var prioVal *int32
+	if priority != nil {
+		v := int32(*priority)
+		prioVal = &v
+	}
+
+	hasSource := db.columnExists(ctx, "talkgroups", "alpha_tag_source")
+
+	// Convert empty mode to nil so NULL is inserted (respects CHECK constraint)
+	modeVal := pqString(mode)
+
+	if hasSource {
+		_, err := db.Pool.Exec(ctx, `
+			INSERT INTO talkgroups (system_id, tgid, alpha_tag, alpha_tag_source, tag, "group", description, mode, priority, first_seen, last_seen)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			ON CONFLICT (system_id, tgid) DO UPDATE SET
+				alpha_tag = CASE
+					WHEN $4 = 'manual' THEN $3
+					WHEN $4 = 'csv' AND COALESCE(talkgroups.alpha_tag_source, '') NOT IN ('manual') THEN $3
+					WHEN $4 = 'mqtt' AND COALESCE(talkgroups.alpha_tag_source, '') NOT IN ('manual', 'csv') THEN $3
+					WHEN $4 = 'directory' AND COALESCE(talkgroups.alpha_tag_source, '') NOT IN ('manual', 'csv', 'mqtt') THEN $3
+					ELSE talkgroups.alpha_tag
+				END,
+				alpha_tag_source = CASE
+					WHEN $4 = 'manual' THEN $4
+					WHEN $4 = 'csv' AND COALESCE(talkgroups.alpha_tag_source, '') NOT IN ('manual') THEN $4
+					WHEN $4 = 'mqtt' AND COALESCE(talkgroups.alpha_tag_source, '') NOT IN ('manual', 'csv') THEN $4
+					WHEN $4 = 'directory' AND COALESCE(talkgroups.alpha_tag_source, '') NOT IN ('manual', 'csv', 'mqtt') THEN $4
+					ELSE talkgroups.alpha_tag_source
+				END,
+				tag         = COALESCE(NULLIF(talkgroups.tag, ''), NULLIF($5, '')),
+				"group"     = COALESCE(NULLIF(talkgroups."group", ''), NULLIF($6, '')),
+				description = COALESCE(NULLIF(talkgroups.description, ''), NULLIF($7, '')),
+				mode        = COALESCE(talkgroups.mode, $8),
+				priority    = COALESCE(talkgroups.priority, $9),
+				first_seen  = LEAST(talkgroups.first_seen, $10),
+				last_seen   = GREATEST(talkgroups.last_seen, $11)
+		`, systemID, tgid, alphaTag, alphaTagSource, tag, group, description, modeVal, prioVal, firstSeen, lastSeen)
+		return err
+	}
+
+	// Fallback: alpha_tag_source column doesn't exist yet
+	_, err := db.Pool.Exec(ctx, `
+		INSERT INTO talkgroups (system_id, tgid, alpha_tag, tag, "group", description, mode, priority, first_seen, last_seen)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (system_id, tgid) DO UPDATE SET
+			alpha_tag   = COALESCE(NULLIF($3, ''), talkgroups.alpha_tag),
+			tag         = COALESCE(NULLIF(talkgroups.tag, ''), NULLIF($4, '')),
+			"group"     = COALESCE(NULLIF(talkgroups."group", ''), NULLIF($5, '')),
+			description = COALESCE(NULLIF(talkgroups.description, ''), NULLIF($6, '')),
+			mode        = COALESCE(talkgroups.mode, $7),
+			priority    = COALESCE(talkgroups.priority, $8),
+			first_seen  = LEAST(talkgroups.first_seen, $9),
+			last_seen   = GREATEST(talkgroups.last_seen, $10)
+	`, systemID, tgid, alphaTag, tag, group, description, modeVal, prioVal, firstSeen, lastSeen)
+	return err
+}

@@ -59,6 +59,22 @@ func (db *DB) UpdateSystemIdentity(ctx context.Context, systemID int, systemType
 	})
 }
 
+// FindSystemViaSiteIdentity returns the system_id for a site identified by (instance_id, short_name).
+// Returns 0, nil if not found.
+func (db *DB) FindSystemViaSiteIdentity(ctx context.Context, instanceID, shortName string) (int, error) {
+	row, err := db.Q.FindSystemViaSite(ctx, sqlcdb.FindSystemViaSiteParams{
+		InstanceID: instanceID,
+		ShortName:  shortName,
+	})
+	if err == pgx.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return row.SystemID, nil
+}
+
 // FindSystemBySysidWacn finds an active system by (sysid, wacn), excluding a given system_id.
 func (db *DB) FindSystemBySysidWacn(ctx context.Context, sysid, wacn string, excludeSystemID int) (int, error) {
 	systemID, err := db.Q.FindSystemBySysidWacn(ctx, sqlcdb.FindSystemBySysidWacnParams{

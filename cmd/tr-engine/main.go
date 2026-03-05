@@ -51,6 +51,20 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Check for subcommands (export, import)
+	if args := flag.Args(); len(args) > 0 {
+		switch args[0] {
+		case "export":
+			runExport(args[1:], overrides)
+		case "import":
+			runImport(args[1:], overrides)
+		default:
+			fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n", args[0])
+			os.Exit(1)
+		}
+		return
+	}
+
 	startTime := time.Now()
 
 	// Config (loads .env automatically, then env vars, then CLI overrides)

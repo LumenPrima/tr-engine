@@ -218,3 +218,96 @@ func (db *DB) UpsertUnit(ctx context.Context, systemID, unitID int, alphaTag, ev
 		Tgid:      &tgid32,
 	})
 }
+
+// UnitExport contains fields needed for export (no stats, no event details).
+type UnitExport struct {
+	SystemID       int
+	UnitID         int
+	AlphaTag       string
+	AlphaTagSource string
+	FirstSeen      *time.Time
+	LastSeen       *time.Time
+}
+
+// ExportUnits returns all units for the given systems, suitable for export.
+func (db *DB) ExportUnits(ctx context.Context, systemIDs []int) ([]UnitExport, error) {
+	// Check if alpha_tag_source column exists (added by migration)
+	hasSource := db.columnExists(ctx, "units", "alpha_tag_source")
+
+	var query string
+	if hasSource {
+		query = `SELECT system_id, unit_id,
+			COALESCE(alpha_tag, ''), COALESCE(alpha_tag_source, ''),
+			first_seen, last_seen
+			FROM units WHERE ($1::int[] IS NULL OR system_id = ANY($1))
+			ORDER BY system_id, unit_id`
+	} else {
+		query = `SELECT system_id, unit_id,
+			COALESCE(alpha_tag, ''), '',
+			first_seen, last_seen
+			FROM units WHERE ($1::int[] IS NULL OR system_id = ANY($1))
+			ORDER BY system_id, unit_id`
+	}
+
+	rows, err := db.Pool.Query(ctx, query, pqIntArray(systemIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []UnitExport
+	for rows.Next() {
+		var u UnitExport
+		if err := rows.Scan(
+			&u.SystemID, &u.UnitID,
+			&u.AlphaTag, &u.AlphaTagSource,
+			&u.FirstSeen, &u.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, u)
+	}
+	return result, rows.Err()
+}
+
+// ImportUpsertUnit upserts a unit from an export archive.
+// Respects alpha_tag_source priority: manual > csv > mqtt.
+func (db *DB) ImportUpsertUnit(ctx context.Context, systemID, unitID int,
+	alphaTag, alphaTagSource string, firstSeen, lastSeen *time.Time) error {
+
+	hasSource := db.columnExists(ctx, "units", "alpha_tag_source")
+
+	if hasSource {
+		_, err := db.Pool.Exec(ctx, `
+			INSERT INTO units (system_id, unit_id, alpha_tag, alpha_tag_source, first_seen, last_seen)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (system_id, unit_id) DO UPDATE SET
+				alpha_tag = CASE
+					WHEN $4 = 'manual' THEN $3
+					WHEN $4 = 'csv' AND COALESCE(units.alpha_tag_source, '') NOT IN ('manual') THEN $3
+					WHEN $4 = 'mqtt' AND COALESCE(units.alpha_tag_source, '') NOT IN ('manual', 'csv') THEN $3
+					ELSE units.alpha_tag
+				END,
+				alpha_tag_source = CASE
+					WHEN $4 = 'manual' THEN $4
+					WHEN $4 = 'csv' AND COALESCE(units.alpha_tag_source, '') NOT IN ('manual') THEN $4
+					WHEN $4 = 'mqtt' AND COALESCE(units.alpha_tag_source, '') NOT IN ('manual', 'csv') THEN $4
+					ELSE units.alpha_tag_source
+				END,
+				first_seen = LEAST(units.first_seen, $5),
+				last_seen  = GREATEST(units.last_seen, $6)
+		`, systemID, unitID, alphaTag, alphaTagSource, firstSeen, lastSeen)
+		return err
+	}
+
+	// Fallback: alpha_tag_source column doesn't exist yet
+	_, err := db.Pool.Exec(ctx, `
+		INSERT INTO units (system_id, unit_id, alpha_tag, first_seen, last_seen)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (system_id, unit_id) DO UPDATE SET
+			alpha_tag  = COALESCE(NULLIF($3, ''), units.alpha_tag),
+			first_seen = LEAST(units.first_seen, $4),
+			last_seen  = GREATEST(units.last_seen, $5)
+	`, systemID, unitID, alphaTag, firstSeen, lastSeen)
+	return err
+}
