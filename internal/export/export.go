@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/snarg/tr-engine/internal/database"
@@ -15,12 +17,21 @@ import (
 
 // ExportOptions configures what to export.
 type ExportOptions struct {
-	SystemIDs []int  // filter to specific systems (empty = all)
-	Version   string // tr-engine version string
+	SystemIDs    []int      // filter to specific systems (empty = all)
+	Version      string     // tr-engine version string
+	Mode         string     // "metadata" or "full"
+	IncludeAudio bool       // include audio files in archive
+	Start        *time.Time // time range start for calls (optional)
+	End          *time.Time // time range end for calls (optional)
+	AudioDir     string     // path to audio directory on disk
 }
 
-// ExportMetadata writes a metadata-only tar.gz archive to w.
-func ExportMetadata(ctx context.Context, db *database.DB, w io.Writer, opts ExportOptions) error {
+// Export writes a tar.gz archive to w. Mode "metadata" exports systems, sites,
+// talkgroups, units. Mode "full" also exports calls, transcriptions, and optionally audio.
+func Export(ctx context.Context, db *database.DB, w io.Writer, opts ExportOptions) error {
+	if opts.Mode == "" {
+		opts.Mode = "metadata"
+	}
 	gz := gzip.NewWriter(w)
 	defer gz.Close()
 	tw := tar.NewWriter(gz)
@@ -84,6 +95,28 @@ func ExportMetadata(ctx context.Context, db *database.DB, w io.Writer, opts Expo
 		}
 	}
 
+	// Load full-mode data (calls, transcriptions) before writing manifest
+	var calls []database.CallExport
+	var transcriptions []database.TranscriptionExport
+	var siteIDMap map[int]database.Site
+
+	if opts.Mode == "full" {
+		calls, err = db.ExportCalls(ctx, systemIDs, opts.Start, opts.End)
+		if err != nil {
+			return fmt.Errorf("load calls: %w", err)
+		}
+
+		siteIDMap, err = db.SiteIDMap(ctx, systemIDs)
+		if err != nil {
+			return fmt.Errorf("load site map: %w", err)
+		}
+
+		transcriptions, err = db.ExportTranscriptions(ctx, systemIDs, opts.Start, opts.End)
+		if err != nil {
+			return fmt.Errorf("load transcriptions: %w", err)
+		}
+	}
+
 	// Write manifest
 	manifest := Manifest{
 		Version:        1,
@@ -101,6 +134,29 @@ func ExportMetadata(ctx context.Context, db *database.DB, w io.Writer, opts Expo
 			Units:              len(units),
 		},
 	}
+
+	if opts.Mode == "full" {
+		manifest.Counts.Calls = len(calls)
+		manifest.Counts.Transcriptions = len(transcriptions)
+		if opts.Start != nil || opts.End != nil {
+			manifest.Filters.TimeRange = &TimeRange{Start: opts.Start, End: opts.End}
+		}
+		manifest.Filters.IncludeAudio = opts.IncludeAudio
+	}
+
+	// Pre-count audio files that exist on disk (manifest needs this before writing)
+	if opts.Mode == "full" && opts.IncludeAudio && opts.AudioDir != "" {
+		for _, c := range calls {
+			if c.AudioFilePath == "" {
+				continue
+			}
+			diskPath := filepath.Join(opts.AudioDir, filepath.FromSlash(filepath.ToSlash(c.AudioFilePath)))
+			if _, err := os.Stat(diskPath); err == nil {
+				manifest.Counts.AudioFiles++
+			}
+		}
+	}
+
 	if err := writeJSON(tw, "manifest.json", manifest); err != nil {
 		return err
 	}
@@ -222,6 +278,92 @@ func ExportMetadata(ctx context.Context, db *database.DB, w io.Writer, opts Expo
 		return err
 	}
 
+	if opts.Mode == "full" {
+		// Write calls.jsonl
+		if err := writeJSONL(tw, "calls.jsonl", func(enc *json.Encoder) error {
+			for _, c := range calls {
+				ref, ok := sysRefMap[c.SystemID]
+				if !ok {
+					continue
+				}
+				rec := buildCallRecord(c, ref, siteIDMap)
+				if err := enc.Encode(rec); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		// Write transcriptions.jsonl
+		if err := writeJSONL(tw, "transcriptions.jsonl", func(enc *json.Encoder) error {
+			for _, t := range transcriptions {
+				ref, ok := sysRefMap[t.SystemID]
+				if !ok {
+					continue
+				}
+				rec := TranscriptionRecord{
+					V:             1,
+					SystemRef:     ref,
+					Tgid:          t.Tgid,
+					CallStartTime: t.CallStartTime,
+					Text:          t.Text,
+					Source:        t.Source,
+					IsPrimary:     t.IsPrimary,
+					Confidence:    t.Confidence,
+					Language:      t.Language,
+					Model:         t.Model,
+					Provider:      t.Provider,
+					WordCount:     t.WordCount,
+					DurationMs:    t.DurationMs,
+					ProviderMs:    t.ProviderMs,
+					Words:         t.Words,
+				}
+				if err := enc.Encode(rec); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		// Write audio files
+		if opts.IncludeAudio && opts.AudioDir != "" {
+			for _, c := range calls {
+				if c.AudioFilePath == "" {
+					continue
+				}
+				relPath := filepath.ToSlash(c.AudioFilePath)
+				diskPath := filepath.Join(opts.AudioDir, filepath.FromSlash(relPath))
+				info, statErr := os.Stat(diskPath)
+				if statErr != nil {
+					continue // skip missing audio files silently
+				}
+				af, openErr := os.Open(diskPath)
+				if openErr != nil {
+					continue
+				}
+				hdr := &tar.Header{
+					Name:    "audio/" + relPath,
+					Size:    info.Size(),
+					Mode:    0644,
+					ModTime: info.ModTime(),
+				}
+				if err := tw.WriteHeader(hdr); err != nil {
+					af.Close()
+					return fmt.Errorf("write audio header %s: %w", relPath, err)
+				}
+				if _, err := io.Copy(tw, af); err != nil {
+					af.Close()
+					return fmt.Errorf("write audio %s: %w", relPath, err)
+				}
+				af.Close()
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -230,6 +372,58 @@ func buildSystemRef(s database.SystemAPI) SystemRef {
 		return SystemRef{Sysid: s.Sysid, Wacn: s.Wacn}
 	}
 	return SystemRef{} // conventional — identified via sites
+}
+
+func buildCallRecord(c database.CallExport, sysRef SystemRef, siteIDMap map[int]database.Site) CallRecord {
+	rec := CallRecord{
+		V:             1,
+		SystemRef:     sysRef,
+		Tgid:          c.Tgid,
+		StartTime:     c.StartTime,
+		StopTime:      c.StopTime,
+		Duration:      c.Duration,
+		Freq:          c.Freq,
+		FreqError:     c.FreqError,
+		SignalDB:      c.SignalDB,
+		NoiseDB:       c.NoiseDB,
+		ErrorCount:    c.ErrorCount,
+		SpikeCount:    c.SpikeCount,
+		AudioType:     c.AudioType,
+		AudioFilePath: filepath.ToSlash(c.AudioFilePath),
+		AudioFileSize: c.AudioFileSize,
+		Phase2TDMA:    c.Phase2TDMA,
+		TDMASlot:      c.TDMASlot,
+		Analog:        c.Analog,
+		Conventional:  c.Conventional,
+		Encrypted:     c.Encrypted,
+		Emergency:     c.Emergency,
+		SrcList:       c.SrcList,
+		FreqList:      c.FreqList,
+		MetadataJSON:  c.MetadataJSON,
+		IncidentData:  c.IncidentData,
+		InstanceID:    c.InstanceID,
+	}
+	if len(c.PatchedTgids) > 0 {
+		rec.PatchedTgids = make([]int, len(c.PatchedTgids))
+		for i, v := range c.PatchedTgids {
+			rec.PatchedTgids[i] = int(v)
+		}
+	}
+	if len(c.UnitIDs) > 0 {
+		rec.UnitIDs = make([]int, len(c.UnitIDs))
+		for i, v := range c.UnitIDs {
+			rec.UnitIDs[i] = int(v)
+		}
+	}
+	if c.SiteID != nil {
+		if site, ok := siteIDMap[*c.SiteID]; ok {
+			rec.SiteRef = &SiteRef{
+				InstanceID: site.InstanceID,
+				ShortName:  site.ShortName,
+			}
+		}
+	}
+	return rec
 }
 
 func buildSystemRecord(s database.SystemAPI) SystemRecord {

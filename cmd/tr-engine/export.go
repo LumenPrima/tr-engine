@@ -16,17 +16,39 @@ import (
 	"github.com/snarg/tr-engine/internal/export"
 )
 
+func parseTime(s string) (time.Time, error) {
+	// Try RFC3339 first
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	// Try date-only
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("cannot parse %q", s)
+}
+
 func runExport(args []string, overrides config.Overrides) {
 	fs := flag.NewFlagSet("export", flag.ExitOnError)
 	output := fs.String("output", "", "Output file path (required)")
 	systems := fs.String("systems", "", "Comma-separated system IDs to export (default: all)")
+	mode := fs.String("mode", "metadata", "Export mode: metadata, full")
+	includeAudio := fs.Bool("include-audio", false, "Include audio files in archive (only with --mode full)")
+	startStr := fs.String("start", "", "Start time for calls (ISO 8601, e.g. 2026-02-01 or 2026-02-01T00:00:00Z)")
+	endStr := fs.String("end", "", "End time for calls (ISO 8601, e.g. 2026-03-01)")
 	fs.StringVar(&overrides.EnvFile, "env-file", overrides.EnvFile, "Path to .env file")
 	fs.StringVar(&overrides.DatabaseURL, "database-url", overrides.DatabaseURL, "PostgreSQL connection URL")
+	fs.StringVar(&overrides.AudioDir, "audio-dir", overrides.AudioDir, "Audio file directory")
 	fs.Parse(args)
 
 	if *output == "" {
 		fmt.Fprintln(os.Stderr, "error: --output is required")
 		fs.Usage()
+		os.Exit(1)
+	}
+
+	if *mode != "metadata" && *mode != "full" {
+		fmt.Fprintf(os.Stderr, "error: invalid mode %q (valid: metadata, full)\n", *mode)
 		os.Exit(1)
 	}
 
@@ -37,7 +59,11 @@ func runExport(args []string, overrides config.Overrides) {
 		log.Fatal().Err(err).Msg("failed to load config")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	timeout := 10 * time.Minute
+	if *mode == "full" {
+		timeout = 30 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	db, err := database.Connect(ctx, cfg.DatabaseURL, log)
@@ -66,6 +92,22 @@ func runExport(args []string, overrides config.Overrides) {
 		}
 	}
 
+	var start, end *time.Time
+	if *startStr != "" {
+		t, err := parseTime(*startStr)
+		if err != nil {
+			log.Fatal().Str("value", *startStr).Msg("invalid --start time (use YYYY-MM-DD or RFC3339)")
+		}
+		start = &t
+	}
+	if *endStr != "" {
+		t, err := parseTime(*endStr)
+		if err != nil {
+			log.Fatal().Str("value", *endStr).Msg("invalid --end time (use YYYY-MM-DD or RFC3339)")
+		}
+		end = &t
+	}
+
 	f, err := os.Create(*output)
 	if err != nil {
 		log.Fatal().Err(err).Str("path", *output).Msg("failed to create output file")
@@ -73,13 +115,18 @@ func runExport(args []string, overrides config.Overrides) {
 	defer f.Close()
 
 	opts := export.ExportOptions{
-		SystemIDs: systemIDs,
-		Version:   fmt.Sprintf("%s (commit=%s)", version, commit),
+		SystemIDs:    systemIDs,
+		Version:      fmt.Sprintf("%s (commit=%s)", version, commit),
+		Mode:         *mode,
+		IncludeAudio: *includeAudio,
+		Start:        start,
+		End:          end,
+		AudioDir:     cfg.AudioDir,
 	}
 
-	log.Info().Str("output", *output).Ints("systems", systemIDs).Msg("starting metadata export")
+	log.Info().Str("output", *output).Str("mode", *mode).Ints("systems", systemIDs).Msg("starting export")
 
-	if err := export.ExportMetadata(ctx, db, f, opts); err != nil {
+	if err := export.Export(ctx, db, f, opts); err != nil {
 		os.Remove(*output) // clean up partial file
 		log.Fatal().Err(err).Msg("export failed")
 	}

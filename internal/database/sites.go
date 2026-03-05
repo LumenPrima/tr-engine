@@ -191,6 +191,25 @@ func (db *DB) UpdateSiteFields(ctx context.Context, siteID int, shortName, insta
 	})
 }
 
+// SiteIDMap returns a map of site_id → Site for the given systems.
+func (db *DB) SiteIDMap(ctx context.Context, systemIDs []int) (map[int]Site, error) {
+	sites, err := db.LoadAllSites(ctx)
+	if err != nil {
+		return nil, err
+	}
+	idSet := make(map[int]bool, len(systemIDs))
+	for _, id := range systemIDs {
+		idSet[id] = true
+	}
+	m := make(map[int]Site)
+	for _, s := range sites {
+		if len(systemIDs) == 0 || idSet[s.SystemID] {
+			m[s.SiteID] = s
+		}
+	}
+	return m, nil
+}
+
 // LoadAllSites returns all sites.
 func (db *DB) LoadAllSites(ctx context.Context) ([]Site, error) {
 	rows, err := db.Q.LoadAllSites(ctx)

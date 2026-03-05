@@ -9,6 +9,93 @@ import (
 	"github.com/snarg/tr-engine/internal/database/sqlcdb"
 )
 
+// CallExport contains all non-derived call fields for export.
+type CallExport struct {
+	SystemID      int
+	SiteID        *int
+	Tgid          int
+	StartTime     time.Time
+	StopTime      *time.Time
+	Duration      *float32
+	Freq          *int64
+	FreqError     *int
+	SignalDB      *float32
+	NoiseDB       *float32
+	ErrorCount    *int
+	SpikeCount    *int
+	AudioType     string
+	AudioFilePath string
+	AudioFileSize *int
+	Phase2TDMA    bool
+	TDMASlot      *int16
+	Analog        bool
+	Conventional  bool
+	Encrypted     bool
+	Emergency     bool
+	PatchedTgids  []int32
+	SrcList       json.RawMessage
+	FreqList      json.RawMessage
+	UnitIDs       []int32
+	MetadataJSON  json.RawMessage
+	IncidentData  json.RawMessage
+	InstanceID    string
+}
+
+// ExportCalls returns all calls for the given systems and optional time range.
+func (db *DB) ExportCalls(ctx context.Context, systemIDs []int, start, end *time.Time) ([]CallExport, error) {
+	// Check if incidentdata column exists (migration may not have been applied)
+	incidentCol := "incidentdata"
+	if !db.columnExists(ctx, "calls", "incidentdata") {
+		incidentCol = "NULL::jsonb"
+	}
+	query := `
+		SELECT system_id, site_id, tgid, start_time, stop_time, duration,
+			freq, freq_error, signal_db, noise_db, error_count, spike_count,
+			COALESCE(audio_type, ''), COALESCE(audio_file_path, ''),
+			audio_file_size, COALESCE(phase2_tdma, false), tdma_slot,
+			COALESCE(analog, false), COALESCE(conventional, false),
+			COALESCE(encrypted, false), COALESCE(emergency, false),
+			patched_tgids, src_list, freq_list, unit_ids,
+			metadata_json, ` + incidentCol + `, COALESCE(instance_id, '')
+		FROM calls
+		WHERE ($1::int[] IS NULL OR system_id = ANY($1))
+		  AND ($2::timestamptz IS NULL OR start_time >= $2)
+		  AND ($3::timestamptz IS NULL OR start_time < $3)
+		ORDER BY start_time ASC
+	`
+	var startArg, endArg any
+	if start != nil {
+		startArg = *start
+	}
+	if end != nil {
+		endArg = *end
+	}
+
+	rows, err := db.Pool.Query(ctx, query, pqIntArray(systemIDs), startArg, endArg)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CallExport
+	for rows.Next() {
+		var c CallExport
+		if err := rows.Scan(
+			&c.SystemID, &c.SiteID, &c.Tgid, &c.StartTime, &c.StopTime, &c.Duration,
+			&c.Freq, &c.FreqError, &c.SignalDB, &c.NoiseDB, &c.ErrorCount, &c.SpikeCount,
+			&c.AudioType, &c.AudioFilePath,
+			&c.AudioFileSize, &c.Phase2TDMA, &c.TDMASlot,
+			&c.Analog, &c.Conventional, &c.Encrypted, &c.Emergency,
+			&c.PatchedTgids, &c.SrcList, &c.FreqList, &c.UnitIDs,
+			&c.MetadataJSON, &c.IncidentData, &c.InstanceID,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, c)
+	}
+	return result, rows.Err()
+}
+
 // Conversion helpers for the calls domain.
 func ptrIntToInt32(v *int) *int32 {
 	if v == nil {
@@ -368,6 +455,12 @@ func (db *DB) FindCallForAudio(ctx context.Context, systemID, tgid int, startTim
 		return 0, time.Time{}, err
 	}
 	return row.CallID, row.StartTime.Time, nil
+}
+
+// FindCallFuzzy checks if a call exists matching (system_id, tgid, start_time ± 5s).
+// Returns call_id and start_time if found, or 0/zero-time/ErrNoRows if not found.
+func (db *DB) FindCallFuzzy(ctx context.Context, systemID, tgid int, startTime time.Time) (int64, time.Time, error) {
+	return db.FindCallForAudio(ctx, systemID, tgid, startTime)
 }
 
 // GetCallAudioPath returns the audio file path and call_filename for a call.

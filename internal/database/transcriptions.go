@@ -398,6 +398,74 @@ func (db *DB) GetCallForTranscription(ctx context.Context, callID int64) (*CallT
 	}, nil
 }
 
+// TranscriptionExport contains fields needed for export.
+type TranscriptionExport struct {
+	SystemID      int
+	Tgid          int
+	CallStartTime time.Time
+	Text          string
+	Source        string
+	IsPrimary     bool
+	Confidence    *float32
+	Language      string
+	Model         string
+	Provider      string
+	WordCount     int
+	DurationMs    int
+	ProviderMs    *int
+	Words         json.RawMessage
+}
+
+// ExportTranscriptions returns all transcriptions for the given systems and optional time range.
+func (db *DB) ExportTranscriptions(ctx context.Context, systemIDs []int, start, end *time.Time) ([]TranscriptionExport, error) {
+	// Check if provider_ms column exists (migration may not have been applied)
+	providerMsCol := "t.provider_ms"
+	if !db.columnExists(ctx, "transcriptions", "provider_ms") {
+		providerMsCol = "NULL::int"
+	}
+	query := `
+		SELECT c.system_id, c.tgid, t.call_start_time,
+			COALESCE(t.text, ''), t.source, t.is_primary, t.confidence,
+			COALESCE(t.language, ''), COALESCE(t.model, ''),
+			COALESCE(t.provider, ''), COALESCE(t.word_count, 0),
+			COALESCE(t.duration_ms, 0), ` + providerMsCol + `, t.words
+		FROM transcriptions t
+		JOIN calls c ON c.call_id = t.call_id AND c.start_time = t.call_start_time
+		WHERE ($1::int[] IS NULL OR c.system_id = ANY($1))
+		  AND ($2::timestamptz IS NULL OR t.call_start_time >= $2)
+		  AND ($3::timestamptz IS NULL OR t.call_start_time < $3)
+		ORDER BY t.call_start_time ASC, t.id ASC
+	`
+	var startArg, endArg any
+	if start != nil {
+		startArg = *start
+	}
+	if end != nil {
+		endArg = *end
+	}
+
+	rows, err := db.Pool.Query(ctx, query, pqIntArray(systemIDs), startArg, endArg)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []TranscriptionExport
+	for rows.Next() {
+		var t TranscriptionExport
+		if err := rows.Scan(
+			&t.SystemID, &t.Tgid, &t.CallStartTime,
+			&t.Text, &t.Source, &t.IsPrimary, &t.Confidence,
+			&t.Language, &t.Model, &t.Provider, &t.WordCount,
+			&t.DurationMs, &t.ProviderMs, &t.Words,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, t)
+	}
+	return result, rows.Err()
+}
+
 // UpdateCallTranscriptionStatus updates the transcription_status on a call and its group.
 func (db *DB) UpdateCallTranscriptionStatus(ctx context.Context, callID int64, startTime time.Time, status string) error {
 	valid := map[string]bool{"none": true, "auto": true, "reviewed": true, "verified": true, "excluded": true}

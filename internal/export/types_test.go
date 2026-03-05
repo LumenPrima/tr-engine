@@ -99,3 +99,66 @@ func TestTalkgroupDirectoryRecord_RoundTrip(t *testing.T) {
 		t.Errorf("talkgroup directory round-trip failed: %+v", decoded)
 	}
 }
+
+func TestCallRecord_RoundTrip(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	dur := float32(45.2)
+	freq := int64(851250000)
+	rec := CallRecord{
+		V:         1,
+		SystemRef: SystemRef{Sysid: "348", Wacn: "BEE00"},
+		SiteRef:   &SiteRef{InstanceID: "tr-1", ShortName: "butco"},
+		Tgid:      24513,
+		StartTime: now,
+		Duration:  &dur,
+		Freq:      &freq,
+		Emergency: true,
+		SrcList:   json.RawMessage(`[{"src":12345}]`),
+		FreqList:  json.RawMessage(`[{"freq":851250000}]`),
+		UnitIDs:   []int{12345, 67890},
+	}
+	data, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded CallRecord
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Tgid != 24513 || !decoded.Emergency || decoded.SiteRef == nil {
+		t.Errorf("call round-trip failed: %+v", decoded)
+	}
+	if decoded.SiteRef.ShortName != "butco" {
+		t.Errorf("site_ref not preserved")
+	}
+	if len(decoded.UnitIDs) != 2 {
+		t.Errorf("unit_ids not preserved")
+	}
+}
+
+func TestTranscriptionRecord_RoundTrip(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	conf := float32(0.92)
+	rec := TranscriptionRecord{
+		V:             1,
+		SystemRef:     SystemRef{Sysid: "348", Wacn: "BEE00"},
+		Tgid:          24513,
+		CallStartTime: now,
+		Text:          "Engine 5 responding",
+		Source:        "auto",
+		IsPrimary:     true,
+		Confidence:    &conf,
+		Language:      "en",
+		Model:         "whisper-large-v3-turbo",
+		WordCount:     3,
+	}
+	data, _ := json.Marshal(rec)
+	var decoded TranscriptionRecord
+	json.Unmarshal(data, &decoded)
+	if decoded.Source != "auto" || decoded.Text != "Engine 5 responding" {
+		t.Errorf("transcription round-trip failed")
+	}
+	if decoded.Confidence == nil || *decoded.Confidence != 0.92 {
+		t.Errorf("confidence not preserved")
+	}
+}
