@@ -645,17 +645,15 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 		}
 
 		// Call disappeared from active list — it's ended.
-		// For encrypted calls (no call_end will arrive), synthesize the ending.
-		if !entry.Encrypted {
-			continue // normal calls get a proper call_end, skip
-		}
-
+		// Synthesize an ending for any call that vanishes. If a proper call_end
+		// MQTT message arrives later with richer metadata (signal, noise, filename),
+		// handleCallEnd does a DB lookup and overwrites these placeholder values.
 		p.log.Debug().
 			Str("tr_call_id", trCallID).
 			Int64("call_id", entry.CallID).
 			Int("tgid", entry.Tgid).
 			Bool("encrypted", entry.Encrypted).
-			Msg("encrypted call ended (disappeared from calls_active)")
+			Msg("call ended (disappeared from calls_active)")
 
 		// Estimate stop time as now (the call ended sometime between the last
 		// calls_active that included it and this one)
@@ -667,7 +665,7 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 			stopTime, duration,
 			entry.Freq,
 			0,    // freq_error
-			0, 0, // signal, noise (unknown for encrypted)
+			0, 0, // signal, noise (unknown — call_end may overwrite)
 			0, 0, // error_count, spike_count
 			0, "COMPLETED", // rec_state
 			0, "COMPLETED", // call_state
@@ -675,7 +673,7 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 			0,              // retry_attempt
 			0,              // process_call_time
 		); err != nil {
-			p.log.Warn().Err(err).Int64("call_id", entry.CallID).Msg("failed to close encrypted call")
+			p.log.Warn().Err(err).Int64("call_id", entry.CallID).Msg("failed to close stale call")
 		}
 
 		p.activeCalls.Delete(trCallID)
