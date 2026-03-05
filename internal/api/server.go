@@ -71,7 +71,7 @@ func NewServer(opts ServerOptions) *Server {
 	r.Use(Logger(opts.Log))
 
 	// Unauthenticated endpoints
-	health := NewHealthHandler(opts.DB, opts.MQTT, opts.Live, opts.Version, opts.StartTime)
+	health := NewHealthHandler(opts.DB, opts.MQTT, opts.Live, opts.AudioStreamer, opts.Version, opts.StartTime)
 	if opts.UpdateCheckURL != "" {
 		health.ConfigureUpdateChecker(opts.UpdateCheckURL, opts.IngestModes, opts.IsDocker, opts.Log)
 	}

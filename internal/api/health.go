@@ -23,6 +23,7 @@ type HealthResponse struct {
 	Checks         map[string]string     `json:"checks"`
 	Database       *DatabasePoolStats    `json:"database_pool,omitempty"`
 	TrunkRecorders []TRInstanceStatusData `json:"trunk_recorders,omitempty"`
+	AudioStream    *AudioStreamStatusData `json:"audio_stream,omitempty"`
 	UpdateAvailable *bool                `json:"update_available,omitempty"`
 	LatestVersion   string               `json:"latest_version,omitempty"`
 	ReleaseURL      string               `json:"release_url,omitempty"`
@@ -45,11 +46,12 @@ type updateStatus struct {
 }
 
 type HealthHandler struct {
-	db        *database.DB
-	mqtt      *mqttclient.Client
-	live      LiveDataSource
-	version   string
-	startTime time.Time
+	db            *database.DB
+	mqtt          *mqttclient.Client
+	live          LiveDataSource
+	audioStreamer AudioStreamer // nil if live audio streaming not configured
+	version       string
+	startTime     time.Time
 
 	// Update checker state
 	updateCheckURL string
@@ -60,13 +62,14 @@ type HealthHandler struct {
 	update         *updateStatus
 }
 
-func NewHealthHandler(db *database.DB, mqtt *mqttclient.Client, live LiveDataSource, version string, startTime time.Time) *HealthHandler {
+func NewHealthHandler(db *database.DB, mqtt *mqttclient.Client, live LiveDataSource, audioStreamer AudioStreamer, version string, startTime time.Time) *HealthHandler {
 	return &HealthHandler{
-		db:        db,
-		mqtt:      mqtt,
-		live:      live,
-		version:   version,
-		startTime: startTime,
+		db:           db,
+		mqtt:         mqtt,
+		live:         live,
+		audioStreamer: audioStreamer,
+		version:      version,
+		startTime:    startTime,
 	}
 }
 
@@ -253,6 +256,12 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		EmptyAcquireCount: stat.EmptyAcquireCount(),
 	}
 
+	// Audio stream status
+	var audioStreamStatus *AudioStreamStatusData
+	if h.audioStreamer != nil && h.audioStreamer.AudioStreamEnabled() {
+		audioStreamStatus = h.audioStreamer.AudioStreamStatus()
+	}
+
 	resp := HealthResponse{
 		Status:         status,
 		Version:        h.version,
@@ -260,6 +269,7 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Checks:         checks,
 		Database:       poolStats,
 		TrunkRecorders: trInstances,
+		AudioStream:    audioStreamStatus,
 	}
 
 	// Add update status if available
