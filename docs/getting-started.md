@@ -283,6 +283,75 @@ curl -N http://localhost:8080/api/v1/events/stream
 
 tr-engine serves static files from a `web/` directory in dev mode. Open `http://localhost:8080/irc-radio-live.html` for an IRC-style live radio monitor.
 
+## 5. Live Audio Streaming (optional)
+
+Live audio streaming lets browser clients hear radio traffic in real time via the OmniTrunker and Scanner web pages. It works alongside MQTT — MQTT provides call metadata, simplestream provides raw audio.
+
+> **Secure context required:** Live audio uses the Web Audio API (`AudioContext` + `AudioWorklet`), which browsers only allow in [secure contexts](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts). This means it works on:
+> - `localhost` / `127.0.0.1` (always treated as secure)
+> - Any `https://` URL
+>
+> It will **not** work over plain `http://` to a remote host — the browser silently blocks `AudioContext` creation. If you're accessing tr-engine from another machine, you need HTTPS (e.g., a reverse proxy with TLS, or Cloudflare Tunnel).
+
+### trunk-recorder side
+
+Add the simplestream plugin to your trunk-recorder `config.json`:
+
+```json
+{
+  "plugins": [
+    {
+      "name": "simplestream",
+      "library": "libsimplestream.so",
+      "streams": [
+        {
+          "address": "YOUR_TR_ENGINE_HOST",
+          "port": 9123,
+          "talkgroup": 0,
+          "sendJSON": true,
+          "shortName": ""
+        }
+      ]
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `address` | IP or hostname of the machine running tr-engine |
+| `port` | Must match the port in `STREAM_LISTEN` (default: 9123) |
+| `talkgroup` | `0` = stream all talkgroups |
+| `sendJSON` | `true` = include talkgroup/unit metadata with each audio packet (recommended) |
+| `shortName` | `""` = stream all systems. Set to a specific `sys_name` to limit to one system. |
+
+### tr-engine side
+
+Add to your `.env`:
+
+```env
+# Enable live audio streaming (disabled if not set)
+STREAM_LISTEN=:9123
+
+# Optional tuning
+# STREAM_SAMPLE_RATE=8000       # 8000 for P25, 16000 for analog
+# STREAM_OPUS_BITRATE=16000     # Opus encoder bitrate (bps), 0 = PCM passthrough
+# STREAM_MAX_CLIENTS=50         # max concurrent WebSocket listeners
+# STREAM_IDLE_TIMEOUT=30s       # tear down idle per-talkgroup encoders
+```
+
+Restart tr-engine after changing `.env`.
+
+### Verify
+
+Check the health endpoint — a new `audio_stream` section appears when streaming is enabled:
+
+```bash
+curl http://localhost:8080/api/v1/health
+```
+
+> **Note:** simplestream sends raw PCM audio over UDP. This is separate from the MQTT feed — you still need MQTT (or file watch) for call metadata, talkgroup names, unit events, etc. Streaming adds live audio on top of the existing data pipeline.
+
 ## What happens on first run
 
 1. tr-engine connects to PostgreSQL (and MQTT if configured)

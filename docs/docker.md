@@ -285,6 +285,67 @@ TRANSCRIBE_MAX_DURATION=300     # skip calls longer than 5min
 
 Transcription auto-triggers on every `call_end` within the min/max duration range. See `sample.env` for the full list of Whisper tuning parameters including anti-hallucination options.
 
+### Live Audio Streaming
+
+Live audio streaming lets browser clients hear radio traffic in real time via the OmniTrunker and Scanner web pages. It uses trunk-recorder's simplestream plugin to send raw PCM audio over UDP, which tr-engine encodes and serves to browsers over WebSocket.
+
+> **Secure context required:** Live audio uses the Web Audio API (`AudioContext` + `AudioWorklet`), which browsers only allow in [secure contexts](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts). This means it works on:
+> - `localhost` / `127.0.0.1` (always treated as secure)
+> - Any `https://` URL
+>
+> It will **not** work over plain `http://` to a remote host — the browser silently blocks `AudioContext` creation. If you're accessing tr-engine from another machine, put a reverse proxy with TLS in front (Caddy, nginx + Let's Encrypt, Cloudflare Tunnel, etc.). See the [full stack guide](./docker-full-stack.md) for a production HTTPS setup.
+
+**trunk-recorder side:** Add the simplestream plugin to your trunk-recorder `config.json`:
+
+```json
+{
+  "plugins": [
+    {
+      "name": "simplestream",
+      "library": "libsimplestream.so",
+      "streams": [
+        {
+          "address": "YOUR_DOCKER_HOST",
+          "port": 9123,
+          "talkgroup": 0,
+          "sendJSON": true,
+          "shortName": ""
+        }
+      ]
+    }
+  ]
+}
+```
+
+Set `address` to the IP or hostname of the machine running Docker. Use `talkgroup: 0` for all talkgroups, `shortName: ""` for all systems.
+
+**tr-engine side:** Add to your `.env`:
+
+```bash
+STREAM_LISTEN=:9123              # enables the UDP listener (disabled if not set)
+# STREAM_SAMPLE_RATE=8000        # 8000 for P25, 16000 for analog
+# STREAM_OPUS_BITRATE=16000      # Opus encoder bitrate (bps)
+# STREAM_MAX_CLIENTS=50          # max concurrent WebSocket listeners
+# STREAM_IDLE_TIMEOUT=30s        # tear down idle per-talkgroup encoders
+```
+
+**Docker port mapping:** Add the UDP port to the `tr-engine` service in `docker-compose.yml`:
+
+```yaml
+  tr-engine:
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+      - "${STREAM_PORT:-9123}:9123/udp"
+    environment:
+      - STREAM_LISTEN=:9123
+```
+
+Or set `STREAM_PORT` in `.env` to change the host port mapping (the container-internal port stays 9123).
+
+Restart with `docker compose up -d`. Verify via the health endpoint — a new `audio_stream` section appears when streaming is enabled.
+
+> **Note:** Streaming works alongside MQTT, not as a replacement. MQTT provides call metadata, talkgroup names, unit events, etc. Simplestream adds live audio on top.
+
 ### Custom web UI files
 
 The web UI is embedded in the binary, but you can override it by mounting a local directory:
