@@ -123,10 +123,20 @@
   }
 
   .panel-top {
+    flex: 0 0 auto;
     height: 21vh;
-    min-height: 21vh;
-    border-bottom: 1px solid var(--border);
+    min-height: 80px;
+  }
+
+  .panel-divider {
+    height: 5px;
+    cursor: row-resize;
+    background: var(--border);
     flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .panel-divider:hover, .panel-divider.dragging {
+    background: var(--accent);
   }
 
   .panel-bottom {
@@ -250,6 +260,8 @@
   /* ── Channel Row States ── */
   .channel-row { transition: opacity 5s ease-out; }
   .channel-row.fading { opacity: 0; }
+  .channel-row.channel-idle { opacity: 0.4; transition: opacity 0.3s ease-out; }
+  .channel-row.channel-idle:hover { opacity: 0.65; }
   .channel-row.emergency { border-left: 3px solid var(--danger); }
   .channel-row.emergency td:first-child { padding-left: 5px; }
 
@@ -540,6 +552,28 @@
   }
   .gear-btn:hover { color: var(--accent); border-color: var(--accent); }
 
+  /* ── View Toggle ── */
+  .view-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    overflow: hidden;
+  }
+  .view-btn {
+    background: var(--bg);
+    color: var(--text-muted);
+    border: none;
+    padding: 3px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .view-btn:not(:last-child) { border-right: 1px solid var(--border); }
+  .view-btn:hover { color: var(--text); }
+  .view-btn.active { background: var(--accent); color: #fff; }
+
   /* ── TG Selection List ── */
   .tg-search {
     width: 100%;
@@ -674,6 +708,10 @@
   <select id="system-filter">
     <option value="">All Systems</option>
   </select>
+  <div class="view-toggle" id="view-toggle">
+    <button class="view-btn active" data-view="talkgroup">TG</button>
+    <button class="view-btn" data-view="frequency">FREQ</button>
+  </div>
   <button class="listen-toggle" id="listen-toggle">
     <span class="dot"></span>
     <span id="listen-label">LISTEN</span>
@@ -687,13 +725,13 @@
   </div>
   <button class="gear-btn" id="settings-btn" title="Settings">&#9881;</button>
   <div class="stats"><span id="event-count">0</span> events</div>
-  <div class="stats" style="opacity:0.6;font-size:10px;color:var(--text-muted)" title="Page version">v8</div>
+  <div class="stats" style="opacity:0.6;font-size:10px;color:var(--text-muted)" title="Page version">v15</div>
 </div>
 
 <div class="panels">
   <!-- Top: Active Voice Channels -->
   <div class="panel panel-top">
-    <div class="panel-header">Active Voice Channels</div>
+    <div class="panel-header" id="channels-header">Active Voice Channels</div>
     <div class="panel-scroll">
       <table id="channels-table">
         <thead>
@@ -717,6 +755,8 @@
       </table>
     </div>
   </div>
+
+  <div class="panel-divider" id="panel-divider"></div>
 
   <!-- Bottom: Unit Activity Feed -->
   <div class="panel panel-bottom">
@@ -895,6 +935,9 @@ let everConnected = false;
 
 // Active calls: call_id -> { data, row, startTimeMs, fading, lastAudioTime, lastElapsedText, panDot, wasAudioActive }
 const activeChannels = new Map();
+// Frequency view: "system_id:freq" -> { data, row, startTimeMs, idle, elapsedCell, panDot, ... }
+let viewMode = 'talkgroup'; // 'talkgroup' or 'frequency'
+const freqChannels = new Map();
 // Seen systems for filter dropdown
 const seenSystems = new Map(); // system_id -> system_name
 // Talkgroup metadata cache: "system_id:tgid" -> { alpha_tag, description, group, tag }
@@ -1020,7 +1063,8 @@ function trackSystem(data) {
 
 // ── Active Voice Channels ──
 function updateChannelsEmptyState() {
-  channelsEmpty.style.display = activeChannels.size === 0 ? '' : 'none';
+  var count = viewMode === 'frequency' ? freqChannels.size : activeChannels.size;
+  channelsEmpty.style.display = count === 0 ? '' : 'none';
 }
 
 function buildChannelCells(d, entry) {
@@ -1124,32 +1168,37 @@ function buildChannelCells(d, entry) {
 }
 
 function addActiveChannel(data) {
+  if (viewMode === 'frequency') { addActiveChannelFreqMode(data); return; }
+
   const callId = data.call_id;
   if (!callId) return;
 
   trackSystem(data);
 
-  // Check if an audio-generated row already exists for this tgid — promote it
-  if (data.tgid && data.system_id) {
-    var audioKey = 'audio-' + data.system_id + '-' + data.tgid;
-    var audioEntry = activeChannels.get(audioKey);
-    if (audioEntry && !audioEntry.fading) {
-      // Promote: remove old key, re-key under call_id with richer data
-      activeChannels.delete(audioKey);
-      audioEntry.data = data;
-      audioEntry.startTimeMs = parseStartTimeMs(data.start_time) || audioEntry.startTimeMs;
-      audioEntry.row.dataset.callId = String(callId);
-      renderChannelRow(audioEntry);
-      applyChannelSystemFilter(audioEntry);
-      activeChannels.set(callId, audioEntry);
-      updateChannelsEmptyState();
-      return;
+  // One row per talkgroup. If ANY existing entry has this tgid, reuse it.
+  if (data.tgid) {
+    for (var [existingKey, existing] of activeChannels) {
+      if (existing.data.tgid === data.tgid && !existing.fading) {
+        // Re-key under new call_id, update data
+        activeChannels.delete(existingKey);
+        existing.data = data;
+        existing.startTimeMs = parseStartTimeMs(data.start_time) || existing.startTimeMs;
+        existing.row.dataset.callId = String(callId);
+        existing.fading = false;
+        existing.row.classList.remove('fading');
+        existing.row.style.opacity = '';
+        renderChannelRow(existing);
+        applyChannelSystemFilter(existing);
+        activeChannels.set(callId, existing);
+        updateChannelsEmptyState();
+        return;
+      }
     }
   }
 
+  // Exact call_id match (shouldn't happen after above, but safety)
   let entry = activeChannels.get(callId);
   if (entry) {
-    // Update existing row — cancel fade if re-activated
     entry.data = data;
     entry.startTimeMs = parseStartTimeMs(data.start_time) || entry.startTimeMs;
     entry.fading = false;
@@ -1161,9 +1210,11 @@ function addActiveChannel(data) {
     return;
   }
 
+  // New tgid — create row
   const row = document.createElement('tr');
   row.className = 'channel-row';
   row.dataset.callId = String(callId);
+  row.dataset.tgid = String(data.tgid || 0);
   if (data.system_id) row.dataset.systemId = String(data.system_id);
 
   entry = { data: data, row: row, startTimeMs: parseStartTimeMs(data.start_time), fading: false, elapsedCell: null, panDot: null, wasAudioActive: false, lastAudioTime: 0, lastElapsedText: '' };
@@ -1173,12 +1224,13 @@ function addActiveChannel(data) {
   entry.panDot = row.querySelector('.pan-dot');
   applyChannelSystemFilter(entry);
 
-  channelsBody.appendChild(row);
+  insertChannelSorted(row, data.tgid || 0);
   updateChannelsEmptyState();
 }
 
 // Create a channel row from audio frames (no MQTT required)
 function addAudioChannel(tgid, systemId) {
+  if (viewMode === 'frequency') return; // no freq available from audio frames
   var channelKey = 'audio-' + systemId + '-' + tgid;
 
   // Already exists (audio-keyed or real call_id with same tgid)?
@@ -1213,6 +1265,7 @@ function addAudioChannel(tgid, systemId) {
   var row = document.createElement('tr');
   row.className = 'channel-row';
   row.dataset.callId = channelKey;
+  row.dataset.tgid = String(tgid);
   row.dataset.systemId = String(systemId);
 
   var entry = { data: data, row: row, startTimeMs: parseStartTimeMs(data.start_time), fading: false, elapsedCell: null, panDot: null, wasAudioActive: false, lastAudioTime: Date.now(), lastElapsedText: '' };
@@ -1222,8 +1275,90 @@ function addAudioChannel(tgid, systemId) {
   entry.panDot = row.querySelector('.pan-dot');
   applyChannelSystemFilter(entry);
 
-  channelsBody.appendChild(row);
+  insertChannelSorted(row, tgid);
   updateChannelsEmptyState();
+}
+
+// Insert row into channelsBody sorted by tgid ascending
+function insertChannelSorted(row, tgid) {
+  var rows = channelsBody.children;
+  for (var i = 0; i < rows.length; i++) {
+    var rowTgid = parseInt(rows[i].dataset.tgid, 10) || 0;
+    if (tgid < rowTgid) {
+      channelsBody.insertBefore(row, rows[i]);
+      return;
+    }
+  }
+  channelsBody.appendChild(row);
+}
+
+// ── Frequency Mode Functions ──
+function addActiveChannelFreqMode(data) {
+  if (!data.freq) return; // skip calls with no frequency
+  trackSystem(data);
+
+  var key = String(data.system_id) + ':' + String(data.freq);
+  var entry = freqChannels.get(key);
+
+  if (entry) {
+    // Existing frequency — update with new call data
+    entry.data = data;
+    entry.idle = false;
+    entry.startTimeMs = parseStartTimeMs(data.start_time) || entry.startTimeMs;
+    entry.row.classList.remove('channel-idle');
+    entry.row.dataset.tgid = String(data.tgid || 0);
+    if (data.system_id) entry.row.dataset.systemId = String(data.system_id);
+    renderChannelRow(entry);
+    applyChannelSystemFilter(entry);
+    updateChannelsEmptyState();
+    return;
+  }
+
+  // New frequency — create row
+  var row = document.createElement('tr');
+  row.className = 'channel-row';
+  row.dataset.callId = String(data.call_id || '');
+  row.dataset.tgid = String(data.tgid || 0);
+  row.dataset.freq = String(data.freq);
+  if (data.system_id) row.dataset.systemId = String(data.system_id);
+
+  entry = { data: data, row: row, startTimeMs: parseStartTimeMs(data.start_time), fading: false, idle: false, elapsedCell: null, panDot: null, wasAudioActive: false, lastAudioTime: 0, lastElapsedText: '' };
+  freqChannels.set(key, entry);
+  renderChannelRow(entry);
+  entry.elapsedCell = row.querySelector('.elapsed-cell');
+  entry.panDot = row.querySelector('.pan-dot');
+  applyChannelSystemFilter(entry);
+
+  insertChannelSortedByFreq(row, data.freq);
+  updateChannelsEmptyState();
+}
+
+function removeActiveChannelFreqMode(data) {
+  if (!data.freq && !data.tgid) return;
+
+  var entry = null;
+  if (data.freq) {
+    entry = freqChannels.get(String(data.system_id) + ':' + String(data.freq));
+  }
+  // Fallback: scan by tgid
+  if (!entry && data.tgid) {
+    for (var e of freqChannels.values()) {
+      if (e.data.tgid === data.tgid && !e.idle) { entry = e; break; }
+    }
+  }
+  if (!entry || entry.idle) return;
+
+  entry.idle = true;
+  entry.row.classList.add('channel-idle');
+  if (entry.elapsedCell) entry.elapsedCell.textContent = '\u2014';
+}
+
+function insertChannelSortedByFreq(row, freq) {
+  for (var i = 0; i < channelsBody.children.length; i++) {
+    var rowFreq = parseInt(channelsBody.children[i].dataset.freq, 10) || 0;
+    if (freq < rowFreq) { channelsBody.insertBefore(row, channelsBody.children[i]); return; }
+  }
+  channelsBody.appendChild(row);
 }
 
 function renderChannelRow(entry) {
@@ -1293,33 +1428,38 @@ function renderChannelRow(entry) {
 }
 
 function removeActiveChannel(data) {
-  const callId = data.call_id;
-  let entry = callId ? activeChannels.get(callId) : null;
+  if (viewMode === 'frequency') { removeActiveChannelFreqMode(data); return; }
 
-  // Fuzzy match by tgid if exact call_id not found
-  if (!entry && data.tgid) {
+  // Collect ALL entries matching this call — by call_id and by tgid
+  var toFade = [];
+  if (data.call_id) {
+    var exact = activeChannels.get(data.call_id);
+    if (exact && !exact.fading) toFade.push(exact);
+  }
+  if (data.tgid) {
     for (const [id, ch] of activeChannels) {
-      if (ch.data.tgid === data.tgid && !ch.fading) {
-        entry = ch;
-        break;
+      if (ch.data.tgid === data.tgid && !ch.fading && toFade.indexOf(ch) === -1) {
+        toFade.push(ch);
       }
     }
   }
 
-  if (!entry) return;
+  if (!toFade.length) return;
 
-  entry.fading = true;
-  entry.row.classList.add('fading');
+  for (var i = 0; i < toFade.length; i++) {
+    var entry = toFade[i];
+    entry.fading = true;
+    entry.row.classList.add('fading');
+    (function(e) {
+      var key = e.data.call_id;
+      setTimeout(function() {
+        if (e.row.parentNode) e.row.parentNode.removeChild(e.row);
+        activeChannels.delete(key);
+        updateChannelsEmptyState();
+      }, 5000);
+    })(entry);
+  }
   updateChannelsEmptyState();
-
-  const entryCallId = entry.data.call_id;
-  setTimeout(function() {
-    if (entry.row.parentNode) {
-      entry.row.parentNode.removeChild(entry.row);
-    }
-    activeChannels.delete(entryCallId);
-    updateChannelsEmptyState();
-  }, 5000);
 }
 
 function applyChannelSystemFilter(entry) {
@@ -1457,8 +1597,12 @@ function addActivityRow(eventType, data) {
 
 // ── System Filter ──
 systemFilter.addEventListener('change', function() {
-  // Filter active channels
+  localStorage.setItem('omni-system-filter', systemFilter.value);
+  // Filter active channels (both maps)
   for (const entry of activeChannels.values()) {
+    applyChannelSystemFilter(entry);
+  }
+  for (const entry of freqChannels.values()) {
     applyChannelSystemFilter(entry);
   }
   updateChannelsEmptyState();
@@ -1624,9 +1768,71 @@ fetch('/api/v1/talkgroups?limit=5000')
 
 connect();
 
+// ── View Toggle (TG / FREQ) ──
+var channelsHeader = document.getElementById('channels-header');
+
+function switchViewMode(newMode) {
+  if (newMode === viewMode) return;
+  viewMode = newMode;
+
+  // Update toggle buttons
+  var btns = document.querySelectorAll('#view-toggle .view-btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('active', btns[i].dataset.view === newMode);
+  }
+
+  // Clear table body (keep empty state row)
+  while (channelsBody.firstChild) {
+    channelsBody.removeChild(channelsBody.firstChild);
+  }
+  channelsBody.appendChild(channelsEmpty);
+
+  if (newMode === 'frequency') {
+    channelsHeader.textContent = 'Frequency Monitor';
+    // Seed freqChannels from any active calls that have freq
+    for (var entry of activeChannels.values()) {
+      if (entry.data.freq && !entry.fading) {
+        addActiveChannelFreqMode(entry.data);
+      }
+    }
+  } else {
+    channelsHeader.textContent = 'Active Voice Channels';
+    // Re-insert activeChannels rows
+    for (var entry of activeChannels.values()) {
+      if (!entry.fading) {
+        // Re-build row from scratch since we cleared DOM
+        while (entry.row.firstChild) entry.row.removeChild(entry.row.firstChild);
+        renderChannelRow(entry);
+        entry.elapsedCell = entry.row.querySelector('.elapsed-cell');
+        entry.panDot = entry.row.querySelector('.pan-dot');
+        applyChannelSystemFilter(entry);
+        insertChannelSorted(entry.row, entry.data.tgid || 0);
+      }
+    }
+    // Clear freq map (will re-seed on next switch)
+    freqChannels.clear();
+  }
+
+  updateChannelsEmptyState();
+
+  // Persist viewMode — merge into omni-settings
+  try {
+    var s = JSON.parse(localStorage.getItem('omni-settings') || '{}');
+    s.viewMode = viewMode;
+    localStorage.setItem('omni-settings', JSON.stringify(s));
+  } catch (e) {}
+}
+
+// Wire toggle button clicks
+document.getElementById('view-toggle').addEventListener('click', function(e) {
+  var btn = e.target.closest('.view-btn');
+  if (btn && btn.dataset.view) switchViewMode(btn.dataset.view);
+});
+
 // ── Stale Row Cleanup (15s) ──
 // SSE and WebSocket audio handle all additions. This only removes rows that got stuck.
 setInterval(function() {
+  if (viewMode === 'frequency') return; // freq mode rows are persistent
   var now = Date.now();
   var toRemove = [];
   for (var pair of activeChannels) {
@@ -1697,6 +1903,12 @@ setInterval(function() {
       if (Array.isArray(saved.selected)) saved.selected.forEach(function(t) { selectedTGs.add(t); });
       if (saved.autoPan === false) autoPanToggle.checked = false;
       if (saved.bufferSize) { bufferSizeSelect.value = saved.bufferSize; setBufferSizeEl.value = saved.bufferSize; }
+      if (saved.systemFilter) pendingSystemFilter = saved.systemFilter;
+      if (saved.listening) pendingListen = true;
+      if (saved.viewMode === 'frequency') {
+        // Defer switching until after DOM is ready — use setTimeout to avoid race
+        setTimeout(function() { switchViewMode('frequency'); }, 0);
+      }
       if (Array.isArray(saved.hiddenColumns)) {
         saved.hiddenColumns.forEach(function(col) {
           document.body.classList.add('hide-col-' + col);
@@ -1704,17 +1916,27 @@ setInterval(function() {
           if (toggle) toggle.checked = false;
         });
       }
+      if (saved.panelSplit) {
+        document.querySelector('.panel-top').style.height = saved.panelSplit + '%';
+      }
     } catch (e) {}
   }
 
   function saveSettings() {
     try {
+      var panelsC = document.querySelector('.panels');
+      var panelT = document.querySelector('.panel-top');
+      var pct = panelsC && panelT ? (panelT.offsetHeight / panelsC.offsetHeight * 100).toFixed(1) : null;
       var obj = {
         volume: parseInt(masterVol.value),
         selected: Array.from(selectedTGs),
         autoPan: autoPanToggle.checked,
         bufferSize: bufferSizeSelect.value,
-        hiddenColumns: getHiddenColumns()
+        hiddenColumns: getHiddenColumns(),
+        listening: listening,
+        systemFilter: systemFilter.value,
+        viewMode: viewMode,
+        panelSplit: pct
       };
       localStorage.setItem('omni-settings', JSON.stringify(obj));
     } catch (e) {}
@@ -1736,7 +1958,76 @@ setInterval(function() {
   }
 
   // Load on init
+  var pendingListen = false;
   loadSettings();
+
+  // ── Draggable Panel Divider ──
+  var panelDivider = document.getElementById('panel-divider');
+  var panelTop = document.querySelector('.panel-top');
+  var panelsContainer = document.querySelector('.panels');
+  var dragging = false;
+
+  panelDivider.addEventListener('mousedown', startDrag);
+  panelDivider.addEventListener('touchstart', startDrag, { passive: false });
+
+  function startDrag(e) {
+    e.preventDefault();
+    dragging = true;
+    panelDivider.classList.add('dragging');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('touchmove', onDrag, { passive: false });
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchend', stopDrag);
+  }
+
+  function onDrag(e) {
+    if (!dragging) return;
+    var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    var rect = panelsContainer.getBoundingClientRect();
+    var offset = clientY - rect.top;
+    var min = 80;
+    var max = rect.height - 80;
+    var clamped = Math.max(min, Math.min(max, offset));
+    panelTop.style.height = clamped + 'px';
+  }
+
+  function stopDrag() {
+    if (!dragging) return;
+    dragging = false;
+    panelDivider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('touchmove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('touchend', stopDrag);
+    var pct = (panelTop.offsetHeight / panelsContainer.offsetHeight * 100).toFixed(1);
+    try {
+      var s = JSON.parse(localStorage.getItem('omni-settings') || '{}');
+      s.panelSplit = pct;
+      localStorage.setItem('omni-settings', JSON.stringify(s));
+    } catch (e) {}
+  }
+
+  // Restore system filter — applied via MutationObserver when the option appears in dropdown
+  var savedSystemFilter = localStorage.getItem('omni-system-filter');
+  if (savedSystemFilter) {
+    // Try immediately (option may already exist)
+    systemFilter.value = savedSystemFilter;
+    if (systemFilter.value !== savedSystemFilter) {
+      // Option not yet in dropdown — watch for it
+      var obs = new MutationObserver(function() {
+        systemFilter.value = savedSystemFilter;
+        if (systemFilter.value === savedSystemFilter) {
+          obs.disconnect();
+          systemFilter.dispatchEvent(new Event('change'));
+        }
+      });
+      obs.observe(systemFilter, { childList: true });
+    }
+  }
 
   // ── Audio status helpers ──
   var lastAudioStatusText = '', lastAudioStatusCls = '';
@@ -1774,10 +2065,7 @@ setInterval(function() {
     engine.on('tg_created', function(ev) {
       // Selection model: mute everything not in selectedTGs
       engine.setMute(ev.tgid, !selectedTGs.has(ev.tgid));
-      // Create channel row from audio frame (works without MQTT)
-      if (ev.tgid && ev.systemId) {
-        addAudioChannel(ev.tgid, ev.systemId);
-      }
+      // Audio channel rows disabled — SSE call_start handles row creation
       highlightAudioTG(ev.tgid, true);
     });
 
@@ -1797,6 +2085,7 @@ setInterval(function() {
     listenLabel.textContent = 'LISTENING';
     audioControls.classList.add('visible');
     setAudioStatus('connecting...');
+    saveSettings();
   }
 
   function stopListening() {
@@ -1812,11 +2101,15 @@ setInterval(function() {
 
     var rows = document.querySelectorAll('.channel-row.audio-active');
     for (var i = 0; i < rows.length; i++) rows[i].classList.remove('audio-active');
+    saveSettings();
   }
 
   listenToggle.addEventListener('click', function() {
     if (listening) stopListening(); else startListening();
   });
+
+  // Auto-resume listening if it was active before reload
+  if (pendingListen) startListening();
 
   // ── Volume + pan controls (toolbar) ──
   masterVol.addEventListener('input', function() {
@@ -1833,7 +2126,8 @@ setInterval(function() {
 
   // ── Highlight channel rows with active audio ──
   function highlightAudioTG(tgid, active) {
-    for (var entry of activeChannels.values()) {
+    var map = viewMode === 'frequency' ? freqChannels : activeChannels;
+    for (var entry of map.values()) {
       if (entry.data.tgid === tgid) {
         if (active) entry.row.classList.add('audio-active');
         else entry.row.classList.remove('audio-active');
@@ -1888,8 +2182,10 @@ setInterval(function() {
     // Batch all DOM writes into one rAF
     requestAnimationFrame(function() {
       var voiceCount = 0;
-      for (var entry of activeChannels.values()) {
+      var channelMap = viewMode === 'frequency' ? freqChannels : activeChannels;
+      for (var entry of channelMap.values()) {
         if (entry.fading) continue;
+        if (viewMode === 'frequency' && entry.idle) continue; // skip idle freq rows for elapsed/audio
 
         // Elapsed timer (1s throttle)
         if (doElapsed && entry.elapsedCell) {
@@ -1942,8 +2238,6 @@ setInterval(function() {
       for (var j = 0; j < active.length; j++) {
         if (now - active[j].lastActivity > 30000) {
           engine._removeTG(active[j].tgid);
-        } else if (now - active[j].lastActivity < 3000 && active[j].systemId) {
-          addAudioChannel(active[j].tgid, active[j].systemId);
         }
       }
     }
