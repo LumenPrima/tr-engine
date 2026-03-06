@@ -89,6 +89,48 @@
   }
   .import-toggle:hover { opacity: 0.85; }
 
+  .write-token-btn {
+    padding: 6px 10px;
+    background: var(--bg-tile); border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text-muted); font-size: 13px; cursor: pointer;
+    font-family: var(--font-body); transition: border-color 0.15s, color 0.15s;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .write-token-btn:hover { border-color: var(--accent); color: var(--text); }
+  .write-token-btn.has-token { color: var(--success); border-color: color-mix(in srgb, var(--success) 50%, var(--border)); }
+
+  .write-token-row {
+    display: none; align-items: center; gap: 8px;
+    padding: 8px 20px;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    position: relative; z-index: 19;
+  }
+  .write-token-row.visible { display: flex; }
+  .write-token-row label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .write-token-row input {
+    flex: 1; max-width: 360px;
+    padding: 5px 10px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text); font-size: 13px; font-family: var(--font-mono);
+  }
+  .write-token-row input:focus { outline: none; border-color: var(--accent); }
+  .write-token-row .token-save {
+    padding: 5px 14px;
+    background: var(--accent); border: none; border-radius: var(--radius-xs);
+    color: #fff; font-size: 12px; font-weight: 500; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .write-token-row .token-save:hover { opacity: 0.85; }
+  .write-token-row .token-clear {
+    padding: 5px 10px;
+    background: none; border: 1px solid var(--border); border-radius: var(--radius-xs);
+    color: var(--text-muted); font-size: 12px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .write-token-row .token-clear:hover { border-color: var(--danger); color: var(--danger); }
+
   .import-panel {
     display: none;
     background: color-mix(in srgb, var(--bg) 92%, transparent);
@@ -253,8 +295,16 @@
     </select>
   </div>
   <div class="header-right">
+    <button class="write-token-btn" id="write-token-btn" title="Set write token for import">&#x1f511; Write Token</button>
     <button class="import-toggle" id="import-toggle-btn">Import CSV</button>
   </div>
+</div>
+
+<div class="write-token-row" id="write-token-row">
+  <label>Write Token:</label>
+  <input type="password" id="write-token-input" placeholder="Enter write token..." autocomplete="off">
+  <button class="token-save" id="token-save-btn">Save</button>
+  <button class="token-clear" id="token-clear-btn">Clear</button>
 </div>
 
 <div class="import-panel" id="import-panel">
@@ -344,6 +394,50 @@ function getAuthHeaders() {
   const token = localStorage.getItem('tr-engine-token');
   return token ? { 'Authorization': `Bearer ${token}` } : {};
 }
+function getWriteHeaders() {
+  const wt = localStorage.getItem('tr-engine-write-token');
+  if (wt) return { 'Authorization': `Bearer ${wt}` };
+  return getAuthHeaders();
+}
+
+// --- Write Token UI ---
+const writeTokenBtn = document.getElementById('write-token-btn');
+const writeTokenRow = document.getElementById('write-token-row');
+const writeTokenInput = document.getElementById('write-token-input');
+const tokenSaveBtn = document.getElementById('token-save-btn');
+const tokenClearBtn = document.getElementById('token-clear-btn');
+
+function updateWriteTokenBtn() {
+  const has = !!localStorage.getItem('tr-engine-write-token');
+  writeTokenBtn.classList.toggle('has-token', has);
+}
+updateWriteTokenBtn();
+
+writeTokenBtn.addEventListener('click', () => {
+  writeTokenRow.classList.toggle('visible');
+  const saved = localStorage.getItem('tr-engine-write-token');
+  if (saved) writeTokenInput.value = saved;
+});
+
+tokenSaveBtn.addEventListener('click', () => {
+  const val = writeTokenInput.value.trim();
+  if (val) {
+    localStorage.setItem('tr-engine-write-token', val);
+    writeTokenRow.classList.remove('visible');
+    updateWriteTokenBtn();
+  }
+});
+
+writeTokenInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') tokenSaveBtn.click();
+});
+
+tokenClearBtn.addEventListener('click', () => {
+  localStorage.removeItem('tr-engine-write-token');
+  writeTokenInput.value = '';
+  writeTokenRow.classList.remove('visible');
+  updateWriteTokenBtn();
+});
 
 // --- Load systems ---
 async function loadSystems() {
@@ -538,7 +632,7 @@ importBtn.addEventListener('click', async () => {
 
     const res = await fetch(`${API}/talkgroup-directory/import?${params}`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getWriteHeaders(),
       body: form,
     });
 
