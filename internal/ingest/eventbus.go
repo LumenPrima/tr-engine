@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/snarg/tr-engine/internal/api"
 	"github.com/snarg/tr-engine/internal/metrics"
 )
@@ -25,6 +26,8 @@ type EventBus struct {
 	ringSize int
 	ringHead int
 	ringMu   sync.RWMutex
+
+	log zerolog.Logger
 }
 
 type subscriber struct {
@@ -33,11 +36,12 @@ type subscriber struct {
 }
 
 // NewEventBus creates an event bus with the given ring buffer size.
-func NewEventBus(ringSize int) *EventBus {
+func NewEventBus(log zerolog.Logger, ringSize int) *EventBus {
 	return &EventBus{
 		subscribers: make(map[uint64]subscriber),
 		ring:        make([]api.SSEEvent, ringSize),
 		ringSize:    ringSize,
+		log:         log,
 	}
 }
 
@@ -122,6 +126,8 @@ type EventData struct {
 func (eb *EventBus) Publish(e EventData) {
 	data, err := json.Marshal(e.Payload)
 	if err != nil {
+		metrics.SSEEventsDroppedTotal.WithLabelValues("marshal_error").Inc()
+		eb.log.Error().Err(err).Str("event_type", e.Type).Msg("sse: dropped event due to marshal error")
 		return
 	}
 
@@ -143,6 +149,10 @@ func (eb *EventBus) Publish(e EventData) {
 
 	// Add to ring buffer
 	eb.ringMu.Lock()
+	if eb.ring[eb.ringHead].ID != "" {
+		metrics.SSEEventsDroppedTotal.WithLabelValues("ring_eviction").Inc()
+		eb.log.Warn().Str("evicted_id", eb.ring[eb.ringHead].ID).Str("event_type", e.Type).Msg("sse: ring buffer eviction — event lost from replay")
+	}
 	eb.ring[eb.ringHead] = event
 	eb.ringHead = (eb.ringHead + 1) % eb.ringSize
 	eb.ringMu.Unlock()
@@ -155,6 +165,8 @@ func (eb *EventBus) Publish(e EventData) {
 			case sub.ch <- event:
 			default:
 				// Drop if subscriber is slow
+				metrics.SSEEventsDroppedTotal.WithLabelValues("slow_subscriber").Inc()
+				eb.log.Warn().Str("event_type", e.Type).Str("event_id", event.ID).Int("subscriber_count", len(eb.subscribers)).Msg("sse: dropped event for slow subscriber")
 			}
 		}
 	}

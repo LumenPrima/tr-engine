@@ -35,10 +35,16 @@ tr-engine-linux
 mqtt-samples.txt
 *.png
 !docs/screenshots/*.png
+*.tar.gz
+debug-samples/
+.serena/
 
 # Dev utilities
 cmd/mqtt-dump/
 cmd/dbcheck/
+debug-receiver
+debug-receiver-linux
 .env.local
 bin/
 tr-engine
+tr-engine-test
