@@ -44,7 +44,8 @@ internal/api/live_data.go             — extend MaintenanceConfigData: add Rete
                                         add source/locked fields per retention setting
 internal/api/admin.go                 — add PUT /admin/maintenance/config and DELETE /admin/maintenance/config/{key}
 internal/api/server.go                — register StorageHandler routes
-  web/admin.html                        — add storage summary widget
+  openapi.yaml                           — document new storage stats, purge, and maintenance config endpoints
+  web/admin.html                         — add storage summary widget
   sample.env                            — add RETENTION_TRUNKING_MESSAGES example (default 720h)
   internal/api/debug_report.go          — include RetentionTrunkingMessages + source/locked in maintenance section
   docs/AGENTS.md                        — update trunking_messages from "Permanent" to "Configurable retention (default 720h)"
@@ -96,7 +97,7 @@ Server-side allowlist (maps purge key → table, time column, purge method):
 |---|---|---|---|
 | `mqtt_raw_messages` | `mqtt_raw_messages` | weekly partitions | `DropOldWeeklyPartitions` |
 | `console_messages` | `console_messages` | `log_time` | `PurgeOlderThan` |
-| `trunking_messages` | `trunking_messages` | `received_at` | `PurgeOlderThan` |
+| `trunking_messages` | `trunking_messages` | `time` | `PurgeOlderThan` |
 | `plugin_statuses` | `plugin_statuses` | `time` | `PurgeOlderThan` |
 | `call_active_checkpoints` | `call_active_checkpoints` | `snapshot_time` | `PurgeOlderThan` |
 
