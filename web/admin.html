@@ -277,7 +277,7 @@
         <span class="status-val" id="basic-write-status">---</span>
       </div>
       <div class="info-box">
-        Tokens are configured in your <code>.env</code> file or <code>docker-compose.yml</code>. Set <code>AUTH_TOKEN</code> for read access and <code>WRITE_TOKEN</code> for write access. Restart tr-engine after changes.
+        Token auth is configured in your <code>.env</code> file or <code>docker-compose.yml</code>. Set <code>AUTH_TOKEN</code> for token mode, or set <code>ADMIN_PASSWORD</code> to enable user login and API keys. <code>WRITE_TOKEN</code> is deprecated but still accepted for legacy write access. Restart tr-engine after changes.
       </div>
     </div>
 
@@ -413,6 +413,21 @@
           <button class="btn btn-danger btn-sm" id="downgrade-btn" disabled>Delete All Users</button>
         </div>
         <div class="error-msg" id="downgrade-err"></div>
+      </div>
+    </div>
+
+    <div class="section" id="section-storage" style="display:none">
+      <div class="section-title">Storage</div>
+      <div class="status-row">
+        <span class="status-label">Total DB Size</span>
+        <span class="status-val" id="storage-total">–</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Top Tables</span>
+        <span class="status-val" id="storage-tables">–</span>
+      </div>
+      <div style="margin-top:10px">
+        <a href="/storage.html" class="btn btn-sm">Manage Storage</a>
       </div>
     </div>
   </div>
@@ -561,6 +576,7 @@
               showPanel('panel-users');
               loadUsers();
               loadKeys();
+              loadStorageSummary();
             } else {
               document.getElementById('noaccess-user').textContent = me.username;
               document.getElementById('noaccess-role').textContent = me.role;
@@ -920,6 +936,37 @@
   document.getElementById('new-key-label').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') document.getElementById('create-key-btn').click();
   });
+
+  // ── Storage Summary ──
+
+  async function loadStorageSummary() {
+    try {
+      var resp = await api('GET', '/admin/storage/stats');
+      if (!resp._ok) return;
+      var el = document.getElementById('section-storage');
+      el.style.display = '';
+      document.getElementById('storage-total').textContent = fmtBytes(resp.total_db_bytes || 0);
+
+      var tables = (resp.tables || []).slice(0, 3);
+      if (tables.length === 0) {
+        document.getElementById('storage-tables').textContent = 'none';
+        return;
+      }
+      var names = tables.map(function(t) {
+        return t.name + ' (' + fmtBytes(t.total_bytes) + ')';
+      });
+      document.getElementById('storage-tables').textContent = names.join(', ');
+    } catch(e) {
+      // storage not available — widget stays hidden
+    }
+  }
+
+  function fmtBytes(b) {
+    if (!b || b === 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), units.length - 1);
+    return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+  }
 
   // ── Init ──
   detectMode();

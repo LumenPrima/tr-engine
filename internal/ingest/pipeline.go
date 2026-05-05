@@ -102,15 +102,55 @@ type Pipeline struct {
 	maintenanceRunning atomic.Bool
 	lastMaintenance    atomic.Pointer[api.MaintenanceRunData]
 	retentionCfg       retentionConfig
+	retentionSources   retentionSource
 }
 
 // retentionConfig holds configurable retention durations for maintenance tasks.
 type retentionConfig struct {
-	RawMessages  time.Duration
-	ConsoleLogs  time.Duration
-	PluginStatus time.Duration
-	Checkpoints  time.Duration
-	StaleCalls   time.Duration
+	RawMessages      time.Duration
+	ConsoleLogs      time.Duration
+	PluginStatus     time.Duration
+	TrunkingMessages time.Duration
+	Checkpoints      time.Duration
+	StaleCalls       time.Duration
+}
+
+// retentionSource tracks where each retention setting originates.
+type retentionSource struct {
+	RawMessages      string
+	ConsoleLogs      string
+	PluginStatus     string
+	TrunkingMessages string
+	Checkpoints      string
+	StaleCalls       string
+}
+
+func (s retentionSource) locked(key string) bool {
+	switch key {
+	case "retention_raw_messages":
+		return s.RawMessages == "env"
+	case "retention_console_logs":
+		return s.ConsoleLogs == "env"
+	case "retention_plugin_status":
+		return s.PluginStatus == "env"
+	case "retention_trunking_messages":
+		return s.TrunkingMessages == "env"
+	case "retention_checkpoints":
+		return s.Checkpoints == "env"
+	case "retention_stale_calls":
+		return s.StaleCalls == "env"
+	}
+	return false
+}
+
+// retentionKeyDefaults maps retention setting keys to their hardcoded defaults.
+var retentionKeyDefaults = map[string]time.Duration{
+	"retention_raw_messages":      168 * time.Hour,
+	"retention_console_logs":      720 * time.Hour,
+	"retention_plugin_status":     720 * time.Hour,
+	"retention_trunking_messages": 720 * time.Hour,
+	"retention_checkpoints":       168 * time.Hour,
+	"retention_stale_calls":       time.Hour,
 }
 
 // bufferedMsg holds a message deferred during warmup.
@@ -135,11 +175,12 @@ type PipelineOptions struct {
 	TranscribeInclude  string // comma-separated TGID allowlist for transcription
 	TranscribeExclude  string // comma-separated TGID denylist for transcription
 	// Configurable retention durations for maintenance tasks
-	RetentionRawMessages  time.Duration
-	RetentionConsoleLogs  time.Duration
-	RetentionPluginStatus time.Duration
-	RetentionCheckpoints  time.Duration
-	RetentionStaleCalls   time.Duration
+	RetentionRawMessages     time.Duration
+	RetentionConsoleLogs     time.Duration
+	RetentionPluginStatus    time.Duration
+	RetentionTrunkingMessages time.Duration
+	RetentionCheckpoints     time.Duration
+	RetentionStaleCalls      time.Duration
 	// Live audio streaming
 	StreamListen      string
 	StreamInstanceID  string        // TR instance ID for simplestream identity resolution
@@ -236,11 +277,20 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		transcribeIncludeTGs: transcribeInclude,
 		transcribeExcludeTGs: transcribeExclude,
 		retentionCfg: retentionConfig{
-			RawMessages:  opts.RetentionRawMessages,
-			ConsoleLogs:  opts.RetentionConsoleLogs,
-			PluginStatus: opts.RetentionPluginStatus,
-			Checkpoints:  opts.RetentionCheckpoints,
-			StaleCalls:   opts.RetentionStaleCalls,
+			RawMessages:      opts.RetentionRawMessages,
+			ConsoleLogs:      opts.RetentionConsoleLogs,
+			PluginStatus:     opts.RetentionPluginStatus,
+			TrunkingMessages: opts.RetentionTrunkingMessages,
+			Checkpoints:      opts.RetentionCheckpoints,
+			StaleCalls:       opts.RetentionStaleCalls,
+		},
+		retentionSources: retentionSource{
+			RawMessages:      detectRetentionSource("RETENTION_RAW_MESSAGES"),
+			ConsoleLogs:      detectRetentionSource("RETENTION_CONSOLE_LOGS"),
+			PluginStatus:     detectRetentionSource("RETENTION_PLUGIN_STATUS"),
+			TrunkingMessages: detectRetentionSource("RETENTION_TRUNKING_MESSAGES"),
+			Checkpoints:      detectRetentionSource("RETENTION_CHECKPOINTS"),
+			StaleCalls:       detectRetentionSource("RETENTION_STALE_CALLS"),
 		},
 		activeCalls:  newActiveCallMap(),
 		affiliations: newAffiliationMap(),
@@ -272,11 +322,15 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 	return p
 }
 
-// Start loads the identity cache and begins periodic stats logging and maintenance.
+// Start loads the identity cache, applies DB-stored retention overrides,
+// and begins periodic stats logging and maintenance.
 func (p *Pipeline) Start(ctx context.Context) error {
 	if err := p.identity.LoadCache(ctx); err != nil {
 		return err
 	}
+
+	// Apply DB-stored retention overrides (env vars still take precedence).
+	p.loadRetentionOverrides(ctx)
 
 	// Resolve name-based transcription filter entries (e.g. "butco:1001" → "5:1001")
 	p.resolveNamedTGFilters()
@@ -314,6 +368,100 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	}
 	p.log.Info().Msg("ingest pipeline started")
 	return nil
+}
+
+// loadRetentionOverrides reads DB-stored config_overrides and applies them to
+// the live retention config. Env vars always take precedence over DB overrides.
+func (p *Pipeline) loadRetentionOverrides(ctx context.Context) {
+	overrides, err := p.db.GetAllConfigOverrides(ctx)
+	if err != nil {
+		p.log.Warn().Err(err).Msg("failed to load config_overrides, using env/default retention")
+		return
+	}
+	for key, value := range overrides {
+		if p.retentionSources.locked(key) {
+			continue // env var takes precedence
+		}
+		d, err := time.ParseDuration(value)
+		if err != nil {
+			p.log.Warn().Str("key", key).Str("value", value).Msg("invalid retention override, skipping")
+			continue
+		}
+		p.setRetentionValue(key, d)
+		// Set source to "db" since the override was loaded from the database.
+		switch key {
+		case "retention_raw_messages":
+			p.retentionSources.RawMessages = "db"
+		case "retention_console_logs":
+			p.retentionSources.ConsoleLogs = "db"
+		case "retention_plugin_status":
+			p.retentionSources.PluginStatus = "db"
+		case "retention_trunking_messages":
+			p.retentionSources.TrunkingMessages = "db"
+		case "retention_checkpoints":
+			p.retentionSources.Checkpoints = "db"
+		case "retention_stale_calls":
+			p.retentionSources.StaleCalls = "db"
+		}
+	}
+}
+
+// SetRetention updates a retention setting and persists it to config_overrides.
+// Returns an error if the key is locked by an environment variable.
+func (p *Pipeline) SetRetention(ctx context.Context, key string, d time.Duration) error {
+	if p.retentionSources.locked(key) {
+		return fmt.Errorf("key %q is locked by environment variable", key)
+	}
+	if err := p.db.SetConfigOverride(ctx, key, d.String()); err != nil {
+		return fmt.Errorf("persist config override: %w", err)
+	}
+	p.setRetentionValue(key, d)
+	return nil
+}
+
+// DeleteRetention removes a DB-stored retention override and resets to env/default.
+func (p *Pipeline) DeleteRetention(ctx context.Context, key string) error {
+	if p.retentionSources.locked(key) {
+		return fmt.Errorf("key %q is locked by environment variable", key)
+	}
+	if err := p.db.DeleteConfigOverride(ctx, key); err != nil {
+		return fmt.Errorf("delete config override: %w", err)
+	}
+	p.resetRetentionValue(key)
+	return nil
+}
+
+func (p *Pipeline) setRetentionValue(key string, d time.Duration) {
+	switch key {
+	case "retention_raw_messages":
+		p.retentionCfg.RawMessages = d
+	case "retention_console_logs":
+		p.retentionCfg.ConsoleLogs = d
+	case "retention_plugin_status":
+		p.retentionCfg.PluginStatus = d
+	case "retention_trunking_messages":
+		p.retentionCfg.TrunkingMessages = d
+	case "retention_checkpoints":
+		p.retentionCfg.Checkpoints = d
+	case "retention_stale_calls":
+		p.retentionCfg.StaleCalls = d
+	}
+}
+
+func (p *Pipeline) resetRetentionValue(key string) {
+	// Check env var first
+	if envKey, ok := retentionKeyToEnv[key]; ok {
+		if v := os.Getenv(envKey); v != "" {
+			if d, err := time.ParseDuration(v); err == nil {
+				p.setRetentionValue(key, d)
+				return
+			}
+		}
+	}
+	// Fall back to coded default
+	if def, ok := retentionKeyDefaults[key]; ok {
+		p.setRetentionValue(key, def)
+	}
 }
 
 // StartWatcher creates and starts a file watcher on the given directory.
@@ -783,6 +931,7 @@ func (p *Pipeline) runMaintenanceWithResult() (*api.MaintenanceRunData, error) {
 	}{
 		{"console_messages", "log_time", p.retentionCfg.ConsoleLogs},
 		{"plugin_statuses", "time", p.retentionCfg.PluginStatus},
+		{"trunking_messages", "time", p.retentionCfg.TrunkingMessages},
 		{"call_active_checkpoints", "snapshot_time", p.retentionCfg.Checkpoints},
 	} {
 		n, err := p.db.PurgeOlderThan(ctx, spec.table, spec.col, spec.retention)
@@ -849,12 +998,25 @@ func (p *Pipeline) runMaintenanceWithResult() (*api.MaintenanceRunData, error) {
 func (p *Pipeline) MaintenanceStatus() *api.MaintenanceStatusData {
 	return &api.MaintenanceStatusData{
 		Config: api.MaintenanceConfigData{
-			RetentionRawMessages:  p.retentionCfg.RawMessages.String(),
-			RetentionConsoleLogs:  p.retentionCfg.ConsoleLogs.String(),
-			RetentionPluginStatus: p.retentionCfg.PluginStatus.String(),
-			RetentionCheckpoints:  p.retentionCfg.Checkpoints.String(),
-			RetentionStaleCalls:   p.retentionCfg.StaleCalls.String(),
-			Schedule:              "every 24h",
+			RetentionRawMessages:               p.retentionCfg.RawMessages.String(),
+			RetentionRawMessagesSource:         p.retentionSources.RawMessages,
+			RetentionRawMessagesLocked:         p.retentionSources.locked("retention_raw_messages"),
+			RetentionConsoleLogs:               p.retentionCfg.ConsoleLogs.String(),
+			RetentionConsoleLogsSource:         p.retentionSources.ConsoleLogs,
+			RetentionConsoleLogsLocked:         p.retentionSources.locked("retention_console_logs"),
+			RetentionPluginStatus:              p.retentionCfg.PluginStatus.String(),
+			RetentionPluginStatusSource:        p.retentionSources.PluginStatus,
+			RetentionPluginStatusLocked:        p.retentionSources.locked("retention_plugin_status"),
+			RetentionTrunkingMessages:           p.retentionCfg.TrunkingMessages.String(),
+			RetentionTrunkingMessagesSource:     p.retentionSources.TrunkingMessages,
+			RetentionTrunkingMessagesLocked:     p.retentionSources.locked("retention_trunking_messages"),
+			RetentionCheckpoints:                p.retentionCfg.Checkpoints.String(),
+			RetentionCheckpointsSource:          p.retentionSources.Checkpoints,
+			RetentionCheckpointsLocked:          p.retentionSources.locked("retention_checkpoints"),
+			RetentionStaleCalls:                 p.retentionCfg.StaleCalls.String(),
+			RetentionStaleCallsSource:           p.retentionSources.StaleCalls,
+			RetentionStaleCallsLocked:           p.retentionSources.locked("retention_stale_calls"),
+			Schedule:                            "every 24h",
 		},
 		LastRun: p.lastMaintenance.Load(),
 	}
@@ -1315,6 +1477,24 @@ func rewriteInstanceID(payload []byte, newID string) []byte {
 	}
 
 	return result
+}
+
+// detectRetentionSource returns "env" if the named environment variable is set, "default" otherwise.
+func detectRetentionSource(envVar string) string {
+	if os.Getenv(envVar) != "" {
+		return "env"
+	}
+	return "default"
+}
+
+// retentionKeyToEnv maps a retention config key to its environment variable name.
+var retentionKeyToEnv = map[string]string{
+	"retention_raw_messages":      "RETENTION_RAW_MESSAGES",
+	"retention_console_logs":      "RETENTION_CONSOLE_LOGS",
+	"retention_plugin_status":     "RETENTION_PLUGIN_STATUS",
+	"retention_trunking_messages": "RETENTION_TRUNKING_MESSAGES",
+	"retention_checkpoints":       "RETENTION_CHECKPOINTS",
+	"retention_stale_calls":       "RETENTION_STALE_CALLS",
 }
 
 // parseHandlerSet splits a comma-separated string into a set of handler names.

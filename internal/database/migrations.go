@@ -113,6 +113,15 @@ ALTER TABLE systems ADD CONSTRAINT systems_system_type_check
 			WHERE table_name = 'users' AND column_name = 'display_name')`,
 	},
 	{
+		name: "create config_overrides table",
+		sql: `CREATE TABLE IF NOT EXISTS config_overrides (
+			key        text PRIMARY KEY,
+			value      text NOT NULL,
+			updated_at timestamptz NOT NULL DEFAULT now()
+		)`,
+		check: `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'config_overrides')`,
+	},
+	{
 		name: "create api_keys table",
 		sql: `CREATE TABLE IF NOT EXISTS api_keys (
 			id                 serial       PRIMARY KEY,

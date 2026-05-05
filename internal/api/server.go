@@ -212,6 +212,10 @@ func NewServer(opts ServerOptions) *Server {
 			NewAffiliationsHandler(opts.Live).Routes(r)
 			NewTranscriptionsHandler(opts.DB, opts.Live).Routes(r)
 			NewAdminHandler(opts.DB, opts.Live, opts.OnSystemMerge).Routes(r)
+			r.Group(func(r chi.Router) {
+				r.Use(AdminOnly)
+				NewStorageHandler(opts.DB, opts.Log).Routes(r)
+			})
 			r.Post("/pages", SavePageHandler(webDir))
 
 			NewQueryHandler(opts.DB).Routes(r)
