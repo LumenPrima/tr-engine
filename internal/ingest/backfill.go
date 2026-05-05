@@ -2,6 +2,8 @@ package ingest
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -307,6 +309,14 @@ func (bm *BackfillManager) enqueueCall(ctx context.Context, callID int64) bool {
 		bm.log.Warn().Err(err).Int64("call_id", callID).Msg("backfill: failed to load call")
 		return false
 	}
+	if backfillShouldSkipForProvider(bm.transcriber.ProviderName(), c.AudioFilePath) {
+		bm.log.Debug().
+			Int64("call_id", callID).
+			Str("provider", bm.transcriber.ProviderName()).
+			Str("audio_file_path", c.AudioFilePath).
+			Msg("backfill: skipping call without dvcf file for IMBE provider")
+		return false
+	}
 	return bm.transcriber.Enqueue(transcribe.Job{
 		CallID:        c.CallID,
 		CallStartTime: c.StartTime,
@@ -321,6 +331,10 @@ func (bm *BackfillManager) enqueueCall(ctx context.Context, callID int64) bool {
 		TgTag:         c.TgTag,
 		TgGroup:       c.TgGroup,
 	})
+}
+
+func backfillShouldSkipForProvider(providerName, audioFilePath string) bool {
+	return strings.EqualFold(providerName, "imbe") && !strings.EqualFold(filepath.Ext(audioFilePath), ".dvcf")
 }
 
 func (bm *BackfillManager) toDBFilter(f BackfillFilters) database.BackfillFilter {
