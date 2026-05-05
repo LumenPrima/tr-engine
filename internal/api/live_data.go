@@ -61,6 +61,12 @@ type LiveDataSource interface {
 
 	// CancelBackfill cancels a backfill job by ID. If id <= 0, cancels all.
 	CancelBackfill(id int) bool
+
+	// SetRetention updates a live retention setting and persists to config_overrides.
+	SetRetention(ctx context.Context, key string, d time.Duration) error
+
+	// DeleteRetention removes a DB-stored retention override, falling back to env/default.
+	DeleteRetention(ctx context.Context, key string) error
 }
 
 // CallUploader processes an uploaded call (audio + metadata).
@@ -204,12 +210,25 @@ type MaintenanceStatusData struct {
 
 // MaintenanceConfigData reports the active retention settings.
 type MaintenanceConfigData struct {
-	RetentionRawMessages  string `json:"retention_raw_messages"`
-	RetentionConsoleLogs  string `json:"retention_console_logs"`
-	RetentionPluginStatus string `json:"retention_plugin_status"`
-	RetentionCheckpoints  string `json:"retention_checkpoints"`
-	RetentionStaleCalls   string `json:"retention_stale_calls"`
-	Schedule              string `json:"schedule"`
+	RetentionRawMessages              string `json:"retention_raw_messages"`
+	RetentionRawMessagesSource        string `json:"retention_raw_messages_source"`
+	RetentionRawMessagesLocked        bool   `json:"retention_raw_messages_locked"`
+	RetentionConsoleLogs              string `json:"retention_console_logs"`
+	RetentionConsoleLogsSource        string `json:"retention_console_logs_source"`
+	RetentionConsoleLogsLocked        bool   `json:"retention_console_logs_locked"`
+	RetentionPluginStatus             string `json:"retention_plugin_status"`
+	RetentionPluginStatusSource       string `json:"retention_plugin_status_source"`
+	RetentionPluginStatusLocked       bool   `json:"retention_plugin_status_locked"`
+	RetentionTrunkingMessages          string `json:"retention_trunking_messages"`
+	RetentionTrunkingMessagesSource    string `json:"retention_trunking_messages_source"`
+	RetentionTrunkingMessagesLocked    bool   `json:"retention_trunking_messages_locked"`
+	RetentionCheckpoints               string `json:"retention_checkpoints"`
+	RetentionCheckpointsSource         string `json:"retention_checkpoints_source"`
+	RetentionCheckpointsLocked         bool   `json:"retention_checkpoints_locked"`
+	RetentionStaleCalls                string `json:"retention_stale_calls"`
+	RetentionStaleCallsSource          string `json:"retention_stale_calls_source"`
+	RetentionStaleCallsLocked          bool   `json:"retention_stale_calls_locked"`
+	Schedule                           string `json:"schedule"`
 }
 
 // MaintenanceRunData reports the results of a single maintenance run.

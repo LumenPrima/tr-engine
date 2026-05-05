@@ -121,11 +121,12 @@ func sanitizeConfig(cfg *config.Config) map[string]any {
 		"PreprocessAudio": cfg.PreprocessAudio,
 
 		// Retention / maintenance
-		"RetentionRawMessages":  cfg.RetentionRawMessages.String(),
-		"RetentionConsoleLogs":  cfg.RetentionConsoleLogs.String(),
-		"RetentionPluginStatus": cfg.RetentionPluginStatus.String(),
-		"RetentionCheckpoints":  cfg.RetentionCheckpoints.String(),
-		"RetentionStaleCalls":   cfg.RetentionStaleCalls.String(),
+		"RetentionRawMessages":      cfg.RetentionRawMessages.String(),
+		"RetentionConsoleLogs":      cfg.RetentionConsoleLogs.String(),
+		"RetentionPluginStatus":     cfg.RetentionPluginStatus.String(),
+		"RetentionTrunkingMessages": cfg.RetentionTrunkingMessages.String(),
+		"RetentionCheckpoints":      cfg.RetentionCheckpoints.String(),
+		"RetentionStaleCalls":       cfg.RetentionStaleCalls.String(),
 
 		// Transcription worker pool
 		"TranscribeWorkers":     cfg.TranscribeWorkers,

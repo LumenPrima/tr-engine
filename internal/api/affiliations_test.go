@@ -30,6 +30,8 @@ func (m *mockLiveData) RunMaintenance(context.Context) (*MaintenanceRunData, err
 func (m *mockLiveData) SubmitBackfill(context.Context, BackfillFiltersData) (int, int, int, error) { return 0, 0, 0, nil }
 func (m *mockLiveData) BackfillStatus() *BackfillStatusData { return nil }
 func (m *mockLiveData) CancelBackfill(int) bool { return false }
+func (m *mockLiveData) SetRetention(ctx context.Context, key string, d time.Duration) error { return nil }
+func (m *mockLiveData) DeleteRetention(ctx context.Context, key string) error { return nil }
 
 // affiliationsResponse matches the JSON shape returned by ListAffiliations.
 type affiliationsResponse struct {

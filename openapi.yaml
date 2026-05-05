@@ -3521,6 +3521,196 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /admin/maintenance/config:
+    put:
+      operationId: setMaintenanceConfig
+      summary: Update a retention setting
+      description: |
+        Updates a single retention setting. The value is persisted to the
+        `config_overrides` table and applied immediately to the live pipeline.
+        Returns 409 if the key is locked by an environment variable.
+        Requires admin role.
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetentionConfigUpdate"
+      responses:
+        "200":
+          description: Retention setting updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    example: "retention_console_logs"
+                  value:
+                    type: string
+                    example: "48h0m0s"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Key is locked by environment variable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Pipeline not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/maintenance/config/{key}:
+    delete:
+      operationId: deleteMaintenanceConfig
+      summary: Reset a retention setting to default
+      description: |
+        Removes a DB-stored retention override and resets the setting to its
+        environment variable value (if set) or coded default. Returns 409 if
+        the key is locked by an environment variable.
+        Requires admin role.
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Retention config key (e.g. retention_console_logs)
+          schema:
+            type: string
+            example: "retention_console_logs"
+      responses:
+        "200":
+          description: Retention override removed, reset to default
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    example: "retention_console_logs"
+                  status:
+                    type: string
+                    example: "reset to default"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Key is locked by environment variable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Pipeline not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/storage/stats:
+    get:
+      operationId: getStorageStats
+      summary: Get database storage statistics
+      description: |
+        Returns per-table row counts and sizes from `pg_stat_user_tables`,
+        plus partition breakdowns for large partitioned tables. Total
+        database size is included. If a per-table stat fails, the table is
+        omitted and an entry is added to `errors[]` — the rest of the
+        response still returns.
+        Requires admin role.
+      tags: [admin, storage]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Storage stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/storage/purge/{table}:
+    post:
+      operationId: purgeTable
+      summary: Manually purge old data from a table
+      description: |
+        Triggers an immediate purge of rows (or partitions) older than the
+        specified duration. The `table` path parameter must be one of the
+        allowed purgeable tables. Purge runs with a 5-minute context
+        timeout — if it times out, `timed_out: true` is returned with
+        a partial count.
+
+        This action is irreversible.
+        Requires admin role.
+      tags: [admin, storage]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: table
+          in: path
+          required: true
+          description: Purgeable table key (see allowlist)
+          schema:
+            type: string
+            enum:
+              - mqtt_raw_messages
+              - console_messages
+              - trunking_messages
+              - plugin_statuses
+              - call_active_checkpoints
+            example: "mqtt_raw_messages"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PurgeRequest"
+      responses:
+        "200":
+          description: Purge completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurgeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "504":
+          description: Purge timed out (partial results included)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurgeResponse"
+
 # ============================================================
 # COMPONENTS
 # ============================================================
@@ -5983,28 +6173,76 @@ components:
 
     MaintenanceConfig:
       type: object
-      description: Active retention settings for automatic maintenance.
+      description: Active retention settings for automatic maintenance. Each setting includes a `_source` ("env", "db", or "default") and a `_locked` flag (true when set by environment variable and immutable through the API).
       properties:
         retention_raw_messages:
           type: string
           description: "Raw MQTT message retention (Go duration, e.g. 168h = 7 days)"
           example: "168h0m0s"
+        retention_raw_messages_source:
+          type: string
+          enum: [env, db, default]
+          description: Where this value originates
+          example: "env"
+        retention_raw_messages_locked:
+          type: boolean
+          description: True when set by environment variable (immutable through API)
+          example: true
         retention_console_logs:
           type: string
           description: "Console log retention (Go duration, e.g. 720h = 30 days)"
           example: "720h0m0s"
+        retention_console_logs_source:
+          type: string
+          enum: [env, db, default]
+          example: "db"
+        retention_console_logs_locked:
+          type: boolean
+          example: false
         retention_plugin_status:
           type: string
           description: "Plugin status retention (Go duration)"
           example: "720h0m0s"
+        retention_plugin_status_source:
+          type: string
+          enum: [env, db, default]
+          example: "default"
+        retention_plugin_status_locked:
+          type: boolean
+          example: false
+        retention_trunking_messages:
+          type: string
+          description: "Trunking message retention (Go duration, default 720h = 30 days)"
+          example: "720h0m0s"
+        retention_trunking_messages_source:
+          type: string
+          enum: [env, db, default]
+          example: "default"
+        retention_trunking_messages_locked:
+          type: boolean
+          example: false
         retention_checkpoints:
           type: string
           description: "Active call checkpoint retention (Go duration)"
           example: "168h0m0s"
+        retention_checkpoints_source:
+          type: string
+          enum: [env, db, default]
+          example: "env"
+        retention_checkpoints_locked:
+          type: boolean
+          example: true
         retention_stale_calls:
           type: string
           description: "Stale incomplete call retention (Go duration)"
           example: "1h0m0s"
+        retention_stale_calls_source:
+          type: string
+          enum: [env, db, default]
+          example: "default"
+        retention_stale_calls_locked:
+          type: boolean
+          example: false
         schedule:
           type: string
           description: Maintenance run schedule
@@ -6170,3 +6408,145 @@ components:
           type: string
           format: date-time
           description: When this stream became active
+
+    RetentionConfigUpdate:
+      type: object
+      description: Request body for updating a retention setting.
+      required: [key, value]
+      properties:
+        key:
+          type: string
+          description: Retention config key
+          enum:
+            - retention_raw_messages
+            - retention_console_logs
+            - retention_plugin_status
+            - retention_trunking_messages
+            - retention_checkpoints
+            - retention_stale_calls
+          example: "retention_console_logs"
+        value:
+          type: string
+          description: "Go duration string (e.g. 48h, 720h, 7d)"
+          example: "48h"
+
+    StorageStats:
+      type: object
+      description: Database storage statistics including per-table sizes and partition breakdowns.
+      properties:
+        total_db_bytes:
+          type: integer
+          format: int64
+          description: Total database size in bytes
+          example: 8589934592
+        tables:
+          type: array
+          items:
+            $ref: "#/components/schemas/TableSizeInfo"
+          description: Per-table size information, sorted by total_bytes descending
+        errors:
+          type: array
+          items:
+            type: string
+          description: Per-table errors that occurred during stat collection. Affected tables are omitted from `tables`.
+          example: ["failed to get partitions for some_table: connection timeout"]
+
+    TableSizeInfo:
+      type: object
+      description: Size information for a single database table.
+      properties:
+        name:
+          type: string
+          description: Table name
+          example: "mqtt_raw_messages"
+        row_count:
+          type: integer
+          format: int64
+          description: "Estimated live row count (from pg_stat_user_tables)"
+          example: 4200000
+        table_bytes:
+          type: integer
+          format: int64
+          description: "Table data size in bytes (pg_table_size)"
+          example: 5368709120
+        index_bytes:
+          type: integer
+          format: int64
+          description: "Index size in bytes (pg_indexes_size)"
+          example: 536870912
+        total_bytes:
+          type: integer
+          format: int64
+          description: "Total relation size in bytes (pg_total_relation_size)"
+          example: 5905580032
+        partitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartitionInfo"
+          description: Per-partition breakdown. Only present for partitioned tables.
+
+    PartitionInfo:
+      type: object
+      description: Size information for a single table partition.
+      properties:
+        name:
+          type: string
+          description: Partition name
+          example: "mqtt_raw_messages_2026_w14"
+        total_bytes:
+          type: integer
+          format: int64
+          description: "Total relation size in bytes"
+          example: 2684354560
+
+    PurgeRequest:
+      type: object
+      description: Request body for manual table purge.
+      required: [older_than]
+      properties:
+        older_than:
+          type: string
+          description: "Rows/partitions older than this duration will be deleted (Go duration, e.g. 48h, 7d)"
+          example: "48h"
+
+    PurgeResponse:
+      type: object
+      description: Response from a manual table purge operation.
+      properties:
+        table:
+          type: string
+          description: Table that was purged
+          example: "mqtt_raw_messages"
+        older_than:
+          type: string
+          description: The duration threshold that was used
+          example: "48h"
+        rows_deleted:
+          type: integer
+          format: int64
+          description: Number of rows deleted (null for partition-drop purges)
+          nullable: true
+          example: null
+        partitions_dropped:
+          type: integer
+          description: Number of partitions dropped (null for row-delete purges)
+          nullable: true
+          example: 2
+        partitions_dropped_names:
+          type: array
+          items:
+            type: string
+          description: Names of dropped partitions (only when partitions were dropped)
+          example: ["mqtt_raw_messages_2025_w48"]
+        timed_out:
+          type: boolean
+          description: True if the 5-minute context deadline expired before completion
+          example: false
+        duration_ms:
+          type: integer
+          description: Wall-clock duration of the purge operation in milliseconds
+          example: 4823
+        warning:
+          type: string
+          description: "Always present, reminding that this action is irreversible"
+          example: "This action is irreversible."

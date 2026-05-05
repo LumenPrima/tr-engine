@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/hlog"
@@ -167,6 +168,84 @@ func (h *AdminHandler) CancelBackfill(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var validRetentionKeys = map[string]bool{
+	"retention_raw_messages":      true,
+	"retention_console_logs":      true,
+	"retention_plugin_status":     true,
+	"retention_trunking_messages": true,
+	"retention_checkpoints":       true,
+	"retention_stale_calls":       true,
+}
+
+// SetMaintenanceConfig updates a single retention setting.
+func (h *AdminHandler) SetMaintenanceConfig(w http.ResponseWriter, r *http.Request) {
+	if h.live == nil {
+		WriteError(w, http.StatusServiceUnavailable, "pipeline not running")
+		return
+	}
+
+	var req struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := DecodeJSON(r, &req); err != nil {
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidBody, "invalid request body")
+		return
+	}
+	if req.Key == "" {
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, "key is required")
+		return
+	}
+	if !validRetentionKeys[req.Key] {
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, "unknown key: "+req.Key)
+		return
+	}
+	if req.Value == "" {
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, "value is required")
+		return
+	}
+
+	d, err := time.ParseDuration(req.Value)
+	if err != nil {
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, "expected duration like '48h' or '7d'")
+		return
+	}
+
+	if err := h.live.SetRetention(r.Context(), req.Key, d); err != nil {
+		WriteError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]string{
+		"key":   req.Key,
+		"value": d.String(),
+	})
+}
+
+// DeleteMaintenanceConfig removes a DB-stored retention override, resetting to env/default.
+func (h *AdminHandler) DeleteMaintenanceConfig(w http.ResponseWriter, r *http.Request) {
+	if h.live == nil {
+		WriteError(w, http.StatusServiceUnavailable, "pipeline not running")
+		return
+	}
+
+	key := chi.URLParam(r, "key")
+	if key == "" || !validRetentionKeys[key] {
+		WriteErrorWithCode(w, http.StatusBadRequest, ErrInvalidParameter, "unknown key: "+key)
+		return
+	}
+
+	if err := h.live.DeleteRetention(r.Context(), key); err != nil {
+		WriteError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]string{
+		"key":    key,
+		"status": "reset to default",
+	})
+}
+
 // Routes registers admin routes on the given router.
 func (h *AdminHandler) Routes(r chi.Router) {
 	r.Post("/admin/systems/merge", h.MergeSystems)
@@ -176,4 +255,11 @@ func (h *AdminHandler) Routes(r chi.Router) {
 	r.Get("/admin/transcribe-backfill", h.GetBackfillStatus)
 	r.Delete("/admin/transcribe-backfill/{id}", h.CancelBackfill)
 	r.Delete("/admin/transcribe-backfill", h.CancelBackfill)
+
+	// Retention config edit/delete requires admin role
+	r.Group(func(r chi.Router) {
+		r.Use(AdminOnly)
+		r.Put("/admin/maintenance/config", h.SetMaintenanceConfig)
+		r.Delete("/admin/maintenance/config/{key}", h.DeleteMaintenanceConfig)
+	})
 }
