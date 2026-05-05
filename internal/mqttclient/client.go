@@ -19,6 +19,13 @@ type Client struct {
 	connected atomic.Bool
 	log       zerolog.Logger
 	handler   MessageHandler
+	msgCh     chan mqttMessage
+	done      chan struct{}
+}
+
+type mqttMessage struct {
+	topic   string
+	payload []byte
 }
 
 type Options struct {
@@ -34,6 +41,8 @@ func Connect(opts Options) (*Client, error) {
 	c := &Client{
 		topics: parseTopics(opts.Topics),
 		log:    opts.Log,
+		msgCh:  make(chan mqttMessage, 1000),
+		done:   make(chan struct{}),
 	}
 
 	clientID := opts.ClientID
@@ -76,6 +85,20 @@ func Connect(opts Options) (*Client, error) {
 
 func (c *Client) SetMessageHandler(h MessageHandler) {
 	c.handler = h
+	go c.dispatchLoop()
+}
+
+func (c *Client) dispatchLoop() {
+	for {
+		select {
+		case msg := <-c.msgCh:
+			if c.handler != nil {
+				c.handler(msg.topic, msg.payload)
+			}
+		case <-c.done:
+			return
+		}
+	}
 }
 
 func (c *Client) onConnect(client mqtt.Client) {
@@ -100,7 +123,15 @@ func (c *Client) onConnectionLost(_ mqtt.Client, err error) {
 
 func (c *Client) onMessage(_ mqtt.Client, msg mqtt.Message) {
 	if c.handler != nil {
-		c.handler(msg.Topic(), msg.Payload())
+		payload := append([]byte(nil), msg.Payload()...)
+		select {
+		case c.msgCh <- mqttMessage{topic: msg.Topic(), payload: payload}:
+		default:
+			c.log.Warn().
+				Str("topic", msg.Topic()).
+				Int("payload_size", len(payload)).
+				Msg("mqtt ingest queue full, dropping message")
+		}
 		return
 	}
 	c.log.Debug().
@@ -115,6 +146,7 @@ func (c *Client) IsConnected() bool {
 
 func (c *Client) Close() {
 	c.log.Info().Msg("disconnecting mqtt client")
+	close(c.done)
 	c.conn.Disconnect(1000)
 }
 
