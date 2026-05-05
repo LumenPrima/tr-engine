@@ -31,7 +31,7 @@ That's it — one file, one command. On first run:
 - PostgreSQL starts and tr-engine auto-applies the database schema
 - Mosquitto starts on port **1883** (anonymous access)
 - tr-engine connects to both and starts listening
-- An API auth token is auto-generated and logged (see [Configuration](#configuration) to set a persistent one)
+- With no auth variables set, tr-engine starts in open mode. See [Configuration](#configuration) before exposing it outside your LAN.
 
 Verify it's running:
 
@@ -129,9 +129,10 @@ cp sample.env .env
 Common settings:
 
 ```bash
-AUTH_TOKEN=my-secret            # persistent API token (auto-generated if not set)
+AUTH_TOKEN=my-secret            # optional shared token for token-mode deployments
+ADMIN_PASSWORD=change-me        # enables full auth with JWT login and API keys
 MQTT_TOPICS=trengine/#          # match your TR plugin's topic prefix (default: #)
-# WRITE_TOKEN=my-write-secret   # separate token for write operations (see below)
+# WRITE_TOKEN=my-write-secret   # deprecated legacy write token
 # CORS_ORIGINS=https://example.com  # restrict CORS (empty = allow all)
 LOG_LEVEL=info                  # debug, info, warn, error
 # TR_DIR=/tr-config             # auto-discover from TR's config.json (see below)
@@ -156,18 +157,16 @@ Then restart: `docker compose up -d`
 
 ### Securing a public-facing instance
 
-If your tr-engine instance is accessible from the internet, you should **always** set `WRITE_TOKEN` in your `.env`:
+If your tr-engine instance is accessible from the internet, use full auth:
 
 ```bash
-AUTH_TOKEN=my-read-token         # used by the web UI (served via /auth-init)
-WRITE_TOKEN=my-write-secret      # required for all write operations
+ADMIN_PASSWORD=my-admin-password # enables login, JWT sessions, and API keys
+AUTH_TOKEN=my-public-read-token  # optional public read token returned by /auth-init
 ```
 
-**Why this matters:** `AUTH_TOKEN` is automatically served to every browser that loads the web UI (via `GET /api/v1/auth-init`). When auth is enabled (the default), the API runs in **read-only mode** unless `WRITE_TOKEN` is set — all POST, PUT, PATCH, and DELETE requests are rejected with a 403 error. This includes call uploads from trunk-recorder.
+**Why this matters:** full auth gives browser users JWT sessions with roles and lets you create `tre_...` API keys for upload plugins or scripts. If `AUTH_TOKEN` is also set, it is treated as a public read token and returned by `GET /api/v1/auth-init`; write operations still require an editor/admin JWT, API key, or the deprecated `WRITE_TOKEN`.
 
-Setting `WRITE_TOKEN` unlocks write operations for clients that present it. The web UI continues to work normally for viewing data using `AUTH_TOKEN`.
-
-Use a strong, random value for `WRITE_TOKEN` and do **not** reuse your `AUTH_TOKEN`.
+`WRITE_TOKEN` is still accepted for older deployments, but new installs should use `ADMIN_PASSWORD` plus API keys instead.
 
 ### TR auto-discovery (TR_DIR)
 

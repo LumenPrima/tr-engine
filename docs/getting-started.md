@@ -215,11 +215,12 @@ AUDIO_DIR=./audio
 # TR_AUDIO_DIR=/path/to/trunk-recorder/audio
 
 # Authentication
-# AUTH_TOKEN=my-secret           # API token (auto-generated if not set)
-# WRITE_TOKEN=my-write-secret    # separate token for write operations
+# AUTH_TOKEN=my-secret           # token-mode shared API token
+# ADMIN_PASSWORD=change-me       # enables full auth with JWT login and API keys
+# WRITE_TOKEN=my-write-secret    # deprecated legacy write token
 ```
 
-> **Public-facing instances:** When auth is enabled (the default), the API runs in **read-only mode** unless `WRITE_TOKEN` is set — all POST, PUT, PATCH, and DELETE requests are rejected with 403. This prevents the browser-visible `AUTH_TOKEN` (served via `/api/v1/auth-init`) from granting write access. Set `WRITE_TOKEN` to a strong, random value to enable writes for trusted services (trunk-recorder upload plugins, admin scripts).
+> **Public-facing instances:** Set `ADMIN_PASSWORD` to enable full auth with user login, roles, and API keys. Use API keys (`tre_...`) for upload plugins and scripts. `WRITE_TOKEN` is still accepted for legacy deployments, but it is deprecated.
 
 `MQTT_TOPICS` must match the topic prefixes from your TR plugin config. If all your TR topics share a common root (e.g. `topic: "trengine/feeds"`, `unit_topic: "trengine/units"`), a single wildcard like `trengine/#` covers everything. If they differ, comma-separate them: `MQTT_TOPICS=prefix1/#,prefix2/#`.
 

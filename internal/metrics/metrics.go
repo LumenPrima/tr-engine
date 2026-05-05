@@ -56,6 +56,12 @@ var (
 		Name:      "sse_events_published_total",
 		Help:      "Total SSE events published.",
 	})
+
+	SSEEventsDroppedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "sse_events_dropped_total",
+		Help:      "Total SSE events dropped before delivery.",
+	}, []string{"reason"})
 )
 
 func init() {
@@ -66,6 +72,7 @@ func init() {
 		MQTTMessagesTotal,
 		MQTTHandlerMessagesTotal,
 		SSEEventsPublishedTotal,
+		SSEEventsDroppedTotal,
 	)
 }
 
