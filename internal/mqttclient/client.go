@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,9 +19,11 @@ type Client struct {
 	topics    []string
 	connected atomic.Bool
 	log       zerolog.Logger
-	handler   MessageHandler
+	handler   atomic.Pointer[MessageHandler]
 	msgCh     chan mqttMessage
 	done      chan struct{}
+	startOnce sync.Once
+	closeOnce sync.Once
 }
 
 type mqttMessage struct {
@@ -84,17 +87,17 @@ func Connect(opts Options) (*Client, error) {
 }
 
 func (c *Client) SetMessageHandler(h MessageHandler) {
-	c.handler = h
-	go c.dispatchLoop()
+	c.startOnce.Do(func() {
+		c.handler.Store(&h)
+		go c.dispatchLoop(h)
+	})
 }
 
-func (c *Client) dispatchLoop() {
+func (c *Client) dispatchLoop(h MessageHandler) {
 	for {
 		select {
 		case msg := <-c.msgCh:
-			if c.handler != nil {
-				c.handler(msg.topic, msg.payload)
-			}
+			h(msg.topic, msg.payload)
 		case <-c.done:
 			return
 		}
@@ -122,7 +125,7 @@ func (c *Client) onConnectionLost(_ mqtt.Client, err error) {
 }
 
 func (c *Client) onMessage(_ mqtt.Client, msg mqtt.Message) {
-	if c.handler != nil {
+	if c.handler.Load() != nil {
 		payload := append([]byte(nil), msg.Payload()...)
 		select {
 		case c.msgCh <- mqttMessage{topic: msg.Topic(), payload: payload}:
@@ -146,7 +149,7 @@ func (c *Client) IsConnected() bool {
 
 func (c *Client) Close() {
 	c.log.Info().Msg("disconnecting mqtt client")
-	close(c.done)
+	c.closeOnce.Do(func() { close(c.done) })
 	c.conn.Disconnect(1000)
 }
 
