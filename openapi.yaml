@@ -15,17 +15,18 @@ info:
 
     ## Authentication
 
-    All endpoints (except `/health` and `/auth-init`) require a bearer token
-    via the `Authorization: Bearer <token>` header or `?token=` query param.
+    tr-engine supports three auth modes derived from configuration:
 
-    **Two-tier auth (optional):** When `WRITE_TOKEN` is configured, mutating
-    operations (POST, PATCH, PUT, DELETE) require the write token. Read
-    operations (GET) accept either the read token (`AUTH_TOKEN`) or write
-    token. If `WRITE_TOKEN` is not set, all operations accept `AUTH_TOKEN`
-    (backwards compatible).
+    - **Open mode**: no `AUTH_TOKEN` and no `ADMIN_PASSWORD`; requests do not
+      require authentication.
+    - **Token mode**: `AUTH_TOKEN` set and `ADMIN_PASSWORD` unset; clients use
+      `Authorization: Bearer <token>` or `?token=`.
+    - **Full mode**: `ADMIN_PASSWORD` set; browser users authenticate with JWT
+      sessions and service clients can use `tre_...` API keys. If `AUTH_TOKEN`
+      is also set, it acts as a public read token returned by `/auth-init`.
 
-    The `/auth-init` endpoint returns only the read token — the write token
-    is never exposed by any endpoint.
+    Mutating operations (POST, PATCH, PUT, DELETE) require editor/admin JWT
+    role, a suitable API key, or the deprecated legacy `WRITE_TOKEN`.
 
     ## Data Model: Systems and Sites
 
@@ -2019,13 +2020,14 @@ paths:
         trunk-recorder's upload plugin at `POST /api/v1/call-upload` and it
         works out of the box.
 
-        **Authentication:** When `WRITE_TOKEN` is configured, this endpoint
-        requires the write token (uploads are write operations). Otherwise,
-        `AUTH_TOKEN` is accepted. In addition to the standard
-        `Authorization: Bearer` header and `?token=` query parameter, this
-        endpoint also accepts auth via the `key` (rdio-scanner) or `api_key`
-        (OpenMHz) multipart form fields. This allows trunk-recorder upload
-        plugins to authenticate without custom header configuration.
+        **Authentication:** Uploads are write operations. In full auth mode,
+        use an API key (`tre_...`) or an editor/admin JWT. In token mode,
+        use `AUTH_TOKEN`. The deprecated `WRITE_TOKEN` is still accepted for
+        legacy deployments. In addition to the standard `Authorization: Bearer`
+        header and `?token=` query parameter, this endpoint also accepts auth
+        via the `key` (rdio-scanner) or `api_key` (OpenMHz) multipart form
+        fields. This allows trunk-recorder upload plugins to authenticate
+        without custom header configuration.
 
         **Format detection:** The endpoint inspects form field names to
         determine the upload format:
