@@ -12,13 +12,13 @@ import (
 
 // TalkgroupFilter specifies filters for listing talkgroups.
 type TalkgroupFilter struct {
-	SystemIDs  []int
-	Sysids     []string
-	Group      *string
-	Search     *string
-	Limit      int
-	Offset     int
-	Sort       string
+	SystemIDs []int
+	Sysids    []string
+	Group     *string
+	Search    *string
+	Limit     int
+	Offset    int
+	Sort      string
 }
 
 // TalkgroupAPI represents a talkgroup for API responses.
@@ -160,6 +160,7 @@ func (db *DB) UpdateTalkgroupFields(ctx context.Context, systemID, tgid int,
 	if alphaTagSource != nil {
 		atsVal = *alphaTagSource
 	}
+	atsVal = effectiveTalkgroupPatchSource(atsVal, alphaTag, description, group, tag, priority)
 	descVal := ""
 	if description != nil {
 		descVal = *description
@@ -187,6 +188,13 @@ func (db *DB) UpdateTalkgroupFields(ctx context.Context, systemID, tgid int,
 		SystemID:       systemID,
 		Tgid:           tgid,
 	})
+}
+
+func effectiveTalkgroupPatchSource(current string, alphaTag, description, group, tag *string, priority *int) string {
+	if alphaTag != nil || description != nil || group != nil || tag != nil || priority != nil {
+		return "manual"
+	}
+	return current
 }
 
 // UpsertTalkgroup inserts or updates a talkgroup, never overwriting good data with empty strings.
