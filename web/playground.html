@@ -292,10 +292,10 @@
     </div>
     <div class="option-row">
       <input type="checkbox" id="includeToken">
-      <label for="includeToken">Include connection info for live preview</label>
+      <label for="includeToken">Include this instance URL for live preview</label>
     </div>
     <div class="option-hint" id="tokenHint" style="display:none">
-      Adds this instance's URL and auth token so the AI-generated page works immediately in the preview.
+      Adds this instance's URL. Tokens are never included in generated prompts.
     </div>
     <button class="btn" id="buildBtn">Build Prompt</button>
   </div>
@@ -378,7 +378,7 @@
   const INTEGRATED_TEMPLATE = `Build a single-file HTML page that will be served from tr-engine's web/ directory.
 
 ## API Specification
-Read the full API spec here: https://raw.githubusercontent.com/LumenPrima/tr-engine/master/openapi.yaml
+Read the full API spec here: https://raw.githubusercontent.com/trunk-reporter/tr-engine/main/openapi.yaml
 
 Use any endpoints you need. All endpoints are under /api/v1. Responses use {items, total, limit, offset} pagination.
 
@@ -423,7 +423,7 @@ Event types: call_start, call_end, unit_event, recorder_update, rate_update
   const STANDALONE_TEMPLATE = `Build a self-contained single-file HTML page that connects to a tr-engine REST API instance.
 
 ## API Specification
-Read the full API spec here: https://raw.githubusercontent.com/LumenPrima/tr-engine/master/openapi.yaml
+Read the full API spec here: https://raw.githubusercontent.com/trunk-reporter/tr-engine/main/openapi.yaml
 
 Use any endpoints you need. All endpoints are under /api/v1. Responses use {items, total, limit, offset} pagination.
 
@@ -431,24 +431,23 @@ Use any endpoints you need. All endpoints are under /api/v1. Responses use {item
 The page needs to connect to a tr-engine instance. Include this auth bootstrap at the top of the page:
 
 1. Show a config bar with an API URL input (default: window.location.origin) and a "Connect" button
-2. On connect, fetch {apiUrl}/api/v1/auth-init to get the Bearer token (this endpoint requires no auth)
-3. If successful, store the token and show a green connected indicator
-4. If it fails (CORS or network), show a manual "Auth Token" input field as fallback
-5. Create a helper function that wraps fetch to include the Authorization header:
+2. On connect, fetch {apiUrl}/api/v1/auth-init to detect auth mode (this endpoint requires no auth)
+3. If mode is "full" and read_token is present, use it for read requests; if mode is "token", show a manual "Auth Token" input field
+4. If auth-init fails (CORS or network), show a manual "Auth Token" input field as fallback
+5. Create a helper function that wraps fetch to include the Authorization header only when a token is available:
 
 function apiFetch(path, opts = {}) {
   return fetch(API_URL + path, {
     ...opts,
-    headers: { ...opts.headers, 'Authorization': 'Bearer ' + TOKEN }
+    headers: TOKEN ? { ...opts.headers, 'Authorization': 'Bearer ' + TOKEN } : opts.headers
   });
 }
 
 Use apiFetch('/api/v1/...') for all API calls.
 
 ## SSE Real-Time Events
-For live updates:
-const url = API_URL + '/api/v1/events/stream?types=call_start,call_end&token=' + encodeURIComponent(TOKEN);
-const es = new EventSource(url);
+For live updates from a standalone page, prefer unauthenticated/open instances or same-origin integrated pages. Browser EventSource cannot set Authorization headers, so do not put bearer tokens in generated source or URLs. If auth is required, show a clear message asking the user to open the integrated page served by tr-engine.
+const es = new EventSource(API_URL + '/api/v1/events/stream?types=call_start,call_end');
 es.onmessage = (e) => { const data = JSON.parse(e.data); /* handle event */ };
 
 ## Styling
@@ -487,18 +486,14 @@ Suggested palette: #0a0a0f background, #e0e0e8 text, #00d4ff accent.
   // ── Build Prompt ──
   function getConnectionBlock() {
     if (!includeTokenEl.checked) return '';
-    var token = window.trAuth && window.trAuth.getToken ? window.trAuth.getToken() : null;
-    if (!token) return '';
     var baseUrl = location.origin;
     return '\n\n## Live Instance (for testing)\n' +
       'API base URL: ' + baseUrl + '\n' +
-      'Auth token: ' + token + '\n' +
       (currentMode === 'integrated'
         ? 'The page will be served from this instance, so relative URLs work. Auth is handled by auth.js automatically.'
         : 'Pre-configure the page to connect to this instance on load:\n' +
           '- Set API_URL = \'' + baseUrl + '\'\n' +
-          '- Set TOKEN = \'' + token + '\'\n' +
-          '- Skip the connection UI and go straight to showing data.');
+          '- Do not embed bearer tokens in source. Use auth-init or ask for a local token at runtime.');
   }
 
   buildBtn.addEventListener('click', function() {
