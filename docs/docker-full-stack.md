@@ -75,26 +75,25 @@ DASHBOARD_DOMAIN=dashboard.example.com
 MQTT_USERNAME=trengine
 MQTT_PASSWORD=your-mqtt-password-here
 
-# STRONGLY RECOMMENDED — API tokens
-# AUTH_TOKEN MUST be set explicitly (not auto-generated) because Caddy
-# needs the value for its conditional auth header injection.
+# STRONGLY RECOMMENDED — full API auth
+ADMIN_PASSWORD=$(openssl rand -base64 32)
+# Optional public read token returned by /auth-init.
 AUTH_TOKEN=$(openssl rand -base64 32)
-WRITE_TOKEN=$(openssl rand -base64 32)
 
 # Optional — match your TR plugin's topic prefix
 MQTT_TOPICS=trengine/#
 ```
 
-Generate secure random tokens:
+Generate secure random secrets:
 
 ```bash
 # Run these and paste the output into .env
-openssl rand -base64 32   # → AUTH_TOKEN
-openssl rand -base64 32   # → WRITE_TOKEN
+openssl rand -base64 32   # → ADMIN_PASSWORD
+openssl rand -base64 32   # → AUTH_TOKEN (optional public read token)
 openssl rand -base64 16   # → MQTT_PASSWORD
 ```
 
-> **Important:** `AUTH_TOKEN` must be set explicitly in `.env` — do not rely on auto-generation. Caddy reads this value via `{$AUTH_TOKEN}` environment variable substitution to inject it into proxied requests. If it's empty, the conditional auth injection won't work and the web UI will prompt for a token on every page load.
+> **Important:** For public deployments, set `ADMIN_PASSWORD` so writes require login, role checks, or API keys. `AUTH_TOKEN` is optional in full mode; when set, it acts as a public read token returned by `/auth-init`.
 
 Key variables:
 
@@ -105,8 +104,9 @@ Key variables:
 | `DASHBOARD_DOMAIN` | Yes | Domain for the tr-dashboard frontend |
 | `MQTT_USERNAME` | Yes | MQTT broker credentials (shared with trunk-recorder) |
 | `MQTT_PASSWORD` | Yes | MQTT broker password |
-| `AUTH_TOKEN` | Strongly recommended | Read-only API token (Caddy injects this for browser requests) |
-| `WRITE_TOKEN` | Strongly recommended | Write token for mutating operations (POST/PATCH/PUT/DELETE) |
+| `ADMIN_PASSWORD` | Strongly recommended | Enables full auth, admin login, JWT sessions, and API keys |
+| `AUTH_TOKEN` | Optional | Public read token in full mode, or shared token in token mode |
+| `WRITE_TOKEN` | No | Deprecated legacy write token |
 
 See [`sample.env`](https://github.com/trunk-reporter/tr-engine/blob/master/sample.env) for all available options. Settings like `TR_DIR`, transcription, file watch, and S3 storage are documented in the [Docker Compose guide](./docker.md).
 
@@ -147,13 +147,6 @@ Create `caddy/Caddyfile` (replace the domain names with yours):
 
 ```caddyfile
 api.example.com {
-    # Inject read token for browser requests that don't send their own Authorization header.
-    # This makes the web UI work seamlessly — browsers get the read token automatically.
-    # When a client sends its own Authorization header (e.g. with WRITE_TOKEN), Caddy
-    # passes it through untouched so write operations work.
-    @no_auth not header Authorization *
-    request_header @no_auth Authorization "Bearer {$AUTH_TOKEN}"
-
     reverse_proxy tr-engine:8080
 }
 
@@ -162,10 +155,7 @@ dashboard.example.com {
 }
 ```
 
-**Why `@no_auth` matters:** Without this conditional matcher, Caddy would unconditionally overwrite the `Authorization` header on every request — replacing the browser's write token with the read token and breaking all write operations. The `@no_auth` matcher ensures:
-
-- **No token from browser** → Caddy injects the read token → reads work seamlessly
-- **Write token from browser** → Caddy passes it through untouched → writes work
+The dashboard and built-in web pages discover auth mode through `GET /api/v1/auth-init`, so Caddy does not need to inject auth headers. If you are upgrading from an older config that has an `@no_auth` injection block, it is harmless to leave in place during migration, but it is no longer required.
 
 ## 5. DNS records
 
@@ -297,11 +287,8 @@ docker run --rm -v ./mosquitto:/mosquitto/config eclipse-mosquitto:2 \
 docker compose restart mosquitto
 ```
 
-**Write operations failing (403):** If API writes return "write operations require WRITE_TOKEN":
-- This is expected when `WRITE_TOKEN` is not set — the API runs in read-only mode when auth is enabled
-- To enable writes, set `WRITE_TOKEN` in `.env` and restart: `docker compose up -d`
-- If `WRITE_TOKEN` is set but writes still fail, check the `@no_auth` matcher in your Caddyfile — without it, Caddy overwrites the `Authorization` header with the read token
+**Write operations failing (403):** Log in with an editor/admin user, or use an API key with write access. For upload plugins, create a `tre_...` API key and use it as the plugin API key. The legacy `WRITE_TOKEN` path still works during the deprecation period.
 
 **Dashboard can't reach the API:** The tr-dashboard container connects to tr-engine via the Docker network (`http://tr-engine:8080`). Check that `TR_AUTH_TOKEN` in the compose file matches your `AUTH_TOKEN`.
 
-**Web UI prompts for token:** `AUTH_TOKEN` must be explicitly set in `.env` (not auto-generated) so Caddy can inject it. If you see token prompts, check that `AUTH_TOKEN` is set and that the Caddyfile has the `@no_auth` injection block.
+**Web UI prompts for token:** In token mode, enter `AUTH_TOKEN`. In full mode, log in with your admin user. If you intended open mode, make sure both `AUTH_TOKEN` and `ADMIN_PASSWORD` are unset and the service has been restarted with `docker compose up -d`.

@@ -8,9 +8,13 @@ tr-engine can ingest calls via HTTP upload, compatible with trunk-recorder's **r
 
 ## Quick Setup
 
-1. Set `WRITE_TOKEN` in your tr-engine `.env` (this is the token TR will authenticate with):
+1. Create an upload credential in tr-engine.
+
+   Recommended for new installs: enable full auth with an admin password, then create an API key from the admin UI or API. Use that API key as the upload plugin credential.
+
+   Legacy token mode is still supported. If you have not enabled full auth, set `AUTH_TOKEN` in your tr-engine `.env` and use that token:
    ```
-   WRITE_TOKEN=your-secret-upload-token
+   AUTH_TOKEN=your-secret-upload-token
    ```
 
 2. Add the rdio-scanner plugin to your trunk-recorder `config.json`:
@@ -40,14 +44,16 @@ The upload endpoint checks credentials in this order:
 3. `key` form field (rdio-scanner convention)
 4. `api_key` form field (OpenMHz convention)
 
-**Which token to use:**
+**Which credential to use:**
 
-| `WRITE_TOKEN` set? | Upload authenticates with | Web UI / read API uses |
-|---------------------|--------------------------|----------------------|
-| Yes | `WRITE_TOKEN` only | `AUTH_TOKEN` |
-| No (fallback) | `AUTH_TOKEN` | `AUTH_TOKEN` |
+| Auth mode | Upload authenticates with | Web UI / read API uses |
+|-----------|--------------------------|------------------------|
+| Open mode | No credential required | No credential required |
+| Token mode | `AUTH_TOKEN` | `AUTH_TOKEN` entered by the user |
+| Full mode | API key (`tre_...`) or JWT bearer token | Public read token or JWT session |
+| Legacy write-token mode | `WRITE_TOKEN` | `AUTH_TOKEN` |
 
-When `WRITE_TOKEN` is not set, uploads fall back to `AUTH_TOKEN` — everything works with a single token. When `WRITE_TOKEN` is configured, uploads require the write token specifically. This lets you give trunk-recorder a write token while keeping a separate read-only token for the web UI. The same applies to all other write operations (POST, PUT, PATCH, DELETE) across the API.
+For new public-facing installs, prefer full mode: set `ADMIN_PASSWORD`, log in, and create a service API key for trunk-recorder uploads. `WRITE_TOKEN` remains accepted for backward compatibility, but it is deprecated.
 
 ## Choosing a Plugin
 
@@ -102,7 +108,7 @@ Add to the `plugins` array in trunk-recorder's `config.json`:
 }
 ```
 
-The `shortName` must match the system's `shortName` in your trunk-recorder config. The `apiKey` is your tr-engine `WRITE_TOKEN` (or `AUTH_TOKEN` if `WRITE_TOKEN` is not set). The `systemId` is sent but not used by tr-engine — identity resolution uses `shortName` instead.
+The `shortName` must match the system's `shortName` in your trunk-recorder config. The `apiKey` is your tr-engine API key (`tre_...`) in full auth mode, or `AUTH_TOKEN` in token mode. The deprecated `WRITE_TOKEN` also works during the transition. The `systemId` is sent but not used by tr-engine — identity resolution uses `shortName` instead.
 
 **Multiple systems:**
 
@@ -205,5 +211,7 @@ Each call is uploaded to both services independently. The `apiKey` in the `syste
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WRITE_TOKEN` | _(empty)_ | Token for write operations including uploads. If not set, uploads use `AUTH_TOKEN`. |
+| `AUTH_TOKEN` | _(empty)_ | Shared token for token-mode deployments. In full mode, this can act as a public read token. |
+| `ADMIN_PASSWORD` | _(empty)_ | Enables full auth mode and JWT/API-key based write access. Recommended for public-facing deployments. |
+| `WRITE_TOKEN` | _(empty)_ | Deprecated legacy write token. Still accepted during the transition; prefer API keys. |
 | `UPLOAD_INSTANCE_ID` | `http-upload` | Instance ID assigned to uploaded calls for identity resolution. |

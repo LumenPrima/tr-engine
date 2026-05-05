@@ -50,7 +50,7 @@ main.go                      config.go
 1. `godotenv.Load(envFile)` — loads `.env` (silent if missing)
 2. `env.Parse(&cfg)` — struct tags with `envDefault` provide defaults
 3. CLI overrides applied field-by-field (non-empty strings only)
-4. If `AUTH_TOKEN` empty and `AUTH_ENABLED=true`, auto-generate random token
+4. Deprecated compatibility: if `AUTH_ENABLED=false`, clear legacy token values so old open-mode configs stay open
 
 Docker Compose uses `${VAR:-default}` interpolation in `docker-compose.yml` so all settings work with zero `.env`.
 
@@ -447,8 +447,8 @@ Upload route group:
 Authenticated route group:
   6. MaxBodySize(10 MB)
   7. [InstrumentHandler if metrics enabled]
-  8. BearerAuth     — accepts AUTH_TOKEN or WRITE_TOKEN
-  9. WriteAuth      — POST/PATCH/PUT/DELETE require WRITE_TOKEN
+  8. JWTOrTokenAuth — accepts JWT, API keys, AUTH_TOKEN, or legacy WRITE_TOKEN
+  9. WriteAuth      — POST/PATCH/PUT/DELETE require editor/admin role, API key, or legacy WRITE_TOKEN
   10. ResponseTimeout — http.TimeoutHandler (skips SSE + audio)
 
   All /api/v1/* handler routes mounted here
@@ -457,20 +457,22 @@ Authenticated route group:
 ### Auth Model
 
 ```
-Two-tier token system:
+Derived auth modes:
   │
-  ├── AUTH_TOKEN (read token)
-  │     auto-generated if not set, logged on startup
-  │     served to web UI via GET /api/v1/auth-init
-  │     gates all API access
+  ├── Open mode
+  │     no AUTH_TOKEN and no ADMIN_PASSWORD
+  │     requests are unauthenticated
   │
-  └── WRITE_TOKEN (write token, optional)
-        required for POST/PATCH/PUT/DELETE when set
-        never exposed by any endpoint
-        if not set, AUTH_TOKEN accepted for writes
+  ├── Token mode
+  │     AUTH_TOKEN set, ADMIN_PASSWORD unset
+  │     clients send Authorization: Bearer or ?token=
+  │
+  └── Full mode
+        ADMIN_PASSWORD set
+        JWT sessions and tre_ API keys support role-based access
+        AUTH_TOKEN, when set, acts as public read token from /auth-init
 
-BearerAuth accepts either token for any request.
-WriteAuth additionally checks WRITE_TOKEN for mutating methods.
+WRITE_TOKEN is deprecated but still accepted as a legacy admin-equivalent credential during the transition.
 ```
 
 ### HTTP Server Config

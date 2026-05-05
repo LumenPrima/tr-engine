@@ -141,8 +141,9 @@ docker compose exec postgres pg_dump -U trengine trengine > backup.sql
 Everything else is optional and has sensible defaults. Add any variable from [sample.env](https://github.com/trunk-reporter/tr-engine/blob/master/sample.env) to your `.env` file:
 
 ```bash
-AUTH_TOKEN=my-secret                # API authentication token
-# WRITE_TOKEN=my-write-secret       # separate token for write operations (recommended for public instances)
+AUTH_TOKEN=my-secret                # token-mode shared API token
+ADMIN_PASSWORD=change-me            # enables full auth with JWT login and API keys
+# WRITE_TOKEN=my-write-secret       # deprecated legacy write token
 # CORS_ORIGINS=https://example.com  # restrict CORS (empty = allow all)
 LOG_LEVEL=debug                     # more verbose logging
 RAW_STORE=false                     # disable raw MQTT archival (saves disk)
