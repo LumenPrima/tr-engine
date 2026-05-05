@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/snarg/tr-engine/internal/api"
 )
 
@@ -12,7 +13,7 @@ import (
 
 func TestEventBusPublishSubscribe(t *testing.T) {
 	t.Run("subscriber_receives_published_event", func(t *testing.T) {
-		eb := NewEventBus(64)
+		eb := NewEventBus(zerolog.Nop(), 64)
 		ch, cancel := eb.Subscribe(api.EventFilter{})
 		defer cancel()
 
@@ -51,7 +52,7 @@ func TestEventBusPublishSubscribe(t *testing.T) {
 	})
 
 	t.Run("filtered_subscriber_misses_non_matching", func(t *testing.T) {
-		eb := NewEventBus(64)
+		eb := NewEventBus(zerolog.Nop(), 64)
 		ch, cancel := eb.Subscribe(api.EventFilter{Types: []string{"call_end"}})
 		defer cancel()
 
@@ -66,7 +67,7 @@ func TestEventBusPublishSubscribe(t *testing.T) {
 	})
 
 	t.Run("cancel_stops_delivery", func(t *testing.T) {
-		eb := NewEventBus(64)
+		eb := NewEventBus(zerolog.Nop(), 64)
 		ch, cancel := eb.Subscribe(api.EventFilter{})
 		cancel()
 
@@ -78,12 +79,12 @@ func TestEventBusPublishSubscribe(t *testing.T) {
 				t.Fatal("should not receive event after cancel")
 			}
 		case <-time.After(50 * time.Millisecond):
-			// expected — channel not closed, just removed from map
+			t.Fatal("timed out waiting for closed channel")
 		}
 	})
 
 	t.Run("multiple_subscribers", func(t *testing.T) {
-		eb := NewEventBus(64)
+		eb := NewEventBus(zerolog.Nop(), 64)
 		ch1, cancel1 := eb.Subscribe(api.EventFilter{})
 		defer cancel1()
 		ch2, cancel2 := eb.Subscribe(api.EventFilter{})
@@ -108,7 +109,7 @@ func TestEventBusPublishSubscribe(t *testing.T) {
 
 func TestEventBusReplaySince(t *testing.T) {
 	t.Run("replay_all_when_empty_lastID", func(t *testing.T) {
-		eb := NewEventBus(64)
+		eb := NewEventBus(zerolog.Nop(), 64)
 		eb.Publish(EventData{Type: "call_start", Payload: "a"})
 		eb.Publish(EventData{Type: "call_end", Payload: "b"})
 
@@ -119,7 +120,7 @@ func TestEventBusReplaySince(t *testing.T) {
 	})
 
 	t.Run("replay_after_specific_id", func(t *testing.T) {
-		eb := NewEventBus(64)
+		eb := NewEventBus(zerolog.Nop(), 64)
 		eb.Publish(EventData{Type: "call_start", Payload: "a"})
 
 		// Grab the first event's ID from the ring
@@ -141,7 +142,7 @@ func TestEventBusReplaySince(t *testing.T) {
 	})
 
 	t.Run("replay_with_filter", func(t *testing.T) {
-		eb := NewEventBus(64)
+		eb := NewEventBus(zerolog.Nop(), 64)
 		eb.Publish(EventData{Type: "call_start", SystemID: 1, Payload: "a"})
 		eb.Publish(EventData{Type: "call_start", SystemID: 2, Payload: "b"})
 
@@ -155,7 +156,7 @@ func TestEventBusReplaySince(t *testing.T) {
 	})
 
 	t.Run("unknown_lastID_replays_all", func(t *testing.T) {
-		eb := NewEventBus(64)
+		eb := NewEventBus(zerolog.Nop(), 64)
 		eb.Publish(EventData{Type: "call_start", Payload: "a"})
 
 		// When lastEventID is not found (overwritten by ring wrap), all available

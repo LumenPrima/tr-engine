@@ -23,9 +23,9 @@ import (
 
 // Pipeline processes incoming MQTT messages from trunk-recorder.
 type Pipeline struct {
-	db       *database.DB
-	identity *IdentityResolver
-	log      zerolog.Logger
+	db         *database.DB
+	identity   *IdentityResolver
+	log        zerolog.Logger
 	audioDir   string
 	trAudioDir string // when set, skip saving audio files (served from TR's filesystem)
 	store      storage.AudioStore
@@ -121,19 +121,19 @@ type bufferedMsg struct {
 }
 
 type PipelineOptions struct {
-	DB               *database.DB
-	AudioDir         string
-	TRAudioDir       string
-	Store            storage.AudioStore
-	S3Uploader       *storage.AsyncUploader // nil if not async mode or no S3
-	RawStore         bool
-	RawIncludeTopics string
-	RawExcludeTopics string
-	MergeP25Systems    bool   // auto-merge systems with same sysid/wacn (default true)
-	MQTTInstanceMap    string // "prefix:instance_id,prefix:instance_id"
-	TranscribeOpts     *transcribe.WorkerPoolOptions // nil = transcription disabled
-	TranscribeInclude  string // comma-separated TGID allowlist for transcription
-	TranscribeExclude  string // comma-separated TGID denylist for transcription
+	DB                *database.DB
+	AudioDir          string
+	TRAudioDir        string
+	Store             storage.AudioStore
+	S3Uploader        *storage.AsyncUploader // nil if not async mode or no S3
+	RawStore          bool
+	RawIncludeTopics  string
+	RawExcludeTopics  string
+	MergeP25Systems   bool                          // auto-merge systems with same sysid/wacn (default true)
+	MQTTInstanceMap   string                        // "prefix:instance_id,prefix:instance_id"
+	TranscribeOpts    *transcribe.WorkerPoolOptions // nil = transcription disabled
+	TranscribeInclude string                        // comma-separated TGID allowlist for transcription
+	TranscribeExclude string                        // comma-separated TGID denylist for transcription
 	// Configurable retention durations for maintenance tasks
 	RetentionRawMessages  time.Duration
 	RetentionConsoleLogs  time.Duration
@@ -142,7 +142,7 @@ type PipelineOptions struct {
 	RetentionStaleCalls   time.Duration
 	// Live audio streaming
 	StreamListen      string
-	StreamInstanceID  string        // TR instance ID for simplestream identity resolution
+	StreamInstanceID  string // TR instance ID for simplestream identity resolution
 	StreamIdleTimeout time.Duration
 	StreamOpusBitrate int // 0 = PCM passthrough, >0 = Opus bitrate in bps
 	Log               zerolog.Logger
@@ -221,18 +221,18 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 	}
 
 	p := &Pipeline{
-		db:              opts.DB,
-		identity:        identity,
-		log:             log,
-		audioDir:        opts.AudioDir,
-		trAudioDir:      opts.TRAudioDir,
-		store:           opts.Store,
-		uploader:        opts.S3Uploader,
-		rawStore:          rawStore,
-		rawInclude:        rawInclude,
-		rawExclude:        rawExclude,
-		instancePrefixMap: instancePrefixMap,
-		mergeP25Systems:   opts.MergeP25Systems,
+		db:                   opts.DB,
+		identity:             identity,
+		log:                  log,
+		audioDir:             opts.AudioDir,
+		trAudioDir:           opts.TRAudioDir,
+		store:                opts.Store,
+		uploader:             opts.S3Uploader,
+		rawStore:             rawStore,
+		rawInclude:           rawInclude,
+		rawExclude:           rawExclude,
+		instancePrefixMap:    instancePrefixMap,
+		mergeP25Systems:      opts.MergeP25Systems,
 		transcribeIncludeTGs: transcribeInclude,
 		transcribeExcludeTGs: transcribeExclude,
 		retentionCfg: retentionConfig{
@@ -244,11 +244,11 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		},
 		activeCalls:  newActiveCallMap(),
 		affiliations: newAffiliationMap(),
-		eventBus:    NewEventBus(4096), // ~60s of events at high rate
-		audioBus:    audioBus,
-		audioRouter: audioRouter,
-		ctx:         ctx,
-		cancel:      cancel,
+		eventBus:     NewEventBus(log, 4096), // ~60s of events at high rate
+		audioBus:     audioBus,
+		audioRouter:  audioRouter,
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 
 	// Transcription worker pool (optional)
@@ -1518,104 +1518,6 @@ func (m *activeCallMap) All() map[string]activeCallEntry {
 	}
 	m.mu.Unlock()
 	return result
-}
-
-// affiliationEntry tracks a unit's current talkgroup affiliation.
-type affiliationEntry struct {
-	SystemID        int
-	SystemName      string
-	Sysid           string
-	UnitID          int
-	UnitAlphaTag    string
-	Tgid            int
-	TgAlphaTag      string
-	TgDescription   string
-	TgTag           string
-	TgGroup         string
-	PreviousTgid    *int
-	AffiliatedSince time.Time
-	LastEventTime   time.Time
-	Status          string // "affiliated" or "off"
-}
-
-type affiliationKey struct {
-	SystemID int
-	UnitID   int
-}
-
-type affiliationMap struct {
-	mu    sync.Mutex
-	items map[affiliationKey]*affiliationEntry
-}
-
-func newAffiliationMap() *affiliationMap {
-	return &affiliationMap{items: make(map[affiliationKey]*affiliationEntry)}
-}
-
-// Update sets or overwrites an affiliation entry (used for "join" events).
-func (m *affiliationMap) Update(key affiliationKey, entry *affiliationEntry) {
-	m.mu.Lock()
-	m.items[key] = entry
-	m.mu.Unlock()
-}
-
-// MarkOff marks a unit as disconnected without removing it from the map.
-func (m *affiliationMap) MarkOff(key affiliationKey, t time.Time) {
-	m.mu.Lock()
-	if e, ok := m.items[key]; ok {
-		e.Status = "off"
-		e.LastEventTime = t
-	}
-	m.mu.Unlock()
-}
-
-// UpdateActivity updates the LastEventTime for an existing entry.
-func (m *affiliationMap) UpdateActivity(key affiliationKey, t time.Time) {
-	m.mu.Lock()
-	if e, ok := m.items[key]; ok {
-		e.LastEventTime = t
-	}
-	m.mu.Unlock()
-}
-
-// Get returns a copy of the entry if it exists.
-func (m *affiliationMap) Get(key affiliationKey) (*affiliationEntry, bool) {
-	m.mu.Lock()
-	e, ok := m.items[key]
-	if ok {
-		copy := *e
-		m.mu.Unlock()
-		return &copy, true
-	}
-	m.mu.Unlock()
-	return nil, false
-}
-
-// All returns a snapshot of all affiliation entries.
-func (m *affiliationMap) All() []affiliationEntry {
-	m.mu.Lock()
-	result := make([]affiliationEntry, 0, len(m.items))
-	for _, e := range m.items {
-		result = append(result, *e)
-	}
-	m.mu.Unlock()
-	return result
-}
-
-// EvictStale removes entries whose LastEventTime is older than maxAge.
-// Returns the number of entries evicted.
-func (m *affiliationMap) EvictStale(maxAge time.Duration) int {
-	cutoff := time.Now().Add(-maxAge)
-	m.mu.Lock()
-	evicted := 0
-	for k, e := range m.items {
-		if e.LastEventTime.Before(cutoff) {
-			delete(m.items, k)
-			evicted++
-		}
-	}
-	m.mu.Unlock()
-	return evicted
 }
 
 // ----- LiveDataSource interface implementation -----
