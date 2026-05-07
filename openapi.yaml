@@ -209,6 +209,37 @@ paths:
                     description: Whether JWT login endpoints are available
 
   /auth/setup:
+    get:
+      operationId: checkAuthSetup
+      summary: Check whether first-run setup is needed
+      description: |
+        Returns whether the instance has completed first-run admin setup.
+        Unauthenticated — always available when JWT auth is configured.
+        The dashboard calls this endpoint to decide whether to show the
+        admin setup flow or the regular login page.
+      tags: [auth]
+      security: []
+      responses:
+        "200":
+          description: Setup status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  needs_setup:
+                    type: boolean
+                    description: true when zero users exist (first-run setup pending)
+                  user_count:
+                    type: integer
+                    description: Total number of users in the database
+        "500":
+          description: Database error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
     post:
       operationId: authSetup
       summary: First-run admin creation
