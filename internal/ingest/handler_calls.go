@@ -197,8 +197,12 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 	if err != nil {
 		p.log.Warn().Err(err).Msg("failed to upsert call group")
 	} else {
-		_ = p.db.SetCallGroupID(ctx, callID, startTime, cgID)
-		_ = p.db.SetCallGroupPrimary(ctx, cgID, callID)
+		if err := p.db.SetCallGroupID(ctx, callID, startTime, cgID); err != nil {
+			p.log.Warn().Err(err).Int64("call_id", callID).Int("call_group_id", cgID).Msg("failed to link call to call group")
+		}
+		if err := p.db.SetCallGroupPrimary(ctx, cgID, callID); err != nil {
+			p.log.Warn().Err(err).Int("call_group_id", cgID).Int64("call_id", callID).Msg("failed to set call group primary")
+		}
 	}
 
 	p.log.Debug().
@@ -559,8 +563,12 @@ func (p *Pipeline) handleCallStartFromEnd(ctx context.Context, msg *CallEndMsg) 
 	if cgErr != nil {
 		p.log.Warn().Err(cgErr).Msg("failed to upsert call group from call_end backfill")
 	} else {
-		_ = p.db.SetCallGroupID(ctx, callID, startTime, cgID)
-		_ = p.db.SetCallGroupPrimary(ctx, cgID, callID)
+		if err := p.db.SetCallGroupID(ctx, callID, startTime, cgID); err != nil {
+			p.log.Warn().Err(err).Int64("call_id", callID).Int("call_group_id", cgID).Msg("failed to link call to call group (backfill)")
+		}
+		if err := p.db.SetCallGroupPrimary(ctx, cgID, callID); err != nil {
+			p.log.Warn().Err(err).Int("call_group_id", cgID).Int64("call_id", callID).Msg("failed to set call group primary (backfill)")
+		}
 	}
 
 	// Update conventional freq→talkgroup map for AnalogC recorder enrichment
@@ -653,7 +661,9 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 			if activeCall.Elapsed > 0 {
 				elapsed := float32(activeCall.Elapsed)
 				stopTime := entry.StartTime.Add(time.Duration(activeCall.Elapsed) * time.Second)
-				_ = p.db.UpdateCallElapsed(ctx, entry.CallID, entry.StartTime, &stopTime, &elapsed)
+				if err := p.db.UpdateCallElapsed(ctx, entry.CallID, entry.StartTime, &stopTime, &elapsed); err != nil {
+					p.log.Warn().Err(err).Int64("call_id", entry.CallID).Float32("elapsed", elapsed).Msg("failed to update call elapsed time")
+				}
 			}
 			continue
 		}

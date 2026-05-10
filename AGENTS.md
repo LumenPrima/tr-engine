@@ -262,9 +262,6 @@ HTML pages in `web/` are auto-discovered and listed on the index page via meta t
 - Live audio streaming — trunk-recorder simplestream UDP ingest (`STREAM_LISTEN`), per-talkgroup Opus/PCM encoding, multi-site deduplication, WebSocket delivery (`GET /audio/live`) with subscribe/unsubscribe filtering. Browser playback via `audio-engine.js` + `audio-worklet.js` AudioWorklet.
 - DB maintenance — automated daily maintenance loop: partition creation (3 months ahead monthly, 3+ weeks ahead weekly), state table decimation (`recorder_snapshots`, `decode_rates`: 1/min after 1 week, 1/hr after 1 month), data purging (configurable retention via `RETENTION_*` env vars), stale call cleanup, orphan call_group cleanup. Admin API: `GET /api/v1/admin/maintenance` (view config + last run results), `POST /api/v1/admin/maintenance` (trigger immediate run). Both require editor+ role (JWT) or WRITE_TOKEN (deprecated).
 
-**Not yet done:**
-- Test coverage for unit-events and affiliations endpoints
-
 ## Real-Time Event Streaming (SSE)
 
 `GET /api/v1/events/stream` pushes filtered events to clients over SSE.
