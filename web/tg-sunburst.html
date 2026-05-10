@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="auth.js?v=1"></script>
+  <meta name="card-title" content="TG Sunburst">
+  <meta name="card-description" content="System-tg-hour call volume in hierarchical sunburst">
+  <meta name="card-order" content="24">
+  <title>TG Sunburst — tr-engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="theme-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-body); font-weight: var(--font-weight-body);
+      min-height: 100vh; display: flex; flex-direction: column;
+      transition: background 0.5s, color 0.4s;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { flex: 1; padding: 80px 24px 40px; max-width: 1400px; margin: 0 auto; width: 100%; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 16px; }
+    .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .controls label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+    .controls select { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-xs); color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 6px 10px; outline: none; }
+    .control-group { display: flex; align-items: center; gap: 6px; }
+    .section { margin-bottom: 24px; }
+    .chart-wrap { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-sm); min-height: 70vh; position: relative; }
+    .loading-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-muted); font-size: 14px; }
+    @media (max-width: 600px) { .wrap { padding: 60px 12px 20px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="section">
+      <h1>TG Sunburst</h1>
+      <p class="subtitle">System → talkgroup → hourly call volume · click to drill in</p>
+      <div class="controls">
+        <div class="control-group">
+          <label for="windowSelect">Time Window</label>
+          <select id="windowSelect">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="limitSelect">Top N TGs</label>
+          <select id="limitSelect">
+            <option value="100" selected>100</option>
+            <option value="50">50</option>
+            <option value="25">25</option>
+          </select>
+        </div>
+        <button id="refreshBtn" style="background:var(--accent);border:none;border-radius:var(--radius-xs);color:#fff;font-family:var(--font-mono);font-size:12px;padding:6px 14px;cursor:pointer;">Refresh</button>
+      </div>
+    </div>
+    <div class="section">
+      <div id="chart-wrap" class="chart-wrap"><span class="loading-text">Loading…</span></div>
+    </div>
+    <div style="text-align:center;padding-top:12px;font-size:11px;color:var(--text-muted);">
+      ECharts Sunburst · Data from /api/v1/calls · Click segments to drill in
+    </div>
+  </div>
+  <script src="theme-engine.js?v=2"></script>
+  <script>
+  (function() {
+    var systemColors = ['rgba(100,180,255,0.85)','rgba(255,140,70,0.85)','rgba(100,220,140,0.85)','rgba(220,130,255,0.85)','rgba(255,200,50,0.85)','rgba(150,200,220,0.85)','rgba(220,140,140,0.85)','rgba(140,220,140,0.85)'];
+    var chartInstance;
+
+    async function apiFetch(url) {
+      var res = await fetch(url);
+      if (!res.ok) throw new Error('API ' + res.status);
+      return res.json();
+    }
+
+    async function loadData() {
+      var el = document.getElementById('chart-wrap');
+      el.classList.add('loading');
+      el.innerHTML = '<span class="loading-text">Loading…</span>';
+
+      var days = parseInt(document.getElementById('windowSelect').value);
+      var maxTgs = parseInt(document.getElementById('limitSelect').value);
+      var cutoff = Date.now() - days * 86400000;
+      var sysList = await apiFetch('/api/v1/systems');
+      var hierarchy = [];
+
+      for (var s = 0; s < sysList.length; s++) {
+        var sid = sysList[s].system_id;
+        var sysName = sysList[s].name || 'System ' + sid;
+        var url = '/api/v1/calls?system_id=' + sid + '&limit=50000&sort=-start_time';
+        var calls = await apiFetch(url);
+        if (!calls) continue;
+
+        // Aggregate by (tgid, hour_of_day)
+        var tgHours = {};
+        for (var c = 0; c < calls.length; c++) {
+          var call = calls[c];
+          if (new Date(call.start_time).getTime() < cutoff) continue;
+          var tgid = call.tgid;
+          var hours = new Date(call.start_time).getUTCHours();
+          var key = tgid + ':' + hours;
+          if (!tgHours[key]) tgHours[key] = { tgid: tgid, hour: hours, count: 0, alpha_tag: call.tgid_alpha_tag || '' };
+          tgHours[key].count++;
+        }
+
+        // Aggregate by tgid for ordering
+        var tgTotals = {};
+        for (var k in tgHours) {
+          var th = tgHours[k];
+          if (!tgTotals[th.tgid]) tgTotals[th.tgid] = { tgid: th.tgid, total: 0, alpha_tag: th.alpha_tag };
+          tgTotals[th.tgid].total += th.count;
+          tgTotals[th.tgid].alpha_tag = tgTotals[th.tgid].alpha_tag || th.alpha_tag;
+        }
+
+        // Sort TGs by total, take top N, then build hourly data
+        var sortedTgs = Object.values(tgTotals).sort(function(a, b) { return b.total - a.total; });
+        sortedTgs = sortedTgs.slice(0, maxTgs);
+
+        var tgChildren = [];
+        for (var t = 0; t < sortedTgs.length; t++) {
+          var tg = sortedTgs[t];
+          var hourlyData = [];
+          for (var h = 0; h < 24; h++) {
+            var key = tg.tgid + ':' + h;
+            if (tgHours[key]) {
+              hourlyData.push({
+                name: (h < 10 ? '0' : '') + h + ':00',
+                value: tgHours[key].count,
+                itemStyle: { color: systemColors[Number(sid) % systemColors.length] }
+              });
+            }
+          }
+          if (hourlyData.length > 0) {
+            var tgName = tg.tgid + (tg.alpha_tag ? (' - ' + tg.alpha_tag) : '');
+            tgChildren.push({
+              name: tgName,
+              system_id: sid,
+              children: hourlyData
+            });
+          }
+        }
+
+        if (tgChildren.length > 0) {
+          hierarchy.push({
+            name: sysName,
+            system_id: sid,
+            children: tgChildren
+          });
+        }
+      }
+
+      if (hierarchy.length === 0) {
+        el.innerHTML = '<span class="loading-text">No data for selected period</span>';
+        return;
+      }
+
+      renderChart(hierarchy);
+    }
+
+    function renderChart(hierarchy) {
+      var el = document.getElementById('chart-wrap');
+      if (chartInstance) chartInstance.dispose();
+      chartInstance = echarts.init(el);
+
+      // Assign colors to all nodes
+      function colorize(nodes, depth) {
+        var colorMap = {};
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          if (depth === 0) {
+            colorMap[node.system_id] = systemColors[Number(node.system_id || 0) % systemColors.length];
+            node.itemStyle = { color: colorMap[node.system_id] };
+          }
+          if (node.children) colorize(node.children, depth + 1);
+        }
+      }
+      colorize(hierarchy, 0);
+
+      chartInstance.clear();
+      chartInstance.setOption({
+        tooltip: {
+          formatter: function(info) {
+            if (!info.data) return info.name;
+            return '<b>' + info.name + '</b><br/>Calls: ' + info.value;
+          }
+        },
+        series: {
+          type: 'sunburst',
+          data: hierarchy,
+          radius: [0, '90%'],
+          sort: undefined,
+          emphasis: { focus: 'ancestor' },
+          levels: [
+            { r0: '0%', r: '25%', label: { rotate: 'tangential', fontSize: 11, fontWeight: '700' } },
+            { r0: '25%', r: '65%', label: { align: 'right', fontSize: 9 }, itemStyle: { borderRadius: 3 } },
+            { r0: '65%', r: '90%', label: { position: 'outside', padding: 2, fontSize: 8 }, itemStyle: { borderRadius: 2 } }
+          ]
+        }
+      });
+
+      var observer = new ResizeObserver(function() { chartInstance.resize(); });
+      observer.observe(el);
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadData);
+    document.getElementById('windowSelect').addEventListener('change', loadData);
+    document.getElementById('limitSelect').addEventListener('change', loadData);
+
+    loadData();
+  })();
+  </script>
+</body>
+</html>

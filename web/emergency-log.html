@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="auth.js?v=1"></script>
+<meta name="card-title" content="Emergency Log">
+<meta name="card-description" content="Emergency call history with full details and timestamps">
+<meta name="card-order" content="9">
+<title>Emergency Log — tr-engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;700&family=Outfit:wght@200;300;400;500;600;700;800;900&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Karla:wght@200;300;400;500&family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500;700&family=VT323&family=Share+Tech+Mono&family=Press+Start+2P&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="theme-config.js"></script>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-body);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  transition: background 0.5s, color 0.4s;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: var(--grid-bg);
+  background-size: var(--grid-size) var(--grid-size);
+  opacity: 0.4;
+}
+body::after {
+  content: ''; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+  background: var(--scanlines);
+}
+.vignette-overlay {
+  position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+  background: var(--vignette); transition: background 0.6s;
+}
+
+.wrap { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 80px 28px 56px; }
+
+/* ── Header ── */
+.header-bar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  padding: 14px 20px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  border-radius: var(--radius); backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--shadow-panel); margin-bottom: 24px;
+}
+.header-bar h1 {
+  font-family: var(--font-display); font-size: 20px; font-weight: 700;
+}
+.header-bar h1 .icon { color: var(--danger); margin-right: 6px; }
+.controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.controls select, .controls input[type="date"] {
+  background: var(--tile-bg); border: 1px solid var(--tile-border);
+  border-radius: var(--radius-xs); color: var(--text);
+  font-family: var(--font-mono); font-size: 12px; padding: 6px 10px;
+  outline: none; transition: border-color 0.2s;
+}
+.controls select:focus, .controls input:focus { border-color: var(--accent); }
+.controls select { min-width: 160px; }
+
+/* ── Summary ── */
+.summary-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px; margin-bottom: 24px;
+}
+.summary-tile {
+  padding: 16px 20px; border-radius: var(--radius-sm);
+  background: var(--tile-bg); border: 1px solid var(--tile-border);
+  box-shadow: var(--shadow-panel); text-align: center;
+  transition: box-shadow 0.2s;
+}
+.summary-tile:hover { box-shadow: var(--shadow-panel-hover); }
+.summary-tile .tile-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px;
+}
+.summary-tile .tile-value {
+  font-family: var(--font-display); font-size: 26px; font-weight: 700;
+  color: var(--danger);
+}
+.summary-tile .tile-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Chart ── */
+.section { margin-bottom: 32px; }
+.section-header {
+  display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.section-title { font-family: var(--font-display); font-size: 16px; font-weight: 600; }
+.section-subtitle { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.chart-container {
+  background: var(--tile-bg); border: 1px solid var(--tile-border);
+  border-radius: var(--radius); padding: 16px; min-height: 260px;
+  box-shadow: var(--shadow-panel);
+}
+
+/* ── Emergency call cards timeline ── */
+.call-list { display: flex; flex-direction: column; gap: 10px; }
+
+.call-card {
+  background: var(--tile-bg); border: 1px solid var(--tile-border);
+  border-radius: var(--radius-sm); padding: 16px; position: relative;
+  box-shadow: var(--shadow-panel); transition: all 0.2s;
+  border-left: 4px solid var(--danger);
+}
+.call-card:hover { border-color: color-mix(in srgb, var(--danger), transparent 70%); box-shadow: var(--shadow-panel-hover); }
+
+.call-card .call-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px;
+}
+.call-card .emergency-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: 12px;
+  background: color-mix(in srgb, var(--danger), transparent 82%);
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 55%);
+  color: var(--danger); font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.call-card .timestamp {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);
+  padding: 2px 10px; background: var(--bg-elevated); border-radius: 8px;
+}
+.call-card .call-id {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-faint);
+}
+
+.call-card .call-info {
+  display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap;
+}
+.call-card .call-detail {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.call-card .detail-label {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+}
+.call-card .detail-value {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--text);
+}
+.call-card .detail-value.call-sign {
+  font-size: 14px; font-weight: 700; color: var(--danger);
+}
+
+.call-card .call-actions {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--tile-border);
+}
+.call-card .btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 12px; border-radius: var(--radius-xs);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  text-decoration: none; border: 1px solid var(--tile-border);
+  color: var(--text); background: var(--bg-elevated);
+  cursor: pointer; transition: all 0.15s;
+}
+.call-card .btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+.call-card .btn .play-icon { letter-spacing: -2px; font-size: 14px; line-height: 1; }
+
+.call-card .duration-pill {
+  margin-left: auto; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted); background: var(--bg-elevated);
+  padding: 3px 10px; border-radius: 10px;
+}
+
+/* ── Pagination ── */
+.pagination {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 20px; padding: 12px;
+  background: var(--tile-bg); border: 1px solid var(--tile-border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-panel);
+}
+.pagination .page-btn {
+  padding: 6px 14px; border-radius: var(--radius-xs);
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--text); background: var(--bg-elevated);
+  border: 1px solid var(--tile-border); cursor: pointer;
+  transition: all 0.15s; text-decoration: none;
+}
+.pagination .page-btn:hover { border-color: var(--accent); color: var(--accent); }
+.pagination .page-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.pagination .page-info { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+
+.chart-loading {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 240px; color: var(--text-muted); font-family: var(--font-mono); font-size: 13px;
+}
+.error-card {
+  background: color-mix(in srgb, var(--danger), transparent 92%);
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 60%);
+  color: var(--danger); padding: 20px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 13px; margin-bottom: 24px;
+}
+.theme-label {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 10000; font-family: var(--font-display); font-size: 11px;
+  letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+  background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(16px);
+  border: 1px solid var(--border); padding: 8px 20px; border-radius: 100px;
+  transition: all 0.5s; pointer-events: none; opacity: 0;
+}
+.theme-label.show { opacity: 1; }
+
+@media (max-width: 768px) {
+  .wrap { padding: 72px 12px 32px; }
+  .summary-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .summary-tile .tile-value { font-size: 20px; }
+  .call-card .call-info { flex-direction: column; gap: 10px; }
+  .header-bar { padding: 10px 14px; }
+  .header-bar h1 { font-size: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="vignette-overlay"></div>
+
+<div class="wrap">
+  <div class="header-bar">
+    <h1><span class="icon">&#9888;</span>Emergency Log</h1>
+    <div class="controls">
+      <select id="sys-select" title="Select system"><option value="">All Systems</option></select>
+      <input type="date" id="date-from" title="From date">
+      <input type="date" id="date-to" title="To date">
+      <select id="sort-select">
+        <option value="-stop_time">Newest first</option>
+        <option value="stop_time">Oldest first</option>
+        <option value="-start_time">Start newest first</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="error-panel"></div>
+
+  <div class="summary-row">
+    <div class="summary-tile">
+      <div class="tile-label">Total Emergencies</div>
+      <div class="tile-value" id="stat-total">—</div>
+    </div>
+    <div class="summary-tile">
+      <div class="tile-label">Today</div>
+      <div class="tile-value" id="stat-today">—</div>
+    </div>
+    <div class="summary-tile">
+      <div class="tile-label">This Week</div>
+      <div class="tile-value" id="stat-week">—</div>
+    </div>
+    <div class="summary-tile">
+      <div class="tile-label">Avg Duration</div>
+      <div class="tile-value" id="stat-avg">—</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Emergency Timeline</span>
+      <span class="section-subtitle">emergency-priority calls — last 30 days</span>
+    </div>
+    <div id="chart-container"><div class="chart-container"><div id="emergency-trend-chart" style="width:100%;height:260px;"></div></div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Emergency Calls</span>
+      <span class="section-subtitle" id="call-count">—</span>
+    </div>
+    <div class="call-list" id="call-list"><div class="chart-loading">Loading emergency calls…</div></div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<div class="theme-label" id="themeLabel"></div>
+
+<script src="theme-engine.js?v=2"></script>
+<script>
+(function() {
+  'use strict';
+
+  var PAGE = 50;
+  var currentPage = 1;
+  document.getElementById('themeLabel').addEventListener('transitionend', function() {
+    var self = this;
+    setTimeout(function() { self.classList.remove('show'); }, 1800);
+  });
+
+  var errorPanel = document.getElementById('error-panel');
+  var sysSelect = document.getElementById('sys-select');
+  var dateFrom = document.getElementById('date-from');
+  var dateTo = document.getElementById('date-to');
+  var sortSelect = document.getElementById('sort-select');
+  var callList = document.getElementById('call-list');
+  var pagination = document.getElementById('pagination');
+
+  var emergencyChart = null;
+
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function apiFetch(path) {
+    return fetch('/api/v1' + path).then(function(r) { return r.json(); });
+  }
+
+  function formatNum(n) {
+    return n == null ? '—' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  function formatTime(dt) {
+    if (!dt) return '—';
+    var d = new Date(dt);
+    return MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' +
+           d.getFullYear() + ' ' + d.getHours().toString().padStart(2,'0') + ':' +
+           d.getMinutes().toString().padStart(2,'0') + ':' + d.getSeconds().toString().padStart(2,'0');
+  }
+
+  function formatDurationSec(s) {
+    if (!s || s <= 0) return '—';
+    var mins = Math.floor(s / 60);
+    var secs = Math.round(s % 60);
+    if (mins > 0) return mins + 'm ' + secs + 's';
+    return secs + 's';
+  }
+
+  function loadError(msg) {
+    errorPanel.innerHTML = '<div class="error-card">Failed to load data: ' + msg + '</div>';
+  }
+
+  function getQueryParams() {
+    var params = 'emergency=true&sort=' + encodeURIComponent(sortSelect.value) + '&limit=' + PAGE + '&offset=' + ((currentPage - 1) * PAGE);
+    if (sysSelect.value) params += '&system_id=' + sysSelect.value;
+    if (dateFrom.value) params += '&start_time=' + dateFrom.value + 'T00:00:00Z';
+    if (dateTo.value) params += '&end_time=' + dateTo.value + 'T23:59:59Z';
+    return params;
+  }
+
+  function loadEmergencies() {
+    var params = 'emergency=true&sort=' + encodeURIComponent(sortSelect.value) + '&limit=' + PAGE + '&offset=' + ((currentPage - 1) * PAGE);
+    if (sysSelect.value) params += '&system_id=' + sysSelect.value;
+    if (dateFrom.value) params += '&start_time=' + dateFrom.value + 'T00:00:00Z';
+    if (dateTo.value) params += '&end_time=' + dateTo.value + 'T23:59:59Z';
+    return apiFetch('/calls?' + params);
+  }
+
+  function loadStats() {
+    // Get all emergencies for summary by fetching with higher limit
+    return apiFetch('/calls?emergency=true&limit=1&sort=-stop_time').catch(function() { return { calls: [] }; });
+  }
+
+  function loadEmergencyTrend() {
+    return apiFetch('/stats/call-volume?interval=day&days=30').then(function(raw) {
+      return { all: raw.buckets || [] };
+    }).catch(function() { return { all: [] }; });
+  }
+
+  function loadEmergencyDaily() {
+    // Use summary endpoint to get emergency-specific counts by day
+    return apiFetch('/calls?emergency=true&limit=1&sort=-stop_time&days=30').then(function(_) {
+      return { rows: [] };
+    }).catch(function() { return { rows: [] }; });
+  }
+
+  function renderCalls(data) {
+    var calls = data.calls || [];
+    var total = data.total || 0;
+
+    document.getElementById('call-count').textContent = formatNum(total) + ' emergency calls' + (data.total_24h > 0 ? ' · ' + data.total_24h + ' in last 24h' : '');
+
+    // Update stats
+    document.getElementById('stat-total').textContent = formatNum(total);
+
+    var todayStr = new Date().toISOString().slice(0, 10);
+    var weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    var todayCount = 0, weekCount = 0, totalDur = 0, durCount = 0;
+    calls.forEach(function(c) {
+      var d = (c.stop_time || c.start_time || '').slice(0, 10);
+      if (d === todayStr) todayCount++;
+      if (d >= weekAgo) weekCount++;
+      if (c.duration) { totalDur += c.duration; durCount++; }
+    });
+    document.getElementById('stat-today').textContent = todayCount;
+    document.getElementById('stat-week').textContent = weekCount;
+    document.getElementById('stat-avg').textContent = durCount > 0 ? formatDurationSec(Math.round(totalDur / durCount)) : '—';
+
+    // Render call cards
+    var html = '';
+    calls.forEach(function(c) {
+      html += '<div class="call-card">';
+      html += '<div class="call-meta">';
+      html += '<span class="emergency-badge">&#9888; EMERGENCY</span>';
+      html += '<span class="timestamp">' + formatTime(c.stop_time || c.start_time) + '</span>';
+      html += '<span class="call-id">Call #' + (c.call_id || '—') + '</span>';
+      html += '</div>';
+
+      html += '<div class="call-info">';
+      html += '<div class="call-detail"><span class="detail-label">System</span><span class="detail-value">' + (c.system_name || '—') + '</span></div>';
+      html += '<div class="call-detail"><span class="detail-label">Site</span><span class="detail-value">' + (c.site_short_name || c.sys_name || '—') + '</span></div>';
+      html += '<div class="call-detail"><span class="detail-label">Talkgroup</span><span class="detail-value">' + (c.tg_alpha_tag ? c.tg_alpha_tag + ' (' + c.tgid + ')' : c.tgid ? c.tgid : '—') + '</span></div>';
+
+      // Show unit IDs if any
+      var unitIds = c.unit_ids;
+      if (unitIds && unitIds.length > 0) {
+        html += '<div class="call-detail"><span class="detail-label">Units</span>';
+        html += '<span class="detail-value call-sign">' + (Array.isArray(unitIds) ? unitIds.join(', ') : unitIds) + '</span></div>';
+      } else if (c.src_unit_id) {
+        html += '<div class="call-detail"><span class="detail-label">Unit</span>';
+        html += '<span class="detail-value call-sign">' + c.src_unit_id + (c.src_unit_alpha_tag ? ' — ' + c.src_unit_alpha_tag : '') + '</span></div>';
+      }
+
+      html += '</div>';
+
+      html += '<div class="call-actions">';
+      if (c.audio_file_path) {
+        html += '<a class="btn" href="' + c.audio_file_path + '" target="_blank"><span class="play-icon">&#9654;</span> Audio</a>';
+      }
+      html += '<span class="duration-pill">&#9632; ' + formatDurationSec(c.duration) + '</span>';
+
+      // Trunking info
+      if (c.src_list) {
+        html += '<span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">SRC: ' + c.src_list + '</span>';
+      }
+
+      html += '</div></div>';
+    });
+
+    if (!calls.length) {
+      html = '<div class="chart-loading">No emergency calls found in the selected range</div>';
+    }
+    callList.innerHTML = html;
+
+    // Render pagination
+    var totalPages = Math.ceil(total / PAGE) || 1;
+    var pagHtml = '';
+    if (totalPages > 1) {
+      if (currentPage > 1) {
+        pagHtml += '<a class="page-btn" href="#" data-page="' + (currentPage - 1) + '">&#8592; Prev</a>';
+      } else {
+        pagHtml += '<span class="page-btn" style="opacity:0.3;pointer-events:none;">&#8592; Prev</span>';
+      }
+      for (var p = Math.max(1, currentPage - 3); p <= Math.min(totalPages, currentPage + 3); p++) {
+        pagHtml += '<a class="page-btn ' + (p === currentPage ? 'active' : '') + '" href="#" data-page="' + p + '">' + p + '</a>';
+      }
+      if (currentPage < totalPages) {
+        pagHtml += '<a class="page-btn" href="#" data-page="' + (currentPage + 1) + '">Next &#8594;</a>';
+      } else {
+        pagHtml += '<span class="page-btn" style="opacity:0.3;pointer-events:none;">Next &#8594;</span>';
+      }
+    }
+    pagination.innerHTML = pagHtml;
+
+    // Event delegation for pagination
+    pagination.querySelectorAll('.page-btn').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        var page = parseInt(this.getAttribute('data-page'));
+        if (!isNaN(page)) {
+          currentPage = page;
+          loadCallsAndRender();
+        }
+      });
+    });
+  }
+
+  function loadCallsAndRender() {
+    loadEmergencies().then(renderCalls).catch(function(e) { loadError(e.message || 'Failed to load emergencies'); });
+  }
+
+  function renderTrendChart(allData) {
+    if (!emergencyChart) emergencyChart = echarts.init(document.getElementById('emergency-trend-chart'));
+
+    // Aggregate calls per day from the call-volume data
+    // We don't have emergency-specific daily data from API, so use placeholder visualization
+    // Instead, let's show emergency count in the summary tiles which is more accurate
+    var option = {
+      tooltip: {
+        trigger: 'axis',
+        formatter: 'This chart shows call volume context — check tiles for emergency-specific stats.'
+      },
+      grid: { left: 50, right: 20, top: 30, bottom: 30 },
+      xAxis: {
+        type: 'category',
+        data: allData.all ? allData.all.slice(-14).map(function(b) { return b.time ? b.time.slice(5) : ''; }) : [],
+        axisLabel: { color: 'var(--text-muted)', font: { size: 10, family: 'JetBrains Mono' }, rotate: 30 },
+        axisLine: { lineStyle: { color: 'var(--border)' } }
+      },
+      yAxis: {
+        type: 'value',
+        name: 'Total Calls', nameTextStyle: { color: 'var(--text-muted)', font: { size: 10 } },
+        axisLabel: { color: 'var(--text-muted)', font: { size: 10 } },
+        splitLine: { lineStyle: { color: 'var(--tile-border)' } }
+      },
+      series: [{
+        name: 'All Calls', type: 'line', smooth: true, data: allData.all ? allData.all.slice(-14).map(function(b) { return b.calls || 0; }) : [],
+        lineStyle: { color: var(--accent), width: 1.5 },
+        areaStyle: { color: 'linear-gradient(180deg, rgba(99,102,241,0.1) 0%, transparent 100%)' },
+        itemStyle: { color: '#6366f1' }
+      }]
+    };
+    emergencyChart.setOption(option);
+  }
+
+  // Initialize
+  loadCallsAndRender();
+
+  // System selector
+  apiFetch('/systems').then(function(raw) {
+    var systems = raw.systems || [];
+    systems.forEach(function(s) {
+      var opt = document.createElement('option');
+      opt.value = s.system_id;
+      opt.textContent = s.system_name;
+      sysSelect.appendChild(opt);
+    });
+  }).catch(function(){});
+
+  // Event listeners
+  sysSelect.addEventListener('change', function() { currentPage = 1; loadCallsAndRender(); });
+  dateFrom.addEventListener('change', function() { currentPage = 1; loadCallsAndRender(); });
+  dateTo.addEventListener('change', function() { currentPage = 1; loadCallsAndRender(); });
+  sortSelect.addEventListener('change', function() { currentPage = 1; loadCallsAndRender(); });
+
+  window.addEventListener('resize', function() {
+    if (emergencyChart) emergencyChart.resize();
+  });
+
+  document.getElementById('themeLabel').classList.add('show');
+})();
+</script>
+</body>
+</html>

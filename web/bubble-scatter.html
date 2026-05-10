@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="auth.js?v=1"></script>
+  <meta name="card-title" content="Bubble Scatter">
+  <meta name="card-description" content="Talkgroup call volume vs emergency rate by size">
+  <meta name="card-order" content="21">
+  <title>Bubble Scatter — tr-engine</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <script src="theme-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-body); font-weight: var(--font-weight-body);
+      min-height: 100vh; display: flex; flex-direction: column;
+      transition: background 0.5s, color 0.4s;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { flex: 1; padding: 80px 24px 40px; max-width: 1400px; margin: 0 auto; width: 100%; }
+    .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .controls label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+    .controls select { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-xs); color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 6px 10px; outline: none; transition: border-color 0.2s; }
+    .controls select:focus { border-color: var(--accent); }
+    .control-group { display: flex; align-items: center; gap: 6px; }
+    .section { margin-bottom: 32px; }
+    .chart-card { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-sm); padding: 16px; min-height: 60vh; position: relative; }
+    .chart-card.loading::after { content: 'Loading...'; display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; }
+    .chart-card.error::after { content: 'Error loading data'; display: flex; align-items: center; justify-content: center; height: 100%; color: var(--error-color, #e06); font-size: 14px; }
+    .loading-text { color: var(--text-muted); font-size: 13px; padding: 8px; }
+    @media (max-width: 600px) { .wrap { padding: 60px 12px 20px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="section">
+      <h1 style="font-size:22px;font-weight:700;margin-bottom:4px;">Bubble Scatter</h1>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">Talkgroup call volume vs emergency rate — bubble size represents average duration</p>
+      <div class="controls">
+        <div class="control-group">
+          <label for="systemSelect">Systems</label>
+          <select id="systemSelect" multiple style="min-width:200px;"></select>
+        </div>
+        <div class="control-group">
+          <label for="windowSelect">Time Window</label>
+          <select id="windowSelect">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="limitSelect">Top N</label>
+          <select id="limitSelect">
+            <option value="100" selected>All (up to 100)</option>
+            <option value="50">Top 50</option>
+            <option value="25">Top 25</option>
+          </select>
+        </div>
+        <button id="refreshBtn" style="background:var(--accent);border:none;border-radius:var(--radius-xs);color:#fff;font-family:var(--font-mono);font-size:12px;padding:6px 14px;cursor:pointer;">Refresh</button>
+      </div>
+    </div>
+    <div class="section">
+      <div id="chart" class="chart-card"></div>
+    </div>
+    <div style="text-align:center;padding-top:16px;font-size:11px;color:var(--text-muted);">
+      Data from /api/v1/calls and /api/v1/talkgroups · X=log scale · Y=emergency rate · Size=avg duration
+    </div>
+  </div>
+
+  <script src="theme-engine.js?v=2"></script>
+  <script>
+  (function() {
+    var chart, systems = {}, chartInstance;
+    var systemColors = ['rgba(100,180,255,0.8)','rgba(255,140,70,0.8)','rgba(100,220,140,0.8)','rgba(220,130,255,0.8)','rgba(255,200,50,0.8)','rgba(150,200,220,0.8)','rgba(220,140,140,0.8)','rgba(140,220,140,0.8)'];
+
+    // Fetch API helper using auth.js patching
+    async function apiFetch(url, token) {
+      var headers = {};
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      var res = await fetch(url, { headers: headers });
+      if (res.status === 401 || res.status === 403) {
+        // Let auth.js retry logic handle it
+        throw new Error('Auth needed');
+      }
+      if (!res.ok) throw new Error('API ' + res.status + ': ' + res.statusText);
+      return res.json();
+    }
+
+    function initChart() {
+      var el = document.getElementById('chart');
+      if (chartInstance) chartInstance.dispose();
+      chartInstance = echarts.init(el);
+      chartInstance.setOption({
+        title: { text: 'Talkgroup Bubble Scatter', left: 'center', textStyle: { color: 'rgba(255,255,255,0.5)', fontSize: 13 } },
+        grid: { left: 60, right: 40, top: 40, bottom: 100 },
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          borderColor: 'rgba(255,255,255,0.1)',
+          textStyle: { fontSize: 12, color: '#ddd' },
+          formatter: function(p) {
+            var d = p.data;
+            if (!d) return p.name;
+            return '<b>' + (d.name || d.tgid) + '</b><br/>' +
+              (d.alpha_tag ? d.alpha_tag + '<br/>' : '') +
+              'Calls: ' + d.total_calls + ' · Emergency: ' + d.emergency_rate.toFixed(1) + '% (' + d.emergency_count + ')<br/>' +
+              'Avg Duration: ' + d.avg_duration_s.toFixed(0) + 's';
+          }
+        },
+        xAxis: {
+          type: 'log', name: 'Total Call Count', nameLocation: 'middle', nameGap: 30,
+          nameTextStyle: { color: 'rgba(255,255,255,0.4)', fontSize: 11 },
+          splitLine: { show: false }, axisLabel: { color: 'rgba(255,255,255,0.5)' },
+          axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+        },
+        yAxis: {
+          type: 'value', min: 0, max: 100, name: 'Emergency Rate (%)', nameLocation: 'middle', nameGap: 35,
+          nameTextStyle: { color: 'rgba(255,255,255,0.4)', fontSize: 11 },
+          splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+          axisLabel: { color: 'rgba(255,255,255,0.5)' },
+          axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+        },
+        visualMap: {
+          orient: 'horizontal', left: 'center', bottom: 20,
+          dimension: 2, min: 0, max: 60,
+          text: ['Longer Avg Duration', 'Shorter Avg Duration'],
+          textStyle: { color: 'rgba(255,255,255,0.4)', fontSize: 10 },
+          inRange: { color: ['#48c6ef', '#4f83cc', '#705dc8', '#9041a5', '#ad2f79', '#c42162', '#d6184e', '#e63d3d', '#f56e2b'], symbolSize: [10, 40] },
+          calculable: true
+        },
+        series: [{
+          type: 'scatter', data: [], symbolSize: function(d) { return Math.max(12, Math.min(60, Math.sqrt((d[2] || 1)) * 3)); },
+          emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 2, shadowBlur: 10 } }
+        }]
+      });
+
+      var ro = new ResizeObserver(function() { chartInstance.resize(); });
+      ro.observe(el);
+    }
+
+    async function loadData() {
+      var el = document.getElementById('chart');
+      el.classList.add('loading');
+      el.classList.remove('error');
+
+      var days = parseInt(document.getElementById('windowSelect').value);
+      var limit = parseInt(document.getElementById('limitSelect').value);
+      var sel = document.getElementById('systemSelect');
+      var selectedSystems = [];
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].selected) selectedSystems.push(parseInt(sel.options[i].value));
+      }
+
+      try {
+        var sysList = await apiFetch('/api/v1/systems');
+        if (!sysList) throw new Error('No systems');
+        for (var i = 0; i < sysList.length; i++) {
+          var s = sysList[i];
+          systems[s.system_id] = s;
+        }
+
+        var allTgCalls = {}; // key: "system_id:tgid" -> { total, em, dur, tags }
+
+        for (var i = 0; i < sysList.length; i++) {
+          var sid = sysList[i].system_id;
+          if (selectedSystems.length > 0 && selectedSystems.indexOf(sid) === -1) continue;
+          var cutoff = new Date(Date.now() - days * 86400000).toISOString();
+          var callsUrl = '/api/v1/calls?system_id=' + sid + '&limit=' + limit + '&sort=-start_time';
+          try {
+            var calls = await apiFetch(callsUrl);
+            if (!calls) continue;
+            for (var j = 0; j < calls.length; j++) {
+              var c = calls[j];
+              if (c.start_time < cutoff) continue;
+              var key = sid + ':' + c.tgid;
+              if (!allTgCalls[key]) {
+                allTgCalls[key] = { system_id: sid, tgid: c.tgid, total: 0, emergency_count: 0, duration_sum: 0, alpha_tag: c.tgid_alpha_tag || '', tag: c.tag || '' };
+              }
+              allTgCalls[key].total++;
+              if (c.emergency) allTgCalls[key].emergency_count++;
+              if (c.duration) allTgCalls[key].duration_sum += c.duration;
+            }
+          } catch(e) { console.warn('Failed to fetch calls for system ' + sid, e); }
+        }
+
+        var data = [];
+        for (var k in allTgCalls) {
+          var tg = allTgCalls[k];
+          data.push({
+            value: [tg.total, tg.total > 0 ? (tg.emergency_count / tg.total * 100) : 0, tg.duration_sum / Math.max(1, tg.total)],
+            name: tg.tgid + (tg.alpha_tag ? (' - ' + tg.alpha_tag) : ''),
+            tgid: tg.tgid,
+            system_id: tg.system_id,
+            alpha_tag: tg.alpha_tag,
+            total_calls: tg.total,
+            emergency_count: tg.emergency_count,
+            avg_duration_s: tg.duration_sum / Math.max(1, tg.total)
+          });
+        }
+
+        // Sort by total calls desc, take top N
+        data.sort(function(a, b) { return b.total_calls - a.total_calls; });
+        data = data.slice(0, parseInt(document.getElementById('limitSelect').value) || 100);
+
+        // Build scatter data with color index
+        var scatterData = [];
+        var colorMap = {};
+        for (var i = 0; i < data.length; i++) {
+          var sid = data[i].system_id;
+          if (!colorMap[sid]) colorMap[sid] = systemColors[Object.keys(colorMap).length % systemColors.length];
+          scatterData.push({
+            value: data[i].value,
+            name: data[i].name,
+            tgid: data[i].tgid,
+            alpha_tag: data[i].alpha_tag,
+            system_id: data[i].system_id,
+            total_calls: data[i].total_calls,
+            emergency_count: data[i].emergency_count,
+            avg_duration_s: data[i].avg_duration_s,
+            itemStyle: { color: colorMap[sid] }
+          });
+        }
+
+        chartInstance.setOption({ series: [{ data: scatterData }] });
+      } catch (e) {
+        el.classList.add('error');
+        console.error('Bubble scatter load error:', e);
+      } finally {
+        el.classList.remove('loading');
+      }
+    }
+
+    function populateSystems() {
+      var sel = document.getElementById('systemSelect');
+      apiFetch('/api/v1/systems').then(function(sysList) {
+        for (var i = 0; i < sysList.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = sysList[i].system_id;
+          opt.textContent = sysList[i].name || 'System ' + sysList[i].system_id;
+          opt.selected = true;
+          sel.appendChild(opt);
+        }
+      }).catch(function(e) { console.warn('Failed to fetch systems:', e); });
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadData);
+    document.getElementById('windowSelect').addEventListener('change', loadData);
+    document.getElementById('limitSelect').addEventListener('change', loadData);
+    document.getElementById('systemSelect').addEventListener('change', loadData);
+
+    initChart();
+    populateSystems();
+    loadData();
+  })();
+  </script>
+</body>
+</html>
