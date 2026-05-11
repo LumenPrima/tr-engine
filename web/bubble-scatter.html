@@ -160,8 +160,9 @@
       }
 
       try {
-        var sysList = await apiFetch('/api/v1/systems');
-        if (!sysList) throw new Error('No systems');
+        var sysResp = await apiFetch('/api/v1/systems');
+        if (!sysResp) throw new Error('No systems');
+        var sysList = sysResp.systems || [];
         for (var i = 0; i < sysList.length; i++) {
           var s = sysList[i];
           systems[s.system_id] = s;
@@ -175,14 +176,14 @@
           var cutoff = new Date(Date.now() - days * 86400000).toISOString();
           var callsUrl = '/api/v1/calls?system_id=' + sid + '&limit=' + limit + '&sort=-start_time';
           try {
-            var calls = await apiFetch(callsUrl);
-            if (!calls) continue;
+            var callsResp = await apiFetch(callsUrl);
+            var calls = (callsResp && callsResp.calls) || [];
             for (var j = 0; j < calls.length; j++) {
               var c = calls[j];
               if (c.start_time < cutoff) continue;
               var key = sid + ':' + c.tgid;
               if (!allTgCalls[key]) {
-                allTgCalls[key] = { system_id: sid, tgid: c.tgid, total: 0, emergency_count: 0, duration_sum: 0, alpha_tag: c.tgid_alpha_tag || '', tag: c.tag || '' };
+                allTgCalls[key] = { system_id: sid, tgid: c.tgid, total: 0, emergency_count: 0, duration_sum: 0, alpha_tag: c.tg_alpha_tag || '', tag: c.tg_tag || '' };
               }
               allTgCalls[key].total++;
               if (c.emergency) allTgCalls[key].emergency_count++;
@@ -240,7 +241,8 @@
 
     function populateSystems() {
       var sel = document.getElementById('systemSelect');
-      apiFetch('/api/v1/systems').then(function(sysList) {
+      apiFetch('/api/v1/systems').then(function(sysResp) {
+        var sysList = (sysResp && sysResp.systems) || [];
         for (var i = 0; i < sysList.length; i++) {
           var opt = document.createElement('option');
           opt.value = sysList[i].system_id;

@@ -491,7 +491,7 @@ body::after {
       },
       series: [{
         name: 'All Calls', type: 'line', smooth: true, data: allData.all ? allData.all.slice(-14).map(function(b) { return b.calls || 0; }) : [],
-        lineStyle: { color: var(--accent), width: 1.5 },
+        lineStyle: { color: '#6366f1', width: 1.5 },
         areaStyle: { color: 'linear-gradient(180deg, rgba(99,102,241,0.1) 0%, transparent 100%)' },
         itemStyle: { color: '#6366f1' }
       }]
@@ -501,6 +501,7 @@ body::after {
 
   // Initialize
   loadCallsAndRender();
+  loadEmergencyTrend().then(renderTrendChart).catch(function() {});
 
   // System selector
   apiFetch('/systems').then(function(raw) {
@@ -508,7 +509,7 @@ body::after {
     systems.forEach(function(s) {
       var opt = document.createElement('option');
       opt.value = s.system_id;
-      opt.textContent = s.system_name;
+      opt.textContent = s.name;
       sysSelect.appendChild(opt);
     });
   }).catch(function(){});

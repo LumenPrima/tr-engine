@@ -86,15 +86,16 @@
       var days = parseInt(document.getElementById('windowSelect').value);
       var maxTgs = parseInt(document.getElementById('limitSelect').value);
       var cutoff = Date.now() - days * 86400000;
-      var sysList = await apiFetch('/api/v1/systems');
+      var sysResp = await apiFetch('/api/v1/systems');
+      var sysList = (sysResp && sysResp.systems) || [];
       var hierarchy = [];
 
       for (var s = 0; s < sysList.length; s++) {
         var sid = sysList[s].system_id;
         var sysName = sysList[s].name || 'System ' + sid;
         var url = '/api/v1/calls?system_id=' + sid + '&limit=50000&sort=-start_time';
-        var calls = await apiFetch(url);
-        if (!calls) continue;
+        var callsResp = await apiFetch(url);
+        var calls = (callsResp && callsResp.calls) || [];
 
         // Aggregate by (tgid, hour_of_day)
         var tgHours = {};
@@ -104,7 +105,7 @@
           var tgid = call.tgid;
           var hours = new Date(call.start_time).getUTCHours();
           var key = tgid + ':' + hours;
-          if (!tgHours[key]) tgHours[key] = { tgid: tgid, hour: hours, count: 0, alpha_tag: call.tgid_alpha_tag || '' };
+          if (!tgHours[key]) tgHours[key] = { tgid: tgid, hour: hours, count: 0, alpha_tag: call.tg_alpha_tag || '' };
           tgHours[key].count++;
         }
 

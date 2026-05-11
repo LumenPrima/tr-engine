@@ -363,7 +363,7 @@ table-wrap { overflow-x: auto; }
     } else {
       filtered = affiliations.filter(function(a) {
         return (a.unit_id + '').indexOf(query) >= 0 ||
-               (a.alpha_tag || '').toLowerCase().indexOf(query) >= 0 ||
+               (a.unit_alpha_tag || '').toLowerCase().indexOf(query) >= 0 ||
                (a.tg_alpha_tag || '').toLowerCase().indexOf(query) >= 0 ||
                (a.tgid + '').indexOf(query) >= 0;
       });
@@ -376,7 +376,7 @@ table-wrap { overflow-x: auto; }
       unitMap[a.unit_id].push(a);
     });
 
-    units = Object.keys(unitMap).sort(function(a, b) {
+    var units = Object.keys(unitMap).sort(function(a, b) {
       var aAff = unitMap[a][0].status === 'affiliated';
       var bAff = unitMap[b][0].status === 'affiliated';
       if (aAff && !bAff) return -1;
@@ -394,7 +394,7 @@ table-wrap { overflow-x: auto; }
       html += '<span class="unit-id">' + uid + '</span>';
       html += '<span class="badge ' + (isAff ? 'affiliated' : 'inactive') + '">' + (isAff ? 'ACTIVE' : 'INACTIVE') + '</span>';
       html += '</div>';
-      html += '<div class="alpha-tag">' + (primary.alpha_tag || '—') + '</div>';
+      html += '<div class="alpha-tag">' + (primary.unit_alpha_tag || '—') + '</div>';
       if (isAff && primary.tgid) {
         html += '<div class="card-row"><span class="label">Talkgroup</span><span class="value">' + primary.tgid;
         html += (primary.tg_alpha_tag ? ' — ' + primary.tg_alpha_tag : '') + '</span></div>';
@@ -416,7 +416,7 @@ table-wrap { overflow-x: auto; }
     // Render matrix table
     var matrixHtml = '';
     affiliations.forEach(function(a) {
-      matrixHtml += '<tr><td><b>' + a.unit_id + '</b></td><td>' + (a.alpha_tag || '—') + '</td>';
+      matrixHtml += '<tr><td><b>' + a.unit_id + '</b></td><td>' + (a.unit_alpha_tag || '—') + '</td>';
       matrixHtml += '<td>' + (a.tgid ? a.tgid + (a.tg_alpha_tag ? ' — ' + a.tg_alpha_tag : '') : '—') + '</td>';
       matrixHtml += '<td>' + (a.tg_alpha_tag ? '' : (a.tag || '—')) + '</td>';
       matrixHtml += '<td>' + formatTime(a.last_change) + '</td></tr>';
@@ -463,7 +463,7 @@ table-wrap { overflow-x: auto; }
     systems.forEach(function(s) {
       var opt = document.createElement('option');
       opt.value = s.system_id;
-      opt.textContent = s.system_name;
+      opt.textContent = s.name;
       sysSelect.appendChild(opt);
     });
   }).catch(function(){});

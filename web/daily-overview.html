@@ -99,7 +99,8 @@
       el.innerHTML = '<span class="loading-text">Loading…</span>';
 
       var days = parseInt(document.getElementById('windowSelect').value);
-      var sysList = await apiFetch('/api/v1/systems');
+      var sysResp = await apiFetch('/api/v1/systems');
+      var sysList = (sysResp && sysResp.systems) || [];
       var cutoff = new Date(Date.now() - days * 86400000).toISOString();
 
       var hierarchy = { name: 'root', children: [] };
@@ -117,12 +118,8 @@
       var results = [];
       for (var i = 0; i < fetches.length; i++) {
         try {
-          var calls = await apiFetch(fetches[i].url);
-          if (calls === null) continue;
-          // Filter by cutoff
-          for (var j = 0; j < calls.length; j++) {
-            if (calls[j].start_time < cutoff) calls.splice(j, 1); j--;
-          }
+          var callsResp = await apiFetch(fetches[i].url);
+          var calls = ((callsResp && callsResp.calls) || []).filter(function(c) { return c.start_time >= cutoff; });
           results.push({ sid: fetches[i].sid, calls: calls });
         } catch(e) { console.warn('Failed to fetch calls for system ' + fetches[i].sid, e); }
       }
@@ -135,7 +132,7 @@
           var c = rs.calls[k];
           var tgid = c.tgid;
           if (!tgMap[tgid]) {
-            tgMap[tgid] = { tgid: tgid, total: 0, emergency_count: 0, duration_sum: 0, alpha_tag: c.tgid_alpha_tag || '', tag: c.tag || '' };
+            tgMap[tgid] = { tgid: tgid, total: 0, emergency_count: 0, duration_sum: 0, alpha_tag: c.tg_alpha_tag || '', tag: c.tg_tag || '' };
           }
           tgMap[tgid].total++;
           if (c.emergency) tgMap[tgid].emergency_count++;
@@ -212,7 +209,7 @@
         .append('title').text(function(d) { return d.data.name + ' — ' + d.value + ' calls'; });
 
       // Talkgroup rectangles
-      var tg = svg.selectAll('.tg').data(root.descendants().filter(function(d) { return d.height === 2; })).enter().append('rect')
+      var tg = svg.selectAll('.tg').data(root.descendants().filter(function(d) { return d.depth === 2; })).enter().append('rect')
         .attr('class', 'tg')
         .attr('fill', function(d) { return systemColors[Number(d.data.system_id || 0) % systemColors.length]; })
         .attr('opacity', 0.45).attr('rx', 3)

@@ -139,7 +139,8 @@
     async function loadGauges() {
       var grid = document.getElementById('grid');
       try {
-        var recorders = await apiFetch('/api/v1/recorders');
+        var recsResp = await apiFetch('/api/v1/recorders');
+        var recorders = (recsResp && recsResp.recorders) || [];
         var stats = {};
         try {
           var statsData = await apiFetch('/api/v1/stats');
@@ -150,7 +151,8 @@
           }
         } catch(e) { console.warn('Stats fetch failed', e); }
 
-        var sysList = await apiFetch('/api/v1/systems');
+        var sysResp = await apiFetch('/api/v1/systems');
+        var sysList = (sysResp && sysResp.systems) || [];
         var sysMap = {};
         for (var i = 0; i < sysList.length; i++) sysMap[sysList[i].system_id] = sysList[i];
 

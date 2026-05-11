@@ -294,7 +294,7 @@ body::after {
   }
 
   function loadHeatmapData(hours) {
-    return apiFetch('/stats/call-heatmap?hours=' + (hours || 720)).then(function(raw) {
+    return apiFetch('/stats/call-heatmap?days=' + Math.min(hours ? Math.round(hours / 24) : 30, 90)).then(function(raw) {
       var cells = raw.cells || raw.data || [];
       var counts = {};
       var totalCalls = 0, peakHour = { hour: 0, count: 0 };
@@ -481,7 +481,7 @@ body::after {
     systems.forEach(function(s) {
       var opt = document.createElement('option');
       opt.value = s.system_id;
-      opt.textContent = s.system_name;
+      opt.textContent = s.name;
       sysSelect.appendChild(opt);
     });
   }).catch(function(){});
