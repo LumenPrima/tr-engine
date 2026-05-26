@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="auth.js?v=1"></script>
+<meta name="card-title" content="Unit Tracker">
+<meta name="card-description" content="Real-time unit affiliations and activity tracking">
+<meta name="card-order" content="7">
+<title>Unit Tracker — tr-engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;700&family=Outfit:wght@200;300;400;500;600;700;800;900&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Karla:wght@200;300;400;500&family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500;700&family=VT323&family=Share+Tech+Mono&family=Press+Start+2P&display=swap" rel="stylesheet">
+<script src="theme-config.js"></script>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-body);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  transition: background 0.5s, color 0.4s;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: var(--grid-bg);
+  background-size: var(--grid-size) var(--grid-size);
+  opacity: 0.4;
+}
+body::after {
+  content: ''; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+  background: var(--scanlines);
+}
+.vignette-overlay {
+  position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+  background: var(--vignette); transition: background 0.6s;
+}
+
+.wrap { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 80px 28px 56px; }
+
+/* ── Top bar ── */
+.header-bar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  padding: 14px 20px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  border-radius: var(--radius); backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--shadow-panel); margin-bottom: 24px;
+}
+.header-bar h1 {
+  font-family: var(--font-display); font-size: 20px; font-weight: 700;
+}
+.controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.controls select, .controls input {
+  background: var(--tile-bg); border: 1px solid var(--tile-border);
+  border-radius: var(--radius-xs); color: var(--text);
+  font-family: var(--font-mono); font-size: 12px; padding: 6px 10px;
+  outline: none; transition: border-color 0.2s;
+}
+.controls select:focus, .controls input:focus { border-color: var(--accent); }
+.controls select { min-width: 160px; }
+
+/* ── Status pills ── */
+.status-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 24px; padding: 10px 16px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  border-radius: var(--radius); backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--shadow-panel);
+}
+.status-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 20px;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+}
+.status-pill.green {
+  background: color-mix(in srgb, var(--success), transparent 85%);
+  border: 1px solid color-mix(in srgb, var(--success), transparent 60%);
+  color: var(--success);
+}
+.status-pill.gray {
+  background: color-mix(in srgb, var(--text-muted), transparent 85%);
+  border: 1px solid color-mix(in srgb, var(--text-muted), transparent 60%);
+  color: var(--text-muted);
+}
+.status-pill.blue {
+  background: color-mix(in srgb, var(--info), transparent 85%);
+  border: 1px solid color-mix(in srgb, var(--info), transparent 60%);
+  color: var(--info);
+}
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+}
+.status-refresh {
+  margin-left: auto; font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted); display: flex; align-items: center; gap: 6px;
+}
+.status-refresh .dot-pulse {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--success); animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ── Filters ── */
+.filter-row {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.filter-row input {
+  flex: 1; min-width: 200px; background: var(--tile-bg);
+  border: 1px solid var(--tile-border); border-radius: var(--radius-xs);
+  color: var(--text); font-family: var(--font-mono); font-size: 12px;
+  padding: 8px 12px; outline: none; transition: border-color 0.2s;
+}
+.filter-row input:focus { border-color: var(--accent); }
+.filter-row input::placeholder { color: var(--text-faint); }
+
+/* ── Unit cards grid ── */
+.unit-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px; margin-bottom: 32px;
+}
+.unit-card {
+  padding: 16px; border-radius: var(--radius-sm);
+  background: var(--tile-bg); border: 1px solid var(--tile-border);
+  box-shadow: var(--shadow-panel); transition: all 0.2s;
+  position: relative; overflow: hidden;
+}
+.unit-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--border); transition: background 0.3s;
+}
+.unit-card.affiliated::before { background: var(--success); }
+.unit-card.inactive::before { background: var(--text-muted); opacity: 0.3; }
+.unit-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-panel-hover); }
+.unit-card .card-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.unit-card .unit-id {
+  font-family: var(--font-mono); font-size: 16px; font-weight: 700;
+  color: var(--text); letter-spacing: 0.02em;
+}
+.unit-card .badge {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  padding: 2px 8px; border-radius: 10px; min-width: 60px; text-align: center;
+}
+.unit-card .badge.affiliated {
+  background: color-mix(in srgb, var(--success), transparent 82%);
+  color: var(--success); border: 1px solid color-mix(in srgb, var(--success), transparent 55%);
+}
+.unit-card .badge.inactive {
+  background: color-mix(in srgb, var(--text-muted), transparent 85%);
+  color: var(--text-muted); border: 1px solid var(--tile-border);
+}
+.unit-card .alpha-tag {
+  font-size: 13px; color: var(--text-mid); margin: 4px 0 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.unit-card .card-row {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+  color: var(--text-muted); margin-top: 4px;
+}
+.unit-card .card-row .label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; min-width: 70px; }
+.unit-card .card-row .value { font-family: var(--font-mono); color: var(--text); }
+
+/* ── Affiliation matrix table ── */
+.section { margin-bottom: 32px; }
+.section-header {
+  display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.section-title { font-family: var(--font-display); font-size: 16px; font-weight: 600; }
+.section-subtitle { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+
+.data-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  background: var(--tile-bg); border: 1px solid var(--tile-border);
+  border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-panel);
+}
+.data-table thead th {
+  background: color-mix(in srgb, var(--accent) 8%, var(--tile-bg));
+  border-bottom: 2px solid var(--accent-dim);
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-mid); font-weight: 600;
+  padding: 10px 14px; text-align: left;
+}
+.data-table tbody tr {
+  border-bottom: 1px solid var(--tile-border);
+  transition: background 0.15s;
+}
+.data-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--tile-bg), white 3%); }
+.data-table tbody tr:hover { background: var(--accent-glow); }
+.data-table tbody td {
+  padding: 9px 14px; font-family: var(--font-mono); font-size: 12px;
+  color: var(--text);
+}
+.data-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+table-wrap { overflow-x: auto; }
+
+.chart-loading {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 200px; color: var(--text-muted); font-family: var(--font-mono); font-size: 13px;
+}
+.error-card {
+  background: color-mix(in srgb, var(--danger), transparent 92%);
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 60%);
+  color: var(--danger); padding: 20px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 13px; margin-bottom: 24px;
+}
+.theme-label {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 10000; font-family: var(--font-display); font-size: 11px;
+  letter-spacing: 3px; text-transform: uppercase; color: var(--accent);
+  background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(16px);
+  border: 1px solid var(--border); padding: 8px 20px; border-radius: 100px;
+  transition: all 0.5s; pointer-events: none; opacity: 0;
+}
+.theme-label.show { opacity: 1; }
+
+@media (max-width: 768px) {
+  .wrap { padding: 72px 12px 32px; }
+  .unit-grid { grid-template-columns: 1fr; }
+  .header-bar { padding: 10px 14px; gap: 8px; }
+  .header-bar h1 { font-size: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="vignette-overlay"></div>
+
+<div class="wrap">
+  <div class="header-bar">
+    <h1>Unit Tracker</h1>
+    <div class="controls">
+      <select id="sys-select" title="Select system"><option value="">All Systems</option></select>
+      <select id="ttl-select" title="Activity threshold">
+        <option value="">All time</option>
+        <option value="300">Last 5 min</option>
+        <option value="900">Last 15 min</option>
+        <option value="1800">Last 30 min</option>
+        <option value="3600">Last hour</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="error-panel"></div>
+
+  <div class="status-bar">
+    <span class="status-pill green" id="pill-aff"><span class="status-dot"></span> Affiliated: <b id="count-aff">—</b></span>
+    <span class="status-pill gray" id="pill-inactive"><span class="status-dot"></span> Inactive: <b id="count-inact">—</b></span>
+    <span class="status-pill blue" id="pill-unique"><span class="status-dot"></span> Unique: <b id="count-unique">—</b></span>
+    <span class="status-refresh" id="status-refresh"><span class="dot-pulse"></span> Updating in <span id="countdown">30</span>s</span>
+  </div>
+
+  <div class="filter-row">
+    <input type="text" id="unit-search" placeholder="Search by call sign, name, or TGID…">
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Live Affiliations</span>
+      <span class="section-subtitle" id="total-label">—</span>
+    </div>
+    <div class="unit-grid" id="unit-grid"><div class="chart-loading">Loading affiliations…</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Affiliation Matrix</span>
+      <span class="section-subtitle">unit → talkgroup mapping</span>
+    </div>
+    <table-wrap>
+      <table class="data-table">
+        <thead><tr>
+          <th>Unit ID</th><th>Alpha Tag</th><th>Talkgroup</th><th>TG Tag</th><th>Last Seen</th>
+        </tr></thead>
+        <tbody id="matrix-body"><tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:32px;">Loading…</td></tr></tbody>
+      </table>
+    </table-wrap>
+  </div>
+</div>
+
+<div class="theme-label" id="themeLabel"></div>
+
+<script src="theme-engine.js?v=2"></script>
+<script>
+(function() {
+  'use strict';
+
+  var POLL_INTERVAL = 30000;
+  document.getElementById('themeLabel').addEventListener('transitionend', function() {
+    var self = this;
+    setTimeout(function() { self.classList.remove('show'); }, 1800);
+  });
+
+  var errorPanel = document.getElementById('error-panel');
+  var sysSelect = document.getElementById('sys-select');
+  var ttlSelect = document.getElementById('ttl-select');
+  var unitGrid = document.getElementById('unit-grid');
+  var matrixBody = document.getElementById('matrix-body');
+  var searchInput = document.getElementById('unit-search');
+  var countdownEl = document.getElementById('countdown');
+
+  var affiliations = [];
+  var pollTimer, countdownTimer;
+
+  function apiFetch(path) {
+    return fetch('/api/v1' + path).then(function(r) { return r.json(); });
+  }
+
+  function formatNum(n) {
+    return n == null ? '—' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  function formatTime(dt) {
+    if (!dt) return 'never';
+    var d = new Date(dt);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return months[d.getMonth()] + ' ' + d.getDate() + ' ' + d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+  }
+
+  function timeAgo(dt) {
+    if (!dt) return 'never';
+    var diff = (Date.now() - new Date(dt).getTime()) / 1000;
+    if (diff < 60) return Math.round(diff) + 's ago';
+    if (diff < 3600) return Math.round(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.round(diff / 3600) + 'h ago';
+    return Math.round(diff / 86400) + 'd ago';
+  }
+
+  function loadError(msg) {
+    errorPanel.innerHTML = '<div class="error-card">Failed to load data: ' + msg + '</div>';
+  }
+
+  function renderAffiliations(data) {
+    affiliations = data.affiliations || [];
+    var total = affiliations.length;
+    var affiliated, inactive, unitSet;
+
+    affiliated = 0; inactive = 0; unitSet = new Set();
+    affiliations.forEach(function(a) {
+      unitSet.add(a.unit_id);
+      if (a.status === 'affiliated') affiliated++;
+      else inactive++;
+    });
+
+    document.getElementById('count-aff').textContent = affiliated;
+    document.getElementById('count-inact').textContent = inactive;
+    document.getElementById('count-unique').textContent = unitSet.size;
+    document.getElementById('total-label').textContent = formatNum(total) + ' entries';
+
+    // Filter by search
+    var query = searchInput.value.toLowerCase().trim();
+    var filtered;
+    if (!query) {
+      filtered = affiliations;
+    } else {
+      filtered = affiliations.filter(function(a) {
+        return (a.unit_id + '').indexOf(query) >= 0 ||
+               (a.unit_alpha_tag || '').toLowerCase().indexOf(query) >= 0 ||
+               (a.tg_alpha_tag || '').toLowerCase().indexOf(query) >= 0 ||
+               (a.tgid + '').indexOf(query) >= 0;
+      });
+    }
+
+    // Render unit cards — collapse multiple entries per unit into single cards
+    var unitMap = {};
+    filtered.forEach(function(a) {
+      if (!unitMap[a.unit_id]) unitMap[a.unit_id] = [];
+      unitMap[a.unit_id].push(a);
+    });
+
+    var units = Object.keys(unitMap).sort(function(a, b) {
+      var aAff = unitMap[a][0].status === 'affiliated';
+      var bAff = unitMap[b][0].status === 'affiliated';
+      if (aAff && !bAff) return -1;
+      if (!aAff && bAff) return 1;
+      return unitMap[a][0].unit_id - unitMap[b][0].unit_id;
+    });
+
+    var html = '';
+    units.forEach(function(uid) {
+      var entries = unitMap[uid];
+      var primary = entries[0];
+      var isAff = primary.status === 'affiliated';
+      html += '<div class="unit-card ' + (isAff ? 'affiliated' : 'inactive') + '">';
+      html += '<div class="card-top">';
+      html += '<span class="unit-id">' + uid + '</span>';
+      html += '<span class="badge ' + (isAff ? 'affiliated' : 'inactive') + '">' + (isAff ? 'ACTIVE' : 'INACTIVE') + '</span>';
+      html += '</div>';
+      html += '<div class="alpha-tag">' + (primary.unit_alpha_tag || '—') + '</div>';
+      if (isAff && primary.tgid) {
+        html += '<div class="card-row"><span class="label">Talkgroup</span><span class="value">' + primary.tgid;
+        html += (primary.tg_alpha_tag ? ' — ' + primary.tg_alpha_tag : '') + '</span></div>';
+      }
+      html += '<div class="card-row"><span class="label">Last seen</span><span class="value">' + formatTime(primary.last_change) + ' (' + timeAgo(primary.last_change) + ')</span></div>';
+      if (primary.site_short_name) {
+        html += '<div class="card-row"><span class="label">Site</span><span class="value">' + primary.site_short_name + '</span></div>';
+      } else if (primary.system_name) {
+        html += '<div class="card-row"><span class="label">System</span><span class="value">' + primary.system_name + '</span></div>';
+      }
+      html += '</div>';
+    });
+
+    if (!units.length) {
+      html = '<div class="chart-loading">No units found matching your filter</div>';
+    }
+    unitGrid.innerHTML = html;
+
+    // Render matrix table
+    var matrixHtml = '';
+    affiliations.forEach(function(a) {
+      matrixHtml += '<tr><td><b>' + a.unit_id + '</b></td><td>' + (a.unit_alpha_tag || '—') + '</td>';
+      matrixHtml += '<td>' + (a.tgid ? a.tgid + (a.tg_alpha_tag ? ' — ' + a.tg_alpha_tag : '') : '—') + '</td>';
+      matrixHtml += '<td>' + (a.tg_alpha_tag ? '' : (a.tag || '—')) + '</td>';
+      matrixHtml += '<td>' + formatTime(a.last_change) + '</td></tr>';
+    });
+    matrixBody.innerHTML = matrixHtml || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:32px;">No data</td></tr>';
+  }
+
+  function loadAffiliations() {
+    var params = '';
+    if (sysSelect.value) params += 'system_id=' + sysSelect.value;
+    if (ttlSelect.value) params += (params ? '&' : '') + 'active_within=' + ttlSelect.value;
+    var url = '/unit-affiliations' + (params ? '?' + params : '');
+    return apiFetch(url).then(function(raw) { renderAffiliations(raw || {}); }).catch(function(e) { loadError(e.message || 'Unknown error'); });
+  }
+
+  function startCountdown() {
+    var remaining = POLL_INTERVAL / 1000;
+    countdownEl.textContent = remaining;
+    countdownTimer = setInterval(function() {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(countdownTimer);
+        remaining = POLL_INTERVAL / 1000;
+      }
+      countdownEl.textContent = remaining;
+    }, 1000);
+  }
+
+  function beginPoll() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(function() {
+      loadAffiliations();
+      startCountdown();
+    }, POLL_INTERVAL);
+    startCountdown();
+  }
+
+  beginPoll();
+  loadAffiliations();
+
+  // System selector
+  apiFetch('/systems').then(function(raw) {
+    var systems = raw.systems || [];
+    systems.forEach(function(s) {
+      var opt = document.createElement('option');
+      opt.value = s.system_id;
+      opt.textContent = s.name;
+      sysSelect.appendChild(opt);
+    });
+  }).catch(function(){});
+
+  sysSelect.addEventListener('change', function() { beginPoll(); });
+  ttlSelect.addEventListener('change', function() { beginPoll(); });
+
+  var searchTimeout;
+  searchInput.addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(loadAffiliations, 300);
+  });
+
+  document.getElementById('themeLabel').classList.add('show');
+})();
+</script>
+</body>
+</html>

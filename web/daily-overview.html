@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="auth.js?v=1"></script>
+  <meta name="card-title" content="Daily Overview">
+  <meta name="card-description" content="Call volume treemap by system and talkgroup">
+  <meta name="card-order" content="22">
+  <title>Daily Overview — tr-engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="theme-config.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-body); font-weight: var(--font-weight-body);
+      min-height: 100vh; display: flex; flex-direction: column;
+      transition: background 0.5s, color 0.4s;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { flex: 1; padding: 80px 24px 40px; max-width: 1600px; margin: 0 auto; width: 100%; }
+    .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .controls label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+    .controls select { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-xs); color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 6px 10px; outline: none; }
+    .controls select:focus { border-color: var(--accent); }
+    .control-group { display: flex; align-items: center; gap: 6px; }
+    .section { margin-bottom: 24px; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 16px; }
+    #treemap { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-sm); overflow: hidden; position: relative; }
+    #treemap svg { width: 100%; height: 100%; }
+    #detail-panel { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-sm); padding: 16px; margin-top: 16px; font-size: 13px; min-height: 60px; display: none; }
+    #detail-panel.visible { display: block; }
+    #detail-panel h3 { margin-bottom: 8px; font-size: 15px; }
+    #detail-panel .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+    #detail-panel .detail-card { padding: 8px 12px; background: var(--bg); border-radius: var(--radius-xs); border: 1px solid var(--tile-border); }
+    #detail-panel .detail-card .label { font-size: 10px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; }
+    #detail-panel .detail-card .value { font-size: 18px; font-weight: 700; margin-top: 2px; }
+    .loading-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-muted); font-size: 14px; }
+    .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .btn-sm { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-xs); color: var(--text); font-family: var(--font-mono); font-size: 11px; padding: 4px 10px; cursor: pointer; }
+    .btn-sm:hover { border-color: var(--accent); }
+    @media (max-width: 600px) { .wrap { padding: 60px 12px 20px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="section">
+      <h1>Daily Overview</h1>
+      <p class="subtitle">Call volume treemap by system and talkgroup</p>
+      <div class="controls">
+        <div class="control-group">
+          <label for="windowSelect">Time Window</label>
+          <select id="windowSelect">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+        <button id="refreshBtn" style="background:var(--accent);border:none;border-radius:var(--radius-xs);color:#fff;font-family:var(--font-mono);font-size:12px;padding:6px 14px;cursor:pointer;">Refresh</button>
+      </div>
+    </div>
+    <div id="treemap" style="height:80vh;"><span class="loading-text">Loading…</span></div>
+    <div id="detail-panel">
+      <div class="detail-header">
+        <h3 id="detail-title">Talkgroup Details</h3>
+        <button class="btn-sm" id="clearDetail">Clear</button>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-card"><div class="label">Talkgroup</div><div class="value" id="d-tgid"></div></div>
+        <div class="detail-card"><div class="label">Tags</div><div class="value" id="d-tag"></div></div>
+        <div class="detail-card"><div class="label">Total Calls</div><div class="value" id="d-calls"></div></div>
+        <div class="detail-card"><div class="label">Emergency %</div><div class="value" id="d-emrg"></div></div>
+        <div class="detail-card"><div class="label">Avg Duration</div><div class="value" id="d-dur"></div></div>
+      </div>
+    </div>
+    <div style="text-align:center;padding-top:12px;font-size:11px;color:var(--text-muted);">
+      D3.js Treemap · Data from /api/v1/calls · Click rectangles for details
+    </div>
+  </div>
+  <script src="theme-engine.js?v=2"></script>
+  <script>
+  (function() {
+    var systemColors = ['rgba(100,180,255,0.9)','rgba(255,140,70,0.9)','rgba(100,220,140,0.9)','rgba(220,130,255,0.9)','rgba(255,200,50,0.9)','rgba(150,200,220,0.9)','rgba(220,140,140,0.9)','rgba(140,220,140,0.9)'];
+    var selected;
+
+    // Fetch API helper
+    async function apiFetch(url) {
+      var res = await fetch(url);
+      if (!res.ok) throw new Error('API ' + res.status);
+      return res.json();
+    }
+
+    async function loadData() {
+      var el = document.getElementById('treemap');
+      el.innerHTML = '<span class="loading-text">Loading…</span>';
+
+      var days = parseInt(document.getElementById('windowSelect').value);
+      var sysResp = await apiFetch('/api/v1/systems');
+      var sysList = (sysResp && sysResp.systems) || [];
+      var cutoff = new Date(Date.now() - days * 86400000).toISOString();
+
+      var hierarchy = { name: 'root', children: [] };
+      var systemMap = {};
+
+      var fetches = [];
+      for (var i = 0; i < sysList.length; i++) {
+        var sid = sysList[i].system_id;
+        systemMap[sid] = sysList[i];
+        var url = '/api/v1/calls?system_id=' + sid + '&limit=50000&sort=-start_time';
+        fetches.push({ sid: sid, url: url });
+      }
+
+      // Fetch all systems' calls in parallel
+      var results = [];
+      for (var i = 0; i < fetches.length; i++) {
+        try {
+          var callsResp = await apiFetch(fetches[i].url);
+          var calls = ((callsResp && callsResp.calls) || []).filter(function(c) { return c.start_time >= cutoff; });
+          results.push({ sid: fetches[i].sid, calls: calls });
+        } catch(e) { console.warn('Failed to fetch calls for system ' + fetches[i].sid, e); }
+      }
+
+      // Aggregate by TG
+      for (var i = 0; i < results.length; i++) {
+        var rs = results[i];
+        var tgMap = {};
+        for (var k = 0; k < rs.calls.length; k++) {
+          var c = rs.calls[k];
+          var tgid = c.tgid;
+          if (!tgMap[tgid]) {
+            tgMap[tgid] = { tgid: tgid, total: 0, emergency_count: 0, duration_sum: 0, alpha_tag: c.tg_alpha_tag || '', tag: c.tg_tag || '' };
+          }
+          tgMap[tgid].total++;
+          if (c.emergency) tgMap[tgid].emergency_count++;
+          if (c.duration) tgMap[tgid].duration_sum += c.duration;
+        }
+        var childTgs = [];
+        for (var t in tgMap) {
+          var tg = tgMap[t];
+          childTgs.push(tg);
+        }
+        systemMap[rs.sid].tg_data = childTgs;
+        if (childTgs.length > 0) {
+          hierarchy.children.push({
+            name: systemMap[rs.sid].name || 'System ' + rs.sid,
+            system_id: rs.sid,
+            children: childTgs.map(function(tg) {
+              return {
+                name: tg.tgid + (tg.alpha_tag ? (' - ' + tg.alpha_tag) : ''),
+                value: tg.total,
+                tgid: tg.tgid,
+                alpha_tag: tg.alpha_tag,
+                call_count: tg.total,
+                emergency_rate: tg.emergency_count / Math.max(1, tg.total) * 100,
+                avg_duration: tg.duration_sum / Math.max(1, tg.total)
+              };
+            })
+          });
+        }
+      }
+
+      if (hierarchy.children.length === 0) {
+        el.innerHTML = '<span class="loading-text">No data for selected period</span>';
+        return;
+      }
+
+      drawTreemap(hierarchy);
+    }
+
+    function drawTreemap(hierarchy) {
+      var container = document.getElementById('treemap');
+      var width = container.clientWidth;
+      var height = Math.min(container.clientHeight, window.innerHeight * 0.75) || 600;
+
+      var root = d3.hierarchy(hierarchy).sum(function(d) { return d.value; }).sort(function(a, b) { return b.value - a.value; });
+      d3.treemap().size([width, height]).padding(3).round(true)(root);
+
+      d3.select('#treemap').select('svg').remove();
+      var svg = d3.select('#treemap').append('svg').attr('width', width).attr('height', height);
+
+      var color = function(system_id) {
+        var idx = 0;
+        var arr = document.querySelectorAll('[system-id]');
+        for (var i = 0; i < arr.length; i++) { if (arr[i].getAttribute('data-sid') == system_id) { idx = system_id; break; } }
+        return systemColors[system_id % systemColors.length] || '#888';
+      };
+
+      // System groups
+      var system = svg.selectAll('.system').data(root.children).enter().append('g').attr('class', 'system');
+
+      // System labels (only shown at top level)
+      system.append('rect').attr('fill', function(d) { return systemColors[Number(d.data.system_id || 0) % systemColors.length]; })
+        .attr('rx', 6).attr('width', function(d) { return d.x1 - d.x0; })
+        .attr('height', function(d) { return d.y1 - d.y0; })
+        .attr('x', function(d) { return d.x0; }).attr('y', function(d) { return d.y0; })
+        .on('click', function() { });
+
+      // System label text
+      system.filter(function(d) { return d.height === 1; }).append('text')
+        .attr('x', function(d) { return d.x0 + 8; }).attr('y', function(d) { return d.y0 + 18; })
+        .attr('fill', '#fff').attr('font-size', '13px').attr('font-weight', '700')
+        .attr('font-family', 'DM Sans, sans-serif')
+        .attr('opacity', function(d) { return (d.x1 - d.x0) > 100 ? 1 : 0; })
+        .text(function(d) { return d.data.name; })
+        .append('title').text(function(d) { return d.data.name + ' — ' + d.value + ' calls'; });
+
+      // Talkgroup rectangles
+      var tg = svg.selectAll('.tg').data(root.descendants().filter(function(d) { return d.depth === 2; })).enter().append('rect')
+        .attr('class', 'tg')
+        .attr('fill', function(d) { return systemColors[Number(d.data.system_id || 0) % systemColors.length]; })
+        .attr('opacity', 0.45).attr('rx', 3)
+        .attr('width', function(d) { return d.x1 - d.x0; })
+        .attr('height', function(d) { return d.y1 - d.y0; })
+        .attr('x', function(d) { return d.x0; }).attr('y', function(d) { return d.y0; })
+        .attr('data-sid', function(d) { return d.data.system_id; })
+        .on('click', function(event, d) { showDetail(d); })
+        .on('mouseover', function(event, d) {
+          d3.select(this).attr('opacity', 0.8);
+        })
+        .on('mouseout', function(event, d) {
+          d3.select(this).attr('opacity', 0.45);
+        });
+
+      // TG labels
+      tg.filter(function(d) { return (d.x1 - d.x0) > 40 && (d.y1 - d.y0) > 20; }).append('text')
+        .attr('x', function(d) { return d.x0 + 4; }).attr('y', function(d) { return d.y0 + 12; })
+        .attr('fill', '#fff').attr('font-size', '9px')
+        .attr('font-family', 'IBM Plex Mono, monospace')
+        .attr('opacity', function(d) { return ((d.x1 - d.x0) > 40 && (d.y1 - d.y0) > 20) ? 0.7 : 0; })
+        .text(function(d) { return d.data.tgid + ': ' + d.value; });
+
+      // Resize handler
+      var ro = new ResizeObserver(function() {
+        var w = container.clientWidth;
+        var h = Math.min(container.clientHeight, window.innerHeight * 0.75) || 600;
+        svg.attr('width', w).attr('height', h);
+        d3.treemap().size([w, h])(root);
+        tg.attr('width', function(d) { return d.x1 - d.x0; }).attr('height', function(d) { return d.y1 - d.y0; }).attr('x', function(d) { return d.x0; }).attr('y', function(d) { return d.y0; });
+        system.filter(function(d) { return d.height === 1; }).select('rect').attr('width', function(d) { return d.x1 - d.x0; }).attr('height', function(d) { return d.y1 - d.y0; }).attr('x', function(d) { return d.x0; }).attr('y', function(d) { return d.y0; });
+        system.select('text').attr('x', function(d) { return d.x0 + 8; }).attr('y', function(d) { return d.y0 + 18; });
+        tg.filter(function(d) { return (d.x1 - d.x0) > 40 && (d.y1 - d.y0) > 20; }).attr('x', function(d) { return d.x0; }).attr('y', function(d) { return d.y0; }).append('text').attr('x', function(d) { return d.x0 + 4; }).attr('y', function(d) { return d.y0 + 12; });
+      });
+      ro.observe(container);
+    }
+
+    function showDetail(d) {
+      var panel = document.getElementById('detail-panel');
+      panel.classList.add('visible');
+      document.getElementById('detail-title').textContent = d.data.tgid + (d.data.alpha_tag ? (' - ' + d.data.alpha_tag) : '');
+      document.getElementById('d-tgid').textContent = d.data.tgid;
+      document.getElementById('d-tag').textContent = d.data.tag || '—';
+      document.getElementById('d-calls').textContent = d.data.call_count;
+      document.getElementById('d-emrg').textContent = d.data.emergency_rate.toFixed(1) + '%';
+      document.getElementById('d-dur').textContent = (d.data.avg_duration || 0).toFixed(0) + 's';
+    }
+
+    document.getElementById('clearDetail').addEventListener('click', function() {
+      document.getElementById('detail-panel').classList.remove('visible');
+    });
+    document.getElementById('refreshBtn').addEventListener('click', loadData);
+    document.getElementById('windowSelect').addEventListener('change', loadData);
+
+    // Initial load
+    loadData();
+  })();
+  </script>
+</body>
+</html>

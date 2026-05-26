@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="auth.js?v=1"></script>
+  <meta name="card-title" content="Recorder Gauges">
+  <meta name="card-description" content="Recorder health dashboard with signal, TG, and call metrics">
+  <meta name="card-order" content="23">
+  <title>Recorder Gauges — tr-engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="theme-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-body); font-weight: var(--font-weight-body);
+      min-height: 100vh; display: flex; flex-direction: column;
+      transition: background 0.5s, color 0.4s;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { flex: 1; padding: 80px 24px 40px; max-width: 1400px; margin: 0 auto; width: 100%; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 16px; }
+    .status-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; font-size: 12px; color: var(--text-muted); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4c4;}
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .gauge-card { background: var(--tile-bg); border: 1px solid var(--tile-border); border-radius: var(--radius-sm); padding: 16px; min-height: 300px; position: relative; }
+    .gauge-card .status-indicator { position: absolute; top: 12px; right: 12px; width: 12px; height: 12px; border-radius: 50%; }
+    .gauge-card .status-good { background: rgba(76,204,76,0.9); box-shadow: 0 0 4px rgba(76,204,76,0.5); }
+    .gauge-card .status-warn { background: rgba(245,166,35,0.9); box-shadow: 0 0 4px rgba(245,166,35,0.5); }
+    .gauge-card .status-bad { background: rgba(239,82,82,0.9); box-shadow: 0 0 4px rgba(239,82,82,0.5); }
+    .gauge-container { width: 100%; height: 280px; }
+    .refresh-note { text-align: center; padding-top: 12px; font-size: 11px; color: var(--text-muted); }
+    .error-msg { text-align: center; color: var(--text-muted); padding: 40px; }
+    @media (max-width: 600px) { .wrap { padding: 60px 12px 20px; } .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Recorder Gauges</h1>
+    <p class="subtitle">Recorder health dashboard — live signal, talkgroup, and call metrics</p>
+    <div class="status-bar">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="lastUpdate">Last updated: —</span>
+      <span id="totalRecorders"></span>
+      <style>
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4c4; box-shadow: 0 0 4px rgba(76,204,76,0.5); }
+      </style>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="refresh-note">Auto-refreshes every 30s · Data from /api/v1/recorders and /api/v1/stats</div>
+  </div>
+  <script src="theme-engine.js?v=2"></script>
+  <script>
+  (function() {
+    var charts = {};
+    var refreshInterval;
+
+    async function apiFetch(url) {
+      var res = await fetch(url);
+      if (!res.ok) throw new Error('API ' + res.status);
+      var json = await res.json();
+      return json || [];
+    }
+
+    function signalColor(db) {
+      if (db == null) return 'rgba(120,120,120,0.5)';
+      if (db > -60) return 'rgba(76,204,76,0.9)';
+      if (db > -80) return 'rgba(245,166,35,0.9)';
+      return 'rgba(239,82,82,0.9)';
+    }
+
+    function signalPercentage(db) {
+      if (db == null) return 50;
+      return Math.max(0, Math.min(100, ((db + 120) / 90) * 100));
+    }
+
+    function gaugeOption(siteInfo, signalPct, callRatePct, activeTgs) {
+      return {
+        title: {
+          text: siteInfo.sys_name || ('Site ' + siteInfo.site_id),
+          left: 'center', top: 4,
+          textStyle: { fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: 'DM Sans' },
+          subtext: siteInfo.site_short_name || '',
+          subtextStyle: { fontSize: 10, color: 'rgba(255,255,255,0.35)' }
+        },
+        series: [
+          {
+            type: 'gauge',
+            startAngle: 200, endAngle: -20, min: 0, max: 100,
+            splitNumber: 10,
+            radius: '85%', center: ['50%', '42%'],
+            itemStyle: { color: signalColor(siteInfo.signal_db) },
+            progress: { show: true, width: 14 },
+            pointer: { show: false },
+            axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(255,255,255,0.08)']] } },
+            axisTick: { show: false },
+            splitLine: { length: 10, lineStyle: { width: 2, color: 'rgba(255,255,255,0.15)' } },
+            axisLabel: { show: false },
+            title: { show: false },
+            detail: {
+              valueAnimation: true,
+              fontSize: 24,
+              fontWeight: '700',
+              formatter: '{value} dB',
+              color: signalColor(siteInfo.signal_db),
+              offsetCenter: [0, '10%']
+            },
+            data: [{ value: signalPct, name: 'Signal' }]
+          },
+          {
+            type: 'gauge',
+            radius: '55%', center: ['50%', '78%'],
+            startAngle: 200, endAngle: -20, min: 0, max: 100,
+            splitNumber: 5,
+            itemStyle: { color: 'rgba(76,204,76,0.7)' },
+            progress: { show: true, width: 10 },
+            pointer: { show: false },
+            axisLine: { lineStyle: { width: 10, color: [[1, 'rgba(255,255,255,0.06)']] } },
+            axisTick: { show: false },
+            splitLine: { show: false },
+            axisLabel: { show: false },
+            title: { show: false },
+            detail: {
+              valueAnimation: true,
+              fontSize: 14,
+              formatter: '{value} active',
+              color: 'rgba(255,255,255,0.5)'
+            },
+            data: [{ value: activeTgs, name: 'TGs' }]
+          }
+        ]
+      };
+    }
+
+    async function loadGauges() {
+      var grid = document.getElementById('grid');
+      try {
+        var recsResp = await apiFetch('/api/v1/recorders');
+        var recorders = (recsResp && recsResp.recorders) || [];
+        var stats = {};
+        try {
+          var statsData = await apiFetch('/api/v1/stats');
+          if (statsData && statsData.system_activity) {
+            for (var i = 0; i < statsData.system_activity.length; i++) {
+              stats[statsData.system_activity[i].system_id] = statsData.system_activity[i];
+            }
+          }
+        } catch(e) { console.warn('Stats fetch failed', e); }
+
+        var sysResp = await apiFetch('/api/v1/systems');
+        var sysList = (sysResp && sysResp.systems) || [];
+        var sysMap = {};
+        for (var i = 0; i < sysList.length; i++) sysMap[sysList[i].system_id] = sysList[i];
+
+        var html = '';
+        for (var i = 0; i < recorders.length; i++) {
+          var site = recorders[i];
+          var sigPct = signalPercentage(site.signal_db);
+          var activeTg = site.active_tgids ? site.active_tgids.length : 0;
+          var key = (site.system_id || '') + ':' + (site.site_id || 0) + ':' + (site.site_short_name || '');
+          var sysName = (sysMap[site.system_id] && sysMap[site.system_id].name) || '';
+
+          html += '<div class="gauge-card">';
+          html += '<div class="status-indicator ' + (sigPct > 66 ? 'status-good' : sigPct > 33 ? 'status-warn' : 'status-bad') + '"></div>';
+          html += '<div class="gauge-container" id="gauge-' + i + '"></div>';
+          html += '</div>';
+
+          setTimeout(function(idx, el) {
+            var dom = document.getElementById('gauge-' + idx);
+            if (!dom) return;
+            if (charts[key]) charts[key].dispose();
+            var chart = echarts.init(dom);
+            chart.setOption(gaugeOption(site, sigPct, activeTg, activeTg));
+            charts[key] = chart;
+            var ro = new ResizeObserver(function() { chart.resize(); });
+            ro.observe(dom);
+          }, 10, i, grid.innerHTML);
+        }
+        // Clear grid and set HTML, then render charts after DOM is ready
+        grid.innerHTML = html;
+
+        // Render charts after a microtask
+        requestAnimationFrame(function() {
+          for (var i = 0; i < recorders.length; i++) {
+            var key = (recorders[i].system_id || '') + ':' + (recorders[i].site_id || 0) + ':' + (recorders[i].site_short_name || '');
+            if (!charts[key]) {
+              var dom = document.getElementById('gauge-' + i);
+              if (!dom) continue;
+              var chart = echarts.init(dom);
+              charts[key] = chart;
+              var ro = new ResizeObserver(function() { chart.resize(); });
+              ro.observe(dom);
+            }
+          }
+        });
+
+        document.getElementById('lastUpdate').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+        document.getElementById('totalRecorders').textContent = ' · ' + recorders.length + ' recorders';
+
+      } catch(e) {
+        grid.innerHTML = '<div class="error-msg">Error loading recorder data: ' + e.message + '</div>';
+        console.error('Recorder gauges load error:', e);
+      }
+    }
+
+    function updateGauges() {
+      loadGauges();
+    }
+
+    // Initial load + auto-refresh
+    loadGauges();
+    refreshInterval = setInterval(updateGauges, 30000);
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+      clearInterval(refreshInterval);
+      for (var k in charts) { if (charts[k]) charts[k].dispose(); }
+    });
+  })();
+  </script>
+</body>
+</html>
