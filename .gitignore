@@ -38,6 +38,7 @@ mqtt-samples.txt
 *.tar.gz
 debug-samples/
 .serena/
+.sisyphus/
 
 # Dev utilities
 cmd/mqtt-dump/
