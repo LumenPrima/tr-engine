@@ -1,6 +1,9 @@
 package api
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -26,9 +29,17 @@ func jwtKeyFunc(secret []byte) jwt.Keyfunc {
 
 // AuthHandler handles login, token refresh, and logout.
 type AuthHandler struct {
-	db        *database.DB
+	db        authStore
 	jwtSecret []byte
 	log       zerolog.Logger
+}
+
+type authStore interface {
+	GetUserByUsername(ctx context.Context, username string) (*database.User, error)
+	UpdateLastLogin(ctx context.Context, id int) error
+	SetRefreshTokenJTI(ctx context.Context, userID int, jti string) error
+	GetRefreshTokenJTI(ctx context.Context, userID int) (string, error)
+	GetUserByID(ctx context.Context, id int) (*database.User, error)
 }
 
 // Claims is the JWT claims structure for access tokens.
@@ -51,7 +62,7 @@ const (
 	refreshCookiePath  = "/api/v1/auth/"
 )
 
-func NewAuthHandler(db *database.DB, jwtSecret []byte, log zerolog.Logger) *AuthHandler {
+func NewAuthHandler(db authStore, jwtSecret []byte, log zerolog.Logger) *AuthHandler {
 	return &AuthHandler{db: db, jwtSecret: jwtSecret, log: log}
 }
 
@@ -107,7 +118,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate refresh token and set as httpOnly cookie
-	refreshToken, err := h.generateRefreshToken(user.ID)
+	refreshToken, err := h.generateRefreshToken(r.Context(), user.ID)
 	if err != nil {
 		h.log.Error().Err(err).Msg("login: failed to generate refresh token")
 		WriteError(w, http.StatusInternalServerError, "internal error")
@@ -152,6 +163,10 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusUnauthorized, "invalid token type")
 		return
 	}
+	if claims.ID == "" {
+		WriteError(w, http.StatusUnauthorized, "invalid refresh token")
+		return
+	}
 
 	subStr, err := claims.GetSubject()
 	if err != nil {
@@ -160,6 +175,18 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, err := strconv.Atoi(subStr)
 	if err != nil {
+		WriteError(w, http.StatusUnauthorized, "invalid refresh token")
+		return
+	}
+
+	storedJTI, err := h.db.GetRefreshTokenJTI(r.Context(), userID)
+	if err != nil {
+		h.log.Error().Err(err).Int("user_id", userID).Msg("refresh: failed to load refresh token jti")
+		WriteError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if storedJTI == "" || claims.ID != storedJTI {
+		h.log.Warn().Int("user_id", userID).Msg("refresh token reuse detected")
 		WriteError(w, http.StatusUnauthorized, "invalid refresh token")
 		return
 	}
@@ -182,6 +209,23 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	refreshToken, err := h.generateRefreshToken(r.Context(), user.ID)
+	if err != nil {
+		h.log.Error().Err(err).Msg("refresh: failed to generate refresh token")
+		WriteError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    refreshToken,
+		Path:     refreshCookiePath,
+		HttpOnly: true,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(refreshTokenExpiry.Seconds()),
+	})
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"access_token": accessToken,
 		"user": map[string]any{
@@ -194,6 +238,20 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 // Logout clears the refresh cookie.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(refreshCookieName); err == nil && cookie.Value != "" {
+		claims := &RefreshClaims{}
+		token, parseErr := jwt.ParseWithClaims(cookie.Value, claims, jwtKeyFunc(h.jwtSecret))
+		if parseErr == nil && token.Valid && claims.Type == "refresh" {
+			if subStr, subErr := claims.GetSubject(); subErr == nil {
+				if userID, convErr := strconv.Atoi(subStr); convErr == nil {
+					if err := h.db.SetRefreshTokenJTI(r.Context(), userID, ""); err != nil {
+						h.log.Warn().Err(err).Int("user_id", userID).Msg("logout: failed to clear refresh token jti")
+					}
+				}
+			}
+		}
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshCookieName,
 		Value:    "",
@@ -248,16 +306,37 @@ func (h *AuthHandler) generateAccessToken(user *database.User) (string, error) {
 	return token.SignedString(h.jwtSecret)
 }
 
-func (h *AuthHandler) generateRefreshToken(userID int) (string, error) {
+func (h *AuthHandler) generateRefreshToken(ctx context.Context, userID int) (string, error) {
+	jti, err := newRefreshTokenJTI()
+	if err != nil {
+		return "", err
+	}
+
 	now := time.Now()
 	claims := RefreshClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.Itoa(userID),
+			ID:        jti,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(refreshTokenExpiry)),
 		},
 		Type: "refresh",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(h.jwtSecret)
+	signed, err := token.SignedString(h.jwtSecret)
+	if err != nil {
+		return "", err
+	}
+	if err := h.db.SetRefreshTokenJTI(ctx, userID, jti); err != nil {
+		return "", err
+	}
+	return signed, nil
+}
+
+func newRefreshTokenJTI() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }

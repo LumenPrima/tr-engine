@@ -1,7 +1,6 @@
 package ingest
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1427,56 +1426,36 @@ func parseInstanceMap(s string) map[string]string {
 // Some TR messages have nested instance_id fields (e.g. signal events have one
 // inside the signal object and one at the envelope level). Both must be rewritten.
 func rewriteInstanceID(payload []byte, newID string) []byte {
-	newIDBytes := []byte(newID)
-	result := payload
-	searchFrom := 0
-
-	for {
-		idx := bytes.Index(result[searchFrom:], []byte(`"instance_id"`))
-		if idx < 0 {
-			break
-		}
-		idx += searchFrom
-
-		// Skip past the key to find colon and value
-		rest := result[idx+len(`"instance_id"`):]
-		i := 0
-		for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == ':') {
-			i++
-		}
-		if i >= len(rest) || rest[i] != '"' {
-			searchFrom = idx + len(`"instance_id"`)
-			continue
-		}
-
-		// Find the closing quote of the value
-		valStart := i + 1
-		valEnd := valStart
-		for valEnd < len(rest) && rest[valEnd] != '"' {
-			if rest[valEnd] == '\\' {
-				valEnd++
-			}
-			valEnd++
-		}
-
-		oldVal := rest[valStart:valEnd]
-		if string(oldVal) == newID {
-			searchFrom = idx + len(`"instance_id"`) + valEnd + 1
-			continue
-		}
-
-		// Build replacement: splice newID in place of oldVal
-		replaceStart := idx + len(`"instance_id"`) + valStart
-		replaceEnd := idx + len(`"instance_id"`) + valEnd
-		newResult := make([]byte, 0, len(result)-len(oldVal)+len(newIDBytes))
-		newResult = append(newResult, result[:replaceStart]...)
-		newResult = append(newResult, newIDBytes...)
-		newResult = append(newResult, result[replaceEnd:]...)
-		result = newResult
-		searchFrom = replaceStart + len(newIDBytes) + 1
+	var obj map[string]any
+	if err := json.Unmarshal(payload, &obj); err != nil {
+		return payload // not valid JSON, return unchanged
 	}
-
+	if !rewriteInstanceIDMap(obj, newID) {
+		return payload // no changes needed
+	}
+	result, err := json.Marshal(obj)
+	if err != nil {
+		return payload // marshal failed, return original
+	}
 	return result
+}
+
+func rewriteInstanceIDMap(obj map[string]any, newID string) bool {
+	changed := false
+	for k, v := range obj {
+		if k == "instance_id" {
+			if s, ok := v.(string); ok && s != newID {
+				obj[k] = newID
+				changed = true
+			}
+		}
+		if nested, ok := v.(map[string]any); ok {
+			if rewriteInstanceIDMap(nested, newID) {
+				changed = true
+			}
+		}
+	}
+	return changed
 }
 
 // detectRetentionSource returns "env" if the named environment variable is set, "default" otherwise.

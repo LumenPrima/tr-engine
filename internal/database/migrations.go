@@ -113,6 +113,11 @@ ALTER TABLE systems ADD CONSTRAINT systems_system_type_check
 			WHERE table_name = 'users' AND column_name = 'display_name')`,
 	},
 	{
+		name:  "add refresh_token_jti to users",
+		sql:   `ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_jti TEXT`,
+		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='refresh_token_jti')`,
+	},
+	{
 		name: "create config_overrides table",
 		sql: `CREATE TABLE IF NOT EXISTS config_overrides (
 			key        text PRIMARY KEY,

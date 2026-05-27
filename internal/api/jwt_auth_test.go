@@ -7,6 +7,7 @@ package api
 //   - jwtKeyFunc (algorithm enforcement)
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,7 +65,7 @@ func TestClientIP(t *testing.T) {
 
 func TestAuthRateLimiter(t *testing.T) {
 	t.Run("allows_initial_burst_of_5", func(t *testing.T) {
-		handler := AuthRateLimiter()(okHandler)
+		handler := AuthRateLimiter(context.Background())(okHandler)
 		for i := 0; i < 5; i++ {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest("POST", "/auth/login", nil)
@@ -77,7 +78,7 @@ func TestAuthRateLimiter(t *testing.T) {
 	})
 
 	t.Run("blocks_after_burst_exhausted", func(t *testing.T) {
-		handler := AuthRateLimiter()(okHandler)
+		handler := AuthRateLimiter(context.Background())(okHandler)
 		ip := "9.8.7.6:1234"
 		// Exhaust the 5-request burst
 		for i := 0; i < 5; i++ {
@@ -100,7 +101,7 @@ func TestAuthRateLimiter(t *testing.T) {
 	})
 
 	t.Run("different_ips_are_independent", func(t *testing.T) {
-		handler := AuthRateLimiter()(okHandler)
+		handler := AuthRateLimiter(context.Background())(okHandler)
 		// Exhaust IP A
 		for i := 0; i < 6; i++ {
 			rec := httptest.NewRecorder()

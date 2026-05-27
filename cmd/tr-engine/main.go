@@ -451,6 +451,7 @@ func main() {
 		OnSystemMerge:  pipeline.RewriteSystemID,
 		TGCSVPaths:     tgCSVPaths,
 		UnitCSVPaths:   unitCSVPaths,
+		ShutdownCtx:    ctx,
 		UpdateCheckURL: func() string { if cfg.UpdateCheck { return cfg.UpdateCheckURL }; return "" }(),
 		IngestModes:    strings.Join(ingestModes, ","),
 		IsDocker:       isDocker,
