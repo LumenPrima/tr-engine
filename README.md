@@ -219,6 +219,8 @@ Features: configurable worker pool, queue size, duration filters, anti-hallucina
 
 80+ endpoints under `/api/v1`. See `openapi.yaml` for the full specification, or open the built-in Swagger UI at `/docs.html`.
 
+Before marking implementation work complete, follow the testing, API contract, and observability gates in [`docs/quality-gates.md`](docs/quality-gates.md).
+
 ### Key Endpoints
 
 | Endpoint | Description |
