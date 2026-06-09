@@ -62,13 +62,27 @@ func (db *DB) PurgeOlderThan(ctx context.Context, table, timeColumn string, rete
 	return tag.RowsAffected(), nil
 }
 
-// DropOldWeeklyPartitions finds and drops weekly partitions whose upper bound
-// is older than the given duration. Returns the names of dropped partitions.
-func (db *DB) DropOldWeeklyPartitions(ctx context.Context, parentTable string, olderThan time.Duration) ([]string, error) {
-	// Find child partitions with their upper bound timestamps
+// expiredPartition is a child partition whose data is older than a cutoff.
+type expiredPartition struct {
+	name  string
+	upper time.Time // exclusive upper bound of the partition's range
+}
+
+// expiredPartitions returns the child partitions of parentTable whose upper
+// bound is strictly before cutoff, along with each bound.
+//
+// The bound is cast to timestamptz inside SQL so the Go side always receives a
+// real time.Time, regardless of the partition column's type. (These tables are
+// partitioned on timestamptz columns, so pg_get_expr renders bounds like
+// '2026-05-18 00:00:00+00'; an earlier date-only time.Parse layout failed on
+// that and silently skipped every partition, so nothing was ever dropped.)
+// Partitions whose bound can't be extracted — DEFAULT partitions, or an
+// open-ended TO (MAXVALUE) — yield a NULL bound and are never returned, so they
+// are never auto-dropped.
+func (db *DB) expiredPartitions(ctx context.Context, parentTable string, cutoff time.Time) ([]expiredPartition, error) {
 	rows, err := db.Pool.Query(ctx, `
 		SELECT c.relname,
-		       (regexp_match(pg_get_expr(c.relpartbound, c.oid), 'TO \(''([^'']+)''\)'))[1] AS upper_bound
+		       (regexp_match(pg_get_expr(c.relpartbound, c.oid), 'TO \(''([^'']+)''\)'))[1]::timestamptz AS upper_bound
 		FROM pg_inherits i
 		JOIN pg_class p ON i.inhparent = p.oid
 		JOIN pg_class c ON i.inhrelid = c.oid
@@ -81,39 +95,122 @@ func (db *DB) DropOldWeeklyPartitions(ctx context.Context, parentTable string, o
 	}
 	defer rows.Close()
 
-	cutoff := time.Now().Add(-olderThan)
-	var dropped []string
-
-	type partition struct {
-		name       string
-		upperBound string
-	}
-	var candidates []partition
-
+	var expired []expiredPartition
 	for rows.Next() {
-		var p partition
-		if err := rows.Scan(&p.name, &p.upperBound); err != nil {
-			return dropped, err
+		var name string
+		var upper *time.Time // nullable: NULL for DEFAULT / MAXVALUE bounds
+		if err := rows.Scan(&name, &upper); err != nil {
+			return nil, err
 		}
-		candidates = append(candidates, p)
+		if upper != nil && upper.Before(cutoff) {
+			expired = append(expired, expiredPartition{name: name, upper: *upper})
+		}
 	}
-	if err := rows.Err(); err != nil {
-		return dropped, err
-	}
+	return expired, rows.Err()
+}
 
-	for _, p := range candidates {
-		upper, err := time.Parse("2006-01-02", p.upperBound)
-		if err != nil {
-			continue // skip partitions with unparseable bounds
-		}
-		if upper.Before(cutoff) {
-			_, err := db.Pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, pgx.Identifier{p.name}.Sanitize()))
-			if err != nil {
-				return dropped, fmt.Errorf("drop %s: %w", p.name, err)
-			}
-			dropped = append(dropped, p.name)
-		}
+// DropOldWeeklyPartitions finds and drops weekly partitions whose upper bound
+// is older than the given duration. Returns the names of dropped partitions.
+func (db *DB) DropOldWeeklyPartitions(ctx context.Context, parentTable string, olderThan time.Duration) ([]string, error) {
+	if olderThan <= 0 {
+		return nil, nil // retention disabled
 	}
-
+	expired, err := db.expiredPartitions(ctx, parentTable, time.Now().Add(-olderThan))
+	if err != nil {
+		return nil, err
+	}
+	var dropped []string
+	for _, p := range expired {
+		if _, err := db.Pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, pgx.Identifier{p.name}.Sanitize())); err != nil {
+			return dropped, fmt.Errorf("drop %s: %w", p.name, err)
+		}
+		dropped = append(dropped, p.name)
+	}
 	return dropped, nil
+}
+
+// CallRetentionResult reports what DropOldCallPartitions removed.
+type CallRetentionResult struct {
+	CallPartitionsDropped  []string // dropped partitions of the calls parent table
+	ChildPartitionsDropped []string // dropped call_frequencies / call_transmissions partitions
+	TranscriptionsDeleted  int64    // transcriptions rows deleted (table is not partitioned)
+}
+
+// DropOldCallPartitions enforces monthly retention on the foreign-key-coupled
+// "call family" (calls + call_frequencies + call_transmissions + transcriptions),
+// dropping whole monthly partitions for calendar months fully older than
+// olderThan. A no-op when olderThan <= 0 (retention disabled).
+//
+// The work is done in foreign-key-safe order, validated against PostgreSQL's
+// behaviour (a plain DROP of a referenced calls partition is refused because the
+// child FK constraints depend on it; DETACH first, then DROP, succeeds once the
+// referencing rows are gone):
+//
+//  1. Drop the referencing child partitions (call_frequencies, call_transmissions).
+//     Nothing references these tables, so a plain partition DROP is safe.
+//  2. Delete transcriptions rows below the partition boundary. transcriptions is
+//     not partitioned, so it needs a row DELETE. The boundary is the newest
+//     dropped calls-partition upper bound — NOT the raw cutoff — so transcripts
+//     belonging to a not-yet-expired boundary month's calls are never deleted.
+//  3. DETACH then DROP the calls partitions themselves.
+func (db *DB) DropOldCallPartitions(ctx context.Context, olderThan time.Duration) (CallRetentionResult, error) {
+	var res CallRetentionResult
+	if olderThan <= 0 {
+		return res, nil // retention disabled
+	}
+	cutoff := time.Now().Add(-olderThan)
+
+	// Determine which calls partitions are fully expired. This set defines the
+	// boundary up to which the entire call family is removed.
+	callExpired, err := db.expiredPartitions(ctx, "calls", cutoff)
+	if err != nil {
+		return res, fmt.Errorf("scan calls partitions: %w", err)
+	}
+	if len(callExpired) == 0 {
+		return res, nil // no whole month is expired yet
+	}
+	// boundary = newest dropped calls-partition upper bound. Everything in the
+	// call family strictly before this timestamp is being removed.
+	boundary := callExpired[0].upper
+	for _, p := range callExpired[1:] {
+		if p.upper.After(boundary) {
+			boundary = p.upper
+		}
+	}
+
+	// 1. Drop referencing child partitions (no table references these).
+	for _, child := range []string{"call_frequencies", "call_transmissions"} {
+		expired, err := db.expiredPartitions(ctx, child, cutoff)
+		if err != nil {
+			return res, fmt.Errorf("scan %s partitions: %w", child, err)
+		}
+		for _, p := range expired {
+			if _, err := db.Pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, pgx.Identifier{p.name}.Sanitize())); err != nil {
+				return res, fmt.Errorf("drop %s: %w", p.name, err)
+			}
+			res.ChildPartitionsDropped = append(res.ChildPartitionsDropped, p.name)
+		}
+	}
+
+	// 2. Delete transcriptions rows for the expired calls (table not partitioned).
+	tag, err := db.Pool.Exec(ctx, `DELETE FROM transcriptions WHERE call_start_time < $1`, boundary)
+	if err != nil {
+		return res, fmt.Errorf("delete transcriptions: %w", err)
+	}
+	res.TranscriptionsDeleted = tag.RowsAffected()
+
+	// 3. Detach + drop the referenced calls partitions. A plain DROP is blocked
+	// while the child FK constraints depend on the partition, so detach first.
+	for _, p := range callExpired {
+		ident := pgx.Identifier{p.name}.Sanitize()
+		if _, err := db.Pool.Exec(ctx, fmt.Sprintf(`ALTER TABLE calls DETACH PARTITION %s`, ident)); err != nil {
+			return res, fmt.Errorf("detach %s: %w", p.name, err)
+		}
+		if _, err := db.Pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ident)); err != nil {
+			return res, fmt.Errorf("drop %s: %w", p.name, err)
+		}
+		res.CallPartitionsDropped = append(res.CallPartitionsDropped, p.name)
+	}
+
+	return res, nil
 }

@@ -280,6 +280,7 @@ func main() {
 		RetentionTrunkingMessages: cfg.RetentionTrunkingMessages,
 		RetentionCheckpoints:      cfg.RetentionCheckpoints,
 		RetentionStaleCalls:       cfg.RetentionStaleCalls,
+		RetentionCalls:            cfg.RetentionCalls,
 		StreamListen:      cfg.StreamListen,
 		StreamInstanceID:  cfg.StreamInstanceID,
 		StreamIdleTimeout: cfg.StreamIdleTimeout,

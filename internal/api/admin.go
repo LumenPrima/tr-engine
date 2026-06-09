@@ -175,6 +175,7 @@ var validRetentionKeys = map[string]bool{
 	"retention_trunking_messages": true,
 	"retention_checkpoints":       true,
 	"retention_stale_calls":       true,
+	"retention_calls":             true,
 }
 
 // SetMaintenanceConfig updates a single retention setting.

@@ -6517,6 +6517,17 @@ components:
         retention_stale_calls_locked:
           type: boolean
           example: false
+        retention_calls:
+          type: string
+          description: "Recorded-call retention (Go duration). Drops whole monthly call partitions (calls, call_frequencies, call_transmissions) and the matching transcriptions older than this. \"0s\" = disabled (keep call data forever); opt-in."
+          example: "0s"
+        retention_calls_source:
+          type: string
+          enum: [env, db, default]
+          example: "default"
+        retention_calls_locked:
+          type: boolean
+          example: false
         schedule:
           type: string
           description: Maintenance run schedule
