@@ -171,7 +171,7 @@ func main() {
 	// Async uploader (only for tiered stores in async mode)
 	var s3Uploader *storage.AsyncUploader
 	if tiered, ok := store.(*storage.TieredStore); ok && cfg.S3.UploadMode == "async" {
-		s3Uploader = storage.NewAsyncUploader(tiered.S3Store(), 500, log)
+		s3Uploader = storage.NewAsyncUploader(tiered, 64, log)
 		s3Uploader.Start(2)
 		// Stopped by pipeline.Stop()
 	}
