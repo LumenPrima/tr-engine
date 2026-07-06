@@ -127,6 +127,7 @@ type Config struct {
 	RetentionTrunkingMessages time.Duration `env:"RETENTION_TRUNKING_MESSAGES" envDefault:"720h"` // 30d
 	RetentionCheckpoints     time.Duration `env:"RETENTION_CHECKPOINTS" envDefault:"168h"`       // 7d
 	RetentionStaleCalls      time.Duration `env:"RETENTION_STALE_CALLS" envDefault:"1h"`
+	RetentionCalls           time.Duration `env:"RETENTION_CALLS" envDefault:"0"`                // 0 = keep forever (opt-in); drops whole monthly call partitions older than this
 
 	// Transcription worker pool
 	TranscribeWorkers     int     `env:"TRANSCRIBE_WORKERS" envDefault:"2"`

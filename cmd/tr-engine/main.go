@@ -171,7 +171,7 @@ func main() {
 	// Async uploader (only for tiered stores in async mode)
 	var s3Uploader *storage.AsyncUploader
 	if tiered, ok := store.(*storage.TieredStore); ok && cfg.S3.UploadMode == "async" {
-		s3Uploader = storage.NewAsyncUploader(tiered.S3Store(), 500, log)
+		s3Uploader = storage.NewAsyncUploader(tiered, 64, log)
 		s3Uploader.Start(2)
 		// Stopped by pipeline.Stop()
 	}
@@ -280,6 +280,7 @@ func main() {
 		RetentionTrunkingMessages: cfg.RetentionTrunkingMessages,
 		RetentionCheckpoints:      cfg.RetentionCheckpoints,
 		RetentionStaleCalls:       cfg.RetentionStaleCalls,
+		RetentionCalls:            cfg.RetentionCalls,
 		StreamListen:      cfg.StreamListen,
 		StreamInstanceID:  cfg.StreamInstanceID,
 		StreamIdleTimeout: cfg.StreamIdleTimeout,
@@ -451,6 +452,7 @@ func main() {
 		OnSystemMerge:  pipeline.RewriteSystemID,
 		TGCSVPaths:     tgCSVPaths,
 		UnitCSVPaths:   unitCSVPaths,
+		ShutdownCtx:    ctx,
 		UpdateCheckURL: func() string { if cfg.UpdateCheck { return cfg.UpdateCheckURL }; return "" }(),
 		IngestModes:    strings.Join(ingestModes, ","),
 		IsDocker:       isDocker,

@@ -32,17 +32,18 @@ type ServerOptions struct {
 	DB            *database.DB
 	MQTT          *mqttclient.Client
 	Live          LiveDataSource
-	Uploader      CallUploader      // nil if upload ingest not available
+	Uploader      CallUploader       // nil if upload ingest not available
 	AudioStreamer AudioStreamer      // nil if live audio streaming not configured
 	Store         storage.AudioStore // audio storage backend (local, S3, or tiered)
 	WebFiles      fs.FS              // embedded web/ directory
-	OpenAPISpec   []byte       // embedded openapi.yaml
+	OpenAPISpec   []byte             // embedded openapi.yaml
 	Version       string
 	StartTime     time.Time
 	Log           zerolog.Logger
 	OnSystemMerge func(sourceID, targetID int) // called after successful system merge to invalidate caches
 	TGCSVPaths    map[int]string               // system_id → CSV file path for talkgroup writeback
 	UnitCSVPaths  map[int]string               // system_id → CSV file path for unit tag writeback
+	ShutdownCtx   context.Context              // context for clean shutdown of background goroutines
 
 	// Update checker (opt-in)
 	UpdateCheckURL string // base URL for version check API
@@ -65,9 +66,9 @@ func NewServer(opts ServerOptions) *Server {
 
 	// Global middleware (no MaxBodySize here — upload endpoint needs a larger limit)
 	r.Use(RequestID)
+	r.Use(Recoverer)
 	r.Use(CORSWithOrigins(corsOrigins))
 	r.Use(RateLimiter(opts.Config.RateLimitRPS, opts.Config.RateLimitBurst))
-	r.Use(Recoverer)
 	r.Use(Logger(opts.Log))
 
 	// Unauthenticated endpoints
@@ -92,14 +93,14 @@ func NewServer(opts ServerOptions) *Server {
 	// Always registered; handler returns 503 if disabled via DEBUG_REPORT_DISABLE=true
 	{
 		debugReport := NewDebugReportHandler(DebugReportOptions{
-			DB:           opts.DB,
-			Config:       opts.Config,
-			Live:         opts.Live,
+			DB:            opts.DB,
+			Config:        opts.Config,
+			Live:          opts.Live,
 			AudioStreamer: opts.AudioStreamer,
-			MQTT:         opts.MQTT,
-			Log:          opts.Log,
-			Version:      opts.Version,
-			StartTime:    opts.StartTime,
+			MQTT:          opts.MQTT,
+			Log:           opts.Log,
+			Version:       opts.Version,
+			StartTime:     opts.StartTime,
 		})
 		r.Post("/api/v1/debug-report", debugReport.Submit)
 	}
@@ -129,7 +130,7 @@ func NewServer(opts ServerOptions) *Server {
 
 	// User auth endpoints — single AuthHandler instance shared across
 	// unauthenticated routes (login/refresh/logout) and authenticated (/auth/me)
-	authRateLimit := AuthRateLimiter()
+	authRateLimit := AuthRateLimiter(opts.ShutdownCtx)
 	var authHandler *AuthHandler
 	if opts.Config.JWTSecret != "" {
 		authHandler = NewAuthHandler(opts.DB, []byte(opts.Config.JWTSecret), opts.Log)
@@ -209,6 +210,8 @@ func NewServer(opts ServerOptions) *Server {
 				NewAudioStreamHandler(opts.AudioStreamer, opts.Config.StreamMaxClients).Routes(r)
 			}
 			NewUnitEventsHandler(opts.DB).Routes(r)
+			NewRecentEventsHandler(opts.DB).Routes(r)
+			NewDashboardSummaryHandler(opts.DB, opts.Live, opts.Version, opts.StartTime).Routes(r)
 			NewAffiliationsHandler(opts.Live).Routes(r)
 			NewTranscriptionsHandler(opts.DB, opts.Live).Routes(r)
 			NewAdminHandler(opts.DB, opts.Live, opts.OnSystemMerge).Routes(r)
@@ -218,7 +221,12 @@ func NewServer(opts ServerOptions) *Server {
 			})
 			r.Post("/pages", SavePageHandler(webDir))
 
-			NewQueryHandler(opts.DB).Routes(r)
+			queryHandler := NewQueryHandler(opts.DB)
+			if opts.Config.AuthEnabled {
+				r.With(QueryAdminOnly).Post("/query", queryHandler.ExecuteQuery)
+			} else {
+				queryHandler.Routes(r)
+			}
 
 			// API key management
 			{
@@ -345,4 +353,3 @@ func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }
-

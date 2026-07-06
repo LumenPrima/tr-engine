@@ -648,7 +648,7 @@ func (p *Pipeline) saveAudio(ctx context.Context, key string, data []byte, conte
 			if err := tiered.SaveLocal(ctx, key, data, contentType); err != nil {
 				return err
 			}
-			p.uploader.Enqueue(key, data, contentType)
+			p.uploader.Enqueue(key, contentType)
 			return nil
 		}
 	}

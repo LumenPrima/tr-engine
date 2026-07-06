@@ -18,7 +18,7 @@ How tr-engine works from startup to shutdown. For what exists and how to use it,
 9. Migrate — run incremental migrations (skip already-applied)
 10. Initialize audio storage (storage.New)
 11. Start storage background services (pruner, reconciler)
-12. Start AsyncUploader if S3 async mode (2 workers, 500 queue)
+12. Start AsyncUploader if S3 async mode (2 workers, 64 queue)
 13. Connect MQTT client (if MQTT_BROKER_URL set)
 14. Build transcription provider (if STT_PROVIDER set)
 15. Create ingest Pipeline (NewPipeline)
@@ -144,7 +144,7 @@ Sync mode (S3_UPLOAD_MODE=sync or default):
 
 Async mode (S3_UPLOAD_MODE=async):
   TieredStore.SaveLocal() → local disk immediately
-  AsyncUploader.Enqueue() → buffered channel (cap 500)
+  AsyncUploader.Enqueue() → buffered channel (cap 64)
     └── 2 worker goroutines → S3Store.Save() with 30s timeout
         └── on failure: logged, file safe on local disk
 ```
