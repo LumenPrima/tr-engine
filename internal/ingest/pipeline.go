@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,10 +59,11 @@ type Pipeline struct {
 	// P25 system merging
 	mergeP25Systems bool // when false, systems with same sysid/wacn stay separate
 
-	// Transcription worker pool (optional, nil if WHISPER_URL not set)
-	transcriber          *transcribe.WorkerPool
-	transcribeIncludeTGs map[string]bool // allowlist: "tgid" or "systemID:tgid"
-	transcribeExcludeTGs map[string]bool // denylist: "tgid" or "systemID:tgid"
+	// Transcription worker pools (optional, nil if STT not configured)
+	transcriber          *transcribe.WorkerPool // primary (e.g. imbe or whisper)
+	fallbackTranscriber  *transcribe.WorkerPool // optional audio fallback when primary is imbe
+	transcribeIncludeTGs map[string]bool        // allowlist: "tgid" or "systemID:tgid"
+	transcribeExcludeTGs map[string]bool        // denylist: "tgid" or "systemID:tgid"
 
 	// Transcription backfill manager (optional, nil if transcription not configured)
 	backfill *BackfillManager
@@ -169,10 +171,11 @@ type PipelineOptions struct {
 	RawIncludeTopics  string
 	RawExcludeTopics  string
 	MergeP25Systems   bool                          // auto-merge systems with same sysid/wacn (default true)
-	MQTTInstanceMap   string                        // "prefix:instance_id,prefix:instance_id"
-	TranscribeOpts    *transcribe.WorkerPoolOptions // nil = transcription disabled
-	TranscribeInclude string                        // comma-separated TGID allowlist for transcription
-	TranscribeExclude string                        // comma-separated TGID denylist for transcription
+	MQTTInstanceMap          string                        // "prefix:instance_id,prefix:instance_id"
+	TranscribeOpts           *transcribe.WorkerPoolOptions // nil = transcription disabled
+	TranscribeFallbackOpts   *transcribe.WorkerPoolOptions // nil = no fallback provider
+	TranscribeInclude        string                        // comma-separated TGID allowlist for transcription
+	TranscribeExclude        string                        // comma-separated TGID denylist for transcription
 	// Configurable retention durations for maintenance tasks
 	RetentionRawMessages     time.Duration
 	RetentionConsoleLogs     time.Duration
@@ -300,18 +303,24 @@ func NewPipeline(opts PipelineOptions) *Pipeline {
 		cancel:       cancel,
 	}
 
-	// Transcription worker pool (optional)
+	// Transcription worker pools (optional)
+	publishTranscriptionEvent := func(eventType string, systemID, tgid int, payload map[string]any) {
+		p.PublishEvent(EventData{
+			Type:     eventType,
+			SystemID: systemID,
+			Tgid:     tgid,
+			Payload:  payload,
+		})
+	}
 	if opts.TranscribeOpts != nil {
 		tOpts := opts.TranscribeOpts
-		tOpts.PublishEvent = func(eventType string, systemID, tgid int, payload map[string]any) {
-			p.PublishEvent(EventData{
-				Type:     eventType,
-				SystemID: systemID,
-				Tgid:     tgid,
-				Payload:  payload,
-			})
-		}
+		tOpts.PublishEvent = publishTranscriptionEvent
 		p.transcriber = transcribe.NewWorkerPool(*tOpts)
+	}
+	if opts.TranscribeFallbackOpts != nil {
+		fOpts := opts.TranscribeFallbackOpts
+		fOpts.PublishEvent = publishTranscriptionEvent
+		p.fallbackTranscriber = transcribe.NewWorkerPool(*fOpts)
 	}
 
 	p.rawBatcher = NewBatcher[database.RawMessageRow](100, 2*time.Second, p.flushRawMessages)
@@ -359,7 +368,10 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	go p.affiliationEvictionLoop()
 	if p.transcriber != nil {
 		p.transcriber.Start()
-		p.backfill = NewBackfillManager(p.ctx, p.db, p.transcriber, p.log)
+		if p.fallbackTranscriber != nil {
+			p.fallbackTranscriber.Start()
+		}
+		p.backfill = NewBackfillManager(p.ctx, p.db, p.transcriber, p.fallbackTranscriber, p.log)
 		p.backfill.Start()
 	}
 	if p.audioRouter != nil {
@@ -493,10 +505,16 @@ func (p *Pipeline) TranscriptionStatus() *api.TranscriptionStatusData {
 	if p.transcriber == nil {
 		return nil
 	}
+	model := p.transcriber.Model()
+	workers := p.transcriber.Workers()
+	if p.fallbackTranscriber != nil {
+		model = fmt.Sprintf("%s+%s", model, p.fallbackTranscriber.Model())
+		workers += p.fallbackTranscriber.Workers()
+	}
 	return &api.TranscriptionStatusData{
 		Status:  "ok",
-		Model:   p.transcriber.Model(),
-		Workers: p.transcriber.Workers(),
+		Model:   model,
+		Workers: workers,
 	}
 }
 
@@ -513,7 +531,7 @@ func (p *Pipeline) EnqueueTranscription(callID int64) bool {
 		p.log.Warn().Err(err).Int64("call_id", callID).Msg("failed to load call for transcription")
 		return false
 	}
-	return p.transcriber.Enqueue(transcribe.Job{
+	return p.enqueueJob(transcribe.Job{
 		CallID:        c.CallID,
 		CallStartTime: c.StartTime,
 		SystemID:      c.SystemID,
@@ -540,27 +558,76 @@ func (p *Pipeline) TranscriptionQueueStats() *api.TranscriptionQueueStatsData {
 		Completed: stats.Completed,
 		Failed:    stats.Failed,
 	}
-
-	if perf := p.transcriber.Performance(); perf != nil {
-		pd := &api.TranscriptionPerformanceData{
-			SampleSize:       perf.SampleSize,
-			AvgRealTimeRatio: perf.AvgRealTimeRatio,
-			AvgProviderMs:    perf.AvgProviderMs,
-		}
-		if len(perf.ByProvider) > 0 {
-			pd.ByProvider = make(map[string]api.TranscriptionProviderMetrics, len(perf.ByProvider))
-			for name, m := range perf.ByProvider {
-				pd.ByProvider[name] = api.TranscriptionProviderMetrics{
-					Count:            m.Count,
-					AvgRealTimeRatio: m.AvgRealTimeRatio,
-					AvgProviderMs:    m.AvgProviderMs,
-				}
-			}
-		}
-		result.Performance = pd
+	if p.fallbackTranscriber != nil {
+		fb := p.fallbackTranscriber.Stats()
+		result.Pending += fb.Pending
+		result.Completed += fb.Completed
+		result.Failed += fb.Failed
 	}
 
+	result.Performance = mergeProviderPerformance(
+		p.transcriber.Performance(),
+		func() *transcribe.ProviderPerformance {
+			if p.fallbackTranscriber == nil {
+				return nil
+			}
+			return p.fallbackTranscriber.Performance()
+		}(),
+	)
+
 	return result
+}
+
+// mergeProviderPerformance combines primary + fallback performance rings for API stats.
+func mergeProviderPerformance(primary, fallback *transcribe.ProviderPerformance) *api.TranscriptionPerformanceData {
+	if primary == nil && fallback == nil {
+		return nil
+	}
+	pd := &api.TranscriptionPerformanceData{
+		ByProvider: make(map[string]api.TranscriptionProviderMetrics),
+	}
+	var totalMs float64
+	var totalRatio float64
+	var ratioCount int
+	var sampleSize int
+
+	add := func(perf *transcribe.ProviderPerformance) {
+		if perf == nil {
+			return
+		}
+		sampleSize += perf.SampleSize
+		if perf.AvgProviderMs != nil {
+			totalMs += *perf.AvgProviderMs * float64(perf.SampleSize)
+		}
+		if perf.AvgRealTimeRatio != nil && perf.SampleSize > 0 {
+			// Weight by sample size when both pools report ratios.
+			totalRatio += *perf.AvgRealTimeRatio * float64(perf.SampleSize)
+			ratioCount += perf.SampleSize
+		}
+		for name, m := range perf.ByProvider {
+			pd.ByProvider[name] = api.TranscriptionProviderMetrics{
+				Count:            m.Count,
+				AvgRealTimeRatio: m.AvgRealTimeRatio,
+				AvgProviderMs:    m.AvgProviderMs,
+			}
+		}
+	}
+	add(primary)
+	add(fallback)
+
+	pd.SampleSize = sampleSize
+	if sampleSize > 0 && totalMs > 0 {
+		avg := totalMs / float64(sampleSize)
+		pd.AvgProviderMs = &avg
+	}
+	if ratioCount > 0 {
+		avg := totalRatio / float64(ratioCount)
+		pd.AvgRealTimeRatio = &avg
+	}
+	if len(pd.ByProvider) == 0 {
+		pd.ByProvider = nil
+	}
+	return pd
 }
 
 // SubscribeAudio subscribes to live audio frames matching the filter.
@@ -614,13 +681,14 @@ func (p *Pipeline) AudioRouterInput() chan<- audio.AudioChunk {
 }
 
 // enqueueTranscription is called by ingest handlers when a call has audio ready.
+// When primary is IMBE with a fallback provider, audio jobs go to the fallback.
+// When primary is IMBE without fallback, audio jobs are skipped (handleDvcf owns P25).
 func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, systemID int, audioFilePath string, meta *AudioMetadata) {
 	if p.transcriber == nil {
 		return
 	}
-	// IMBE provider requires a .dvcf file that arrives on a separate MQTT topic.
-	// Transcription for IMBE is enqueued by handleDvcf, not by other handlers.
-	if p.isIMBEProvider() {
+	// IMBE-only mode: .dvcf arrives on a separate MQTT topic via handleDvcf.
+	if p.isIMBEProvider() && p.fallbackTranscriber == nil {
 		return
 	}
 	// Skip if neither an audio file path nor a call filename is available —
@@ -628,8 +696,9 @@ func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, syste
 	if audioFilePath == "" && meta.Filename == "" {
 		return
 	}
+	minDur, maxDur := p.transcriptionDurationBounds()
 	dur := float32(meta.CallLength)
-	if dur < float32(p.transcriber.MinDuration()) || dur > float32(p.transcriber.MaxDuration()) {
+	if dur < float32(minDur) || dur > float32(maxDur) {
 		return
 	}
 	// Talkgroup filter: check allowlist/denylist
@@ -655,9 +724,61 @@ func (p *Pipeline) enqueueTranscription(callID int64, startTime time.Time, syste
 			job.SrcList = raw
 		}
 	}
-	if !p.transcriber.Enqueue(job) {
+	if !p.enqueueJob(job) {
 		p.log.Warn().Int64("call_id", callID).Msg("transcription queue full, skipping")
 	}
+}
+
+// transcriptionDurationBounds returns min/max duration from the primary pool
+// (fallback uses the same config values).
+func (p *Pipeline) transcriptionDurationBounds() (min, max float64) {
+	if p.transcriber == nil {
+		return 0, 0
+	}
+	return p.transcriber.MinDuration(), p.transcriber.MaxDuration()
+}
+
+// enqueueJob routes a job to the primary or fallback worker pool.
+// Routing: .dvcf → primary when primary is imbe; otherwise audio → fallback
+// when primary is imbe + fallback configured; else → primary.
+func (p *Pipeline) enqueueJob(job transcribe.Job) bool {
+	pool := p.routeTranscriber(job.AudioFilePath)
+	if pool == nil {
+		return false
+	}
+	return pool.Enqueue(job)
+}
+
+// routeTranscriber selects the worker pool for a call's audio path.
+// Exported for tests via routeTranscriberFor.
+func (p *Pipeline) routeTranscriber(audioFilePath string) *transcribe.WorkerPool {
+	return routeTranscriber(p.transcriber, p.fallbackTranscriber, audioFilePath)
+}
+
+// routeTranscriber picks primary vs fallback based on provider names and path.
+// When primary is imbe:
+//   - .dvcf paths → primary
+//   - other paths → fallback if configured, else nil (skip)
+// Otherwise all jobs go to primary.
+func routeTranscriber(primary, fallback *transcribe.WorkerPool, audioFilePath string) *transcribe.WorkerPool {
+	if primary == nil {
+		return nil
+	}
+	if !strings.EqualFold(primary.ProviderName(), "imbe") {
+		return primary
+	}
+	if isDvcfPath(audioFilePath) {
+		return primary
+	}
+	if fallback != nil {
+		return fallback
+	}
+	return nil
+}
+
+// isDvcfPath reports whether path points at a SymbolStream DVCF sidecar.
+func isDvcfPath(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".dvcf")
 }
 
 // shouldTranscribeTG checks talkgroup include/exclude filters.
@@ -677,12 +798,12 @@ func (p *Pipeline) shouldTranscribeTG(systemID, tgid int) bool {
 	return !p.transcribeExcludeTGs[plain] && !p.transcribeExcludeTGs[scoped]
 }
 
-// isIMBEProvider returns true if the transcription provider is the IMBE ASR provider.
+// isIMBEProvider returns true if the primary transcription provider is IMBE ASR.
 func (p *Pipeline) isIMBEProvider() bool {
 	if p.transcriber == nil {
 		return false
 	}
-	return p.transcriber.ProviderName() == "imbe"
+	return strings.EqualFold(p.transcriber.ProviderName(), "imbe")
 }
 
 // resolveNamedTGFilters expands name-based entries like "butco:1001" into
@@ -779,6 +900,9 @@ func (p *Pipeline) Stop() {
 	}
 	if p.transcriber != nil {
 		p.transcriber.Stop()
+	}
+	if p.fallbackTranscriber != nil {
+		p.fallbackTranscriber.Stop()
 	}
 	if p.uploader != nil {
 		p.uploader.Stop()

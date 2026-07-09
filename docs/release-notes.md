@@ -7,7 +7,7 @@ This release brings major new capabilities to tr-engine, including a new transcr
 ## New Features
 
 ### IMBE ASR Transcription for P25 Calls
-tr-engine now supports direct transcription from P25 IMBE codec frames through the new IMBE ASR provider. When paired with the `tr-plugin-dvcf` plugin, SymbolStream v2 `.dvcf` files are ingested over MQTT and transcribed without requiring traditional audio file processing. This provides lower-latency transcription for P25 calls. To enable, set `STT_PROVIDER=imbe`. Note that IMBE ASR currently handles P25 calls only; analog calls continue to use your existing STT provider.
+tr-engine now supports direct transcription from P25 IMBE codec frames through the new IMBE ASR provider. When paired with the `tr-plugin-dvcf` plugin, SymbolStream v2 `.dvcf` files are ingested over MQTT and transcribed without requiring traditional audio file processing. This provides lower-latency transcription for P25 calls. To enable, set `STT_PROVIDER=imbe`. For mixed P25+analog systems, also set `STT_FALLBACK_PROVIDER=whisper` (or another audio STT) so non-DVCF calls still get transcribed.
 
 ### Storage Management
 New administrative endpoints provide visibility into database storage usage and allow configuring retention policies. Administrators can view per-table statistics and trigger manual data purges directly from the API. Retention intervals for raw messages, console logs, and plugin statuses remain configurable via environment variables.

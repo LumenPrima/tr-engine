@@ -124,7 +124,8 @@ The `.env` file is auto-loaded from the current directory on startup. See `sampl
 | `CORS_ORIGINS` | No | `*` | Comma-separated allowed CORS origins |
 | `RATE_LIMIT_RPS` | No | `20` | Per-IP rate limit (requests/second) |
 | `AUDIO_DIR` | No | `./audio` | Audio file storage directory |
-| `STT_PROVIDER` | No | `whisper` | Transcription provider: `whisper`, `elevenlabs`, `deepinfra`, `imbe` |
+| `STT_PROVIDER` | No | `whisper` | Transcription provider: `whisper`, `elevenlabs`, `deepinfra`, `imbe`, `none` |
+| `STT_FALLBACK_PROVIDER` | No | _(empty)_ | When primary is `imbe`, route non-`.dvcf` (analog/audio) jobs here (`whisper`/`elevenlabs`/`deepinfra`) |
 | `STREAM_LISTEN` | No | | UDP listen address for live audio (e.g., `:9123`) |
 | `LOG_LEVEL` | No | `info` | Log level |
 
@@ -212,6 +213,7 @@ Pluggable speech-to-text with four providers:
 | ElevenLabs | `STT_PROVIDER=elevenlabs` + `ELEVENLABS_API_KEY` | ElevenLabs Scribe API |
 | DeepInfra | `STT_PROVIDER=deepinfra` + `DEEPINFRA_STT_API_KEY` | Hosted Whisper models |
 | IMBE ASR | `STT_PROVIDER=imbe` + `IMBE_ASR_URL` | Transcribes directly from P25 IMBE codec frames via DVCF |
+| Dual (IMBE + audio) | `STT_PROVIDER=imbe` + `STT_FALLBACK_PROVIDER=whisper` (+ both URLs) | P25 via `.dvcf`/IMBE; analog/audio via fallback STT |
 
 Features: configurable worker pool, queue size, duration filters, anti-hallucination parameters, `provider_ms` performance tracking, talkgroup include/exclude filtering.
 
