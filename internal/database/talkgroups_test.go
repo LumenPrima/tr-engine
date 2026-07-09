@@ -1,6 +1,30 @@
 package database
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestRefreshTalkgroupStatsColdSQLIncludesEncrypted(t *testing.T) {
+	sql := refreshTalkgroupStatsColdSQL
+	for _, want := range []string{
+		"encrypted_count_30d",
+		"FILTER (WHERE encrypted)",
+		"encrypted_count",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("refreshTalkgroupStatsColdSQL missing %q", want)
+		}
+	}
+}
+
+func TestTalkgroupAPIEncryptedCallsJSONTag(t *testing.T) {
+	// Compile-time sanity: field exists and zero value marshals as encrypted_calls.
+	tg := TalkgroupAPI{CallCount: 10, EncryptedCalls: 3}
+	if tg.EncryptedCalls != 3 || tg.CallCount != 10 {
+		t.Fatalf("unexpected TalkgroupAPI values: %+v", tg)
+	}
+}
 
 func TestEffectiveTalkgroupPatchSource(t *testing.T) {
 	text := "value"

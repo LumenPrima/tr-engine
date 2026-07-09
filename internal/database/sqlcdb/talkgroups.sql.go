@@ -81,6 +81,7 @@ SELECT t.system_id, COALESCE(s.name, '') AS system_name, s.sysid,
     COALESCE(t."group", '') AS "group", COALESCE(t.description, '') AS description,
     t.mode, t.priority, t.first_seen, t.last_seen,
     (SELECT count(*)::int FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days') AS call_count,
+    (SELECT count(*)::int FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '30 days' AND c.encrypted) AS encrypted_calls,
     (SELECT count(*)::int FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '1 hour') AS calls_1h,
     (SELECT count(*)::int FROM calls c WHERE c.system_id = t.system_id AND c.tgid = t.tgid AND c.start_time > now() - interval '24 hours') AS calls_24h,
     GREATEST(
@@ -98,22 +99,23 @@ type GetTalkgroupByCompositeParams struct {
 }
 
 type GetTalkgroupByCompositeRow struct {
-	SystemID    int
-	SystemName  string
-	Sysid       string
-	Tgid        int
-	AlphaTag    string
-	Tag         string
-	Group       string
-	Description string
-	Mode        *string
-	Priority    *int32
-	FirstSeen   pgtype.Timestamptz
-	LastSeen    pgtype.Timestamptz
-	CallCount   int
-	Calls1h     int
-	Calls24h    int
-	UnitCount   int
+	SystemID       int
+	SystemName     string
+	Sysid          string
+	Tgid           int
+	AlphaTag       string
+	Tag            string
+	Group          string
+	Description    string
+	Mode           *string
+	Priority       *int32
+	FirstSeen      pgtype.Timestamptz
+	LastSeen       pgtype.Timestamptz
+	CallCount      int
+	EncryptedCalls int
+	Calls1h        int
+	Calls24h       int
+	UnitCount      int
 }
 
 func (q *Queries) GetTalkgroupByComposite(ctx context.Context, arg GetTalkgroupByCompositeParams) (GetTalkgroupByCompositeRow, error) {
@@ -133,6 +135,7 @@ func (q *Queries) GetTalkgroupByComposite(ctx context.Context, arg GetTalkgroupB
 		&i.FirstSeen,
 		&i.LastSeen,
 		&i.CallCount,
+		&i.EncryptedCalls,
 		&i.Calls1h,
 		&i.Calls24h,
 		&i.UnitCount,

@@ -4522,6 +4522,10 @@ components:
           type: integer
           description: Calls in the last 30 days
           example: 1547
+        encrypted_calls:
+          type: integer
+          description: Encrypted calls in the last 30 days (list uses cached stats; single-talkgroup computes live)
+          example: 120
         calls_1h:
           type: integer
           description: Calls in the last hour
