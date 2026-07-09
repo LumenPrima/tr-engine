@@ -122,7 +122,8 @@ The `.env` file is auto-loaded from the current directory on startup. See `sampl
 | `AUTH_TOKEN` | No | | Shared API token (token mode) or public read token (full mode) |
 | `ADMIN_PASSWORD` | No | | Enables JWT login, seeds admin user on first run |
 | `CORS_ORIGINS` | No | `*` | Comma-separated allowed CORS origins |
-| `RATE_LIMIT_RPS` | No | `20` | Per-IP rate limit (requests/second) |
+| `RATE_LIMIT_RPS` | No | `100` | Per-IP rate limit (requests/second); set `0` to disable |
+| `RATE_LIMIT_BURST` | No | `200` | Per-IP rate limit burst size |
 | `AUDIO_DIR` | No | `./audio` | Audio file storage directory |
 | `STT_PROVIDER` | No | `whisper` | Transcription provider: `whisper`, `elevenlabs`, `deepinfra`, `imbe` |
 | `STREAM_LISTEN` | No | | UDP listen address for live audio (e.g., `:9123`) |

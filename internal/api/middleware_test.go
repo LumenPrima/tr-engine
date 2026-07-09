@@ -172,6 +172,59 @@ func TestRateLimiter(t *testing.T) {
 			t.Errorf("IP B first request: expected 200, got %d", rec3.Code)
 		}
 	})
+
+	t.Run("rps_zero_disables", func(t *testing.T) {
+		handler := RateLimiter(0, 1)(okHandler)
+		for i := 0; i < 50; i++ {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/api/v1/talkgroups", nil)
+			req.RemoteAddr = "10.0.0.9:1234"
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("request %d with RPS=0: expected 200, got %d", i, rec.Code)
+			}
+		}
+	})
+
+	t.Run("exempt_paths_never_limited", func(t *testing.T) {
+		// Burst of 1 — second API call would 429, but health is exempt
+		handler := RateLimiter(1, 1)(okHandler)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/api/v1/foo", nil)
+		req.RemoteAddr = "10.0.0.3:1234"
+		handler.ServeHTTP(rec, req)
+
+		// Exhaust the budget
+		rec2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest("GET", "/api/v1/foo", nil)
+		req2.RemoteAddr = "10.0.0.3:1234"
+		handler.ServeHTTP(rec2, req2)
+		if rec2.Code != http.StatusTooManyRequests {
+			t.Fatalf("expected 429 after burst, got %d", rec2.Code)
+		}
+
+		for _, path := range []string{"/api/v1/health", "/metrics", "/assets/app.js", "/style.css"} {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", path, nil)
+			req.RemoteAddr = "10.0.0.3:1234"
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Errorf("exempt path %s: expected 200, got %d", path, rec.Code)
+			}
+		}
+	})
+}
+
+func TestRateLimitExempt(t *testing.T) {
+	if !rateLimitExempt("/api/v1/health") {
+		t.Error("health should be exempt")
+	}
+	if rateLimitExempt("/api/v1/talkgroups") {
+		t.Error("talkgroups should not be exempt")
+	}
+	if !rateLimitExempt("/web/app.js") {
+		t.Error(".js should be exempt")
+	}
 }
 
 func TestBearerAuth(t *testing.T) {

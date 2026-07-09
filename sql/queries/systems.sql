@@ -18,6 +18,16 @@ UPDATE systems SET
     name        = COALESCE(NULLIF(@name::text, ''), name)
 WHERE system_id = @system_id AND deleted_at IS NULL;
 
+-- name: PromoteSystemType :execrows
+-- Upgrades a provisional default system_type ("conventional") when later evidence
+-- shows a more specific type. Never overwrites a non-default type.
+UPDATE systems SET system_type = @system_type
+WHERE system_id = @system_id
+  AND deleted_at IS NULL
+  AND system_type = 'conventional'
+  AND @system_type::text <> ''
+  AND @system_type::text <> 'conventional';
+
 -- name: FindSystemBySysidWacn :one
 SELECT system_id FROM systems
 WHERE sysid = $1 AND wacn = $2

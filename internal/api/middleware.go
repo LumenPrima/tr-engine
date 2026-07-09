@@ -174,7 +174,17 @@ func CORSWithOrigins(origins []string) func(http.Handler) http.Handler {
 
 // RateLimiter returns middleware that applies per-IP rate limiting.
 // rps is requests per second, burst is the maximum burst size.
+// When rps <= 0, rate limiting is disabled (pass-through).
+// Health, metrics, and static asset paths are never rate-limited.
 func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
+	// Disabled: SPA / reverse-proxy friendly when operators set RATE_LIMIT_RPS=0
+	if rps <= 0 {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	if burst < 1 {
+		burst = 1
+	}
+
 	var mu sync.Mutex
 	limiters := make(map[string]*rate.Limiter)
 
@@ -203,6 +213,10 @@ func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if rateLimitExempt(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			ip := clientIP(r)
 			if !getLimiter(ip).Allow() {
 				w.Header().Set("Retry-After", "1")
@@ -212,6 +226,27 @@ func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// rateLimitExempt reports paths that should never count against the per-IP budget.
+// Health/metrics probes and static UI assets are high-volume and low risk.
+func rateLimitExempt(path string) bool {
+	if path == "/api/v1/health" || path == "/metrics" {
+		return true
+	}
+	// Built-in web UI static assets (not API)
+	if strings.HasPrefix(path, "/assets/") ||
+		strings.HasPrefix(path, "/static/") ||
+		strings.HasSuffix(path, ".js") ||
+		strings.HasSuffix(path, ".css") ||
+		strings.HasSuffix(path, ".map") ||
+		strings.HasSuffix(path, ".ico") ||
+		strings.HasSuffix(path, ".png") ||
+		strings.HasSuffix(path, ".svg") ||
+		strings.HasSuffix(path, ".woff2") {
+		return true
+	}
+	return false
 }
 
 // ResponseTimeout wraps non-streaming handlers with a write deadline.
