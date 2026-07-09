@@ -584,6 +584,35 @@ paths:
         "409":
           description: Username already exists
 
+  /users/all:
+    delete:
+      operationId: deleteAllUsers
+      summary: Delete all users
+      description: |
+        **DANGER**: Permanently deletes all user accounts and cascades to their
+        sessions and API keys. This is a destructive, irreversible operation
+        intended for downgrade paths (e.g., disabling JWT auth). Admin only.
+      tags: [auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All users deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    example: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Admin access required
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /users/{id}:
     patch:
       operationId: updateUser
@@ -1653,6 +1682,30 @@ paths:
       responses:
         "200":
           description: Audio stream
+          content:
+            audio/mp4:
+              schema:
+                type: string
+                format: binary
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial audio stream
+          headers:
+            Content-Range:
+              description: Byte range of the partial response per RFC 7233.
+              schema:
+                type: string
           content:
             audio/mp4:
               schema:
@@ -2868,18 +2921,20 @@ paths:
         these talkgroups." To change filters, disconnect and reconnect
         with new parameters — SSE `Last-Event-ID` provides gapless recovery.
 
-        **Event types:**
+        **Event types currently emitted:**
 
         | Event | Description | Payload |
         |-------|-------------|---------|
-        | `call_start` | New call recording started | Call object (partial — no audio/transcription yet) |
-        | `call_update` | Call updated (new transmission, freq change) | Call object (partial delta) |
-        | `call_end` | Call recording completed | Full Call object with audio_url |
-        | `unit_event` | Unit lifecycle event | UnitEvent object |
-        | `recorder_update` | Recorder state changed | Recorder object |
-        | `rate_update` | Decode rate update | DecodeRate object |
-        | `trunking_message` | P25 control channel message | TrunkingMessage object |
-        | `console` | TR console log message | ConsoleMessage object |
+        | `call_start` | New call recording started | Call fields (partial — no audio/transcription yet) |
+        | `call_end` | Call recording completed | Call fields including duration, audio path |
+        | `unit_event` | Unit lifecycle event | UnitEvent fields (subtype in `type`/`event`) |
+        | `recorder_update` | Recorder state changed | Recorder fields |
+        | `rate_update` | Decode rate update | DecodeRate fields |
+        | `trunking_message` | P25 control channel message | TrunkingMessage fields |
+        | `console` | TR console log message | ConsoleMessage fields |
+        | `transcription` | STT job completed | call_id, text, timing, model |
+
+        `call_update` is reserved for client compatibility and is **not** currently emitted.
 
       tags: [events]
       parameters:
@@ -2919,9 +2974,10 @@ paths:
           in: query
           description: |
             Comma-separated event types to subscribe to. Omit for all
-            event types. Valid values: `call_start`, `call_update`,
-            `call_end`, `unit_event`, `recorder_update`, `rate_update`,
-            `trunking_message`, `console`.
+            event types. Valid values: `call_start`, `call_end`,
+            `unit_event`, `recorder_update`, `rate_update`,
+            `trunking_message`, `console`, `transcription`.
+            (`call_update` is accepted for compatibility but is not emitted.)
 
             Supports compound syntax with `:` to filter on event
             subtypes. For example, `unit_event:call` matches only unit
@@ -3226,6 +3282,10 @@ paths:
         returns the results. Useful for analytical queries that don't map
         to predefined endpoints.
 
+        **Access:** When authentication is enabled, this endpoint is
+        intentionally restricted to admin access. Read-only users should use
+        purpose-built analytics endpoints instead of raw SQL.
+
         **Safety measures:**
         - Query runs inside a `READ ONLY` transaction — INSERT, UPDATE,
           DELETE, DROP, and all other write operations are rejected by
@@ -3270,7 +3330,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: Admin access required for read-only queries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: forbidden
+                error: Admin access required for read-only queries
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -3506,7 +3573,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /admin/transcribe-backfill/{job_id}:
+  /admin/transcribe-backfill/{id}:
     delete:
       operationId: cancelTranscribeBackfill
       summary: Cancel a specific backfill job
@@ -3517,7 +3584,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - name: job_id
+        - name: id
           in: path
           required: true
           description: Backfill job ID
@@ -3743,6 +3810,183 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PurgeResponse"
+
+  /debug-report:
+    post:
+      operationId: submitDebugReport
+      summary: Submit a debug report
+      description: |
+        Collects client-provided diagnostic data, merges it with server-side
+        state (health, active calls, console logs, TR config), and forwards
+        the combined report to the configured debug receiver endpoint.
+        Returns 503 if debug reports are disabled (`DEBUG_REPORT_DISABLE=true`)
+        or no `DEBUG_REPORT_URL` is configured.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Arbitrary client diagnostic data to include in the report
+              additionalProperties: true
+      responses:
+        "200":
+          description: Report submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submitted:
+                    type: boolean
+                    example: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: Debug reports disabled or no receiver configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ----------------------------------------------------------
+  # Recent Events & Dashboard
+  # ----------------------------------------------------------
+  /recent-events:
+    get:
+      operationId: listRecentEvents
+      summary: List recent calls and unit events
+      description: |
+        Returns a time-ordered UNION of recent calls and unit events. Useful
+        for dashboards that need a unified activity feed.
+
+        Results are ordered by `time DESC`. The `time` field uses `stop_time`
+        for calls (falling back to `start_time` if null) and the raw event
+        time for unit events.
+
+        Filter parameters are AND-ed. Empty numeric filters match all values.
+        The time range defaults to the last hour and is capped at 24 hours.
+      tags: [events]
+      parameters:
+        - name: system_id
+          in: query
+          description: Filter by system ID (repeatable)
+          schema:
+            type: array
+            items:
+              type: integer
+            explode: false
+        - name: site_id
+          in: query
+          description: Filter by site ID (repeatable)
+          schema:
+            type: array
+            items:
+              type: integer
+            explode: false
+        - name: tgid
+          in: query
+          description: Filter by talkgroup ID (repeatable)
+          schema:
+            type: array
+            items:
+              type: integer
+            explode: false
+        - name: unit_id
+          in: query
+          description: Filter by unit ID (repeatable)
+          schema:
+            type: array
+            items:
+              type: integer
+            explode: false
+        - name: types
+          in: query
+          description: Comma-separated event types (e.g. "call,unit_event")
+          schema:
+            type: string
+            example: "call,unit_event"
+        - name: start_time
+          in: query
+          description: Start of time range (RFC 3339). Defaults to 1 hour ago.
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          description: End of time range (RFC 3339). Defaults to now.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Maximum results (default 50, max 100)
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          description: Result offset for pagination
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecentEventsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      summary: Get dashboard summary snapshot
+      description: |
+        Returns an aggregated snapshot for dashboard use: health status,
+        high-level stats, active calls, and top talkgroups by activity.
+
+        The `hours` parameter controls the lookback window for stats and
+        top talkgroup activity (default 24h, max 720h). The `top_limit`
+        parameter controls how many top talkgroups to return (default 10,
+        max 100).
+      tags: [stats]
+      parameters:
+        - name: hours
+          in: query
+          description: Lookback window for stats and top talkgroups (1–720)
+          schema:
+            type: integer
+            default: 24
+            minimum: 1
+            maximum: 720
+        - name: top_limit
+          in: query
+          description: Number of top talkgroups to return (1–100)
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummaryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
 # ============================================================
 # COMPONENTS
@@ -6015,23 +6259,29 @@ components:
       type: string
       enum:
         - call_start
-        - call_update
         - call_end
         - unit_event
         - recorder_update
         - rate_update
         - trunking_message
         - console
+        - transcription
+        - call_update
       description: |
-        SSE event types pushed to clients:
+        SSE event types pushed to clients.
+
+        Currently emitted by tr-engine:
         - **call_start**: new call recording began
-        - **call_update**: call updated (new transmission, freq change)
         - **call_end**: call recording completed, audio available
-        - **unit_event**: unit lifecycle event (on/off/join/call/end/signal/etc.)
-        - **recorder_update**: recorder hardware state changed
-        - **rate_update**: decode rate update from a system
+        - **unit_event**: unit lifecycle event (on/off/join/call/end/signal/call_alert/etc.)
+        - **recorder_update**: recorder hardware state snapshot
+        - **rate_update**: decode rate sample from a system
         - **trunking_message**: P25 control channel message
-        - **console**: trunk-recorder console log message
+        - **console**: trunk-recorder console log line
+        - **transcription**: STT job completed for a call
+
+        Reserved (not currently emitted):
+        - **call_update**: historical/client-compat only; ingest does not publish mid-call updates
 
     SSEEvent:
       type: object
@@ -6056,9 +6306,10 @@ components:
 
         The `data` field contains the **domain object directly**, not a
         wrapper. Its structure depends on the event type:
-        - `call_start` / `call_update` / `call_end`: Call object
+        - `call_start` / `call_end`: Call object (and related call fields)
         - `unit_event`: UnitEvent object
         - `recorder_update`: Recorder object
+        - `transcription`: transcription result payload (call_id, text, timing)
         - `rate_update`: DecodeRate object
         - `trunking_message`: TrunkingMessage object
         - `console`: ConsoleMessage object
@@ -6583,3 +6834,140 @@ components:
           type: string
           description: "Always present, reminding that this action is irreversible"
           example: "This action is irreversible."
+
+    # ========== Recent Events & Dashboard ==========
+
+    RecentEventsResponse:
+      type: object
+      required: [events, total, limit, offset]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentEvent"
+        total:
+          type: integer
+          description: Total matching events (not just this page)
+        limit:
+          type: integer
+          description: Max results per page
+        offset:
+          type: integer
+          description: Current page offset
+
+    RecentEvent:
+      type: object
+      required: [id, type, time]
+      properties:
+        id:
+          type: string
+          description: "Unique event ID (e.g. call:123 or unit_event:456)"
+          example: "call:48531"
+        type:
+          type: string
+          enum: [call, unit_event]
+          description: Event type discriminator
+        time:
+          type: string
+          format: date-time
+          description: Event timestamp (call stop_time or unit_event time)
+        system_id:
+          type: integer
+          nullable: true
+          description: Radio system ID
+        site_id:
+          type: integer
+          nullable: true
+          description: Site ID within the system
+        tgid:
+          type: integer
+          nullable: true
+          description: Talkgroup ID
+        unit_id:
+          type: integer
+          nullable: true
+          description: Radio unit ID (unit_event only)
+
+    DashboardSummaryResponse:
+      type: object
+      required: [generated_at, health, stats, active_calls, top_talkgroups]
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          description: When this summary was generated
+        health:
+          $ref: "#/components/schemas/DashboardSummaryHealth"
+        stats:
+          $ref: "#/components/schemas/DashboardSummaryStats"
+        active_calls:
+          type: array
+          description: Currently active (in-progress) calls from in-memory tracker
+          items:
+            $ref: "#/components/schemas/ActiveCallData"
+        top_talkgroups:
+          type: object
+          required: [activity, total, hours, limit]
+          properties:
+            activity:
+              type: array
+              items:
+                $ref: "#/components/schemas/TalkgroupActivity"
+            total:
+              type: integer
+              description: Total talkgroups with activity in the lookback window
+            hours:
+              type: integer
+              description: Lookback window used
+            limit:
+              type: integer
+              description: Max top talkgroups returned
+
+    DashboardSummaryHealth:
+      type: object
+      required: [database, mqtt, version, uptime_seconds]
+      properties:
+        database:
+          type: string
+          enum: [ok, error]
+          description: Database connectivity status
+        mqtt:
+          type: string
+          enum: [ok, error, disconnected, not_configured]
+          description: MQTT broker status
+        version:
+          type: string
+          description: tr-engine version
+          example: "0.6.1"
+        uptime_seconds:
+          type: integer
+          description: Seconds since process start
+
+    DashboardSummaryStats:
+      type: object
+      required: [systems, sites, talkgroups, units, total_calls, calls_24h, calls_1h, total_duration_hours]
+      properties:
+        systems:
+          type: integer
+          description: Total radio systems
+        sites:
+          type: integer
+          description: Total sites across systems
+        talkgroups:
+          type: integer
+          description: Total talkgroups across all systems
+        units:
+          type: integer
+          description: Total units across all systems
+        total_calls:
+          type: integer
+          description: Total call recordings
+        calls_24h:
+          type: integer
+          description: Calls in last 24 hours
+        calls_1h:
+          type: integer
+          description: Calls in last hour
+        total_duration_hours:
+          type: number
+          description: Total recorded audio duration in hours

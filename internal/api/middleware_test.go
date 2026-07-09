@@ -340,7 +340,6 @@ func TestUploadAuth(t *testing.T) {
 	})
 }
 
-
 // ── JWTOrTokenAuth ────────────────────────────────────────────────────────
 
 // mockAPIKeyDB implements apiKeyResolver for testing.
@@ -590,6 +589,47 @@ func TestEditorOrAbove(t *testing.T) {
 			}
 			if !tc.wantOK && rec.Code != http.StatusForbidden {
 				t.Errorf("expected 403 for role=%q, got %d", tc.role, rec.Code)
+			}
+		})
+	}
+}
+
+func TestQueryAdminOnly(t *testing.T) {
+	cases := []struct {
+		name      string
+		role      string
+		wantCode  int
+		wantError string
+	}{
+		{name: "admin_passes", role: "admin", wantCode: http.StatusOK},
+		{name: "editor_rejected", role: "editor", wantCode: http.StatusForbidden, wantError: queryAccessDeniedMessage()},
+		{name: "viewer_rejected", role: "viewer", wantCode: http.StatusForbidden, wantError: queryAccessDeniedMessage()},
+		{name: "anonymous_rejected", role: "", wantCode: http.StatusForbidden, wantError: queryAccessDeniedMessage()},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("POST", "/api/v1/query", nil)
+			if tc.role != "" {
+				req = setAuthContext(req, 1, "u", tc.role, "jwt")
+			}
+
+			QueryAdminOnly(okHandler).ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantCode {
+				t.Fatalf("expected %d, got %d", tc.wantCode, rec.Code)
+			}
+			if tc.wantError == "" {
+				return
+			}
+
+			var resp ErrorResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("invalid JSON error response: %v", err)
+			}
+			if resp.Error != tc.wantError {
+				t.Fatalf("expected error %q, got %q", tc.wantError, resp.Error)
 			}
 		})
 	}
@@ -854,4 +894,41 @@ func TestWriteAuth_DeprecatedWriteToken_StillWorks(t *testing.T) {
 	if rec.Code != 200 {
 		t.Errorf("expected 200 with deprecated write token, got %d", rec.Code)
 	}
+}
+
+func TestQueryAuthChain(t *testing.T) {
+	handler := JWTOrTokenAuth(nil, "", "read-token")(
+		WriteAuth("", "read-token", true)(
+			QueryAdminOnly(okHandler),
+		),
+	)
+
+	t.Run("no_auth_returns_401", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/query", nil)
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
+
+	t.Run("read_only_auth_returns_query_specific_403", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/v1/query", nil)
+		req.Header.Set("Authorization", "Bearer read-token")
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", rec.Code)
+		}
+
+		var resp ErrorResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("invalid JSON error response: %v", err)
+		}
+		if resp.Error != queryAccessDeniedMessage() {
+			t.Fatalf("expected error %q, got %q", queryAccessDeniedMessage(), resp.Error)
+		}
+	})
 }

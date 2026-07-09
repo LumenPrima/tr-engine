@@ -136,6 +136,27 @@ func (db *DB) UpdateLastLogin(ctx context.Context, id int) error {
 	return err
 }
 
+// SetRefreshTokenJTI stores the currently valid refresh token JTI for a user.
+func (db *DB) SetRefreshTokenJTI(ctx context.Context, userID int, jti string) error {
+	_, err := db.Pool.Exec(ctx, `UPDATE users SET refresh_token_jti = $2 WHERE id = $1`, userID, jti)
+	return err
+}
+
+// GetRefreshTokenJTI returns the currently valid refresh token JTI for a user.
+func (db *DB) GetRefreshTokenJTI(ctx context.Context, userID int) (string, error) {
+	var jti string
+	err := db.Pool.QueryRow(ctx,
+		`SELECT COALESCE(refresh_token_jti, '') FROM users WHERE id = $1`, userID,
+	).Scan(&jti)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return jti, nil
+}
+
 // UserUpdate holds optional fields for a partial user update.
 type UserUpdate struct {
 	Role         *string

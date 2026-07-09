@@ -310,6 +310,20 @@
     white-space: nowrap;
   }
 
+  /* ── Buffered range ── */
+  .audio-buffered {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    pointer-events: none; border-radius: inherit;
+  }
+
+  /* ── Seek/drag states ── */
+  .audio-progress-wrap { cursor: pointer; user-select: none; -webkit-user-select: none; }
+  .audio-progress-wrap.seeking { cursor: wait; }
+  .audio-progress-wrap.dragging,
+  .audio-progress-wrap.dragging:hover { cursor: grabbing; }
+  .audio-progress-wrap:hover .audio-progress-head { width: 4px; }
+
   /* ── Loading / empty ── */
   .loading-state, .empty-state {
     display: flex; flex-direction: column; align-items: center;
@@ -584,7 +598,17 @@
     return p;
   }
 
-  /* ── Fetch calls ── */
+  /* ── Fetch calls ──
+   *
+   * When the transcript search input has text, we switch to server-side
+   * full-text search via /api/v1/transcriptions/search instead of fetching
+   * all calls and filtering client-side. The search results are mapped into
+   * the same call-object shape that renderTable() expects, so the rest of
+   * the UI (pagination, detail panel, etc.) works unchanged.
+   *
+   * When the transcript search is empty, we fall back to the normal
+   * /api/v1/calls endpoint with all its filter/sort/pagination params.
+   */
 
   async function fetchCalls() {
     loading.style.display = '';
@@ -592,19 +616,66 @@
     while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
     expandedCallId = null;
 
-    try {
-      var res = await fetch(API + '/calls?' + buildParams());
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      var data = await res.json();
-      calls = data.calls || [];
-      total = data.total || 0;
+    var q = transcriptSearch.value.trim();
 
-      var q = transcriptSearch.value.trim().toLowerCase();
+    try {
       if (q) {
-        calls = calls.filter(function(c) {
-          return c.transcription_text && c.transcription_text.toLowerCase().indexOf(q) !== -1;
+        /* ── Server-side transcript search mode ── */
+        var p = new URLSearchParams();
+        p.set('q', q);
+        p.set('limit', String(PAGE_SIZE));
+        p.set('offset', String(offset));
+
+        /* Pass through time range and system filter to narrow search results */
+        p.set('start_time', rangeStart(activeRange));
+        var sysVal = systemFilter.value;
+        if (sysVal) p.set('system_id', sysVal);
+
+        var res = await fetch(API + '/transcriptions/search?' + p.toString());
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var data = await res.json();
+
+        /* Map transcription search results into call objects for renderTable() */
+        calls = (data.results || []).map(function(r) {
+          return {
+            call_id: r.call_id,
+            system_name: r.system_name || '',
+            tgid: r.tgid,
+            tg_alpha_tag: r.tg_alpha_tag || '',
+            start_time: r.call_start_time,
+            duration: r.call_duration || null,
+            transcription_text: r.text || '',
+            /* Fields not available from search endpoint — set sensible defaults */
+            audio_url: null,
+            emergency: false,
+            encrypted: false,
+            short_name: '',
+            talkgroup: '',
+            freq: null,
+            src_list: null,
+            unit_ids: null,
+            tg_group: null,
+            tg_description: null,
+            stop_time: null,
+            audio_type: '',
+            signal_db: null,
+            noise_db: null,
+            error_count: null,
+            spike_count: null,
+            phase2_tdma: false,
+            tdma_slot: null,
+            patched_tgids: null,
+            site_short_name: ''
+          };
         });
-        total = calls.length; /* client-side filter — override server total */
+        total = data.total || 0;
+      } else {
+        /* ── Normal calls fetch mode ── */
+        var res = await fetch(API + '/calls?' + buildParams());
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var data = await res.json();
+        calls = data.calls || [];
+        total = data.total || 0;
       }
 
       renderTable();
@@ -1010,6 +1081,10 @@
       progressWrap.className = 'audio-progress-wrap';
       progressWrap.dataset.callId = call.call_id;
 
+      var bufferedDiv = document.createElement('div');
+      bufferedDiv.className = 'audio-buffered';
+      progressWrap.appendChild(bufferedDiv);
+
       var progressFill = document.createElement('div');
       progressFill.className = 'audio-progress-fill';
       progressFill.style.width = '0';
@@ -1086,7 +1161,7 @@
   /* ── Audio playback ── */
 
   audioEl.addEventListener('timeupdate', function() {
-    if (!currentAudioId) return;
+    if (!currentAudioId || isDragging) return;
     var player = document.querySelector('.audio-player[data-call-id="' + currentAudioId + '"]');
     if (!player) return;
     var fill = player.querySelector('.audio-progress-fill');
@@ -1099,6 +1174,34 @@
   });
 
   audioEl.addEventListener('ended', stopAudio);
+
+  audioEl.addEventListener('seeking', function() {
+    if (!currentAudioId) return;
+    var player = document.querySelector('.audio-player[data-call-id="' + currentAudioId + '"]');
+    if (!player) return;
+    var wrap = player.querySelector('.audio-progress-wrap');
+    if (wrap) wrap.classList.add('seeking');
+  });
+
+  audioEl.addEventListener('seeked', function() {
+    if (!currentAudioId) return;
+    var player = document.querySelector('.audio-player[data-call-id="' + currentAudioId + '"]');
+    if (!player) return;
+    var wrap = player.querySelector('.audio-progress-wrap');
+    if (wrap) wrap.classList.remove('seeking');
+  });
+
+  audioEl.addEventListener('progress', function() {
+    if (!currentAudioId) return;
+    var player = document.querySelector('.audio-player[data-call-id="' + currentAudioId + '"]');
+    if (!player) return;
+    var buffered = player.querySelector('.audio-buffered');
+    if (!buffered || !audioEl.duration) return;
+    if (audioEl.buffered.length > 0) {
+      var end = audioEl.buffered.end(audioEl.buffered.length - 1);
+      buffered.style.width = ((end / audioEl.duration) * 100) + '%';
+    }
+  });
 
   function playAudio(callId, url) {
     if (currentAudioId && currentAudioId !== callId) {
@@ -1145,15 +1248,72 @@
     if (url) playAudio(callId, url);
   });
 
-  /* Seek on progress bar click */
-  document.addEventListener('click', function(e) {
+  /* Seek on progress bar — click + drag + touch */
+  var isDragging = false;
+  var dragWrap = null;
+
+  function seekToPosition(wrap, clientX) {
+    var rect = wrap.getBoundingClientRect();
+    var pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    if (audioEl.duration && isFinite(audioEl.duration)) {
+      audioEl.currentTime = pct * audioEl.duration;
+    }
+    /* Update progress bar immediately for responsiveness */
+    var fill = wrap.querySelector('.audio-progress-fill');
+    var head = wrap.querySelector('.audio-progress-head');
+    var ts = wrap.closest('.audio-player').querySelector('.audio-time');
+    if (fill) fill.style.width = (pct * 100) + '%';
+    if (head) head.style.left = (pct * 100) + '%';
+    if (ts && audioEl.duration) ts.textContent = fmtMMSS(pct * audioEl.duration) + ' / ' + fmtMMSS(audioEl.duration);
+  }
+
+  document.addEventListener('mousedown', function(e) {
     var wrap = e.target.closest('.audio-progress-wrap');
     if (!wrap) return;
     var callId = parseInt(wrap.dataset.callId);
     if (currentAudioId !== callId || !audioEl.duration) return;
-    var rect = wrap.getBoundingClientRect();
-    var pct = (e.clientX - rect.left) / rect.width;
-    audioEl.currentTime = pct * audioEl.duration;
+    e.preventDefault();
+    isDragging = true;
+    dragWrap = wrap;
+    wrap.classList.add('dragging');
+    seekToPosition(wrap, e.clientX);
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging || !dragWrap) return;
+    e.preventDefault();
+    seekToPosition(dragWrap, e.clientX);
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (!isDragging) return;
+    if (dragWrap) dragWrap.classList.remove('dragging');
+    isDragging = false;
+    dragWrap = null;
+  });
+
+  /* Touch support for mobile scrubbing */
+  document.addEventListener('touchstart', function(e) {
+    var wrap = e.target.closest('.audio-progress-wrap');
+    if (!wrap) return;
+    var callId = parseInt(wrap.dataset.callId);
+    if (currentAudioId !== callId || !audioEl.duration) return;
+    isDragging = true;
+    dragWrap = wrap;
+    wrap.classList.add('dragging');
+    seekToPosition(wrap, e.touches[0].clientX);
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!isDragging || !dragWrap) return;
+    seekToPosition(dragWrap, e.touches[0].clientX);
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (!isDragging) return;
+    if (dragWrap) dragWrap.classList.remove('dragging');
+    isDragging = false;
+    dragWrap = null;
   });
 
   /* ── URL sync ── */

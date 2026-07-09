@@ -28,10 +28,10 @@ docker compose up -d
 ```
 
 That's it — one file, one command. On first run:
-- PostgreSQL starts and tr-engine auto-applies the database schema
+- PostgreSQL 17 starts and tr-engine auto-applies the database schema
 - Mosquitto starts on port **1883** (anonymous access)
-- tr-engine connects to both and starts listening
-- With no auth variables set, tr-engine starts in open mode. See [Configuration](#configuration) before exposing it outside your LAN.
+- tr-engine connects to both and starts listening on port **8080**
+- With no auth variables set, tr-engine starts in **open mode** (no API auth). See [Securing a public-facing instance](#securing-a-public-facing-instance) before exposing it outside your LAN.
 
 Verify it's running:
 
@@ -39,7 +39,7 @@ Verify it's running:
 curl http://localhost:8080/api/v1/health
 ```
 
-## 3. Point trunk-recorder at the broker
+## 2. Point trunk-recorder at the broker
 
 In your trunk-recorder `config.json`, set the MQTT plugin's broker to your Docker host:
 
@@ -225,7 +225,11 @@ Both modes coexist during a transition — existing MQTT-ingested audio still se
 
 ### Transcription (STT)
 
-Transcription is optional. Add STT settings to your `.env` to enable automatic transcription of call recordings. Three provider options:
+Transcription is optional. Add STT settings to your `.env` to enable automatic transcription of call recordings.
+
+Supported `STT_PROVIDER` values: `whisper` (default), `elevenlabs`, `deepinfra`, `imbe`, `none`.
+
+> **Whisper without a URL:** If `STT_PROVIDER=whisper` (the default) but `WHISPER_URL` is empty, transcription is simply disabled — no error. Set `STT_PROVIDER=none` if you want to make that intent explicit.
 
 **Local Whisper (self-hosted):**
 
@@ -273,6 +277,25 @@ TRANSCRIBE_WORKERS=2
 # ELEVENLABS_KEYTERMS=Medic,Engine,Ladder,Rescue,10-4
 ```
 
+**DeepInfra:**
+
+```bash
+STT_PROVIDER=deepinfra
+DEEPINFRA_STT_API_KEY=your_api_key_here
+# DEEPINFRA_STT_MODEL=openai/whisper-large-v3-turbo
+TRANSCRIBE_WORKERS=2
+```
+
+**IMBE ASR (P25 digital only):**
+
+```bash
+STT_PROVIDER=imbe
+IMBE_ASR_URL=http://imbe-asr:8090
+# IMBE_ASR_MODEL=imbe
+```
+
+Requires [tr-plugin-dvcf](https://github.com/trunk-reporter/tr-plugin-dvcf) on trunk-recorder so `.dvcf` sidecars are published over MQTT. **Limitation:** only P25 digital calls with DVCF are transcribed. Analog/conventional calls get no transcription while `STT_PROVIDER=imbe`. Dual-provider routing (IMBE + audio STT fallback) is a tracked 1.0 blocker — see `docs/roadmap.md`.
+
 **Common tuning (all providers):**
 
 ```bash
@@ -280,9 +303,11 @@ TRANSCRIBE_QUEUE_SIZE=500       # max queued jobs (dropped when full)
 TRANSCRIBE_MIN_DURATION=1.0     # skip calls shorter than 1s
 TRANSCRIBE_MAX_DURATION=300     # skip calls longer than 5min
 # PREPROCESS_AUDIO=true         # bandpass filter + normalize (requires sox)
+# TRANSCRIBE_INCLUDE_TGIDS=     # optional allowlist
+# TRANSCRIBE_EXCLUDE_TGIDS=     # optional denylist
 ```
 
-Transcription auto-triggers on every `call_end` within the min/max duration range. See `sample.env` for the full list of Whisper tuning parameters including anti-hallucination options.
+For audio providers (whisper/elevenlabs/deepinfra), transcription is enqueued when audio is ready (`call_end` / audio MQTT / upload). For `imbe`, only the DVCF path enqueues jobs. See `sample.env` for the full Whisper anti-hallucination parameter list.
 
 ### Live Audio Streaming
 
