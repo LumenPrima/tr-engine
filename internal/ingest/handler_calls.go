@@ -10,6 +10,50 @@ import (
 	"github.com/snarg/tr-engine/internal/database"
 )
 
+// maybePromoteSystemType upgrades a provisional "conventional" system default when
+// live call metadata provides stronger evidence. TR only publishes system type on
+// the systems/config topics at startup; if tr-engine misses that message, systems
+// stay stuck as conventional (#26).
+func (p *Pipeline) maybePromoteSystemType(ctx context.Context, systemID int, call *CallData) {
+	inferred := inferSystemTypeFromCall(call)
+	if inferred == "" {
+		return
+	}
+	promoted, err := p.db.PromoteSystemType(ctx, systemID, inferred)
+	if err != nil {
+		p.log.Warn().Err(err).Int("system_id", systemID).Str("type", inferred).Msg("failed to promote system type")
+		return
+	}
+	if promoted {
+		p.log.Info().
+			Int("system_id", systemID).
+			Str("system_type", inferred).
+			Str("sys_name", call.SysName).
+			Msg("promoted provisional system type from call metadata")
+	}
+}
+
+// inferSystemTypeFromCall derives a system_type from call flags when TR's systems
+// message was never received. Returns empty when evidence is weak (keep default).
+func inferSystemTypeFromCall(call *CallData) string {
+	if call == nil {
+		return ""
+	}
+	// Trunked digital → p25 (covers Phase 1 and Phase 2 trunked)
+	if !call.Conventional && !call.Analog {
+		return "p25"
+	}
+	// Conventional digital (P25 conventional, conventionalP25 in TR)
+	if call.Conventional && !call.Analog {
+		audio := strings.ToLower(call.AudioType)
+		if audio == "digital" || audio == "p25" || call.Phase2TDMA {
+			return "conventionalP25"
+		}
+	}
+	// Pure analog conventional already matches the default; no promotion needed.
+	return ""
+}
+
 // upsertAndEnrichTalkgroup upserts a talkgroup, enriches it from the directory,
 // and returns the effective alpha tag (respects manual > csv > mqtt priority).
 func (p *Pipeline) upsertAndEnrichTalkgroup(ctx context.Context, systemID, tgid int, alphaTag, tag, group, description string, eventTime time.Time) string {
@@ -44,6 +88,8 @@ func (p *Pipeline) handleCallStart(payload []byte) error {
 	if err != nil {
 		return fmt.Errorf("resolve identity: %w", err)
 	}
+	// If TR's systems/config MQTT was missed, upgrade provisional "conventional" default.
+	p.maybePromoteSystemType(ctx, identity.SystemID, call)
 
 	// Upsert talkgroup + enrich from directory — capture effective tag
 	effectiveTgTag := call.TalkgroupAlphaTag
@@ -317,8 +363,28 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 		p.activeCalls.Delete(matchedKey)
 	}
 
-	// Resolve identity for talkgroup upsert and event publishing
+	// Resolve identity for talkgroup upsert and event publishing.
+	// Prefer the active-call map's identity when present so a transient resolve
+	// failure still yields a usable SSE payload.
 	identity, idErr := p.identity.Resolve(ctx, msg.InstanceID, call.SysName)
+	systemID := entry.SystemID
+	siteID := 0
+	if entry.SiteID != nil {
+		siteID = *entry.SiteID
+	}
+	if idErr == nil {
+		systemID = identity.SystemID
+		siteID = identity.SiteID
+		p.maybePromoteSystemType(ctx, identity.SystemID, call)
+	} else {
+		p.log.Warn().
+			Err(idErr).
+			Int64("call_id", entry.CallID).
+			Str("tr_call_id", call.ID).
+			Str("sys_name", call.SysName).
+			Msg("identity resolve failed on call_end; publishing SSE with partial identity")
+	}
+
 	effectiveTgTag := call.TalkgroupAlphaTag
 	effectiveUnitTag := call.UnitAlphaTag
 	if idErr == nil && call.Talkgroup > 0 {
@@ -339,50 +405,52 @@ func (p *Pipeline) handleCallEnd(payload []byte) error {
 		Float64("duration", call.Length).
 		Msg("call ended")
 
-	if idErr == nil {
-		p.PublishEvent(EventData{
-			Type:      "call_end",
-			SystemID:  identity.SystemID,
-			SiteID:    identity.SiteID,
-			Tgid:      call.Talkgroup,
-			Emergency: call.Emergency,
-			Payload: map[string]any{
-				"call_id":        entry.CallID,
-				"system_id":      identity.SystemID,
-				"tgid":           call.Talkgroup,
-				"tg_alpha_tag":   effectiveTgTag,
-				"unit":           call.Unit,
-				"unit_alpha_tag": effectiveUnitTag,
-				"freq":           int64(call.Freq),
-				"start_time":     startTime,
-				"stop_time":      stopTime,
-				"duration":       call.Length,
-				"emergency":      call.Emergency,
-				"encrypted":      call.Encrypted,
-				"call_filename":  call.CallFilename,
-				"incident_data":  call.IncidentData,
-			},
-		})
+	// Always publish call_end when we updated the call — clients need the event
+	// even if identity resolution failed (#17).
+	p.PublishEvent(EventData{
+		Type:      "call_end",
+		SystemID:  systemID,
+		SiteID:    siteID,
+		Tgid:      call.Talkgroup,
+		Emergency: call.Emergency,
+		Payload: map[string]any{
+			"call_id":        entry.CallID,
+			"system_id":      systemID,
+			"tgid":           call.Talkgroup,
+			"tg_alpha_tag":   effectiveTgTag,
+			"unit":           call.Unit,
+			"unit_alpha_tag": effectiveUnitTag,
+			"freq":           int64(call.Freq),
+			"start_time":     startTime,
+			"stop_time":      stopTime,
+			"duration":       call.Length,
+			"emergency":      call.Emergency,
+			"encrypted":      call.Encrypted,
+			"call_filename":  call.CallFilename,
+			"incident_data":  call.IncidentData,
+		},
+	})
 
-		// Enqueue for transcription in TR_AUDIO_DIR mode.
-		// When audio comes via MQTT, handleAudio enqueues instead.
-		if p.trAudioDir != "" && !call.Encrypted && call.CallFilename != "" {
-			meta := &AudioMetadata{
-				Talkgroup:         call.Talkgroup,
-				CallLength:        int(call.Length),
-				Filename:          call.CallFilename,
-				TalkgroupTag:      effectiveTgTag,
-				TalkgroupDesc:     call.TalkgroupDescription,
-				TalkgroupGroupTag: call.TalkgroupTag,
-				TalkgroupGroup:    call.TalkgroupGroup,
-			}
-			p.enqueueTranscription(entry.CallID, entry.StartTime, identity.SystemID, "", meta)
+	// Enqueue for transcription in TR_AUDIO_DIR mode.
+	// When audio comes via MQTT, handleAudio enqueues instead.
+	if idErr == nil && p.trAudioDir != "" && !call.Encrypted && call.CallFilename != "" {
+		meta := &AudioMetadata{
+			Talkgroup:         call.Talkgroup,
+			CallLength:        int(call.Length),
+			Filename:          call.CallFilename,
+			TalkgroupTag:      effectiveTgTag,
+			TalkgroupDesc:     call.TalkgroupDescription,
+			TalkgroupGroupTag: call.TalkgroupTag,
+			TalkgroupGroup:    call.TalkgroupGroup,
 		}
+		p.enqueueTranscription(entry.CallID, entry.StartTime, identity.SystemID, "", meta)
+	}
 
-		// Synthesize srcList from unit_event:call records if TR didn't provide one
-		// (e.g., encrypted calls). Only writes if src_list is still NULL.
+	// Synthesize srcList from unit_event:call records if TR didn't provide one
+	// (e.g., encrypted calls). Only writes if src_list is still NULL.
+	if systemID > 0 {
 		p.synthesizeSrcList(ctx, entry.CallID, entry.StartTime,
-			identity.SystemID, call.Talkgroup, stopTime, float32(call.Length))
+			systemID, call.Talkgroup, stopTime, float32(call.Length))
 	}
 
 	return nil

@@ -111,6 +111,9 @@
   .type-trunking_message { background: var(--bg-tile); color: var(--text-muted); }
   .type-console     { background: var(--bg-tile); color: var(--text-faint); }
 
+  .event.recent { opacity: 0.7; }
+  .event.recent .event-type::after { content: ' ↺'; font-size: 10px; opacity: 0.6; }
+
   .theme-label {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     z-index: 10000; font-family: var(--font-display); font-size: 12px;
@@ -246,7 +249,7 @@ function esc(s) {
   return div.innerHTML;
 }
 
-function addEvent(type, data) {
+function addEvent(type, data, isRecent) {
   // Remap call_alert from unit_event subtype to its own display type
   let displayType = type;
   if (type === 'unit_event' && data.event_type === 'call_alert') {
@@ -262,7 +265,7 @@ function addEvent(type, data) {
   eventCountEl.textContent = totalCount;
 
   const row = document.createElement('div');
-  row.className = 'event';
+  row.className = 'event' + (isRecent ? ' recent' : '');
 
   const now = new Date();
   const time = formatTime(data.start_time || data.time || data.log_time) || now.toLocaleTimeString();
@@ -270,7 +273,7 @@ function addEvent(type, data) {
   row.innerHTML =
     `<span class="event-time">${time}</span>` +
     `<span class="event-type type-${displayType}">${displayType.replace(/_/g, ' ')}</span>` +
-    `<span class="event-detail">${formatDetail(displayType, data)}</span>`;
+    `<span class="event-detail">${isRecent ? formatRecentDetail(displayType, data) : formatDetail(displayType, data)}</span>`;
 
   eventsEl.insertBefore(row, eventsEl.firstChild);
 
@@ -278,6 +281,40 @@ function addEvent(type, data) {
   while (eventsEl.children.length > MAX_EVENTS) {
     eventsEl.removeChild(eventsEl.lastChild);
   }
+}
+
+function formatRecentDetail(type, d) {
+  const parts = [];
+  if (type === 'call_end' || type === 'call_start' || type === 'call_update') {
+    if (d.tgid != null) parts.push(`<span class="val">TG ${d.tgid}</span>`);
+    if (d.system_id != null) parts.push(`<span class="dim">sys=${d.system_id}</span>`);
+    if (d.site_id != null) parts.push(`<span class="dim">site=${d.site_id}</span>`);
+  } else if (type === 'unit_event') {
+    if (d.unit_id != null) parts.push(`<span class="val">Unit ${d.unit_id}</span>`);
+    if (d.tgid != null) parts.push(`<span class="dim">tg=${d.tgid}</span>`);
+    if (d.system_id != null) parts.push(`<span class="dim">sys=${d.system_id}</span>`);
+  } else {
+    if (d.tgid != null) parts.push(`<span class="val">TG ${d.tgid}</span>`);
+    if (d.unit_id != null) parts.push(`<span class="val">Unit ${d.unit_id}</span>`);
+    if (d.system_id != null) parts.push(`<span class="dim">sys=${d.system_id}</span>`);
+  }
+  return parts.length ? parts.join(' ') : '<span class="dim">—</span>';
+}
+
+function loadRecentEvents() {
+  fetch('/api/v1/recent-events?limit=50')
+    .then(function(r) { return r.ok ? r.json() : { events: [] }; })
+    .then(function(resp) {
+      var events = resp.events || [];
+      if (!events.length) return;
+      // Events come newest-first; insert oldest-first so newest ends up on top
+      for (var i = events.length - 1; i >= 0; i--) {
+        var ev = events[i];
+        var displayType = ev.type === 'call' ? 'call_end' : ev.type;
+        addEvent(displayType, ev, true);
+      }
+    })
+    .catch(function() { /* ignore — page starts empty as before */ });
 }
 
 function connect() {
@@ -329,6 +366,7 @@ document.querySelectorAll('.filters input').forEach(cb => {
   cb.addEventListener('change', () => connect());
 });
 
+loadRecentEvents();
 connect();
 </script>
 <script src="theme-engine.js?v=2"></script>

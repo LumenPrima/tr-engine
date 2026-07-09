@@ -59,6 +59,20 @@ func (db *DB) UpdateSystemIdentity(ctx context.Context, systemID int, systemType
 	})
 }
 
+// PromoteSystemType upgrades a provisional "conventional" default to a more
+// specific type when live traffic provides evidence (e.g. trunked digital → p25).
+// Returns true if a row was updated. Never downgrades a known non-default type.
+func (db *DB) PromoteSystemType(ctx context.Context, systemID int, systemType string) (bool, error) {
+	if systemID == 0 || systemType == "" || systemType == "conventional" {
+		return false, nil
+	}
+	n, err := db.Q.PromoteSystemType(ctx, sqlcdb.PromoteSystemTypeParams{
+		SystemID:   systemID,
+		SystemType: systemType,
+	})
+	return n > 0, err
+}
+
 // FindSystemViaSiteIdentity returns the system_id for a site identified by (instance_id, short_name).
 // Returns 0, nil if not found.
 func (db *DB) FindSystemViaSiteIdentity(ctx context.Context, instanceID, shortName string) (int, error) {

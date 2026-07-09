@@ -74,6 +74,29 @@ func (q *Queries) FindSystemViaSite(ctx context.Context, arg FindSystemViaSitePa
 	return i, err
 }
 
+
+const promoteSystemType = `-- name: PromoteSystemType :execrows
+UPDATE systems SET system_type = $1
+WHERE system_id = $2
+  AND deleted_at IS NULL
+  AND system_type = 'conventional'
+  AND $1::text <> ''
+  AND $1::text <> 'conventional'
+`
+
+type PromoteSystemTypeParams struct {
+	SystemType string
+	SystemID   int
+}
+
+func (q *Queries) PromoteSystemType(ctx context.Context, arg PromoteSystemTypeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, promoteSystemType, arg.SystemType, arg.SystemID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getSystemByID = `-- name: GetSystemByID :one
 SELECT system_id, system_type, COALESCE(name, '') AS name, sysid, wacn
 FROM systems WHERE system_id = $1 AND deleted_at IS NULL

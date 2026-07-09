@@ -62,8 +62,10 @@ type Config struct {
 	JWTSecret     string `env:"JWT_SECRET"`      // HMAC key for JWT signing; auto-generated if empty (sessions lost on restart)
 	AdminUsername string `env:"ADMIN_USERNAME" envDefault:"admin"` // default admin username seeded on first run
 	AdminPassword string `env:"ADMIN_PASSWORD"` // if set, seeds admin user on first run and enables JWT auth
-	RateLimitRPS   float64 `env:"RATE_LIMIT_RPS" envDefault:"20"`
-	RateLimitBurst int     `env:"RATE_LIMIT_BURST" envDefault:"40"`
+	// RateLimitRPS is requests/sec per client IP. Set to 0 to disable rate limiting.
+	// Defaults are sized for SPA dashboards that fan out many parallel API calls.
+	RateLimitRPS   float64 `env:"RATE_LIMIT_RPS" envDefault:"100"`
+	RateLimitBurst int     `env:"RATE_LIMIT_BURST" envDefault:"200"`
 	CORSOrigins string `env:"CORS_ORIGINS"` // comma-separated allowed origins; empty = allow all (*)
 	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
 

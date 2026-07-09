@@ -24,7 +24,7 @@ import (
 type contextKey int
 
 const (
-	ctxKeyUserID   contextKey = iota
+	ctxKeyUserID contextKey = iota
 	ctxKeyUsername
 	ctxKeyRole
 	ctxKeyAuthType
@@ -172,10 +172,19 @@ func CORSWithOrigins(origins []string) func(http.Handler) http.Handler {
 	}
 }
 
-
 // RateLimiter returns middleware that applies per-IP rate limiting.
 // rps is requests per second, burst is the maximum burst size.
+// When rps <= 0, rate limiting is disabled (pass-through).
+// Health, metrics, and static asset paths are never rate-limited.
 func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
+	// Disabled: SPA / reverse-proxy friendly when operators set RATE_LIMIT_RPS=0
+	if rps <= 0 {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	if burst < 1 {
+		burst = 1
+	}
+
 	var mu sync.Mutex
 	limiters := make(map[string]*rate.Limiter)
 
@@ -204,6 +213,10 @@ func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if rateLimitExempt(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			ip := clientIP(r)
 			if !getLimiter(ip).Allow() {
 				w.Header().Set("Retry-After", "1")
@@ -213,6 +226,27 @@ func RateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// rateLimitExempt reports paths that should never count against the per-IP budget.
+// Health/metrics probes and static UI assets are high-volume and low risk.
+func rateLimitExempt(path string) bool {
+	if path == "/api/v1/health" || path == "/metrics" {
+		return true
+	}
+	// Built-in web UI static assets (not API)
+	if strings.HasPrefix(path, "/assets/") ||
+		strings.HasPrefix(path, "/static/") ||
+		strings.HasSuffix(path, ".js") ||
+		strings.HasSuffix(path, ".css") ||
+		strings.HasSuffix(path, ".map") ||
+		strings.HasSuffix(path, ".ico") ||
+		strings.HasSuffix(path, ".png") ||
+		strings.HasSuffix(path, ".svg") ||
+		strings.HasSuffix(path, ".woff2") {
+		return true
+	}
+	return false
 }
 
 // ResponseTimeout wraps non-streaming handlers with a write deadline.
@@ -496,6 +530,10 @@ func EditorOrAbove(next http.Handler) http.Handler {
 	})
 }
 
+func queryAccessDeniedMessage() string {
+	return "admin access required for read-only queries"
+}
+
 // WriteAuth requires the write token for mutating HTTP methods (POST, PATCH, PUT, DELETE).
 // WriteAuth gates mutating HTTP methods (POST, PATCH, PUT, DELETE).
 // Read methods (GET, HEAD, OPTIONS) always pass through.
@@ -527,6 +565,10 @@ func WriteAuth(writeToken, authToken string, jwtEnabled bool) func(http.Handler)
 					return
 				}
 				// viewer role → forbidden
+				if r.URL.Path == "/api/v1/query" {
+					WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, queryAccessDeniedMessage())
+					return
+				}
 				WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, "insufficient permissions for write operations")
 				return
 			}
@@ -534,6 +576,10 @@ func WriteAuth(writeToken, authToken string, jwtEnabled bool) func(http.Handler)
 			// No role in context — if JWT is enabled, this means caller is
 			// unauthenticated or used a read-only token. Reject.
 			if jwtEnabled {
+				if r.URL.Path == "/api/v1/query" {
+					WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, queryAccessDeniedMessage())
+					return
+				}
 				WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, "write operations require login with editor or admin role")
 				return
 			}
@@ -557,19 +603,27 @@ func WriteAuth(writeToken, authToken string, jwtEnabled bool) func(http.Handler)
 
 // AuthRateLimiter limits login/setup attempts to 5 per minute per IP.
 // Separate from the global RateLimiter to avoid locking out legitimate API usage.
-func AuthRateLimiter() func(http.Handler) http.Handler {
+// The provided context controls the cleanup goroutine lifecycle — it exits when the
+// context is cancelled (e.g., on server shutdown).
+func AuthRateLimiter(ctx context.Context) func(http.Handler) http.Handler {
 	var mu sync.Mutex
 	limiters := make(map[string]*rate.Limiter)
-	// Clean stale entries every 5 minutes
+	ticker := time.NewTicker(5 * time.Minute)
 	go func() {
-		for range time.Tick(5 * time.Minute) {
-			mu.Lock()
-			for ip, lim := range limiters {
-				if lim.Tokens() >= 5 { // fully replenished = idle
-					delete(limiters, ip)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				mu.Lock()
+				for ip, lim := range limiters {
+					if lim.Tokens() >= 5 { // fully replenished = idle
+						delete(limiters, ip)
+					}
 				}
+				mu.Unlock()
+			case <-ctx.Done():
+				return
 			}
-			mu.Unlock()
 		}
 	}()
 
@@ -607,6 +661,25 @@ func AdminOnly(next http.Handler) http.Handler {
 				Str("role", ContextRole(r)).
 				Msg("admin access denied")
 			WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, "admin access required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// QueryAdminOnly keeps the raw SQL endpoint restricted to admin access when
+// auth is enabled, even though the SQL executes in a READ ONLY transaction.
+func QueryAdminOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if RoleLevel(ContextRole(r)) < RoleLevel("admin") {
+			log := hlog.FromRequest(r)
+			log.Warn().
+				Str("path", r.URL.Path).
+				Str("username", ContextUsername(r)).
+				Int("user_id", ContextUserID(r)).
+				Str("role", ContextRole(r)).
+				Msg("query access denied")
+			WriteErrorWithCode(w, http.StatusForbidden, ErrForbidden, queryAccessDeniedMessage())
 			return
 		}
 		next.ServeHTTP(w, r)
