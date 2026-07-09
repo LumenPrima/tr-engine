@@ -199,66 +199,51 @@ func main() {
 
 	// Transcription (optional — build provider based on STT_PROVIDER)
 	var transcribeOpts *transcribe.WorkerPoolOptions
-	var sttProvider transcribe.Provider
-	switch cfg.STTProvider {
-	case "whisper":
-		if cfg.WhisperURL != "" {
-			sttProvider = transcribe.NewWhisperClient(cfg.WhisperURL, cfg.WhisperModel, cfg.WhisperAPIKey, cfg.WhisperTimeout)
-		}
-	case "elevenlabs":
-		if cfg.ElevenLabsAPIKey == "" {
-			log.Fatal().Msg("STT_PROVIDER=elevenlabs requires ELEVENLABS_API_KEY")
-		}
-		sttProvider = transcribe.NewElevenLabsClient(cfg.ElevenLabsAPIKey, cfg.ElevenLabsModel, cfg.ElevenLabsKeyterms, cfg.WhisperTimeout)
-	case "deepinfra":
-		if cfg.DeepInfraAPIKey == "" {
-			log.Fatal().Msg("STT_PROVIDER=deepinfra requires DEEPINFRA_STT_API_KEY")
-		}
-		sttProvider = transcribe.NewDeepInfraClient(cfg.DeepInfraAPIKey, cfg.DeepInfraModel, cfg.WhisperTimeout)
-	case "imbe":
-		if cfg.IMBEAsrURL == "" {
-			log.Fatal().Msg("STT_PROVIDER=imbe requires IMBE_ASR_URL")
-		}
-		sttProvider = transcribe.NewIMBEClient(cfg.IMBEAsrURL, cfg.IMBEAsrModel, cfg.WhisperTimeout)
-	case "none", "":
-		// Transcription explicitly disabled
-	default:
-		log.Fatal().Str("provider", cfg.STTProvider).Msg("unknown STT_PROVIDER (valid: whisper, elevenlabs, deepinfra, imbe, none)")
+	var fallbackOpts *transcribe.WorkerPoolOptions
+	sttProvider, err := buildSTTProvider(cfg.STTProvider, cfg)
+	if err != nil {
+		log.Fatal().Err(err).Str("provider", cfg.STTProvider).Msg("invalid STT_PROVIDER")
 	}
 
 	if sttProvider != nil {
-		transcribeOpts = &transcribe.WorkerPoolOptions{
-			DB:              db,
-			AudioDir:        cfg.AudioDir,
-			TRAudioDir:      cfg.TRAudioDir,
-			Store:           store,
-			Provider:        sttProvider,
-			ProviderTimeout: cfg.WhisperTimeout,
-			Temperature:     cfg.WhisperTemperature,
-			Language:        cfg.WhisperLanguage,
-			Prompt:          cfg.WhisperPrompt,
-			Hotwords:        cfg.WhisperHotwords,
-			BeamSize:        cfg.WhisperBeamSize,
-			PreprocessAudio: cfg.PreprocessAudio,
-			Workers:         cfg.TranscribeWorkers,
-			QueueSize:       cfg.TranscribeQueueSize,
-			MinDuration:     cfg.TranscribeMinDuration,
-			MaxDuration:     cfg.TranscribeMaxDuration,
-			Log:             log.With().Str("component", "transcribe").Logger(),
-
-			RepetitionPenalty:             cfg.WhisperRepetitionPenalty,
-			NoRepeatNgramSize:             cfg.WhisperNoRepeatNgram,
-			ConditionOnPreviousText:       cfg.WhisperConditionOnPrev,
-			NoSpeechThreshold:             cfg.WhisperNoSpeechThreshold,
-			HallucinationSilenceThreshold: cfg.WhisperHallucinationThreshold,
-			MaxNewTokens:                  cfg.WhisperMaxTokens,
-			VadFilter:                     cfg.WhisperVadFilter,
-		}
+		transcribeOpts = newWorkerPoolOptions(cfg, db, store, sttProvider, log, "transcribe")
 		log.Info().
 			Str("provider", sttProvider.Name()).
 			Str("model", sttProvider.Model()).
 			Int("workers", cfg.TranscribeWorkers).
 			Msg("transcription enabled")
+	}
+
+	// Optional fallback provider (intended for STT_PROVIDER=imbe + audio STT for analog calls)
+	if strings.TrimSpace(cfg.STTFallbackProvider) != "" {
+		if sttProvider == nil {
+			log.Fatal().Msg("STT_FALLBACK_PROVIDER requires a primary STT_PROVIDER")
+		}
+		if strings.EqualFold(cfg.STTFallbackProvider, cfg.STTProvider) {
+			log.Fatal().Str("provider", cfg.STTFallbackProvider).Msg("STT_FALLBACK_PROVIDER must differ from STT_PROVIDER")
+		}
+		if !strings.EqualFold(sttProvider.Name(), "imbe") {
+			log.Fatal().
+				Str("primary", sttProvider.Name()).
+				Str("fallback", cfg.STTFallbackProvider).
+				Msg("STT_FALLBACK_PROVIDER is only supported when STT_PROVIDER=imbe")
+		}
+		fallbackProvider, ferr := buildSTTProvider(cfg.STTFallbackProvider, cfg)
+		if ferr != nil {
+			log.Fatal().Err(ferr).Str("provider", cfg.STTFallbackProvider).Msg("invalid STT_FALLBACK_PROVIDER")
+		}
+		if fallbackProvider == nil {
+			log.Fatal().Str("provider", cfg.STTFallbackProvider).Msg("STT_FALLBACK_PROVIDER resolved to no provider (check required credentials/URL)")
+		}
+		if strings.EqualFold(fallbackProvider.Name(), "imbe") {
+			log.Fatal().Msg("STT_FALLBACK_PROVIDER cannot be imbe (use it as STT_PROVIDER instead)")
+		}
+		fallbackOpts = newWorkerPoolOptions(cfg, db, store, fallbackProvider, log, "transcribe-fallback")
+		log.Info().
+			Str("primary", sttProvider.Name()).
+			Str("fallback", fallbackProvider.Name()).
+			Str("fallback_model", fallbackProvider.Model()).
+			Msg("dual-provider transcription enabled (.dvcf→imbe, audio→fallback)")
 	}
 
 	// Ingest Pipeline
@@ -272,6 +257,7 @@ func main() {
 		MergeP25Systems:   cfg.MergeP25Systems,
 		MQTTInstanceMap:   cfg.MQTTInstanceMap,
 		TranscribeOpts:    transcribeOpts,
+		TranscribeFallbackOpts: fallbackOpts,
 		TranscribeInclude: cfg.TranscribeIncludeTGIDs,
 		TranscribeExclude: cfg.TranscribeExcludeTGIDs,
 		RetentionRawMessages:      cfg.RetentionRawMessages,
@@ -451,6 +437,7 @@ func main() {
 		OnSystemMerge:  pipeline.RewriteSystemID,
 		TGCSVPaths:     tgCSVPaths,
 		UnitCSVPaths:   unitCSVPaths,
+		ShutdownCtx:    ctx,
 		UpdateCheckURL: func() string { if cfg.UpdateCheck { return cfg.UpdateCheckURL }; return "" }(),
 		IngestModes:    strings.Join(ingestModes, ","),
 		IsDocker:       isDocker,
@@ -488,4 +475,67 @@ func main() {
 	}
 
 	log.Info().Msg("tr-engine stopped")
+}
+
+// buildSTTProvider constructs an STT provider from a name and config.
+// Returns (nil, nil) when the provider is "none"/empty or when optional
+// whisper is selected without WHISPER_URL (transcription disabled).
+func buildSTTProvider(name string, cfg *config.Config) (transcribe.Provider, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "whisper":
+		if cfg.WhisperURL == "" {
+			return nil, nil
+		}
+		return transcribe.NewWhisperClient(cfg.WhisperURL, cfg.WhisperModel, cfg.WhisperAPIKey, cfg.WhisperTimeout), nil
+	case "elevenlabs":
+		if cfg.ElevenLabsAPIKey == "" {
+			return nil, fmt.Errorf("elevenlabs requires ELEVENLABS_API_KEY")
+		}
+		return transcribe.NewElevenLabsClient(cfg.ElevenLabsAPIKey, cfg.ElevenLabsModel, cfg.ElevenLabsKeyterms, cfg.WhisperTimeout), nil
+	case "deepinfra":
+		if cfg.DeepInfraAPIKey == "" {
+			return nil, fmt.Errorf("deepinfra requires DEEPINFRA_STT_API_KEY")
+		}
+		return transcribe.NewDeepInfraClient(cfg.DeepInfraAPIKey, cfg.DeepInfraModel, cfg.WhisperTimeout), nil
+	case "imbe":
+		if cfg.IMBEAsrURL == "" {
+			return nil, fmt.Errorf("imbe requires IMBE_ASR_URL")
+		}
+		return transcribe.NewIMBEClient(cfg.IMBEAsrURL, cfg.IMBEAsrModel, cfg.WhisperTimeout), nil
+	case "none", "":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unknown provider %q (valid: whisper, elevenlabs, deepinfra, imbe, none)", name)
+	}
+}
+
+// newWorkerPoolOptions builds WorkerPoolOptions for a given provider.
+func newWorkerPoolOptions(cfg *config.Config, db *database.DB, store storage.AudioStore, provider transcribe.Provider, log zerolog.Logger, component string) *transcribe.WorkerPoolOptions {
+	return &transcribe.WorkerPoolOptions{
+		DB:              db,
+		AudioDir:        cfg.AudioDir,
+		TRAudioDir:      cfg.TRAudioDir,
+		Store:           store,
+		Provider:        provider,
+		ProviderTimeout: cfg.WhisperTimeout,
+		Temperature:     cfg.WhisperTemperature,
+		Language:        cfg.WhisperLanguage,
+		Prompt:          cfg.WhisperPrompt,
+		Hotwords:        cfg.WhisperHotwords,
+		BeamSize:        cfg.WhisperBeamSize,
+		PreprocessAudio: cfg.PreprocessAudio,
+		Workers:         cfg.TranscribeWorkers,
+		QueueSize:       cfg.TranscribeQueueSize,
+		MinDuration:     cfg.TranscribeMinDuration,
+		MaxDuration:     cfg.TranscribeMaxDuration,
+		Log:             log.With().Str("component", component).Logger(),
+
+		RepetitionPenalty:             cfg.WhisperRepetitionPenalty,
+		NoRepeatNgramSize:             cfg.WhisperNoRepeatNgram,
+		ConditionOnPreviousText:       cfg.WhisperConditionOnPrev,
+		NoSpeechThreshold:             cfg.WhisperNoSpeechThreshold,
+		HallucinationSilenceThreshold: cfg.WhisperHallucinationThreshold,
+		MaxNewTokens:                  cfg.WhisperMaxTokens,
+		VadFilter:                     cfg.WhisperVadFilter,
+	}
 }

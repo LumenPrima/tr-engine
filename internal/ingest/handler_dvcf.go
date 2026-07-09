@@ -56,7 +56,7 @@ func (p *Pipeline) handleDvcf(payload []byte) error {
 		Str("sys_name", meta.ShortName).
 		Msg("dvcf file saved")
 
-	// Enqueue transcription if IMBE provider is active
+	// Enqueue transcription if IMBE provider is active (primary handles .dvcf).
 	if !p.isIMBEProvider() {
 		return nil
 	}
@@ -74,7 +74,8 @@ func (p *Pipeline) handleDvcf(payload []byte) error {
 	}
 
 	// Check duration and talkgroup filters
-	if call.Duration < float32(p.transcriber.MinDuration()) || call.Duration > float32(p.transcriber.MaxDuration()) {
+	minDur, maxDur := p.transcriptionDurationBounds()
+	if call.Duration < float32(minDur) || call.Duration > float32(maxDur) {
 		return nil
 	}
 	if !p.shouldTranscribeTG(call.SystemID, call.Tgid) {
@@ -95,7 +96,7 @@ func (p *Pipeline) handleDvcf(payload []byte) error {
 		TgTag:         call.TgTag,
 		TgGroup:       call.TgGroup,
 	}
-	if !p.transcriber.Enqueue(job) {
+	if !p.enqueueJob(job) {
 		p.log.Warn().Int64("call_id", call.CallID).Msg("dvcf: transcription queue full, skipping")
 	}
 

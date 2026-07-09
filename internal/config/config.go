@@ -72,16 +72,17 @@ type Config struct {
 	RawExcludeTopics string `env:"RAW_EXCLUDE_TOPICS"`
 
 	// Transcription (optional — disabled when no STT provider is configured)
-	STTProvider        string `env:"STT_PROVIDER" envDefault:"whisper"`
-	WhisperURL         string        `env:"WHISPER_URL"`
-	WhisperAPIKey      string        `env:"WHISPER_API_KEY"`
-	WhisperModel       string        `env:"WHISPER_MODEL"`
-	WhisperTimeout     time.Duration `env:"WHISPER_TIMEOUT" envDefault:"30s"`
-	WhisperTemperature float64       `env:"WHISPER_TEMPERATURE" envDefault:"0.1"`
-	WhisperLanguage    string        `env:"WHISPER_LANGUAGE" envDefault:"en"`
-	WhisperPrompt      string        `env:"WHISPER_PROMPT"`
-	WhisperHotwords    string        `env:"WHISPER_HOTWORDS"`
-	WhisperBeamSize    int           `env:"WHISPER_BEAM_SIZE" envDefault:"0"`
+	STTProvider         string `env:"STT_PROVIDER" envDefault:"whisper"`
+	STTFallbackProvider string `env:"STT_FALLBACK_PROVIDER"` // e.g. "whisper" when primary is "imbe"
+	WhisperURL          string        `env:"WHISPER_URL"`
+	WhisperAPIKey       string        `env:"WHISPER_API_KEY"`
+	WhisperModel        string        `env:"WHISPER_MODEL"`
+	WhisperTimeout      time.Duration `env:"WHISPER_TIMEOUT" envDefault:"30s"`
+	WhisperTemperature  float64       `env:"WHISPER_TEMPERATURE" envDefault:"0.1"`
+	WhisperLanguage     string        `env:"WHISPER_LANGUAGE" envDefault:"en"`
+	WhisperPrompt       string        `env:"WHISPER_PROMPT"`
+	WhisperHotwords     string        `env:"WHISPER_HOTWORDS"`
+	WhisperBeamSize     int           `env:"WHISPER_BEAM_SIZE" envDefault:"0"`
 
 	// Anti-hallucination parameters (require custom whisper-server or compatible endpoint)
 	WhisperRepetitionPenalty          float64 `env:"WHISPER_REPETITION_PENALTY" envDefault:"0"`
@@ -102,6 +103,7 @@ type Config struct {
 	DeepInfraModel  string `env:"DEEPINFRA_STT_MODEL" envDefault:"openai/whisper-large-v3-turbo"`
 
 	// IMBE ASR (alternative to Whisper; used when STT_PROVIDER=imbe)
+	// Pair with STT_FALLBACK_PROVIDER for analog/conventional calls that lack .dvcf.
 	IMBEAsrURL   string `env:"IMBE_ASR_URL"`
 	IMBEAsrModel string `env:"IMBE_ASR_MODEL" envDefault:"imbe"`
 

@@ -2,7 +2,6 @@ package ingest
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,11 +49,12 @@ type BackfillJobStatus struct {
 }
 
 // BackfillManager processes a queue of backfill jobs sequentially,
-// drip-feeding untranscribed calls into the transcription worker pool.
+// drip-feeding untranscribed calls into the transcription worker pool(s).
 type BackfillManager struct {
-	db          *database.DB
-	transcriber *transcribe.WorkerPool
-	log         zerolog.Logger
+	db         *database.DB
+	primary    *transcribe.WorkerPool
+	fallback   *transcribe.WorkerPool // optional dual-provider fallback
+	log        zerolog.Logger
 	minDuration float64
 	maxDuration float64
 
@@ -69,13 +69,15 @@ type BackfillManager struct {
 }
 
 // NewBackfillManager creates a new backfill manager.
-func NewBackfillManager(ctx context.Context, db *database.DB, transcriber *transcribe.WorkerPool, log zerolog.Logger) *BackfillManager {
+// fallback may be nil when dual-provider transcription is not configured.
+func NewBackfillManager(ctx context.Context, db *database.DB, primary, fallback *transcribe.WorkerPool, log zerolog.Logger) *BackfillManager {
 	return &BackfillManager{
 		db:          db,
-		transcriber: transcriber,
+		primary:     primary,
+		fallback:    fallback,
 		log:         log.With().Str("component", "backfill").Logger(),
-		minDuration: transcriber.MinDuration(),
-		maxDuration: transcriber.MaxDuration(),
+		minDuration: primary.MinDuration(),
+		maxDuration: primary.MaxDuration(),
 		submit:      make(chan struct{}, 1),
 		ctx:         ctx,
 	}
@@ -281,9 +283,10 @@ func (bm *BackfillManager) processJob(ctx context.Context, job *BackfillJob) {
 	}
 }
 
-// waitForQueueRoom blocks until the transcription queue has <= 1 pending jobs.
+// waitForQueueRoom blocks until the primary transcription queue has <= 1 pending jobs.
+// Fallback queue depth is not a gate — drip-feed is paced by the primary pool.
 func (bm *BackfillManager) waitForQueueRoom(ctx context.Context) {
-	if bm.transcriber.Stats().Pending <= 1 {
+	if bm.pendingJobs() <= 1 {
 		return
 	}
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -293,11 +296,19 @@ func (bm *BackfillManager) waitForQueueRoom(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if bm.transcriber.Stats().Pending <= 1 {
+			if bm.pendingJobs() <= 1 {
 				return
 			}
 		}
 	}
+}
+
+func (bm *BackfillManager) pendingJobs() int {
+	n := bm.primary.Stats().Pending
+	if bm.fallback != nil {
+		n += bm.fallback.Stats().Pending
+	}
+	return n
 }
 
 func (bm *BackfillManager) enqueueCall(ctx context.Context, callID int64) bool {
@@ -309,15 +320,16 @@ func (bm *BackfillManager) enqueueCall(ctx context.Context, callID int64) bool {
 		bm.log.Warn().Err(err).Int64("call_id", callID).Msg("backfill: failed to load call")
 		return false
 	}
-	if backfillShouldSkipForProvider(bm.transcriber.ProviderName(), c.AudioFilePath) {
+	pool := routeTranscriber(bm.primary, bm.fallback, c.AudioFilePath)
+	if pool == nil {
 		bm.log.Debug().
 			Int64("call_id", callID).
-			Str("provider", bm.transcriber.ProviderName()).
+			Str("provider", bm.primary.ProviderName()).
 			Str("audio_file_path", c.AudioFilePath).
 			Msg("backfill: skipping call without dvcf file for IMBE provider")
 		return false
 	}
-	return bm.transcriber.Enqueue(transcribe.Job{
+	return pool.Enqueue(transcribe.Job{
 		CallID:        c.CallID,
 		CallStartTime: c.StartTime,
 		SystemID:      c.SystemID,
@@ -333,8 +345,11 @@ func (bm *BackfillManager) enqueueCall(ctx context.Context, callID int64) bool {
 	})
 }
 
+// backfillShouldSkipForProvider reports whether a call should be skipped for
+// IMBE-only mode (no fallback). Kept for tests and call sites that need the
+// pure predicate without pool objects.
 func backfillShouldSkipForProvider(providerName, audioFilePath string) bool {
-	return strings.EqualFold(providerName, "imbe") && !strings.EqualFold(filepath.Ext(audioFilePath), ".dvcf")
+	return strings.EqualFold(providerName, "imbe") && !isDvcfPath(audioFilePath)
 }
 
 func (bm *BackfillManager) toDBFilter(f BackfillFilters) database.BackfillFilter {

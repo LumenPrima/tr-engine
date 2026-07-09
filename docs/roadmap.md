@@ -31,6 +31,7 @@ Items that must ship before tr-engine and tr-dashboard can be tagged 1.0.
 **Repo:** tr-engine
 **Why:** IMBE provider only handles P25. Analog/conventional calls get no transcription when `STT_PROVIDER=imbe`. Any user with mixed systems hits this immediately.
 **Scope:** Two worker pools (IMBE + fallback), routing by presence of .dvcf file. Config: `STT_PROVIDER=imbe`, `STT_FALLBACK_PROVIDER=whisper`.
+**Status:** Implemented — set `STT_FALLBACK_PROVIDER` alongside `STT_PROVIDER=imbe`.
 **Depends on:** Nothing — self-contained in tr-engine.
 
 ### Backfill manager IMBE guard

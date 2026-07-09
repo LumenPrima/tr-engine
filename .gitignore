@@ -47,5 +47,9 @@ debug-receiver
 debug-receiver-linux
 .env.local
 bin/
-tr-engine
+/tr-engine
 tr-engine-test
+
+# Playwright test deps and results
+node_modules/
+test-results/

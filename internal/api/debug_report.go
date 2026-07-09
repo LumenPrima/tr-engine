@@ -79,6 +79,7 @@ func sanitizeConfig(cfg *config.Config) map[string]any {
 
 		// Transcription: Whisper
 		"STTProvider":                     cfg.STTProvider,
+		"STTFallbackProvider":             cfg.STTFallbackProvider,
 		"WhisperURL":                      sanitizeURL(cfg.WhisperURL),
 		"WhisperAPIKey":                   redact(cfg.WhisperAPIKey),
 		"WhisperModel":                    cfg.WhisperModel,

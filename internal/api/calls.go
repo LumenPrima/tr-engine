@@ -1,11 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/snarg/tr-engine/internal/audio"
@@ -191,20 +194,9 @@ func (h *CallsHandler) GetCallAudio(w http.ResponseWriter, r *http.Request) {
 	if audioPath != "" && h.store != nil {
 		if rc, openErr := h.store.Open(r.Context(), audioPath); openErr == nil {
 			defer rc.Close()
-			ext := strings.ToLower(filepath.Ext(audioPath))
-			contentTypes := map[string]string{
-				".m4a": "audio/mp4",
-				".mp3": "audio/mpeg",
-				".wav": "audio/wav",
-				".ogg": "audio/ogg",
+			if !h.serveOpenAudio(w, r, rc, audioPath, id) {
+				return
 			}
-			if ct, ok := contentTypes[ext]; ok {
-				w.Header().Set("Content-Type", ct)
-			} else {
-				w.Header().Set("Content-Type", "application/octet-stream")
-			}
-			w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%d%s"`, id, ext))
-			io.Copy(w, rc)
 			return
 		}
 	}
@@ -220,6 +212,39 @@ func (h *CallsHandler) GetCallAudio(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CallsHandler) serveLocalFile(w http.ResponseWriter, r *http.Request, path string, callID int64) {
+	file, err := os.Open(path)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, "audio file not found on disk")
+		return
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		WriteError(w, http.StatusNotFound, "audio file not found on disk")
+		return
+	}
+
+	h.serveAudioContent(w, r, file, path, info.ModTime(), callID)
+}
+
+func (h *CallsHandler) serveOpenAudio(w http.ResponseWriter, r *http.Request, rc io.ReadCloser, path string, callID int64) bool {
+	if seeker, ok := rc.(io.ReadSeeker); ok {
+		h.serveAudioContent(w, r, seeker, path, time.Time{}, callID)
+		return true
+	}
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "failed to read audio file")
+		return false
+	}
+
+	h.serveAudioContent(w, r, bytes.NewReader(data), path, time.Time{}, callID)
+	return true
+}
+
+func (h *CallsHandler) serveAudioContent(w http.ResponseWriter, r *http.Request, content io.ReadSeeker, path string, modTime time.Time, callID int64) {
 	ext := strings.ToLower(filepath.Ext(path))
 	contentTypes := map[string]string{
 		".m4a": "audio/mp4",
@@ -233,7 +258,7 @@ func (h *CallsHandler) serveLocalFile(w http.ResponseWriter, r *http.Request, pa
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%d%s"`, callID, ext))
-	http.ServeFile(w, r, path)
+	http.ServeContent(w, r, fmt.Sprintf("%d%s", callID, ext), modTime, content)
 }
 
 // resolveAudioFile finds the audio file on disk.
