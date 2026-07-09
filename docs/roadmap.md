@@ -35,9 +35,8 @@ Items that must ship before tr-engine and tr-dashboard can be tagged 1.0.
 
 ### Backfill manager IMBE guard
 **Repo:** tr-engine
-**Why:** Backfill feeds old calls (no .dvcf files) to the IMBE provider, causing log spam and wasted cycles. Confirmed on eddie.
-**Scope:** Small fix — check provider name in `backfill.go:enqueueCall()`, skip calls without .dvcf when IMBE is active.
-**Depends on:** Nothing.
+**Status:** Done — `backfillShouldSkipForProvider` skips non-`.dvcf` paths when the active provider is IMBE (unit-tested).
+**Why:** Backfill previously fed old audio-only calls to the IMBE provider, causing log spam and wasted cycles.
 
 ### Test coverage gaps
 **Repo:** tr-engine

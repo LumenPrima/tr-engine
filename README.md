@@ -122,9 +122,11 @@ The `.env` file is auto-loaded from the current directory on startup. See `sampl
 | `AUTH_TOKEN` | No | | Shared API token (token mode) or public read token (full mode) |
 | `ADMIN_PASSWORD` | No | | Enables JWT login, seeds admin user on first run |
 | `CORS_ORIGINS` | No | `*` | Comma-separated allowed CORS origins |
-| `RATE_LIMIT_RPS` | No | `20` | Per-IP rate limit (requests/second) |
+| `RATE_LIMIT_RPS` | No | `20` | Per-IP rate limit (requests/second). Raise for SPA dashboards if you see 429s |
+| `RATE_LIMIT_BURST` | No | `40` | Per-IP rate limit burst size |
 | `AUDIO_DIR` | No | `./audio` | Audio file storage directory |
-| `STT_PROVIDER` | No | `whisper` | Transcription provider: `whisper`, `elevenlabs`, `deepinfra`, `imbe` |
+| `STT_PROVIDER` | No | `whisper` | Transcription provider: `whisper`, `elevenlabs`, `deepinfra`, `imbe`, `none` |
+| `IMBE_ASR_URL` | No | | Required when `STT_PROVIDER=imbe` (IMBE ASR HTTP base URL) |
 | `STREAM_LISTEN` | No | | UDP listen address for live audio (e.g., `:9123`) |
 | `LOG_LEVEL` | No | `info` | Log level |
 
@@ -188,9 +190,10 @@ trunk-recorder  ──MQTT──>  broker  ──MQTT──>  tr-engine  ──R
 `GET /api/v1/events/stream` pushes filtered events over SSE.
 
 - **Filter params** (all optional, AND-ed): `systems`, `sites`, `tgids`, `units`, `types`, `emergency_only`
-- **8 event types**: `call_start`, `call_update`, `call_end`, `unit_event`, `recorder_update`, `rate_update`, `trunking_message`, `console`
-- **Compound type syntax**: `types=unit_event:call` filters by subtype
-- **Reconnect**: `Last-Event-ID` header for gapless recovery (60s server-side buffer)
+- **Event types currently emitted**: `call_start`, `call_end`, `unit_event`, `recorder_update`, `rate_update`, `trunking_message`, `console`, `transcription`
+- **Compound type syntax**: `types=unit_event:call` filters by unit-event subtype
+- **Reconnect**: `Last-Event-ID` header for gapless recovery (server-side ring buffer; if the ID has fallen out of the buffer, all buffered events are replayed)
+- **Note:** `call_update` is reserved in the OpenAPI enum for client compatibility but is not emitted by the current ingest path
 
 ## Live Audio Streaming
 
@@ -204,16 +207,17 @@ trunk-recorder  ──MQTT──>  broker  ──MQTT──>  tr-engine  ──R
 
 ## Transcription
 
-Pluggable speech-to-text with four providers:
+Pluggable speech-to-text. Set `STT_PROVIDER` (default `whisper`). Transcription is disabled when the provider is `none`/`""`, or when `whisper` is selected but `WHISPER_URL` is empty.
 
 | Provider | Config | Notes |
 |----------|--------|-------|
 | Whisper | `STT_PROVIDER=whisper` + `WHISPER_URL` | Self-hosted or cloud Whisper-compatible API |
 | ElevenLabs | `STT_PROVIDER=elevenlabs` + `ELEVENLABS_API_KEY` | ElevenLabs Scribe API |
 | DeepInfra | `STT_PROVIDER=deepinfra` + `DEEPINFRA_STT_API_KEY` | Hosted Whisper models |
-| IMBE ASR | `STT_PROVIDER=imbe` + `IMBE_ASR_URL` | Transcribes directly from P25 IMBE codec frames via DVCF |
+| IMBE ASR | `STT_PROVIDER=imbe` + `IMBE_ASR_URL` | P25 only — needs [tr-plugin-dvcf](https://github.com/trunk-reporter/tr-plugin-dvcf). Analog calls get **no** transcription in this mode |
+| None | `STT_PROVIDER=none` | Explicitly disable transcription |
 
-Features: configurable worker pool, queue size, duration filters, anti-hallucination parameters, `provider_ms` performance tracking, talkgroup include/exclude filtering.
+Features: worker pool, queue size, duration filters, anti-hallucination parameters (Whisper), `provider_ms` performance tracking, talkgroup include/exclude filtering, backfill API. Completed jobs publish an SSE `transcription` event.
 
 ## API
 

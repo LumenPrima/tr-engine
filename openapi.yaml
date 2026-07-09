@@ -2921,18 +2921,20 @@ paths:
         these talkgroups." To change filters, disconnect and reconnect
         with new parameters — SSE `Last-Event-ID` provides gapless recovery.
 
-        **Event types:**
+        **Event types currently emitted:**
 
         | Event | Description | Payload |
         |-------|-------------|---------|
-        | `call_start` | New call recording started | Call object (partial — no audio/transcription yet) |
-        | `call_update` | Call updated (new transmission, freq change) | Call object (partial delta) |
-        | `call_end` | Call recording completed | Full Call object with audio_url |
-        | `unit_event` | Unit lifecycle event | UnitEvent object |
-        | `recorder_update` | Recorder state changed | Recorder object |
-        | `rate_update` | Decode rate update | DecodeRate object |
-        | `trunking_message` | P25 control channel message | TrunkingMessage object |
-        | `console` | TR console log message | ConsoleMessage object |
+        | `call_start` | New call recording started | Call fields (partial — no audio/transcription yet) |
+        | `call_end` | Call recording completed | Call fields including duration, audio path |
+        | `unit_event` | Unit lifecycle event | UnitEvent fields (subtype in `type`/`event`) |
+        | `recorder_update` | Recorder state changed | Recorder fields |
+        | `rate_update` | Decode rate update | DecodeRate fields |
+        | `trunking_message` | P25 control channel message | TrunkingMessage fields |
+        | `console` | TR console log message | ConsoleMessage fields |
+        | `transcription` | STT job completed | call_id, text, timing, model |
+
+        `call_update` is reserved for client compatibility and is **not** currently emitted.
 
       tags: [events]
       parameters:
@@ -2972,9 +2974,10 @@ paths:
           in: query
           description: |
             Comma-separated event types to subscribe to. Omit for all
-            event types. Valid values: `call_start`, `call_update`,
-            `call_end`, `unit_event`, `recorder_update`, `rate_update`,
-            `trunking_message`, `console`.
+            event types. Valid values: `call_start`, `call_end`,
+            `unit_event`, `recorder_update`, `rate_update`,
+            `trunking_message`, `console`, `transcription`.
+            (`call_update` is accepted for compatibility but is not emitted.)
 
             Supports compound syntax with `:` to filter on event
             subtypes. For example, `unit_event:call` matches only unit
@@ -6256,23 +6259,29 @@ components:
       type: string
       enum:
         - call_start
-        - call_update
         - call_end
         - unit_event
         - recorder_update
         - rate_update
         - trunking_message
         - console
+        - transcription
+        - call_update
       description: |
-        SSE event types pushed to clients:
+        SSE event types pushed to clients.
+
+        Currently emitted by tr-engine:
         - **call_start**: new call recording began
-        - **call_update**: call updated (new transmission, freq change)
         - **call_end**: call recording completed, audio available
-        - **unit_event**: unit lifecycle event (on/off/join/call/end/signal/etc.)
-        - **recorder_update**: recorder hardware state changed
-        - **rate_update**: decode rate update from a system
+        - **unit_event**: unit lifecycle event (on/off/join/call/end/signal/call_alert/etc.)
+        - **recorder_update**: recorder hardware state snapshot
+        - **rate_update**: decode rate sample from a system
         - **trunking_message**: P25 control channel message
-        - **console**: trunk-recorder console log message
+        - **console**: trunk-recorder console log line
+        - **transcription**: STT job completed for a call
+
+        Reserved (not currently emitted):
+        - **call_update**: historical/client-compat only; ingest does not publish mid-call updates
 
     SSEEvent:
       type: object
@@ -6297,9 +6306,10 @@ components:
 
         The `data` field contains the **domain object directly**, not a
         wrapper. Its structure depends on the event type:
-        - `call_start` / `call_update` / `call_end`: Call object
+        - `call_start` / `call_end`: Call object (and related call fields)
         - `unit_event`: UnitEvent object
         - `recorder_update`: Recorder object
+        - `transcription`: transcription result payload (call_id, text, timing)
         - `rate_update`: DecodeRate object
         - `trunking_message`: TrunkingMessage object
         - `console`: ConsoleMessage object

@@ -116,10 +116,13 @@ The index page auto-discovers all available dashboards. Key pages to explore fir
 
 | Page | What it shows |
 |------|---------------|
-| **OmniTrunker** | Real-time system overview -- active calls, recorders, decode rates |
+| **OmniTrunker** | Real-time system overview — active calls, recorders, decode rates |
 | **Event Horizon** | Logarithmic timeline where events drift from "now" into the past |
 | **Call History** | Searchable call log with inline audio playback and transmission timeline |
 | **Live Events** | Raw SSE event stream with type filtering |
+| **Talkgroup Research** | Talkgroup browser with activity stats and encryption indicators |
+
+Auth starts in **open mode** (no tokens required). Before exposing the port beyond your LAN, set `ADMIN_PASSWORD` (and optionally `AUTH_TOKEN`) — see [Auth Migration Guide](./migrating-auth.md).
 
 Systems, sites, talkgroups, and units auto-populate as data flows in. There is no manual configuration. Open the **OmniTrunker** page to see your radio system appear in real time, or browse **Call History** to replay recordings with their metadata.
 

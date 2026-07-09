@@ -657,7 +657,7 @@ func (p *Pipeline) handleCallsActive(payload []byte) error {
 	snapshot := p.activeCalls.All()
 	for trCallID, entry := range snapshot {
 		if activeCall, ok := activeIDs[trCallID]; ok {
-			// Still active — update elapsed duration for call_update events
+			// Still active — refresh elapsed duration on the active-call cache
 			if activeCall.Elapsed > 0 {
 				elapsed := float32(activeCall.Elapsed)
 				stopTime := entry.StartTime.Add(time.Duration(activeCall.Elapsed) * time.Second)

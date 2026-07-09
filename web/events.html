@@ -175,7 +175,7 @@ let lastEventId = '';
 let totalCount = 0;
 let everConnected = false;
 
-const EVENT_TYPES = ['call_start', 'call_end', 'call_update', 'unit_event', 'recorder_update', 'rate_update', 'trunking_message', 'console'];
+const EVENT_TYPES = ['call_start', 'call_end', 'unit_event', 'recorder_update', 'rate_update', 'trunking_message', 'console', 'transcription'];
 
 function getSelectedTypes() {
   const checked = new Set(Array.from(document.querySelectorAll('.filters input:checked')).map(cb => cb.value));

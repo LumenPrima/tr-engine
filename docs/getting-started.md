@@ -214,13 +214,19 @@ AUDIO_DIR=./audio
 # receiving it over MQTT, set TR_AUDIO_DIR to TR's audioBaseDir:
 # TR_AUDIO_DIR=/path/to/trunk-recorder/audio
 
-# Authentication
-# AUTH_TOKEN=my-secret           # token-mode shared API token
-# ADMIN_PASSWORD=change-me       # enables full auth with JWT login and API keys
-# WRITE_TOKEN=my-write-secret    # deprecated legacy write token
+# Authentication (three modes — pick one configuration)
+# Open (default): leave AUTH_TOKEN and ADMIN_PASSWORD unset
+# AUTH_TOKEN=my-secret           # token mode: shared API token for all access
+# ADMIN_PASSWORD=change-me       # full mode: JWT login + roles + API keys
+# AUTH_TOKEN=public-read-token   # optional with ADMIN_PASSWORD: public read token
+# WRITE_TOKEN=my-write-secret    # deprecated legacy write token — prefer ADMIN_PASSWORD + API keys
+
+# Optional STT (disabled until a provider is fully configured)
+# STT_PROVIDER=whisper           # whisper | elevenlabs | deepinfra | imbe | none
+# WHISPER_URL=http://localhost:8000/v1/audio/transcriptions
 ```
 
-> **Public-facing instances:** Set `ADMIN_PASSWORD` to enable full auth with user login, roles, and API keys. Use API keys (`tre_...`) for upload plugins and scripts. `WRITE_TOKEN` is still accepted for legacy deployments, but it is deprecated.
+> **Public-facing instances:** Set `ADMIN_PASSWORD` to enable full auth with user login, roles, and API keys. Optionally set `AUTH_TOKEN` as a public read token returned by `/api/v1/auth-init`. Use API keys (`tre_...`) for upload plugins and scripts. `WRITE_TOKEN` is still accepted for legacy deployments, but it is deprecated. See [Auth Migration Guide](./migrating-auth.md).
 
 `MQTT_TOPICS` must match the topic prefixes from your TR plugin config. If all your TR topics share a common root (e.g. `topic: "trengine/feeds"`, `unit_topic: "trengine/units"`), a single wildcard like `trengine/#` covers everything. If they differ, comma-separate them: `MQTT_TOPICS=prefix1/#,prefix2/#`.
 
