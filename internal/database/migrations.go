@@ -113,6 +113,11 @@ ALTER TABLE systems ADD CONSTRAINT systems_system_type_check
 			WHERE table_name = 'users' AND column_name = 'display_name')`,
 	},
 	{
+		name:  "add refresh_token_jti to users",
+		sql:   `ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token_jti TEXT`,
+		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='refresh_token_jti')`,
+	},
+	{
 		name: "create config_overrides table",
 		sql: `CREATE TABLE IF NOT EXISTS config_overrides (
 			key        text PRIMARY KEY,
@@ -138,6 +143,11 @@ ALTER TABLE systems ADD CONSTRAINT systems_system_type_check
 		CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash)`,
 		check: `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'api_keys')`,
+	},
+	{
+		name:  "add talkgroups.encrypted_count_30d",
+		sql:   `ALTER TABLE talkgroups ADD COLUMN IF NOT EXISTS encrypted_count_30d int NOT NULL DEFAULT 0`,
+		check: `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'talkgroups' AND column_name = 'encrypted_count_30d')`,
 	},
 }
 

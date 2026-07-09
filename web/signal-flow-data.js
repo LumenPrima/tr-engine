@@ -193,8 +193,19 @@ async function query(apiBase, sql, params, limit = 10000) {
     body: JSON.stringify({ sql, params, limit }),
   });
   if (!resp.ok) {
-    if (resp.status === 403) return { columns: [], rows: [] }; // /query disabled — degrade gracefully
-    throw new Error(`Query failed: ${resp.status} ${await resp.text()}`);
+    let payload = null;
+    try {
+      payload = await resp.json();
+    } catch {
+      payload = null;
+    }
+
+    if (resp.status === 403) {
+      throw new Error(payload?.error || 'Admin access required for read-only queries');
+    }
+
+    const detail = payload?.error || payload?.detail || resp.statusText || 'Request failed';
+    throw new Error(`Query failed: ${resp.status} ${detail}`);
   }
   return resp.json();
 }

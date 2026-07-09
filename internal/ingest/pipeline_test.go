@@ -398,3 +398,71 @@ func TestUnitDedupKeyEquality(t *testing.T) {
 		t.Error("different SystemID should not be equal")
 	}
 }
+
+func TestRewriteInstanceID(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload []byte
+		newID   string
+		want    map[string]any
+	}{
+		{
+			name:    "simple_top_level",
+			payload: []byte(`{"instance_id": "old", "other": "field"}`),
+			newID:   "new",
+			want:    map[string]any{"instance_id": "new", "other": "field"},
+		},
+		{
+			name:    "nested_instance_id",
+			payload: []byte(`{"instance_id": "old", "signal": {"instance_id": "old"}}`),
+			newID:   "new",
+			want:    map[string]any{"instance_id": "new", "signal": map[string]any{"instance_id": "new"}},
+		},
+		{
+			name:    "no_change_when_already_matched",
+			payload: []byte(`{"instance_id": "same", "other": "field"}`),
+			newID:   "same",
+			want:    map[string]any{"instance_id": "same", "other": "field"},
+		},
+		{
+			name:    "invalid_json_unchanged",
+			payload: []byte(`not valid json`),
+			newID:   "new",
+			want:    nil,
+		},
+		{
+			name:    "my_instance_id_not_matched",
+			payload: []byte(`{"my_instance_id": "old", "instance_id": "tr-1"}`),
+			newID:   "tr-2",
+			want:    map[string]any{"my_instance_id": "old", "instance_id": "tr-2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rewriteInstanceID(tt.payload, tt.newID)
+			if tt.want == nil {
+				if string(got) != string(tt.payload) {
+					t.Errorf("rewriteInstanceID(%q, %q) = %q, want unchanged %q",
+						string(tt.payload), tt.newID, string(got), string(tt.payload))
+				}
+				return
+			}
+			var gotObj map[string]any
+			if err := json.Unmarshal(got, &gotObj); err != nil {
+				t.Fatalf("result is not valid JSON: %v", err)
+			}
+			if gotObj["instance_id"] != tt.want["instance_id"] {
+				t.Errorf("instance_id = %v, want %v", gotObj["instance_id"], tt.want["instance_id"])
+			}
+			if nested, ok := gotObj["signal"].(map[string]any); ok {
+				if nested["instance_id"] != tt.want["signal"].(map[string]any)["instance_id"] {
+					t.Errorf("signal.instance_id = %v, want %v", nested["instance_id"], tt.want["signal"].(map[string]any)["instance_id"])
+				}
+			}
+			if gotObj["my_instance_id"] != tt.want["my_instance_id"] {
+				t.Errorf("my_instance_id = %v, want %v (should not change)", gotObj["my_instance_id"], tt.want["my_instance_id"])
+			}
+		})
+	}
+}

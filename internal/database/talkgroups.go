@@ -23,23 +23,24 @@ type TalkgroupFilter struct {
 
 // TalkgroupAPI represents a talkgroup for API responses.
 type TalkgroupAPI struct {
-	SystemID       int        `json:"system_id"`
-	SystemName     string     `json:"system_name,omitempty"`
-	Sysid          string     `json:"sysid,omitempty"`
-	Tgid           int        `json:"tgid"`
-	AlphaTag       string     `json:"alpha_tag,omitempty"`
-	Tag            string     `json:"tag,omitempty"`
-	Group          string     `json:"group,omitempty"`
-	Description    string     `json:"description,omitempty"`
-	Mode           *string    `json:"mode,omitempty"`
-	Priority       *int       `json:"priority,omitempty"`
-	FirstSeen      *time.Time `json:"first_seen,omitempty"`
-	LastSeen       *time.Time `json:"last_seen,omitempty"`
-	CallCount      int        `json:"call_count"`
-	Calls1h        int        `json:"calls_1h"`
-	Calls24h       int        `json:"calls_24h"`
-	UnitCount      int        `json:"unit_count"`
-	RelevanceScore *int       `json:"relevance_score,omitempty"`
+	SystemID        int        `json:"system_id"`
+	SystemName      string     `json:"system_name,omitempty"`
+	Sysid           string     `json:"sysid,omitempty"`
+	Tgid            int        `json:"tgid"`
+	AlphaTag        string     `json:"alpha_tag,omitempty"`
+	Tag             string     `json:"tag,omitempty"`
+	Group           string     `json:"group,omitempty"`
+	Description     string     `json:"description,omitempty"`
+	Mode            *string    `json:"mode,omitempty"`
+	Priority        *int       `json:"priority,omitempty"`
+	FirstSeen       *time.Time `json:"first_seen,omitempty"`
+	LastSeen        *time.Time `json:"last_seen,omitempty"`
+	CallCount       int        `json:"call_count"`
+	EncryptedCalls  int        `json:"encrypted_calls"` // encrypted calls in last 30 days (cached on list)
+	Calls1h         int        `json:"calls_1h"`
+	Calls24h        int        `json:"calls_24h"`
+	UnitCount       int        `json:"unit_count"`
+	RelevanceScore  *int       `json:"relevance_score,omitempty"`
 }
 
 // AmbiguousMatch represents a system where an ambiguous entity was found.
@@ -91,19 +92,20 @@ type TalkgroupDirectoryFilter struct {
 
 func talkgroupRowToAPI(r sqlcdb.GetTalkgroupByCompositeRow) TalkgroupAPI {
 	tg := TalkgroupAPI{
-		SystemID:    r.SystemID,
-		SystemName:  r.SystemName,
-		Sysid:       r.Sysid,
-		Tgid:        r.Tgid,
-		AlphaTag:    r.AlphaTag,
-		Tag:         r.Tag,
-		Group:       r.Group,
-		Description: r.Description,
-		Mode:        r.Mode,
-		CallCount:   r.CallCount,
-		Calls1h:     r.Calls1h,
-		Calls24h:    r.Calls24h,
-		UnitCount:   r.UnitCount,
+		SystemID:       r.SystemID,
+		SystemName:     r.SystemName,
+		Sysid:          r.Sysid,
+		Tgid:           r.Tgid,
+		AlphaTag:       r.AlphaTag,
+		Tag:            r.Tag,
+		Group:          r.Group,
+		Description:    r.Description,
+		Mode:           r.Mode,
+		CallCount:      r.CallCount,
+		EncryptedCalls: r.EncryptedCalls,
+		Calls1h:        r.Calls1h,
+		Calls24h:       r.Calls24h,
+		UnitCount:      r.UnitCount,
 	}
 	if r.Priority != nil {
 		v := int(*r.Priority)
@@ -275,7 +277,7 @@ func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]Tal
 			t.tgid, COALESCE(t.alpha_tag, '') AS alpha_tag, COALESCE(t.tag, '') AS tag,
 			COALESCE(t."group", '') AS "group", COALESCE(t.description, '') AS description,
 			t.mode, t.priority, t.first_seen, t.last_seen,
-			t.call_count_30d, t.calls_1h, t.calls_24h, t.unit_count_30d
+			t.call_count_30d, t.encrypted_count_30d, t.calls_1h, t.calls_24h, t.unit_count_30d
 		FROM talkgroups t
 		JOIN systems s ON s.system_id = t.system_id AND s.deleted_at IS NULL
 		%s
@@ -296,7 +298,7 @@ func (db *DB) ListTalkgroups(ctx context.Context, filter TalkgroupFilter) ([]Tal
 			&tg.SystemID, &tg.SystemName, &tg.Sysid,
 			&tg.Tgid, &tg.AlphaTag, &tg.Tag, &tg.Group, &tg.Description,
 			&tg.Mode, &tg.Priority, &tg.FirstSeen, &tg.LastSeen,
-			&tg.CallCount, &tg.Calls1h, &tg.Calls24h, &tg.UnitCount,
+			&tg.CallCount, &tg.EncryptedCalls, &tg.Calls1h, &tg.Calls24h, &tg.UnitCount,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -525,8 +527,8 @@ func (db *DB) RefreshTalkgroupStatsHot(ctx context.Context) (int64, error) {
 	return tag.RowsAffected() + tagZero.RowsAffected(), nil
 }
 
-// RefreshTalkgroupStatsCold updates the slow-changing stats (call_count_30d, unit_count_30d)
-// by scanning the last 30 days. Runs every hour.
+// RefreshTalkgroupStatsCold updates the slow-changing stats (call_count_30d,
+// encrypted_count_30d, unit_count_30d) by scanning the last 30 days. Runs every hour.
 //
 // Unit counts are derived from two sources (whichever is higher wins):
 //   - unit_events: explicit unit event messages from trunk-recorder's unit_topic
@@ -535,13 +537,24 @@ func (db *DB) RefreshTalkgroupStatsHot(ctx context.Context) (int64, error) {
 // This ensures unit counts are populated even when trunk-recorder is not
 // configured to send unit event messages (only call_start/call_end).
 func (db *DB) RefreshTalkgroupStatsCold(ctx context.Context) (int64, error) {
-	tag, err := db.Pool.Exec(ctx, `
+	tag, err := db.Pool.Exec(ctx, refreshTalkgroupStatsColdSQL)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// refreshTalkgroupStatsColdSQL is exported for tests that assert query shape.
+const refreshTalkgroupStatsColdSQL = `
 		UPDATE talkgroups t SET
 			call_count_30d = COALESCE(cs.call_count, 0),
+			encrypted_count_30d = COALESCE(cs.encrypted_count, 0),
 			unit_count_30d = COALESCE(us.unit_count, 0),
 			stats_updated_at = now()
 		FROM (
-			SELECT system_id, tgid, count(*)::int AS call_count
+			SELECT system_id, tgid,
+				count(*)::int AS call_count,
+				count(*) FILTER (WHERE encrypted)::int AS encrypted_count
 			FROM calls
 			WHERE start_time > now() - interval '30 days'
 			GROUP BY system_id, tgid
@@ -567,13 +580,9 @@ func (db *DB) RefreshTalkgroupStatsCold(ctx context.Context) (int64, error) {
 		WHERE t.system_id = COALESCE(cs.system_id, us.system_id)
 		  AND t.tgid = COALESCE(cs.tgid, us.tgid)
 		  AND (t.call_count_30d IS DISTINCT FROM COALESCE(cs.call_count, 0)
+			OR t.encrypted_count_30d IS DISTINCT FROM COALESCE(cs.encrypted_count, 0)
 			OR t.unit_count_30d IS DISTINCT FROM COALESCE(us.unit_count, 0))
-	`)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
-}
+	`
 
 // TalkgroupExport contains fields needed for export (no stats, no search vectors).
 type TalkgroupExport struct {
