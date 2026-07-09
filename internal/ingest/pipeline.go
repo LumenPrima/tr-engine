@@ -1078,7 +1078,7 @@ func (p *Pipeline) CancelBackfill(id int) bool {
 
 // talkgroupStatsLoop refreshes cached talkgroup stats on two cadences:
 // - Hot (calls_1h, calls_24h): every 5 minutes, scans only 24h of calls
-// - Cold (call_count_30d, unit_count_30d): every hour, scans 30 days
+// - Cold (call_count_30d, encrypted_count_30d, unit_count_30d): every hour, scans 30 days
 func (p *Pipeline) talkgroupStatsLoop() {
 	log := p.log.With().Str("task", "tg-stats").Logger()
 
