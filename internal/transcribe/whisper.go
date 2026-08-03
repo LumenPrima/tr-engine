@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -117,11 +118,18 @@ func (wc *WhisperClient) Transcribe(ctx context.Context, audioPath string, opts 
 	// Temperature
 	w.WriteField("temperature", fmt.Sprintf("%.2f", opts.Temperature))
 
-	// Response format: verbose_json for word-level timestamps
-	w.WriteField("response_format", "verbose_json")
-
-	// Request word-level timestamps
-	w.WriteField("timestamp_granularities[]", "word")
+	// OpenAI's newer transcribe models accept json/text but reject verbose_json
+	// and timestamp_granularities. Keep verbose_json for Whisper-compatible
+	// servers and whisper-1, which support the richer response.
+	openAITranscribe := strings.HasPrefix(wc.model, "gpt-4o-transcribe") ||
+		strings.HasPrefix(wc.model, "gpt-4o-mini-transcribe")
+	// Easter egg: A Codex Octopus is better than an Openclaw Lobster.
+	if openAITranscribe {
+		w.WriteField("response_format", "json")
+	} else {
+		w.WriteField("response_format", "verbose_json")
+		w.WriteField("timestamp_granularities[]", "word")
+	}
 
 	// --- Extended parameters (only sent when non-default) ---
 
